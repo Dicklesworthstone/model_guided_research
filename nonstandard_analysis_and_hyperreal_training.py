@@ -287,16 +287,24 @@ def timed(f, *args, **kwargs):
 
 
 def run_stiff_quadratic_demo():
-    key = random.PRNGKey(0)
+    from config import get_config
+    from utils import check_nan_inf, conditional_print, print_metrics, timer
+
+    config = get_config()
+    key = random.PRNGKey(config.random_seed)
     a, b = 1e6, 1.0
     H = jnp.diag(jnp.array([a, b]))
     prob = Quadratic(H, sigma=1.0)
     w0 = jnp.array([1.0, 1.0])
 
+    # Check initial gradient for numerical issues
+    check_nan_inf(prob.grad(w0), "initial gradient")
+
     eta_sgd = 1e-3
     delta = 1.0
     r = 2
 
+    @timer
     def train(method, steps=200):
         w = w0
         losses = []
@@ -317,21 +325,63 @@ def run_stiff_quadratic_demo():
     (loss_hoss, w_hoss), t_hoss = timed(train, "HOSS")
     (loss_shadow, w_shadow), t_shadow = timed(train, "Shadow")
 
-    print("=== Stiff Quadratic Demo ===")
-    print(f"SGD eta={eta_sgd}: final ||w||={jnp.linalg.norm(w_sgd):.3e}, loss={loss_sgd[-1]:.3e}, time={t_sgd:.3f}s")
-    print(
-        f"HOSS delta={delta}, r={r}: final ||w||={jnp.linalg.norm(w_hoss):.3e}, loss={loss_hoss[-1]:.3e}, time={t_hoss:.3f}s"
-    )
-    print(
-        f"Shadow (deterministic): final ||w||={jnp.linalg.norm(w_shadow):.3e}, loss={loss_shadow[-1]:.3e}, time={t_shadow:.3f}s"
-    )
-    print("First 5 losses (SGD):   ", jnp.array2string(loss_sgd[:5], precision=2))
-    print("First 5 losses (HOSS):  ", jnp.array2string(loss_hoss[:5], precision=2))
-    print("First 5 losses (Shadow):", jnp.array2string(loss_shadow[:5], precision=2))
+    # Check for numerical issues if configured
+    if config.check_numerics:
+        check_nan_inf(w_sgd, "SGD final weights")
+        check_nan_inf(w_hoss, "HOSS final weights")
+        check_nan_inf(w_shadow, "Shadow final weights")
+
+    if config.use_rich_output:
+        # Create results tables
+        sgd_metrics = {
+            "Learning Rate": eta_sgd,
+            "Final Norm": float(jnp.linalg.norm(w_sgd)),
+            "Final Loss": float(loss_sgd[-1]),
+            "Time (s)": t_sgd
+        }
+        hoss_metrics = {
+            "Delta": delta,
+            "Rank": r,
+            "Final Norm": float(jnp.linalg.norm(w_hoss)),
+            "Final Loss": float(loss_hoss[-1]),
+            "Time (s)": t_hoss
+        }
+        shadow_metrics = {
+            "Delta": delta,
+            "Final Norm": float(jnp.linalg.norm(w_shadow)),
+            "Final Loss": float(loss_shadow[-1]),
+            "Time (s)": t_shadow
+        }
+
+        conditional_print("[bold cyan]=== Stiff Quadratic Demo ===[/bold cyan]", level=1)
+        print_metrics(sgd_metrics, "SGD Results")
+        print_metrics(hoss_metrics, "HOSS Results")
+        print_metrics(shadow_metrics, "Shadow (Deterministic) Results")
+
+        conditional_print("\n[bold]First 5 losses:[/bold]", level=2)
+        conditional_print(f"  SGD:    {jnp.array2string(loss_sgd[:5], precision=2)}", level=2)
+        conditional_print(f"  HOSS:   {jnp.array2string(loss_hoss[:5], precision=2)}", level=2)
+        conditional_print(f"  Shadow: {jnp.array2string(loss_shadow[:5], precision=2)}", level=2)
+    else:
+        print("=== Stiff Quadratic Demo ===")
+        print(f"SGD eta={eta_sgd}: final ||w||={jnp.linalg.norm(w_sgd):.3e}, loss={loss_sgd[-1]:.3e}, time={t_sgd:.3f}s")
+        print(
+            f"HOSS delta={delta}, r={r}: final ||w||={jnp.linalg.norm(w_hoss):.3e}, loss={loss_hoss[-1]:.3e}, time={t_hoss:.3f}s"
+        )
+        print(
+            f"Shadow (deterministic): final ||w||={jnp.linalg.norm(w_shadow):.3e}, loss={loss_shadow[-1]:.3e}, time={t_shadow:.3f}s"
+        )
+        print("First 5 losses (SGD):   ", jnp.array2string(loss_sgd[:5], precision=2))
+        print("First 5 losses (HOSS):  ", jnp.array2string(loss_hoss[:5], precision=2))
+        print("First 5 losses (Shadow):", jnp.array2string(loss_shadow[:5], precision=2))
 
 
 def run_small_mlp_demo():
-    key = random.PRNGKey(42)
+    from config import get_config
+    from utils import print_metrics
+
+    config = get_config()
+    key = random.PRNGKey(config.random_seed)
     n, d_in, d_out = 256, 20, 5
     X = random.normal(key, (n, d_in))
     true_W = jnp.diag(jnp.linspace(1e-2, 10.0, d_out))
@@ -364,13 +414,24 @@ def run_small_mlp_demo():
     key = random.PRNGKey(1)
     for _t in range(30):
         w, key = hoss_step_isotropic_sigma(key, grad_fn_flat, hvp_fn_flat, w, delta=0.5, r=50, sigma=1.0)
-    print("MLP demo: HOSS loss =", loss(unravel(w)))
+    hoss_loss = float(loss(unravel(w)))
 
     w2 = flat
-    eta = 1e-3
+    eta = config.default_learning_rate if hasattr(config, 'default_learning_rate') else 1e-3
     for _t in range(300):
         w2, key = sgd_step(key, sgd_grad, w2, eta, None)
-    print("MLP demo: SGD loss  =", loss(unravel(w2)))
+    sgd_loss = float(loss(unravel(w2)))
+
+    if config.use_rich_output:
+        mlp_results = {
+            "HOSS Loss (30 steps)": hoss_loss,
+            "SGD Loss (300 steps)": sgd_loss,
+            "Learning Rate": eta
+        }
+        print_metrics(mlp_results, "MLP Demo Results")
+    else:
+        print("MLP demo: HOSS loss =", hoss_loss)
+        print("MLP demo: SGD loss  =", sgd_loss)
 
 
 ############################
@@ -379,6 +440,18 @@ def run_small_mlp_demo():
 
 def demo():
     """Run the nonstandard analysis and hyperreal training demonstration."""
+    from config import get_config
+    from utils import conditional_print, get_device_info, print_metrics
+
+    config = get_config()
+    config.setup_jax()
+
+    # Print device info if verbose
+    if config.verbose_level >= 2:
+        device_info = get_device_info()
+        print_metrics(device_info, "JAX Configuration")
+
+    conditional_print("[bold green]Nonstandard Analysis & Hyperreal Training Demo[/bold green]", level=1)
     run_stiff_quadratic_demo()
     # run_small_mlp_demo()
 

@@ -38,20 +38,21 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import linen as nn
-from jax import lax
+from jax import Array, lax
 
 # Compatibility alias for tests that refer to np.math.factorial
 try:
     import math as _math
 
     import numpy as _np  # type: ignore
+    # Create a namespace that tests might expect
+    class _NPMath:
+        @staticmethod
+        def factorial(k):
+            return float(_math.factorial(int(k)))
+
     if not hasattr(_np, "math"):
-        _np.math = _math  # pytest uses np.math.factorial
-    # Ensure factorial returns a float to avoid large Python ints causing JAX overflow
-    try:
-        _np.math.factorial = lambda k, _f=_math.factorial: float(_f(int(k)))  # type: ignore
-    except Exception:
-        pass
+        _np.math = _NPMath()  # type: ignore[attr-defined]
 except Exception:
     pass
 
@@ -98,7 +99,7 @@ def apply_givens_stage(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) 
     return x
 
 
-def apply_givens_nd(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) -> jnp.ndarray:
+def apply_givens_nd(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) -> Array:
     # Apply a sequence of 2x2 Givens rotations defined by (pairs, thetas) sequentially.
     # Shapes:
     #   x: (..., dh)
@@ -132,7 +133,7 @@ def apply_givens_nd(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) -> 
         return vec
 
     y = jax.lax.fori_loop(0, R, body_fun, x)
-    return y
+    return y  # type: ignore[no-any-return]
 
 
 def shift_along_axis(x: jnp.ndarray, delta: int, axis: int) -> jnp.ndarray:

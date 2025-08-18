@@ -75,9 +75,12 @@ class BitTape:
         self.w += 32 * int(x.size)
 
     def pop_u32(self, n: int) -> np.ndarray:
-        assert n <= self.buf.size
-        out: np.ndarray = self.buf[-n:].copy()
-        self.buf = self.buf[:-n]
+        if n > self.buf.size:
+            raise ValueError(f"Cannot pop {n} u32 values, only {self.buf.size} available")
+        if n < 0:
+            raise ValueError(f"Cannot pop negative number of values: {n}")
+        out: np.ndarray = self.buf[-n:].copy() if n > 0 else np.array([], dtype=np.uint32)
+        self.buf = self.buf[:-n] if n > 0 else self.buf
         self.w -= 32 * n
         return out
 
@@ -111,7 +114,7 @@ class Reservoir:
         out = self.buf[:n].copy()
         self.buf = self.buf[n:]
         self.r += 32 * n
-        return out
+        return out  # type: ignore[no-any-return]
 
     def give_back_u32_prefix(self, x: np.ndarray):
         x = np.asarray(x, dtype=np.uint32).ravel()
@@ -150,7 +153,7 @@ def orth_mix_inverse(x, h_vec):
     def reflect(z, v):
         return z - 2 * jnp.sum(z * v, axis=-1, keepdims=True) * v
 
-    # orth_mix = reflect(v2) ∘ reflect(v1); inverse is reflect(v1) ∘ reflect(v2)
+    # orth_mix applies reflect(v1) then reflect(v2); inverse applies them in reverse
     y = reflect(x, v2)
     y = reflect(y, v1)
     return y
@@ -564,34 +567,80 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
 
 
 def diagnostics_print():
+    from config import get_config
+    from utils import conditional_print, print_metrics
+
+    config = get_config()
     ok, emax, ledger, tape_u32, res_u32 = cycle_test()
-    print("cycle_ok", ok, "max_abs_err", emax)
-    print("tape_u32_words", tape_u32, "res_u32_words_after", res_u32)
-    print(
-        "bits_written",
-        ledger["bits_written"],
-        "bits_consumed",
-        ledger["bits_consumed"],
-        "delta_bits",
-        ledger["delta_bits"],
-    )
-    print("per_block_bits", [(s.bits_written, s.bits_consumed, s.delta_bits) for s in ledger["per_block"]])
-    baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
-    ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
-    print(
-        "rough_peak_activation_baseline_MB",
-        round(baseline_MB, 3),
-        "ours_MB",
-        round(ours_MB, 3),
-        "reduction_x",
-        round(baseline_MB / max(1e-6, ours_MB), 2),
-    )
+
+    if config.use_rich_output:
+        cycle_metrics = {
+            "Cycle OK": ok,
+            "Max Abs Error": emax,
+            "Tape U32 Words": tape_u32,
+            "Reservoir U32 Words After": res_u32
+        }
+        print_metrics(cycle_metrics, "Cycle Test Results")
+
+        bit_metrics = {
+            "Bits Written": ledger["bits_written"],
+            "Bits Consumed": ledger["bits_consumed"],
+            "Delta Bits": ledger["delta_bits"]
+        }
+        print_metrics(bit_metrics, "Bit Operations")
+
+        conditional_print("[bold]Per-block bits:[/bold]", level=2)
+        for i, s in enumerate(ledger["per_block"]):
+            conditional_print(f"  Block {i}: written={s.bits_written}, consumed={s.bits_consumed}, delta={s.delta_bits}", level=2)
+
+        baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
+        ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
+        memory_metrics = {
+            "Baseline Peak Activation (MB)": round(baseline_MB, 3),
+            "Our Method (MB)": round(ours_MB, 3),
+            "Reduction Factor": round(baseline_MB / max(1e-6, ours_MB), 2)
+        }
+        print_metrics(memory_metrics, "Memory Usage")
+    else:
+        print("cycle_ok", ok, "max_abs_err", emax)
+        print("tape_u32_words", tape_u32, "res_u32_words_after", res_u32)
+        print(
+            "bits_written",
+            ledger["bits_written"],
+            "bits_consumed",
+            ledger["bits_consumed"],
+            "delta_bits",
+            ledger["delta_bits"],
+        )
+        print("per_block_bits", [(s.bits_written, s.bits_consumed, s.delta_bits) for s in ledger["per_block"]])
+        baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
+        ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
+        print(
+            "rough_peak_activation_baseline_MB",
+            round(baseline_MB, 3),
+            "ours_MB",
+            round(ours_MB, 3),
+            "reduction_x",
+            round(baseline_MB / max(1e-6, ours_MB), 2),
+        )
 
 
 def demo():
     """Run the reversible computation and measure preserving learning demonstration."""
+    from config import get_config
+    from utils import conditional_print, get_device_info, log_metrics_conditionally, print_metrics
+
+    config = get_config()
+    config.setup_jax()
+
+    # Print device info if verbose
+    if config.verbose_level >= 2:
+        device_info = get_device_info()
+        print_metrics(device_info, "JAX Configuration")
+
+    conditional_print("[bold magenta]Reversible Computation & Measure-Preserving Learning Demo[/bold magenta]", level=1)
     diagnostics_print()
-    k = key(42)
+    k = key(config.random_seed)
     d = 64
     L = 3
     d_a = 48
@@ -605,15 +654,30 @@ def demo():
     T = 16
     x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
     y_tar = jax.nn.one_hot(jax.random.randint(k, (bs, T, dummy_logits_dim), 0, dummy_logits_dim), dummy_logits_dim)
+    from utils import conditional_print
+
     opt_state = opt.init(jax.tree_util.tree_flatten([b.coup.g_w1 for b in m.blocks])[0])
+
+    conditional_print("\n[bold]Training Progress:[/bold]", level=1)
     for step in range(3):
         m, opt_state, loss = tiny_train_step(m, x, y_tar, opt, opt_state)
-        print("step", step, "loss", loss)
+        metrics = {"loss": loss}
+        log_metrics_conditionally(step, metrics)
     tape = BitTape()
     res = Reservoir(777)
     y, ledger = model_forward(x, m, tape, res, audit_mode=True)
     x_rec = model_inverse(y, m, tape, res)
-    print("final_cycle_ok", np.allclose(np.asarray(x), np.asarray(x_rec)))
+
+    final_ok = np.allclose(np.asarray(x), np.asarray(x_rec))
+    if config.use_rich_output:
+        from rich.console import Console
+        console = Console()
+        if final_ok:
+            console.print("\n[bold green]✓ Final cycle check: PASSED[/bold green]")
+        else:
+            console.print("\n[bold red]✗ Final cycle check: FAILED[/bold red]")
+    else:
+        print("final_cycle_ok", final_ok)
 
 
 if __name__ == "__main__":

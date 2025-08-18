@@ -18,9 +18,13 @@ import jax.numpy as jnp
 import numpy as np
 from jax import random
 
-# Configure JAX: force CPU to avoid accidental GPU/CUDA runtime needs
-jax.config.update("jax_enable_x64", False)  # Use float32 for speed
-jax.config.update("jax_platform_name", "cpu")
+# Configure JAX using config module for consistency
+from config import get_config
+
+config = get_config()
+config.jax_precision = "float32"  # Use float32 for speed
+config.use_gpu = False  # Force CPU to avoid accidental GPU/CUDA runtime needs
+config.setup_jax()
 
 # Import all modules to test
 import iterated_function_systems_and_fractal_memory as ifs
@@ -421,7 +425,7 @@ class TestSimplicialComplexes:
         - Simplicial model: uses D2 to propagate triangle structure to edges; expected to outperform.
         """
         print("\n🔬 Testing Triangle-Dependent Task (Simplicial vs Pairwise Baseline)...")
-        jax.config.update("jax_platform_name", "cpu")
+        # JAX already configured at module level
         key = random.PRNGKey(123)
         p = 20
         edge_prob = 0.2

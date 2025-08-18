@@ -1,0 +1,31 @@
+{
+  "use_gpu": false,
+  "jax_precision": "float32",
+  "random_seed": 42,
+  "jax_debug_nans": false,
+  "jax_disable_jit": false,
+  
+  "verbose": true,
+  "verbose_level": 1,
+  "save_outputs": false,
+  "output_dir": "outputs",
+  "save_checkpoints": false,
+  "checkpoint_dir": "checkpoints",
+  
+  "log_metrics": true,
+  "log_interval": 100,
+  "use_rich_output": true,
+  "show_progress_bars": true,
+  
+  "debug_mode": false,
+  "check_numerics": false,
+  "profile_performance": false,
+  
+  "max_iterations": 1000,
+  "convergence_threshold": 1e-6,
+  "early_stopping_patience": 10,
+  
+  "default_learning_rate": 0.001,
+  "default_batch_size": 32,
+  "gradient_clip_norm": null
+}

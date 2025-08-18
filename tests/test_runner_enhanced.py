@@ -524,9 +524,9 @@ class EnhancedTestRunner:
             f"Time: {datetime.now().strftime('%H:%M:%S')}"
         )
 
-    def _display_enhanced_summary(self):
+    def _display_enhanced_summary(self) -> None:
         """Display comprehensive test summary with rich formatting."""
-        elapsed = time.time() - self.start_time
+        elapsed = time.time() - (self.start_time or time.time())
 
         # Group results by test type
         by_type: dict[str, list[TestResult]] = {}
@@ -582,7 +582,7 @@ class EnhancedTestRunner:
                         notes.append(f"⚠️ {len(result.warnings)} warnings")
                     row.append(", ".join(notes) if notes else "")
 
-                table.add_row(*row)
+                table.add_row(*[str(item) for item in row])
 
             console.print(table)
             console.print(f"Passed: {passed}/{total}\n")
@@ -642,7 +642,7 @@ class EnhancedTestRunner:
                 )
                 console.print(error_panel)
 
-    def _generate_detailed_report(self):
+    def _generate_detailed_report(self) -> None:
         """Generate a detailed report with all test information."""
         console.print("\n")
         console.rule("[bold]Detailed Test Report", style="blue")

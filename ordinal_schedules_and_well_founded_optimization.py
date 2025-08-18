@@ -120,7 +120,7 @@ def _OrdinalParams_new_compat(cls, *args, **kwargs):
         return _OrdinalParams_new(cls, params.A0, params.B_init, params.P0, params.eta0, params.gamma, params.beta)
     return _OrdinalParams_new(cls, *args, **kwargs)
 
-OrdinalParams.__new__ = staticmethod(_OrdinalParams_new_compat)  # type: ignore[misc]
+OrdinalParams.__new__ = staticmethod(_OrdinalParams_new_compat)  # type: ignore[method-assign,assignment]
 
 
 def patience_for_B(B: jnp.int32, params: OrdinalParams) -> jnp.int32:
@@ -180,7 +180,9 @@ def ordinal_state_init(params: OrdinalParams):
 
 # Test convenience wrapper accepting test-style kwargs
 def OrdinalParams_test(**kwargs) -> OrdinalParams:
-    return OrdinalParams.from_test_kwargs(**kwargs)
+    result = OrdinalParams.from_test_kwargs(**kwargs)
+    assert isinstance(result, OrdinalParams)  # Help mypy understand the type
+    return result
 
 
 def ordinal_rank(st: OrdinalState) -> int:
@@ -451,11 +453,17 @@ def summarize(results):
 
 
 def main():
+    from config import get_config
+    from utils import conditional_print, print_metrics
+
+    config = get_config()
+    config.setup_jax()
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--steps", type=int, default=50000)
     ap.add_argument("--dim", type=int, default=50)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=config.random_seed)
     ap.add_argument("--eta0", type=float, default=0.1)
     ap.add_argument("--gamma", type=float, default=0.5)
     ap.add_argument("--A0", type=int, default=2)
@@ -468,8 +476,17 @@ def main():
 
     params = OrdinalParams(A0=args.A0, B_init=args.B_init, P0=args.P0, eta0=args.eta0, gamma=args.gamma, beta=args.beta)
 
+    from utils import create_progress_bar
+
     results = []
     base_key = random.PRNGKey(args.seed)
+
+    # Create progress bar if configured
+    progress = create_progress_bar(args.runs, "Running experiments")
+    task = None
+    if progress:
+        task = list(progress.tasks)[0]
+
     for i in range(args.runs):
         rep_seed = int(random.bits(random.fold_in(base_key, i), 32))
         res = run_replicate(
@@ -487,23 +504,83 @@ def main():
         )
         results.append(res)
 
+        if progress and task is not None:
+            progress.update(task, advance=1)
+
+    if progress:
+        progress.stop()
+
     summ = summarize(results)
 
-    print("=== Ordinal Scheduler vs. Cosine/Linear Baselines ===")
-    print(f"runs={summ['runs']} steps={args.steps} dim={args.dim} seed={args.seed}")
-    print(f"median MSE: ord={summ['median_ord']:.6f}  cos={summ['median_cos']:.6f}  lin={summ['median_lin']:.6f}")
-    print(f"per-run dominance (ord <= 0.95 * best(baselines)): {summ['dominance_count']}/{summ['runs']}")
-    print(f"pass_median={summ['pass_median']}  pass_dominance={summ['pass_dominance']}  PASSED={summ['passed']}")
-    print("\nExample replicate details (first run):")
-    r0 = results[0]
-    print(f"  ord MSE={r0['ord_mse']:.6f} seg_means={r0['ord_seg_means']}")
-    print(f"  cos MSE={r0['cos_mse']:.6f} seg_means={r0['cos_seg_means']}")
-    print(f"  lin MSE={r0['lin_mse']:.6f} seg_means={r0['lin_seg_means']}")
-    print(f"  ordinal anneals={r0['anneals']} restarts={r0['restarts']} (strict rank drops at limits)")
+    if config.use_rich_output:
+        conditional_print("[bold yellow]=== Ordinal Scheduler vs. Cosine/Linear Baselines ===[/bold yellow]", level=1)
+
+        experiment_config = {
+            "Runs": summ['runs'],
+            "Steps": args.steps,
+            "Dimension": args.dim,
+            "Seed": args.seed
+        }
+        print_metrics(experiment_config, "Experiment Configuration")
+
+        mse_metrics = {
+            "Ordinal MSE": summ['median_ord'],
+            "Cosine MSE": summ['median_cos'],
+            "Linear MSE": summ['median_lin']
+        }
+        print_metrics(mse_metrics, "Median MSE Results")
+
+        validation_metrics = {
+            "Dominance Count": f"{summ['dominance_count']}/{summ['runs']}",
+            "Pass Median Test": summ['pass_median'],
+            "Pass Dominance Test": summ['pass_dominance'],
+            "Overall Pass": summ['passed']
+        }
+        print_metrics(validation_metrics, "Validation Results")
+
+        # Example replicate details
+        r0 = results[0]
+        conditional_print("\n[bold]First Run Details:[/bold]", level=2)
+        first_run_metrics = {
+            "Ordinal MSE": r0['ord_mse'],
+            "Cosine MSE": r0['cos_mse'],
+            "Linear MSE": r0['lin_mse'],
+            "Ordinal Anneals": r0['anneals'],
+            "Restarts": r0['restarts']
+        }
+        print_metrics(first_run_metrics, "First Run Results")
+
+        conditional_print("\n[dim]Segment means:[/dim]", level=3)
+        conditional_print(f"  Ordinal: {r0['ord_seg_means']}", level=3)
+        conditional_print(f"  Cosine:  {r0['cos_seg_means']}", level=3)
+        conditional_print(f"  Linear:  {r0['lin_seg_means']}", level=3)
+    else:
+        print("=== Ordinal Scheduler vs. Cosine/Linear Baselines ===")
+        print(f"runs={summ['runs']} steps={args.steps} dim={args.dim} seed={args.seed}")
+        print(f"median MSE: ord={summ['median_ord']:.6f}  cos={summ['median_cos']:.6f}  lin={summ['median_lin']:.6f}")
+        print(f"per-run dominance (ord <= 0.95 * best(baselines)): {summ['dominance_count']}/{summ['runs']}")
+        print(f"pass_median={summ['pass_median']}  pass_dominance={summ['pass_dominance']}  PASSED={summ['passed']}")
+        print("\nExample replicate details (first run):")
+        r0 = results[0]
+        print(f"  ord MSE={r0['ord_mse']:.6f} seg_means={r0['ord_seg_means']}")
+        print(f"  cos MSE={r0['cos_mse']:.6f} seg_means={r0['cos_seg_means']}")
+        print(f"  lin MSE={r0['lin_mse']:.6f} seg_means={r0['lin_seg_means']}")
+        print(f"  ordinal anneals={r0['anneals']} restarts={r0['restarts']} (strict rank drops at limits)")
 
 
 def demo():
     """Run the ordinal schedules and well founded optimization demonstration."""
+    from config import get_config
+    from utils import conditional_print, get_device_info, print_metrics
+
+    config = get_config()
+
+    # Print device info if verbose
+    if config.verbose_level >= 2:
+        device_info = get_device_info()
+        print_metrics(device_info, "JAX Configuration")
+
+    conditional_print("[bold blue]Ordinal Schedules & Well-Founded Optimization Demo[/bold blue]", level=1)
     main()
 
 

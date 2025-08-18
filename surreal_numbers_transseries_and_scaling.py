@@ -228,12 +228,15 @@ def compute_T(
 ):
     Ltr = nll(params, Xtr, Ytr, width_mask_ones, depth_mask_full, inv1, H)
     Lva = nll(params, Xva, Yva, width_mask_ones, depth_mask_full, inv1, H)
-    base = Lva + 1e-9
-    T_D = Lva / (Ltr + 1e-9)
+    # Use a more robust epsilon and ensure consistent handling
+    eps = 1e-6
+    base = jnp.maximum(Lva, eps)
+    T_D = Lva / jnp.maximum(Ltr, eps)
     Lva_H = nll(params, Xva, Yva, width_mask_ones, depth_mask_half, inv1, H)
     Lva_W = nll(params, Xva, Yva, width_mask_half, depth_mask_full, inv2, H)
-    T_H = Lva_H / base
-    T_W = Lva_W / base
+    # Clip ratios to prevent numerical explosion
+    T_H = jnp.minimum(Lva_H / base, 1e3)
+    T_W = jnp.minimum(Lva_W / base, 1e3)
     return T_D, T_H, T_W, Ltr, Lva
 
 
@@ -241,7 +244,9 @@ def choose_move(TD, TH, TW, eps=0.02):
     v = jnp.array([TD, TH, TW])
     i = int(jnp.argmax(v))
     j = int(jnp.argmax(v.at[i].set(-jnp.inf)))
-    if float(v[i] / (v[j] + 1e-9)) <= 1.0 + eps:
+    # Use maximum to ensure we don't divide by zero or near-zero
+    ratio = v[i] / jnp.maximum(v[j], 1e-6)
+    if float(ratio) <= 1.0 + eps:
         return "data"
     return ["data", "depth", "width"][i]
 

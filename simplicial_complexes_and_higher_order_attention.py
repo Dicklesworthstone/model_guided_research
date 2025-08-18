@@ -144,7 +144,7 @@ def cycle_indicator_on_edges(p, cycle_vertices, edges=None):
     for i in range(len(cycle_vertices)):
         u = int(cycle_vertices[i])
         v = int(cycle_vertices[(i + 1) % len(cycle_vertices)])
-        
+
         # Determine edge key and sign based on cycle direction
         if u < v:
             edge_key = (u, v)
@@ -386,7 +386,13 @@ def sanity_suite(params, complex_, d):
 
 
 def main():
-    key = jax.random.PRNGKey(42)
+    from config import get_config
+    from utils import check_nan_inf, conditional_print, log_metrics_conditionally, print_model_summary, save_checkpoint
+
+    config = get_config()
+
+    # Use config for seed and other settings
+    key = jax.random.PRNGKey(config.random_seed)
     p = 6
     complex_ = build_complete_complex_K2(p)
     r = cycle_indicator_on_edges(p, list(range(p)), edges=complex_["edges"])
@@ -394,33 +400,59 @@ def main():
     d = 16
     L = 3
     params = init_params(key, K, d)
+
+    # Print model summary if verbose
+    if config.verbose_level >= 2:
+        print_model_summary(params, "Simplicial Mixer")
+
     key_data = jax.random.PRNGKey(7)
     X_train, Y_train = generate_dataset(key_data, complex_, num=1024, r=r)
     X_test, Y_test = generate_dataset(jax.random.PRNGKey(8), complex_, num=256, r=r)
-    lr = 1e-2
+
+    # Use config for training hyperparameters
+    lr = config.default_learning_rate if hasattr(config, 'default_learning_rate') else 1e-2
     lam_bdry = 1e-4
-    batch_size = 64
+    batch_size = config.default_batch_size if hasattr(config, 'default_batch_size') else 64
 
     def batches(X, Y, bs):
         n = X.shape[0]
         for i in range(0, n, bs):
             yield X[i : i + bs], Y[i : i + bs]
 
-    for epoch in range(10):
+    num_epochs = 10
+    conditional_print(f"[bold]Training Simplicial Mixer[/bold] for {num_epochs} epochs", level=1)
+
+    for epoch in range(num_epochs):
         perm = jax.random.permutation(jax.random.fold_in(key, epoch), X_train.shape[0])
         X_train = X_train[perm]
         Y_train = Y_train[perm]
         losses = []
         accs = []
-        for Xb, Yb in batches(X_train, Y_train, batch_size):
+
+        for batch_idx, (Xb, Yb) in enumerate(batches(X_train, Y_train, batch_size)):
+            # Check for numerical issues if debug mode
+            if config.check_numerics:
+                check_nan_inf(Xb, f"input batch {batch_idx}")
+
             params, loss, acc, bd, mass = train_step(params, complex_, L, Xb, Yb, r, lam_bdry, lr)
             losses.append(loss)
             accs.append(acc)
+
         loss_epoch = float(jnp.mean(jnp.array(losses)))
         acc_epoch = float(jnp.mean(jnp.array(accs)))
-        print(
-            f"epoch {epoch:02d} | loss {loss_epoch:.4f} | acc {acc_epoch:.3f} | mean_boundary {float(bd):.6f} | mean_mass {float(mass):.3f}"
-        )
+
+        # Use conditional logging
+        metrics = {
+            "loss": loss_epoch,
+            "acc": acc_epoch,
+            "boundary": float(bd),
+            "mass": float(mass)
+        }
+        log_metrics_conditionally(epoch, metrics)
+
+        # Save checkpoint if configured
+        if epoch % 5 == 0:  # Save every 5 epochs
+            save_checkpoint(params, epoch, metrics)
 
     @jax.jit
     def eval_batch(X, Y):

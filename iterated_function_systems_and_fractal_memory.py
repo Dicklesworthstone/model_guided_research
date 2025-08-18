@@ -671,7 +671,3 @@ def FractalKVStore(key, d: int, m: int, k: int, s: float = 0.4) -> FractalKV:
 def _compute_c_w(path: Array, cfg: FractalKVConfig) -> Array:
     store = FractalKV(cfg)
     return store._compute_c_batch(path.reshape(1, -1)).reshape(cfg.d_val)
-
-
-def _path_to_index(path: Array, m_pow: Array) -> Array:
-    return jnp.dot(path, m_pow).astype(jnp.int32)

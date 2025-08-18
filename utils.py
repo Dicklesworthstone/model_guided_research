@@ -81,3 +81,106 @@ def print_model_summary(params: Any, name: str = "Model") -> None:
     table.add_row("Parameter Groups", str(len(jax.tree_util.tree_leaves(params))))
 
     console.print(table)
+
+
+def conditional_print(message: str, level: int = 1) -> None:
+    """Print message only if verbose level is high enough."""
+    from config import get_config
+    config = get_config()
+    if config.verbose and config.verbose_level >= level:
+        if config.use_rich_output:
+            console.print(message)
+        else:
+            print(message)
+
+
+def log_metrics_conditionally(step: int, metrics: dict[str, Any]) -> None:
+    """Log metrics based on config settings."""
+    from config import get_config
+    config = get_config()
+
+    if not config.log_metrics:
+        return
+
+    if step % config.log_interval != 0 and step != 0:
+        return
+
+    if config.use_rich_output:
+        # Format metrics nicely
+        metric_str = " | ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}"
+                                 for k, v in metrics.items()])
+        console.print(f"[cyan]Step {step}[/cyan] | {metric_str}")
+    else:
+        print(f"Step {step} | " + " | ".join([f"{k}: {v}" for k, v in metrics.items()]))
+
+
+def save_checkpoint(params: Any, step: int, metrics: dict[str, Any] | None = None) -> None:
+    """Save model checkpoint if configured."""
+    import pickle
+
+    from config import get_config
+
+    config = get_config()
+    if not config.save_checkpoints:
+        return
+
+    checkpoint_path = config.checkpoint_dir / f"checkpoint_step_{step}.pkl"
+    checkpoint_data = {
+        "params": params,
+        "step": step,
+        "metrics": metrics or {}
+    }
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump(checkpoint_data, f)
+
+    conditional_print(f"[dim]Checkpoint saved to {checkpoint_path}[/dim]", level=2)
+
+
+def create_progress_bar(total: int, description: str = "Processing") -> Any:
+    """Create a progress bar if configured."""
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+    from config import get_config
+
+    config = get_config()
+    if not config.show_progress_bars or not config.use_rich_output:
+        return None
+
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    )
+    progress.start()
+    progress.add_task(description, total=total)
+    return progress
+
+
+def safe_divide(numerator: jnp.ndarray, denominator: jnp.ndarray,
+                 epsilon: float = 1e-8) -> jnp.ndarray:
+    """Safe division avoiding NaN/Inf."""
+    return numerator / (denominator + epsilon)
+
+
+def gradient_norm(grads: Any) -> float:
+    """Calculate L2 norm of gradients."""
+    leaves = jax.tree_util.tree_leaves(grads)
+    return float(jnp.sqrt(sum(jnp.sum(g**2) for g in leaves)))
+
+
+def clip_gradients(grads: Any, max_norm: float | None = None) -> Any:
+    """Clip gradients by global norm."""
+    from config import get_config
+
+    config = get_config()
+    max_norm = max_norm or config.gradient_clip_norm
+
+    if max_norm is None:
+        return grads
+
+    g_norm = gradient_norm(grads)
+    scale = jnp.minimum(1.0, max_norm / (g_norm + 1e-8))
+    return jax.tree_util.tree_map(lambda g: g * scale, grads)

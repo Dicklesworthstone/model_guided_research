@@ -5,6 +5,7 @@ Model Guided Research CLI - Run experimental mathematical models for ML research
 
 import importlib
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich import box
@@ -109,17 +110,65 @@ def list():
 
 @app.command()
 def run(
-    demo_name: str = typer.Argument(
-        ...,
+    demo_name: Annotated[str, typer.Argument(
         help="Name of the demo to run",
         autocompletion=lambda: DEMOS.keys()  # type: ignore[call-arg]
-    ),
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v",
+    )],
+    config_file: Annotated[Path | None, typer.Option(
+        "--config", "-c",
+        help="Path to JSON config file (see config.example.json)"
+    )] = None,
+    verbose: Annotated[bool, typer.Option(
+        "--verbose", "-v",
         help="Show verbose output"
-    ),
+    )] = False,
+    verbose_level: Annotated[int | None, typer.Option(
+        "--verbose-level",
+        min=0, max=3,
+        help="Verbosity level: 0=silent, 1=normal, 2=detailed, 3=debug"
+    )] = None,
+    seed: Annotated[int | None, typer.Option(
+        "--seed", "-s",
+        help="Random seed for reproducibility"
+    )] = None,
+    no_rich: Annotated[bool, typer.Option(
+        "--no-rich",
+        help="Disable rich formatting for plain text output"
+    )] = False,
+    debug: Annotated[bool, typer.Option(
+        "--debug",
+        help="Enable debug mode with numerical checking"
+    )] = False,
 ):
     """Run a specific demo by name"""
+
+    # Configure settings
+    from config import ProjectConfig, set_config
+
+    # Load config from file if provided
+    if config_file and config_file.exists():
+        config = ProjectConfig.from_file(config_file)
+        if verbose:
+            console.print(f"[dim]Loaded config from {config_file}[/dim]")
+    else:
+        config = ProjectConfig()
+
+    # Override with command-line arguments
+    if verbose:
+        config.verbose = True
+    if verbose_level is not None:
+        config.verbose_level = verbose_level
+    if seed is not None:
+        config.random_seed = seed
+    if no_rich:
+        config.use_rich_output = False
+    if debug:
+        config.debug_mode = True
+        config.check_numerics = True
+        config.jax_debug_nans = True
+
+    # Set the global config
+    set_config(config)
 
     if demo_name not in DEMOS:
         console.print(f"[bold red]Error:[/bold red] Demo '{demo_name}' not found")
@@ -249,17 +298,93 @@ def info(
 
 
 @app.command()
+def config(
+    output: Annotated[Path | None, typer.Option(
+        "--output", "-o",
+        help="Output path for config file"
+    )] = None,
+    show: Annotated[bool, typer.Option(
+        "--show",
+        help="Show current configuration"
+    )] = False,
+):
+    """Generate example config file or show current configuration"""
+
+    import json
+
+    from config import get_config
+
+    if show:
+        # Show current configuration
+        current = get_config()
+        console.print("[bold cyan]Current Configuration:[/bold cyan]\n")
+
+        config_dict = {}
+        for field in current.__dataclass_fields__:
+            value = getattr(current, field)
+            if isinstance(value, Path):
+                value = str(value)
+            config_dict[field] = value
+
+        console.print(json.dumps(config_dict, indent=2))
+        return
+
+    # Generate example config
+    output_path = output or Path("config.json")
+
+    if output_path.exists():
+        if not typer.confirm(f"File {output_path} exists. Overwrite?"):
+            raise typer.Exit(0)
+
+    example_config = {
+        "use_gpu": False,
+        "jax_precision": "float32",
+        "random_seed": 42,
+        "jax_debug_nans": False,
+        "jax_disable_jit": False,
+
+        "verbose": True,
+        "verbose_level": 1,
+        "save_outputs": False,
+        "output_dir": "outputs",
+        "save_checkpoints": False,
+        "checkpoint_dir": "checkpoints",
+
+        "log_metrics": True,
+        "log_interval": 100,
+        "use_rich_output": True,
+        "show_progress_bars": True,
+
+        "debug_mode": False,
+        "check_numerics": False,
+        "profile_performance": False,
+
+        "max_iterations": 1000,
+        "convergence_threshold": 1e-6,
+        "early_stopping_patience": 10,
+
+        "default_learning_rate": 0.001,
+        "default_batch_size": 32,
+        "gradient_clip_norm": None
+    }
+
+    with open(output_path, 'w') as f:
+        json.dump(example_config, f, indent=2)
+
+    console.print(f"[green]✓ Example config written to {output_path}[/green]")
+    console.print(f"\n[dim]Use it with:[/dim] [bold]mgr run <demo> --config {output_path}[/bold]")
+
+
+@app.command()
 def run_all(
-    delay: int = typer.Option(
-        2,
+    delay: Annotated[int, typer.Option(
         "--delay", "-d",
         help="Delay in seconds between demos"
-    ),
-    skip_errors: bool = typer.Option(
-        True,
+    )] = 2,
+    skip_errors: Annotated[bool, typer.Option(
         "--skip-errors/--stop-on-error",
         help="Continue running demos even if one fails"
-    ),
+    )] = True,
 ):
     """Run all available demos in sequence"""
 

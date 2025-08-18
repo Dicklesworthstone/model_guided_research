@@ -12,14 +12,17 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import jax
 import jax.numpy as jnp
 import pytest
 from jax import random
 
-# Configure JAX
-jax.config.update("jax_enable_x64", False)  # Use float32 for speed
-jax.config.update("jax_platform_name", "cpu")  # Force CPU to avoid CUDA issues
+# Configure JAX using config module for consistency
+from config import get_config
+
+config = get_config()
+config.jax_precision = "float32"  # Use float32 for speed
+config.use_gpu = False  # Force CPU to avoid CUDA issues
+config.setup_jax()
 
 # Import all modules to test
 import iterated_function_systems_and_fractal_memory as ifs
