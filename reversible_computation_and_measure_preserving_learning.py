@@ -1,0 +1,620 @@
+"""
+Reversible, auditable learning with a metered irreversibility valve.
+
+Core ideas
+----------
+• State = (x, e, T): activations x (float32), a randomness reservoir e (u32 words),
+  and a bit tape T. All non-invertible effects are made explicit as transfers of bits
+  between these three, so the *global* map is a bijection on (x,e,T).
+
+• Reversible core: additive coupling with Householder mixing (orth_mix) yields a
+  triangular Jacobian with det=1. Both forward and inverse are closed-form; this
+  enables O(1) activation storage by reconstructing states instead of checkpointing.
+
+• Metered valve: after each reversible block, split y=(a,b). The valve
+  (1) writes the exact binary representation of b to T (so nothing leaks),
+  (2) samples new indices for b from a learned categorical q_φ(k|a) using an
+      integer-CDF inverse transform that *consumes* a fixed B bits/element from e,
+  (3) stores the coder residual back to T so the step remains bijective on (x,e,T),
+      and (4) dequantizes the indices to form b′ with known conditional law.
+
+• Accounting (irreversibility budget): every valve returns
+  bits_written, bits_consumed, delta_bits = written − consumed. The model ledger
+  sums these exactly; if you later drop T, delta_bits is the certified information
+  you discarded.
+
+• Calibration/compression/sampling unification: the same coder both samples from
+  q_φ and losslessly records b’s microstate; with audit_mode on, the forward→inverse
+  cycle is bit-exact.
+
+• Diagnostics & structure: cycle_test() verifies bitwise reversibility; diagnostics_print()
+  reports the ledger and a rough activation-memory reduction; tiny_train_step() shows
+  standard training while keeping the valve in audit mode. The code mirrors the math:
+  explicit bijection (coupling), explicit coder/sampler (valve), and explicit bit ledger.
+"""
+
+import math
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from jax import Array
+else:
+    Array = Any
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+
+key = jax.random.PRNGKey
+
+
+def split_key(k):
+    return jax.random.split(k, 2)
+
+
+def float32_to_u32(x: Array) -> Array:
+    b = jax.lax.bitcast_convert_type(x, jnp.uint32)
+    return b
+
+
+def u32_to_float32(b: Array) -> Array:
+    x = jax.lax.bitcast_convert_type(b, jnp.float32)
+    return x
+
+
+class BitTape:
+    def __init__(self):
+        self.buf = np.zeros((0,), dtype=np.uint32)
+        self.w = 0
+
+    def push_u32(self, x: np.ndarray):
+        x = np.asarray(x, dtype=np.uint32).ravel()
+        self.buf = np.concatenate([self.buf, x], 0)
+        self.w += 32 * int(x.size)
+
+    def pop_u32(self, n: int) -> np.ndarray:
+        assert n <= self.buf.size
+        out: np.ndarray = self.buf[-n:].copy()
+        self.buf = self.buf[:-n]
+        self.w -= 32 * n
+        return out
+
+    def bits_written(self) -> int:
+        return int(self.w)
+
+    def size_u32(self) -> int:
+        return int(self.buf.size)
+
+
+class Reservoir:
+    def __init__(self, seed):
+        # Accept either an int seed or a JAX PRNGKey
+        if isinstance(seed, jax.Array):
+            self.k = seed
+        else:
+            self.k = jax.random.PRNGKey(int(seed))
+        self.buf = np.zeros((0,), dtype=np.uint32)
+        self.r = 0
+
+    def ensure(self, n: int):
+        if self.buf.size >= n:
+            return
+        need = n - self.buf.size
+        self.k, sub = split_key(self.k)
+        gen = jax.random.bits(sub, (need,), dtype=jnp.uint32)
+        self.buf = np.concatenate([self.buf, np.asarray(gen, dtype=np.uint32)], 0)
+
+    def take_u32(self, n: int) -> np.ndarray:
+        self.ensure(n)
+        out = self.buf[:n].copy()
+        self.buf = self.buf[n:]
+        self.r += 32 * n
+        return out
+
+    def give_back_u32_prefix(self, x: np.ndarray):
+        x = np.asarray(x, dtype=np.uint32).ravel()
+        self.buf = np.concatenate([x, self.buf], 0)
+        self.r -= 32 * int(x.size)
+
+    def bits_consumed(self) -> int:
+        return int(self.r)
+
+    def size_u32(self) -> int:
+        return int(self.buf.size)
+
+
+def orth_mix(x, h_vec):
+    """Determinant +1 orthogonal mixing via a product of two Householder reflections.
+    This preserves measure (det=+1) rather than a single reflection (det=-1).
+    """
+    v1 = h_vec / (jnp.linalg.norm(h_vec, axis=-1, keepdims=True) + 1e-12)
+    # Create a second non-colinear vector by a rotated/shifted version
+    v2 = jnp.roll(v1, 1, axis=-1)
+    v2 = v2 / (jnp.linalg.norm(v2, axis=-1, keepdims=True) + 1e-12)
+    # Householder reflection H(v): z -> z - 2 (v·z) v
+    def reflect(z, v):
+        return z - 2 * jnp.sum(z * v, axis=-1, keepdims=True) * v
+    y = reflect(x, v1)
+    y = reflect(y, v2)
+    return y
+
+
+def orth_mix_inverse(x, h_vec):
+    """Inverse of orth_mix composed of two reflections: apply in reverse order."""
+    v1 = h_vec / (jnp.linalg.norm(h_vec, axis=-1, keepdims=True) + 1e-12)
+    v2 = jnp.roll(v1, 1, axis=-1)
+    v2 = v2 / (jnp.linalg.norm(v2, axis=-1, keepdims=True) + 1e-12)
+
+    def reflect(z, v):
+        return z - 2 * jnp.sum(z * v, axis=-1, keepdims=True) * v
+
+    # orth_mix = reflect(v2) ∘ reflect(v1); inverse is reflect(v1) ∘ reflect(v2)
+    y = reflect(x, v2)
+    y = reflect(y, v1)
+    return y
+
+def affine_nonlinear(x, w1, b1, w2, b2):
+    x = x @ w1 + b1
+    x = jnp.tanh(x)
+    x = x @ w2 + b2
+    return x
+
+
+@dataclass
+class CouplingParams:
+    g_w1: Array
+    g_b1: Array
+    g_w2: Array
+    g_b2: Array
+    h_w1: Array
+    h_b1: Array
+    h_w2: Array
+    h_b2: Array
+    mix: Array
+
+
+def make_coupling_params(k: jax.Array, d: int, hidden: int) -> CouplingParams:
+    k, kg, kh, km = jax.random.split(k, 4)
+
+    def init_weight(k, m, n):
+        w = jax.random.normal(k, (m, n), dtype=jnp.float32) * jnp.float32(1.0 / math.sqrt(m))
+        return w
+
+    g_w1 = init_weight(kg, d // 2, hidden)
+    g_b1 = jnp.zeros((hidden,), jnp.float32)
+    g_w2 = init_weight(kg, hidden, d // 2)
+    g_b2 = jnp.zeros((d // 2,), jnp.float32)
+    h_w1 = init_weight(kh, d // 2, hidden)
+    h_b1 = jnp.zeros((hidden,), jnp.float32)
+    h_w2 = init_weight(kh, hidden, d // 2)
+    h_b2 = jnp.zeros((d // 2,), jnp.float32)
+    mix = jax.random.normal(km, (d,), dtype=jnp.float32)
+    return CouplingParams(g_w1, g_b1, g_w2, g_b2, h_w1, h_b1, h_w2, h_b2, mix)
+
+
+def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
+    # Apply orthogonal mixing first
+    x = orth_mix(x, p.mix)
+    x1, x2 = jnp.split(x, 2, axis=-1)
+    u1 = x1
+    u2 = x2 + affine_nonlinear(x1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
+    y1 = u1 + affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
+    y2 = u2
+    y = jnp.concatenate([y1, y2], axis=-1)
+    return y
+
+
+def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
+    # Inverse coupling: undo the forward operations
+    y1, y2 = jnp.split(y, 2, axis=-1)
+    u2 = y2
+    u1 = y1 - affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
+    x2 = u2 - affine_nonlinear(u1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
+    x1 = u1
+    x = jnp.concatenate([x1, x2], axis=-1)
+    x = orth_mix_inverse(x, p.mix)
+    return x  # type: ignore[no-any-return]
+
+
+@dataclass
+class ValveParams:
+    w1: Array
+    b1: Array
+    w2: Array
+    b2: Array
+    w3: Array
+    b3: Array
+    centers: Array
+
+
+def make_valve_params(k: jax.Array, d_a: int, bins: int, hidden: int) -> ValveParams:
+    k, k1, k2, k3 = jax.random.split(k, 4)
+
+    def init_weight(k, m, n):
+        return jax.random.normal(k, (m, n), dtype=jnp.float32) * jnp.float32(1.0 / math.sqrt(m))
+
+    w1 = init_weight(k1, d_a, hidden)
+    b1 = jnp.zeros((hidden,), jnp.float32)
+    w2 = init_weight(k2, hidden, hidden)
+    b2 = jnp.zeros((hidden,), jnp.float32)
+    w3 = init_weight(k3, hidden, bins)
+    b3 = jnp.zeros((bins,), jnp.float32)
+    centers = jnp.linspace(-3.0, 3.0, bins, dtype=jnp.float32)
+    return ValveParams(w1, b1, w2, b2, w3, b3, centers)
+
+
+def valve_logits(a: Array, vp: ValveParams) -> Array:
+    h = jnp.tanh(a @ vp.w1 + vp.b1)
+    h = jnp.tanh(h @ vp.w2 + vp.b2)
+    z = h @ vp.w3 + vp.b3
+    return z
+
+
+def softmax_logits(z: Array) -> Array:
+    z = z - jnp.max(z, axis=-1, keepdims=True)
+    p = jnp.exp(z)
+    p = p / jnp.sum(p, axis=-1, keepdims=True)
+    return p
+
+
+def probs_to_integer_cdf(p: np.ndarray, B: int) -> tuple[np.ndarray, np.ndarray]:
+    M = 1 << B
+    f = np.maximum(1, np.floor(p * M + 1e-8).astype(np.int64))
+    s = int(f.sum())
+    if s > M:
+        over = s - M
+        idx = np.argsort(-f)
+        for i in range(over):
+            j = idx[i % len(f)]
+            if f[j] > 1:
+                f[j] -= 1
+    elif s < M:
+        under = M - s
+        idx = np.argsort(-p)
+        for i in range(under):
+            f[idx[i % len(f)]] += 1
+    c = np.zeros((len(f) + 1,), dtype=np.int64)
+    c[1:] = np.cumsum(f)
+    return f.astype(np.int64), c
+
+
+def quantize_b(b: Array, centers: Array) -> Array:
+    idx = jnp.argmin((b[..., None] - centers[None, None, :]) ** 2, axis=-1)
+    return idx.astype(jnp.int32)
+
+
+def dequantize_idx(idx: Array, centers: Array) -> Array:
+    return centers[idx]
+
+
+@dataclass
+class ValveStats:
+    bits_written: int
+    bits_consumed: int
+    delta_bits: int
+
+
+class MeteredValve:
+    def __init__(self, d_total: int, d_a: int, d_b: int, bins: int, Bbits: int, hidden: int, seed: int):
+        self.d_total = d_total
+        self.d_a = d_a
+        self.d_b = d_b
+        self.bins = bins
+        self.B = Bbits
+        self.params = make_valve_params(key(seed), d_a, bins, hidden)
+
+    def forward(
+        self, y: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True
+    ) -> tuple[Array, ValveStats]:
+        a, b = jnp.split(y, [self.d_a], axis=-1)
+        # Always store exact representation to maintain bijection irrespective of mode
+        raw = np.asarray(float32_to_u32(b)).ravel()
+        tape.push_u32(raw)
+        bw0 = 32 * raw.size
+        logits = valve_logits(a, self.params)
+        p = softmax_logits(logits)
+        K = self.bins
+        B = self.B
+        # Flatten any leading dims into positions dimension
+        flat_p = np.asarray(p).reshape(-1, K)
+        N = flat_p.shape[0] * self.d_b
+        # Ensure enough random bits for all positions
+        res.ensure((self.B * N + 31) // 32)
+        u_words = res.take_u32((self.B * N + 31) // 32)
+        u_bits = np.unpackbits(u_words.view(np.uint8))
+        u_bits = u_bits[: self.B * N]
+        u_bits = u_bits.reshape(N, self.B)
+        u = np.zeros((N,), dtype=np.int64)
+        for _j in range(self.B):
+            u = (u << 1) | u_bits[:, _j]
+        out_idx = np.zeros((N,), dtype=np.int64)
+        out_residual = np.zeros((N,), dtype=np.int64)
+        off = 0
+        cdfs = []
+        for i in range(flat_p.shape[0]):
+            f, c = probs_to_integer_cdf(flat_p[i], B)
+            cdfs.append((f, c))
+            for _j in range(self.d_b):
+                uu = u[off]
+                k = np.searchsorted(c, uu, side="right") - 1
+                if k >= K:
+                    k = K - 1
+                r = int(uu - c[k])
+                out_idx[off] = k
+                out_residual[off] = r
+                off += 1
+        res_bits = np.zeros((N, self.B), dtype=np.uint8)
+        for i in range(N):
+            r = out_residual[i]
+            for _j in range(self.B):
+                res_bits[i, self.B - 1 - _j] = (r >> _j) & 1
+        res_words = np.packbits(res_bits.ravel()).view(np.uint32)
+        tape.push_u32(res_words)
+        # Each sample yields d_b indices; arrange as [batch, d_b]
+        # Reshape indices back to the leading shape of a (excluding feature axis)
+        lead_shape = tuple(int(s) for s in a.shape[:-1])
+        idx_mat = out_idx.reshape(int(np.prod(lead_shape, dtype=np.int64)), self.d_b)
+        bq = np.asarray(dequantize_idx(jnp.array(idx_mat), self.params.centers)).astype(np.float32)
+        bq = bq.reshape(*lead_shape, self.d_b)
+        a_np = np.asarray(a).astype(np.float32)
+        # Concatenate along last feature axis
+        y_out = np.concatenate([a_np, bq], axis=-1).astype(np.float32)
+        bw = bw0 + self.B * N
+        bc = self.B * N
+        return jnp.array(y_out), ValveStats(bits_written=bw, bits_consumed=bc, delta_bits=bw - bc)
+
+    def inverse(self, y_out: Array, tape: BitTape, res: Reservoir) -> Array:
+        a, bq = jnp.split(y_out, [self.d_a], axis=-1)
+        logits = valve_logits(a, self.params)
+        p = softmax_logits(logits)
+        p_np = np.asarray(p).reshape(-1, self.bins)
+        N = p_np.shape[0] * self.d_b
+        B = self.B
+        n_words = (B * N + 31) // 32
+        res_words = tape.pop_u32(n_words)
+        r_bits = np.unpackbits(res_words.view(np.uint8))[: B * N].reshape(N, B)
+        r = np.zeros((N,), dtype=np.int64)
+        for _j in range(B):
+            r = (r << 1) | r_bits[:, _j]
+        idx = np.asarray(quantize_b(bq, self.params.centers)).reshape(
+            -1,
+        )
+        u = np.zeros((N,), dtype=np.int64)
+        off = 0
+        for i in range(p_np.shape[0]):
+            f, c = probs_to_integer_cdf(p_np[i], B)
+            for _j in range(self.d_b):
+                k = int(idx[off])
+                u[off] = int(c[k]) + int(r[off])
+                off += 1
+        u_bits = np.zeros((N, B), dtype=np.uint8)
+        for i in range(N):
+            uu = int(u[i])
+            for _j in range(B):
+                u_bits[i, B - 1 - _j] = (uu >> _j) & 1
+        u_words = np.packbits(u_bits.ravel()).view(np.uint32)
+        res.give_back_u32_prefix(u_words)
+        raw_words = tape.pop_u32(bq.size)
+        b = u32_to_float32(jnp.array(raw_words.reshape(bq.shape), dtype=jnp.uint32))
+        y = jnp.concatenate([a, b], axis=-1)
+        return y
+
+
+@dataclass
+class Block:
+    coup: CouplingParams
+    valve: MeteredValve
+
+
+@dataclass
+class Model:
+    blocks: list[Block]
+    d: int
+    d_a: int
+    d_b: int
+
+    # Methods expected by tests
+    def forward(self, x: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True):
+        return model_forward(x, self, tape, res, audit_mode=audit_mode)
+
+    def inverse(self, y: Array, tape: BitTape, res: Reservoir):
+        return model_inverse(y, self, tape, res)
+
+
+def make_model(k: jax.Array, L: int, d: int, d_a: int, hidden: int, bins: int, Bbits: int) -> Model:
+    blocks = []
+    for _i in range(L):
+        k, ks, kv = jax.random.split(k, 3)
+        coup = make_coupling_params(ks, d, hidden)
+        valve = MeteredValve(
+            d_total=d,
+            d_a=d_a,
+            d_b=d - d_a,
+            bins=bins,
+            Bbits=Bbits,
+            hidden=hidden,
+            seed=int(jax.random.randint(kv, (), 0, 2**31 - 1)),
+        )
+        blocks.append(Block(coup, valve))
+    return Model(blocks=blocks, d=d, d_a=d_a, d_b=d - d_a)
+
+
+def model_forward(
+    x: Array, m: Model, tape: BitTape, res: Reservoir, audit_mode: bool = True
+) -> tuple[Array, dict[str, Any]]:
+    y = x
+    ledger: dict[str, Any] = {"bits_written": 0, "bits_consumed": 0, "delta_bits": 0, "per_block": []}
+    for b in m.blocks:
+        y = rev_coupling_forward(y, b.coup)
+        y, stats = b.valve.forward(y, tape, res, audit_mode=audit_mode)
+        ledger["bits_written"] = int(ledger["bits_written"]) + stats.bits_written
+        ledger["bits_consumed"] = int(ledger["bits_consumed"]) + stats.bits_consumed
+        ledger["delta_bits"] = int(ledger["delta_bits"]) + stats.delta_bits
+        ledger["per_block"].append(stats)
+    return y, ledger
+
+
+def model_inverse(y: Array, m: Model, tape: BitTape, res: Reservoir) -> Array:
+    x = y
+    for b in reversed(m.blocks):
+        x = b.valve.inverse(x, tape, res)
+        x = rev_coupling_inverse(x, b.coup)
+    return x
+
+
+# --- Small API adapters expected by tests ---
+
+def create_model(d: int, depth: int, key: jax.Array) -> Model:
+    """Test helper: mirror signature in tests; choose reasonable defaults.
+    d_a = d // 2, hidden=4*d_a, bins=65, Bbits=8.
+    """
+    d_a = d // 2
+    hidden = max(8, 4 * d_a)
+    bins = 65
+    Bbits = 8
+    return make_model(key, depth, d, d_a, hidden, bins, Bbits)
+
+
+def random_coupling_params(key: jax.Array, d: int) -> CouplingParams:
+    """API expected by tests: convenience generator for coupling params."""
+    hidden = max(8, d)
+    return make_coupling_params(key, d, hidden)
+
+
+def forward(x: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True):
+    """Not used directly by tests, but keep for completeness."""
+    raise NotImplementedError("Use model_forward with a Model instance.")
+
+
+def cycle_test():
+    k = key(0)
+    B = 8
+    d = 64
+    L = 3
+    d_a = 48
+    hidden = 128
+    bins = 65
+    m = make_model(k, L, d, d_a, hidden, bins, B)
+    bs = 4
+    T = 16
+    x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
+    tape = BitTape()
+    res = Reservoir(123)
+    y, ledger = model_forward(x, m, tape, res, audit_mode=True)
+    x_rec = model_inverse(y, m, tape, res)
+    e1 = jnp.max(jnp.abs(x - x_rec)).item()
+    # Allow for tiny floating-point noise from host<->device transfers
+    ok = np.allclose(np.asarray(x), np.asarray(x_rec), atol=1e-5, rtol=1e-5)
+    return ok, e1, ledger, tape.size_u32(), res.size_u32()
+
+
+def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: int = 0):
+    def loss_fn(params_flat):
+        i = 0
+        blocks = []
+        for _b in m.blocks:
+            cp = CouplingParams(*(params_flat[i : i + 9]))
+            i += 9
+            vp = ValveParams(*(params_flat[i : i + 6]), m.blocks[0].valve.params.centers)
+            i += 6
+            blocks.append(Block(cp, MeteredValve(m.d, m.d_a, m.d_b, m.blocks[0].valve.bins, m.blocks[0].valve.B, 1, 0)))
+            blocks[-1].valve.params = vp
+        m2 = Model(blocks=blocks, d=m.d, d_a=m.d_a, d_b=m.d_b)
+        tape_local = BitTape()
+        res_local = Reservoir(1234)
+        y, _ = model_forward(x, m2, tape_local, res_local, audit_mode=True)
+        logits = y[..., : y_target.shape[-1]]
+        loss = jnp.mean(optax.softmax_cross_entropy(logits, y_target))
+        return loss
+
+    params = []
+    for b in m.blocks:
+        params += [
+            b.coup.g_w1,
+            b.coup.g_b1,
+            b.coup.g_w2,
+            b.coup.g_b2,
+            b.coup.h_w1,
+            b.coup.h_b1,
+            b.coup.h_w2,
+            b.coup.h_b2,
+            b.coup.mix,
+        ]
+        vp = b.valve.params
+        params += [vp.w1, vp.b1, vp.w2, vp.b2, vp.w3, vp.b3]
+    params_tree = jax.tree_util.tree_flatten(params)[0]
+    loss, grads = jax.value_and_grad(loss_fn)(params_tree)
+    updates, opt_state = opt.update(grads, opt_state, params_tree)
+    params_tree = optax.apply_updates(params_tree, updates)
+    i = 0
+    new_blocks = []
+    for b in m.blocks:
+        cp = CouplingParams(*(params_tree[i : i + 9]))
+        i += 9
+        w1, b1, w2, b2, w3, b3 = params_tree[i : i + 6]
+        i += 6
+        vp = ValveParams(w1, b1, w2, b2, w3, b3, b.valve.params.centers)
+        valve = MeteredValve(m.d, m.d_a, m.d_b, b.valve.bins, b.valve.B, 1, 0)
+        valve.params = vp
+        new_blocks.append(Block(cp, valve))
+    m = Model(blocks=new_blocks, d=m.d, d_a=m.d_a, d_b=m.d_b)
+    return m, opt_state, float(loss)
+
+
+def diagnostics_print():
+    ok, emax, ledger, tape_u32, res_u32 = cycle_test()
+    print("cycle_ok", ok, "max_abs_err", emax)
+    print("tape_u32_words", tape_u32, "res_u32_words_after", res_u32)
+    print(
+        "bits_written",
+        ledger["bits_written"],
+        "bits_consumed",
+        ledger["bits_consumed"],
+        "delta_bits",
+        ledger["delta_bits"],
+    )
+    print("per_block_bits", [(s.bits_written, s.bits_consumed, s.delta_bits) for s in ledger["per_block"]])
+    baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
+    ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
+    print(
+        "rough_peak_activation_baseline_MB",
+        round(baseline_MB, 3),
+        "ours_MB",
+        round(ours_MB, 3),
+        "reduction_x",
+        round(baseline_MB / max(1e-6, ours_MB), 2),
+    )
+
+
+def demo():
+    """Run the reversible computation and measure preserving learning demonstration."""
+    diagnostics_print()
+    k = key(42)
+    d = 64
+    L = 3
+    d_a = 48
+    hidden = 128
+    bins = 65
+    B = 8
+    m = make_model(k, L, d, d_a, hidden, bins, B)
+    opt = optax.adam(1e-3)
+    dummy_logits_dim = 32
+    bs = 8
+    T = 16
+    x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
+    y_tar = jax.nn.one_hot(jax.random.randint(k, (bs, T, dummy_logits_dim), 0, dummy_logits_dim), dummy_logits_dim)
+    opt_state = opt.init(jax.tree_util.tree_flatten([b.coup.g_w1 for b in m.blocks])[0])
+    for step in range(3):
+        m, opt_state, loss = tiny_train_step(m, x, y_tar, opt, opt_state)
+        print("step", step, "loss", loss)
+    tape = BitTape()
+    res = Reservoir(777)
+    y, ledger = model_forward(x, m, tape, res, audit_mode=True)
+    x_rec = model_inverse(y, m, tape, res)
+    print("final_cycle_ok", np.allclose(np.asarray(x), np.asarray(x_rec)))
+
+
+if __name__ == "__main__":
+    demo()

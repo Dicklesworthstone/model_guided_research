@@ -1,0 +1,109 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "model-guided-research"
+version = "0.1.0"
+description = "Experimental mathematical models for machine learning research"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "Model Guided Research Team" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+dependencies = [
+    # Core ML libraries
+    "jax[cpu]>=0.4.0",
+    "jaxlib>=0.4.0",
+    "numpy>=1.26.0",
+    # Neural network libraries
+    "flax>=0.8.0",
+    "optax>=0.2.0",
+    # Visualization (optional, only used in one demo)
+    "matplotlib>=3.8.0",
+    # CLI and console output
+    "typer>=0.15.0",
+    "rich>=13.7.0",
+    "psutil>=7.0.0",
+]
+
+[project.optional-dependencies]
+# Development dependencies
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.9.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.8.0",
+    "black>=23.0.0",
+]
+
+# Testing
+test = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "pytest-xdist>=3.0.0",  # For parallel test execution
+]
+
+# GPU support
+gpu = [
+    "jax[cuda12]>=0.4.0",
+]
+
+[project.scripts]
+mgr = "cli:app"
+model-guided-research = "cli:app"
+
+[project.urls]
+Repository = "https://github.com/model-guided-research/model-guided-research"
+
+# Configure Hatchling
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+# Ruff configuration
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings  
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",  # Line too long
+    "E402",  # Module level import not at top of file
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+# uv specific configuration
+[tool.uv]
+python-preference = "only-managed"
+compile-bytecode = true
