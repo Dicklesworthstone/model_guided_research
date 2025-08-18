@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass
 
 import jax.numpy as jnp
-from jax import grad, jit, lax, random
+from jax import grad, jit, lax, random, tree_util
 
 
 # ---------- algebra ----------
@@ -69,6 +69,22 @@ class Params:
     b: jnp.ndarray  # ()
     tau: float
 
+
+# Register Params as a JAX pytree so jit/grad can handle it
+def _params_flatten(p: "Params"):
+    # Treat w and b as differentiable leaves; keep tau as auxiliary static data
+    children = (p.w, p.b)
+    aux_data = p.tau
+    return children, aux_data
+
+
+def _params_unflatten(aux_data, children):
+    w, b = children
+    tau = aux_data
+    return Params(w=w, b=b, tau=tau)
+
+
+tree_util.register_pytree_node(Params, _params_flatten, _params_unflatten)
 
 # ---------- dataset ----------
 def make_dataset(key, n_samples, n_low, n_high, p_tag=0.35, value_max=9, L_max=None):

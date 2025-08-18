@@ -113,10 +113,11 @@ def make_width_mask(rng, d_model, keep):
         return jnp.ones((d_model,), dtype=jnp.float32), 1.0
     # Accept either our PRNG wrapper or a raw JAX key
     if hasattr(rng, "split") and not isinstance(rng, jax.Array):
-        ks = rng.split(1)
-        k = ks[0]
+        # PRNG.split(1) returns a single key; do not index into it
+        k = rng.split()
     else:
-        rng, k = jax.random.split(rng)
+        # For raw JAX keys, generate one child key deterministically
+        _, k = jax.random.split(rng, 2)
     idx = jax.random.permutation(k, d_model)
     kcnt = int(jnp.floor(keep * d_model))
     keep_idx = idx[:kcnt]
@@ -136,8 +137,12 @@ def forward(params, x, width_mask, depth_mask, inv_keep, training, H):
     W_e, b_e = params["emb"]["W"], params["emb"]["b"]
     x = x @ W_e + b_e
 
-    def one_block(carry, inp):
-        x, blk, flag, wm = carry
+    # Stack all blocks and depth masks for scan to avoid indexing during tracing
+    all_blocks = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params["blocks"])
+
+    def scan_f(carry, inputs):
+        x, wm = carry
+        blk, flag = inputs
         xg = x * wm
 
         def apply_block(z):
@@ -148,24 +153,17 @@ def forward(params, x, width_mask, depth_mask, inv_keep, training, H):
             return z + b
 
         y = lax.cond(flag, apply_block, lambda z: z, xg)
-        return (y, blk, flag, wm), None
+        return (y, wm), None
 
-    carry = (x, params["blocks"][0], depth_mask[0], width_mask)
-
-    def scan_f(carry, i):
-        x, _, _, wm = carry
-        blk = params["blocks"][i]
-        flag = depth_mask[i]
-        return one_block((x, blk, flag, wm), None)
-
-    carry, _ = lax.scan(scan_f, carry, jnp.arange(H))
+    carry = (x, width_mask)
+    carry, _ = lax.scan(scan_f, carry, (all_blocks, depth_mask))
     x = carry[0] * width_mask
     logits = x @ params["out"]["W"] + params["out"]["b"]
     logits = logits * inv_keep
     return logits
 
 
-@jit
+@partial(jit, static_argnums=(6,))
 def nll(params, x, y, width_mask, depth_mask, inv_keep, H):
     logits = forward(params, x, width_mask, depth_mask, inv_keep, False, H)
     z = logits - jax.nn.logsumexp(logits, axis=-1, keepdims=True)
@@ -202,7 +200,7 @@ def adam_update(params, grads, st, lr=1e-3, b1=0.9, b2=0.999, eps=1e-8):
     return new_params, {"m": m, "v": v, "t": t}
 
 
-@jit
+@partial(jit, static_argnums=(4,))
 def train_step(params, st, x, y, H, width_mask, depth_mask, inv_keep, lr):
     loss, grads = value_and_grad(nll)(params, x, y, width_mask, depth_mask, inv_keep, H)
     new_params, st2 = adam_update(params, grads, st, lr=lr)

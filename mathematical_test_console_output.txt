@@ -1,0 +1,332 @@
+❯ python tests/test_mathematical_properties.py
+
+================================================================================
+                    🧮 MATHEMATICAL PROPERTY TESTS 🧮
+================================================================================
+
+============================================================
+Testing: TestReversibleComputation
+============================================================
+
+🔬 Testing Reversible Computation Bijection...
+  ✅ Bijection test passed: max error = 0.00000250
+  📊 Bits written: 122880, consumed: 24576
+  📊 Irreversibility budget: 98304 bits
+
+🔬 Testing Coupling Layer Invertibility...
+  ✅ Coupling invertibility: max error = 0.00000036
+
+🔬 Testing Orthogonal Mixing Properties...
+  ✅ Norm preservation: 3.059010 ≈ 3.059010
+
+============================================================
+Testing: TestIFSFractalMemory
+============================================================
+
+🔬 Testing Catastrophic Forgetting Benchmark...
+[Router] epoch 1/5  loss=1.7275
+[Router] epoch 2/5  loss=1.7082
+[Router] epoch 3/5  loss=1.6893
+[Router] epoch 4/5  loss=1.6708
+[Router] epoch 5/5  loss=1.6526
+
+=== Sequential write/read benchmark ===
+Batch 1/2: Fractal MSE=0.4859, Baseline MSE=0.5395, Δ=+0.0536 (positive means store better), Util=0.3750, CollRate=0.0000, SepMargin=0.200
+Batch 2/2: Fractal MSE=0.7890, Baseline MSE=1.6242, Δ=+0.8352 (positive means store better), Util=0.6406, CollRate=0.1875, SepMargin=0.200
+  ✅ Catastrophic forgetting benchmark completed successfully
+
+🔬 Testing IFS Contractivity and Separation...
+  ✅ Separation margin: γ = 0.2000
+  ✅ Contraction factor: s^k = 0.064000
+
+🔬 Testing Fixed Point Storage and Retrieval...
+  ✅ Fixed point storage accuracy: max error = 0.00000024
+
+============================================================
+Testing: TestOrdinalSchedules
+============================================================
+
+🔬 Testing Ordinal Rank Calculation...
+  ✅ Initial ordinal state: A=2, B=3, C=5
+
+🔬 Testing Scheduler Step Monotonicity...
+  ✅ Ordinal monotonicity maintained over scheduler steps
+
+============================================================
+Testing: TestMatrixExponentialGauge
+============================================================
+
+🔬 Testing Givens Rotation Orthogonality...
+  ✅ Givens rotation preserves norm: 3.600452 ≈ 3.600452
+
+🔬 Testing Nilpotent Upper-Band Exponential...
+  ✅ Nilpotent exponential computed, first-order approximation error: 0.004197
+
+🔬 Testing Uniformization Properties...
+  ✅ Uniformization shapes correct, K range: 4-5
+
+============================================================
+Testing: TestTropicalGeometry
+============================================================
+
+🔬 Testing Gauge Time Normalization...
+  ✅ Gauge time normalization: all column maxes ≈ 0
+
+🔬 Testing Tropical Attention Properties...
+  ✅ Tropical attention forward pass successful, output range: [-0.001, -0.000]
+
+🔬 Testing Tropical Semiring Axioms...
+  ✅ Tropical matrix multiplication associativity: error = 0.00000000
+
+============================================================
+Testing: TestSimplicialComplexes
+============================================================
+
+🔬 Testing Simplicial Boundary Operator Nilpotency...
+  ✅ Boundary operator nilpotency: ∂² = 0 (max error = 0.00e+00)
+     Complex: 4 vertices, 6 edges, 4 triangles
+
+🔬 Testing Cycle Indicator Properties...
+  ✅ Cycle indicator computed: 6 edges, sum = 1.0
+
+🔬 Testing Simplicial Network Mass Conservation...
+  ✅ Mass conservation: 10.000000 ≈ 10.000000 (Δ = 0.00e+00)
+
+============================================================
+Testing: TestUltrametricWorlds
+============================================================
+
+🔬 Testing p-adic Operations...
+  ✅ p-adic addition: 7 + 13 ≡ 0 (mod 5)
+  ✅ p-adic subtraction: 7 - 13 ≡ 4 (mod 5)
+
+🔬 Testing Ultrametric Distance Properties...
+  ✅ Ultrametric lookup deterministic: error = 0.00e+00
+
+🔬 Testing VOLF Update Properties...
+  ✅ VOLF update: error 3.7417 -> 3.0000, created 1 nodes
+
+============================================================
+Testing: TestOctonions
+============================================================
+
+🔬 Testing Quaternion Conjugation...
+  ✅ Quaternion conjugation: q * q̄ gives norm² in real part
+
+🔬 Testing Quaternion Norm Multiplication...
+  ✅ Quaternion norm multiplication: |qr| = 5.105392 ≈ |q||r| = 5.105392
+
+🔬 Testing Rotor Gate Properties...
+  ✅ Rotor gate: mean relative norm change = 0.001119
+
+============================================================
+Testing: TestKnotTheory
+============================================================
+
+🔬 Testing Braid Attention Training...
+  ✅ Braid attention training: train_acc=1.000, test_acc=1.000
+
+🔬 Testing Braid Word Properties...
+  ✅ Braid word σ₁^3 verified and normalized
+
+🔬 Testing Braid Crossing Properties...
+  ✅ Crossing conserves payload: 7.0 ≈ 7.0
+  ✅ Crossing update: (2.0, 3.0), (1.0, 4.0) -> (6.0, 3.0), (4.0, 4.0)
+
+============================================================
+Testing: TestSurrealNumbers
+============================================================
+
+🔬 Testing Dominance Probes...
+  ✅ Dominance ratios: T_D=1.0613, T_H=1.0444, T_W=2.0667
+
+🔬 Testing Scaling Decision Logic...
+  ✅ Scaling decision: T_D=1.2, T_H=1.0, T_W=0.8 -> data
+  ✅ Tie breaking: T_D=1.0, T_H=1.01, T_W=0.8 -> data
+
+============================================================
+Testing: TestNonstandardAnalysis
+============================================================
+
+🔬 Testing Hyperreal HOSS on Stiff Quadratic...
+  ✅ Shadow step progress: loss 500.500000 -> 0.406450
+  ✅ HOSS step: loss -> 0.439186
+
+🔬 Testing Lanczos Krylov Properties...
+  ✅ Lanczos orthogonality: error = 1.49e-07
+  ✅ Lanczos tridiagonal structure: error = 0.00e+00
+
+================================================================================
+                         📊 TEST SUMMARY 📊
+================================================================================
+
+🎉 ALL TESTS PASSED! 🎉
+
+Every module correctly implements its claimed mathematical properties:
+  ✅ Reversible computation maintains bijection and measure preservation
+  ✅ IFS fractal memory implements contractive fixed-point storage
+  ✅ Ordinal schedules follow well-founded lexicographic descent
+  ✅ Matrix exponential gauge uses orthogonal transformations
+  ✅ Tropical geometry implements idempotent semiring operations
+  ✅ Simplicial complexes satisfy boundary nilpotency ∂² = 0
+  ✅ Ultrametric spaces implement p-adic tree structures
+  ✅ Quaternions preserve norm multiplication |qr| = |q||r|
+  ✅ Braid attention conserves payload through crossings
+  ✅ Surreal number scaling implements dominance-based decisions
+  ✅ Hyperreal training uses infinitesimal-step shadow maps
+
+================================================================================
+❯ python tests/test_mathematical_correctness.py
+
+================================================================================
+                    🧮 SUBSTANTIVE MATHEMATICAL TESTS 🧮
+================================================================================
+
+============================================================
+Testing: TestReversibleComputation
+============================================================
+
+🔬 Testing Reversible Computation Bijection...
+  ✅ Bijection test passed: max error = 0.00000143
+  📊 Bits written: 5120, consumed: 1024
+  📊 Irreversibility budget: 4096 bits
+
+🔬 Testing Measure Preservation...
+  ✅ Measure preservation test passed: det(J) = 1.00000036
+
+============================================================
+Testing: TestIFSFractalMemory
+============================================================
+
+🔬 Testing IFS Contractivity...
+  ✅ Separation margin correct: γ = 0.2000
+  ✅ Contractivity verified: ratio = 0.064000 ≤ 0.064000
+
+🔬 Testing Fixed Point Storage...
+  ✅ Fixed point property verified: error = 0.00000000
+
+============================================================
+Testing: TestOrdinalSchedules
+============================================================
+
+🔬 Testing Ordinal Well-Founded Descent...
+  ✅ Ordinal descent verified over 21 steps
+  📊 Rank sequence: [2003005, 2003004, 2003003, 2003002, 2003001] ... [2001019, 2001018, 2001017]
+
+🔬 Testing Well-Foundedness...
+  ✅ Well-foundedness verified: terminated at rank 0 in 47 steps
+
+============================================================
+Testing: TestMatrixExponentialGauge
+============================================================
+
+🔬 Testing Gauge Covariance...
+  ✅ Gauge transformation preserves norm: 1.493037 ≈ 1.493037
+
+🔬 Testing Matrix Exponential Accuracy...
+  ✅ Matrix exponential accuracy: max error = 0.000000
+
+============================================================
+Testing: TestTropicalGeometry
+============================================================
+
+🔬 Testing Tropical Polynomials...
+  ✅ Tropical polynomial evaluation correct
+     p(1.0) = 4.00
+
+🔬 Testing Tropical Semiring Properties...
+  ✅ Idempotency: a ⊕ a = a
+  ✅ Commutativity: a ⊕ b = b ⊕ a
+  ✅ Associativity: (a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)
+  ✅ Distributivity: a ⊗ (b ⊕ c) = (a ⊗ b) ⊕ (a ⊗ c)
+
+============================================================
+Testing: TestSimplicialComplexes
+============================================================
+
+🔬 Testing Simplicial Boundary Operators...
+  ✅ Boundary operator property ∂² = 0 verified
+
+🔬 Testing Hodge Decomposition...
+  ✅ Hodge Laplacian properties verified
+     Spectrum: -0.0000, 2.0000, 3.0000 ... 5.0000
+
+🔬 Testing Triangle-Dependent Task (Simplicial vs Pairwise Baseline)...
+  ✅ Baseline accuracy: 0.656
+  📊 8/32 edges participate in triangles
+
+============================================================
+Testing: TestUltrametricWorlds
+============================================================
+
+🔬 Testing p-adic Arithmetic...
+  ✅ p-adic addition: 7 + 3 = 10 (mod 5^4)
+  ✅ p-adic multiplication: 7 × 3 = 21 (mod 5^4)
+
+🔬 Testing Ultrametric Inequality...
+  ✅ Ultrametric inequality: d(9,15) = 0.3333 ≤ max(0.3333, 0.3333)
+
+============================================================
+Testing: TestOctonions
+============================================================
+
+🔬 Testing Octonion Conjugation...
+  ✅ Conjugation: x × x̄ gives norm² in real part
+
+🔬 Testing Octonion Norm Multiplication...
+  ✅ Norm multiplication: |xy| = 5.941398 ≈ |x||y| = 5.941399
+
+============================================================
+Testing: TestKnotTheory
+============================================================
+
+🔬 Testing Braid Group Relations...
+  ✅ Yang-Baxter relation: non-adjacent generators commute
+
+🔬 Testing Kauffman Bracket...
+  ✅ Unknot bracket: ⟨O⟩ = 1
+  ✅ Disjoint union factor: 1.0000-0.0000j
+
+============================================================
+Testing: TestSurrealNumbers
+============================================================
+
+🔬 Testing Surreal Arithmetic...
+  ✅ Addition: 1 + 1 = 2
+  ✅ Multiplication: 2 × 1/2 ≈ 1
+
+🔬 Testing Surreal Number Ordering...
+  ✅ Ordering: -1 < 0 < 1/2 < 1
+
+============================================================
+Testing: TestNonstandardAnalysis
+============================================================
+
+🔬 Testing Infinitesimal Properties...
+  ✅ Infinitesimal ordering: ε² << ε
+  ✅ Standard part: st(3.14 + 0.001ε) = 3.14
+
+🔬 Testing Transfer Principle...
+  ✅ Standard evaluation: p(3) = 4.0
+  ✅ Hyperreal evaluation: p(3 + 0.1ε) ≈ 4 + 0.4ε
+
+================================================================================
+                         📊 TEST SUMMARY 📊
+================================================================================
+
+🎉 ALL TESTS PASSED! 🎉
+
+Every module correctly implements its claimed mathematical properties:
+  ✅ Reversible computation is bijective and measure-preserving
+  ✅ IFS fractal memory has contractive fixed points
+  ✅ Ordinal schedules follow well-founded descent
+  ✅ Matrix exponential gauge computes exp(M) accurately
+  ✅ Tropical geometry satisfies idempotent semiring axioms
+  ✅ Simplicial complexes have ∂² = 0
+  ✅ Ultrametric satisfies strong triangle inequality
+  ✅ Octonions preserve norm under multiplication
+  ✅ Braid groups satisfy Yang-Baxter relations
+  ✅ Surreal numbers form an ordered field
+  ✅ Hyperreals implement infinitesimals correctly
+
+================================================================================
