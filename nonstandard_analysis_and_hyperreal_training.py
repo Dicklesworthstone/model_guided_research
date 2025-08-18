@@ -78,7 +78,8 @@ def lanczos_sym(hvp, w, g, r):
     beta = jnp.zeros((r,))
 
     q_im1 = jnp.zeros_like(g)
-    q_i = g / (jnp.linalg.norm(g) + 1e-30)
+    g_norm = jnp.linalg.norm(g)
+    q_i = jnp.where(g_norm > 1e-30, g / g_norm, jnp.zeros_like(g))
     beta_im1 = 0.0
 
     def body(i, carry):
@@ -87,7 +88,7 @@ def lanczos_sym(hvp, w, g, r):
         a_i = jnp.dot(q_i, v)
         v = v - a_i * q_i - beta_im1 * q_im1
         b_i = jnp.linalg.norm(v)
-        q_ip1 = jnp.where(b_i > 1e-30, v / (b_i + 1e-30), jnp.zeros_like(v))
+        q_ip1 = jnp.where(b_i > 1e-30, v / b_i, jnp.zeros_like(v))
         Q = Q.at[:, i].set(q_i)
         alpha = alpha.at[i].set(a_i)
         beta = beta.at[i].set(b_i)

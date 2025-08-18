@@ -30,12 +30,24 @@ class ProjectConfig:
         """Load configuration from JSON file."""
         with open(path) as f:
             data = json.load(f)
+        # Convert any string paths back to Path objects based on field annotations
+        from dataclasses import fields
+        for field in fields(cls):
+            if field.type == Path or (hasattr(field.type, '__origin__') and field.type.__origin__ is Path):
+                if field.name in data and isinstance(data[field.name], str):
+                    data[field.name] = Path(data[field.name])
         return cls(**data)
 
     def save(self, path: Path) -> None:
         """Save configuration to JSON file."""
+        data = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, Path):
+                data[key] = str(value)
+            else:
+                data[key] = value
         with open(path, 'w') as f:
-            json.dump(self.__dict__, f, indent=2, default=str)
+            json.dump(data, f, indent=2)
 
     def setup_jax(self) -> None:
         """Configure JAX based on settings."""

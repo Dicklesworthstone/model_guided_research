@@ -49,7 +49,12 @@ def check_nan_inf(x: jnp.ndarray, name: str = "tensor") -> None:
     has_inf = jnp.any(jnp.isinf(x))
 
     if has_nan or has_inf:
-        console.print(f"[bold red]Warning:[/bold red] {name} contains {'NaN' if has_nan else ''}{' and ' if has_nan and has_inf else ''}{'Inf' if has_inf else ''} values")
+        issues = []
+        if has_nan:
+            issues.append('NaN')
+        if has_inf:
+            issues.append('Inf')
+        console.print(f"[bold red]Warning:[/bold red] {name} contains {' and '.join(issues)} values")
 
 
 def get_device_info() -> dict[str, Any]:

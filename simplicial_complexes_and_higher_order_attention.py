@@ -123,16 +123,40 @@ def build_er_graph_flag_complex(p, edge_prob, key):
     A = A + A.T
     return build_flag_complex_from_adjacency(A)
 
-def cycle_indicator_on_edges(p, cycle_vertices):
-    edges = [(int(i), int(j)) for i in range(p) for j in range(i + 1, p)]
+def cycle_indicator_on_edges(p, cycle_vertices, edges=None):
+    """Create a cycle indicator vector on edges.
+
+    Args:
+        p: Number of vertices (used if edges is None)
+        cycle_vertices: List of vertices forming the cycle
+        edges: Optional list of edges in the complex. If None, assumes complete graph.
+
+    Returns:
+        Indicator vector r with same dimension as number of edges
+    """
+    if edges is None:
+        # Default to complete graph edges
+        edges = [(int(i), int(j)) for i in range(p) for j in range(i + 1, p)]
+
     e2idx = {e: i for i, e in enumerate(edges)}
     r = jnp.zeros((len(edges),), dtype=jnp.float32)
+
     for i in range(len(cycle_vertices)):
         u = int(cycle_vertices[i])
         v = int(cycle_vertices[(i + 1) % len(cycle_vertices)])
-        a, b = (u, v) if u < v else (v, u)
-        s = 1.0 if u < v else -1.0
-        r = r.at[e2idx[(a, b)]].add(s)
+        
+        # Determine edge key and sign based on cycle direction
+        if u < v:
+            edge_key = (u, v)
+            sign = 1.0
+        else:
+            edge_key = (v, u)
+            sign = -1.0
+
+        # Only add if edge exists in the complex
+        if edge_key in e2idx:
+            r = r.at[e2idx[edge_key]].add(sign)
+
     return r
 
 
@@ -283,18 +307,25 @@ def train_step(params, complex_, L, X, Y, r, lam_bdry, lr):
     return new_params, loss_value, acc, bd, mass
 
 
-def generate_dataset(key, complex_, num, unbalanced=False):
+def generate_dataset(key, complex_, num, r=None, unbalanced=False):
     K = complex_["K"]
     assert K == 2
     D2 = _to_dense(complex_["D"][2])
     n2 = complex_["dims"][2]
+
+    # If r is not provided, create a default one
+    if r is None:
+        # Default to a cycle on all vertices
+        p = complex_["dims"][0]
+        edges = complex_.get("edges", None)
+        r = cycle_indicator_on_edges(p, list(range(p)), edges=edges)
 
     def sample(k):
         k1, k2 = jax.random.split(k)
         sel = jax.random.bernoulli(k1, 0.5, (n2,)).astype(jnp.float32)
         sgn = jax.random.choice(k2, jnp.array([-1.0, 1.0]), (n2,))
         x2 = sel * sgn
-        y = ((D2 @ x2) @ generate_dataset.r) != 0.0
+        y = ((D2 @ x2) @ r) != 0.0
         if unbalanced:
             y = jnp.where(jax.random.bernoulli(k1, 0.7), 0.0, y.astype(jnp.float32))
         return x2, y.astype(jnp.float32)
@@ -358,15 +389,14 @@ def main():
     key = jax.random.PRNGKey(42)
     p = 6
     complex_ = build_complete_complex_K2(p)
-    r = cycle_indicator_on_edges(p, list(range(p)))
-    generate_dataset.r = r
+    r = cycle_indicator_on_edges(p, list(range(p)), edges=complex_["edges"])
     K = complex_["K"]
     d = 16
     L = 3
     params = init_params(key, K, d)
     key_data = jax.random.PRNGKey(7)
-    X_train, Y_train = generate_dataset(key_data, complex_, num=1024)
-    X_test, Y_test = generate_dataset(jax.random.PRNGKey(8), complex_, num=256)
+    X_train, Y_train = generate_dataset(key_data, complex_, num=1024, r=r)
+    X_test, Y_test = generate_dataset(jax.random.PRNGKey(8), complex_, num=256, r=r)
     lr = 1e-2
     lam_bdry = 1e-4
     batch_size = 64
