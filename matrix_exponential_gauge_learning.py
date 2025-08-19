@@ -950,7 +950,7 @@ def demo():
             ] if 'K_bh' in locals() and K_bh.ndim == 2 else [],
             "curvature_mean_default": float(curv_mean_def),
             "curvature_mean_commuting": float(curv_mean_comm),
-            # Intentionally omit large heatmap rows from export to keep artifact compact
+            "sampling_smoothness_var_mean": float(var_mean) if ('var_mean' in locals()) else None,
         }
     except Exception:
         pass
