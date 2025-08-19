@@ -220,6 +220,9 @@ class LCPTreeAttention:
 # ---------------------------
 
 
+from typing import Any, Tuple, Union, cast
+
+
 class UltrametricAttention:
     """Approximate ultrametric attention via LSH-based LCP trie.
 
@@ -245,10 +248,23 @@ class UltrametricAttention:
             for _ in range(self._heads)
         ]
         # Buckets per head: dict or array-backed by depth depending on mode
+        # Buckets type: packed -> list[ list[ dict[int, list[int]] ] ]; unpacked -> list[ dict[tuple[int,...], list[int]] ]
+        BuckPacked = list[list[dict[int, list[int]]]]
+        BuckUnpacked = list[dict[Tuple[int, ...], list[int]]]
         if self._packed:
-            self._buckets = [[list() for _ in range(self.max_depth + 1)] for _ in range(self._heads)]
+            # Packed: per head, per level dict mapping code->list of idx for O(1) access
+            packed: BuckPacked = []
+            for _ in range(self._heads):
+                levels: list[dict[int, list[int]]] = []
+                for __ in range(self.max_depth + 1):
+                    levels.append(cast(dict[int, list[int]], {}))
+                packed.append(levels)
+            self._buckets: Union[BuckPacked, BuckUnpacked] = packed
         else:
-            self._buckets = [dict() for _ in range(self._heads)]  # type: ignore[list-item]
+            unpacked: BuckUnpacked = []
+            for _ in range(self._heads):
+                unpacked.append(cast(dict[Tuple[int, ...], list[int]], {}))
+            self._buckets = unpacked
         # Store keys by index for quick similarity checks
         self._key_vec: dict[int, _np.ndarray] = {}
 
@@ -272,7 +288,8 @@ class UltrametricAttention:
                 code = 0
                 for d in range(1, self.max_depth + 1):
                     code = (code << 1) | int(sig[d - 1])
-                    self._buckets[h][d].append((code, int(idx)))
+                    level = cast(dict[int, list[int]], self._buckets[h][d])
+                    level.setdefault(code, []).append(int(idx))
             else:
                 for pref in self._prefixes(sig):
                     bucket = self._buckets[h].setdefault(pref, [])
@@ -294,8 +311,8 @@ class UltrametricAttention:
                 code = 0
                 for d in range(self.max_depth, 0, -1):
                     code = (code << 1) | int(sig[d - 1])
-                    level = self._buckets[h][d] if d < len(self._buckets[h]) else []
-                    lst = [idx for (c, idx) in level if c == code]
+                    level = cast(dict[int, list[int]], self._buckets[h][d]) if d < len(self._buckets[h]) else {}
+                    lst = level.get(code, [])
                     if lst:
                         candidate_idxs = lst
                         break
@@ -480,6 +497,25 @@ def demo():
     smoke_demo_small()
     run_task_A()
     run_task_B()
+    # Optional packed timing benchmark to n=4096
+    try:
+        import time as _time
+        print("\n[Packed LCP Timing]")
+        for N in [64, 256, 1024, 4096]:
+            dim = 32
+            U = UltrametricAttention(dim=dim, p=5, max_depth=16, packed=True, heads=2)
+            keys = np.random.randn(N, dim)
+            vals = np.random.randn(N, dim)
+            t0 = _time.perf_counter()
+            for i in range(N):
+                U.insert(i, keys[i])
+            t1 = _time.perf_counter()
+            q = np.random.randn(dim)
+            _ = U.attend(q, vals)
+            t2 = _time.perf_counter()
+            print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

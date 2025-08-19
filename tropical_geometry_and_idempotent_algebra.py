@@ -319,6 +319,23 @@ def run():
         jnp.array([jnp.inf]),
     )
     print("median margin:", float(jnp.median(cert)))
+    # Route-level certificates: min runner-up margins along predicted routes for a small batch
+    from rich.console import Console as _Console
+    from rich.table import Table as _Table
+    tbl = _Table(title="Tropical Route Certificates (first 10)", show_header=True, header_style="bold magenta")
+    tbl.add_column("idx")
+    tbl.add_column("pred")
+    tbl.add_column("route_min_gap")
+    nshow = min(10, Xte.shape[0])
+    gaps = []
+    for i in range(nshow):
+        y_i = yhat[i]
+        c = int(jnp.argmax(y_i))
+        r = route_single(params, Xte[i], cfg_test, c)
+        gaps.append(float(r["margin"]))
+        tbl.add_row(str(i), str(c), f"{float(r['margin']):.4f}")
+    _Console().print(tbl)
+    print("Min route gap/2 certificate:", f"{(min(gaps)/2.0):.4f}")
 
 
 # (adapter defined above)

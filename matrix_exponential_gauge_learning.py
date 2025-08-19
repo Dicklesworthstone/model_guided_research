@@ -252,6 +252,14 @@ def uniformization_expmv_banded(
     m = lam * t_bh  # (BH,)
     K_f = jnp.ceil(m + sigma * jnp.sqrt(m + 1e-6))
     K = jnp.maximum(K_f.astype(jnp.int32), 1)  # (BH,)
+    # Optional cap via environment for ablation
+    try:
+        cap_str = os.environ.get("GAUGE_UNIF_CAP_K", "")
+        if cap_str:
+            Kcap = jnp.array(int(cap_str), dtype=jnp.int32)
+            K = jnp.minimum(K, Kcap)
+    except Exception:
+        pass
     Kmax = jnp.max(K)
     coeff0 = jnp.exp(-m)  # (BH,)
     coeff = coeff0[:, None, None]  # (BH,1,1)
@@ -746,6 +754,40 @@ def demo():
     if cfg.use_structured_blocks:
         print("Structured blocks: ON; commutator norms (first block):", dbg[0].get("comm_norms", {}))
 
+    # Per-block uniformization stats
+    Ks = [jnp.mean(bdbg["uniformization_K"]).item() for bdbg in dbg]
+    Kmaxs = [int(jnp.max(bdbg["uniformization_K"])) for bdbg in dbg]
+    print("Uniformization K mean per block:", [float(f"{k:.2f}") for k in Ks])
+    print("Uniformization K max per block:", Kmaxs)
+    # Per-head K stats for first block (mean, max) per head
+    K_bh = dbg[0]["uniformization_K"]  # (B,H)
+    if K_bh.ndim == 2:
+        K_head_stats = [(float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])]
+        print("Uniformization K per head (mean,max) [block0]:", K_head_stats)
+
+    # ASCII heatmap of commutators per block (so_spd, so_sp, spd_sp)
+    if cfg.use_structured_blocks:
+        combos = ["so_spd", "so_sp", "spd_sp"]
+        # Gather norms per block
+        rows = {c: [] for c in combos}
+        for b in dbg:
+            cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
+            for c in combos:
+                rows[c].append(float(cm.get(c, 0.0)))
+        # Normalize to 0..1 for heatmap glyphs
+        glyphs = " .:-=+*#%@"
+        def row_to_ascii(vals):
+            if not vals:
+                return ""
+            lo, hi = min(vals), max(vals)
+            if hi - lo < 1e-12:
+                return glyphs[0] * len(vals)
+            idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(glyphs) - 1)) for v in vals]
+            return "".join(glyphs[i] for i in idxs)
+        print("\n[Comm Heatmap per block]")
+        for c in combos:
+            print(f"{c:7s}:", row_to_ascii(rows[c]))
+
     # Quick stability comparison: structured vs unstructured curvature proxy
     # Build a second config with the opposite setting and compare mean curvature
     cfg_alt = GaugeTransformerConfig(
@@ -798,6 +840,61 @@ def demo():
         print("||[skew, sym]||:", f"{comm_norm(skew, sym):.2e}")
         print("||[skew, A]||:", f"{comm_norm(skew, A):.2e}")
         print("||[sym, A]||:", f"{comm_norm(sym, A):.2e}")
+
+    # --- BCH-aware stacking demo: enforce commuting blocks on even layers ---
+    from flax.core import freeze, unfreeze
+    vars_comm = unfreeze(variables)
+    for bi in range(len(model.blocks)):
+        if bi % 2 == 0:
+            blk_key = f"gt_block_{bi}"
+            if blk_key in vars_comm.get("params", {}):
+                pblk = vars_comm["params"][blk_key]
+                for name in ["so_gen", "spd_sym", "sp_sym"]:
+                    if name in pblk:
+                        W = pblk[name]
+                        d0, d1 = W.shape[-2], W.shape[-1]
+                        diag = jnp.diag(jnp.diag(W.reshape(-1, d0, d1)[0])) if d0 == d1 else W
+                        # Broadcast diag back per-head
+                        if W.ndim == 3:
+                            diagH = jnp.tile(diag[None, ...], (W.shape[0], 1, 1))
+                            pblk[name] = diagH
+                        else:
+                            pblk[name] = W
+    variables_comm = freeze(vars_comm)
+    y_comm, dbg_comm = model.apply(variables_comm, x, train=False, return_debug=True)
+    curv_mean_comm = float(jnp.mean(dbg_comm[0]["curvature_proxy"]))
+    curv_mean_def = float(jnp.mean(dbg[0]["curvature_proxy"]))
+    print("Curvature mean default:", f"{curv_mean_def:.4f}")
+    print("Curvature mean BCH-aware (even commuting):", f"{curv_mean_comm:.4f}")
+
+    # Alternate structured/unstructured: zero out generators on odd blocks (env GAUGE_ALT_STRUCT=1)
+    if os.environ.get("GAUGE_ALT_STRUCT", "0") == "1":
+        from flax.core import freeze as _freeze
+        from flax.core import unfreeze as _unfreeze
+        vars_alt = _unfreeze(variables)
+        for bi in range(len(model.blocks)):
+            if bi % 2 == 1:
+                blk_key = f"gt_block_{bi}"
+                if blk_key in vars_alt.get("params", {}):
+                    pblk = vars_alt["params"][blk_key]
+                    for name in ["so_gen", "spd_sym", "sp_sym"]:
+                        if name in pblk:
+                            pblk[name] = jnp.zeros_like(pblk[name])
+        variables_alt = _freeze(vars_alt)
+        _, dbg_alt = model.apply(variables_alt, x, train=False, return_debug=True)
+        curv_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
+        print("Curvature mean alt (odd unstructured):", f"{curv_alt:.4f}")
+
+    # If GAUGE_UNIF_CAP_K is set, compare vs uncapped K means
+    cap_val = os.environ.get("GAUGE_UNIF_CAP_K", "")
+    if cap_val:
+        # Uncapped run
+        val = os.environ.pop("GAUGE_UNIF_CAP_K")
+        _, dbg_uncap = model.apply(variables, x, train=False, return_debug=True)
+        os.environ["GAUGE_UNIF_CAP_K"] = val
+        K_uncap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg_uncap]
+        K_cap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg]
+        print("Uniformization K mean (uncapped vs capped):", list(zip([round(v,2) for v in K_uncap], [round(v,2) for v in K_cap], strict=False)))
 
 
 if __name__ == "__main__":

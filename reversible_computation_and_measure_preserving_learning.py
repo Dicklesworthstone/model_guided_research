@@ -318,8 +318,8 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
     u2 = y2
     u1 = y1 - affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
     if USE_CAYLEY_HYBRID:
-        # Invert Cayley approximately by fixed-point on the inverse: (I + S) y = (I - S) u
-        def cayley_inverse(u2_loc: Array, y_loc: Array) -> Array:
+        # Improved inverse via damped Richardson iterations on (I + S) x = (I - S) y
+        def cayley_inverse(u2_loc: Array, y_loc: Array, iters: int, alpha: float = 0.5) -> Array:
             u = u2_loc / (jnp.linalg.norm(u2_loc, axis=-1, keepdims=True) + 1e-12)
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
@@ -329,10 +329,11 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
                 return u * a - v * b
             rhs = y_loc - S_apply(y_loc)
             x_est = rhs
-            for _ in range(CAYLEY_ITERS):
-                x_est = rhs - S_apply(x_est)
+            for _ in range(max(2, 2 * iters)):
+                # x <- x + α (rhs - (I+S) x)
+                x_est = x_est + alpha * (rhs - (x_est + S_apply(x_est)))
             return x_est
-        u1 = cayley_inverse(u2, u1)
+        u1 = cayley_inverse(u2, u1, CAYLEY_ITERS)
     if USE_SYMPLECTIC_HYBRID:
         def grad_H_q(q):
             return q
@@ -886,19 +887,48 @@ def demo():
         if config.use_rich_output:
             from rich.console import Console as _Console
             _Console().print(t)
+            # ASCII sparklines for aggregated trends
+            def spark(vals):
+                bars = "▁▂▃▄▅▆▇█"
+                if not vals:
+                    return ""
+                lo, hi = min(vals), max(vals)
+                if hi - lo < 1e-12:
+                    return bars[0] * len(vals)
+                idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
+                return "".join(bars[i] for i in idxs)
+            # Re-run quick sweep to collect arrays
+            import time as _time
+            tm_by_iter = []
+            mem_by_iter = []
+            for iters in [1, 2, 3, 4]:
+                set_reversible_cayley_iters(iters)
+                _t0 = _time.perf_counter()
+                _ = model_forward(x, m, BitTape(), Reservoir(555), audit_mode=True)
+                tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
+                mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
+            print("iters time(ms):", spark(tm_by_iter))
 
     # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
         import time
         import tracemalloc
+
         from rich.table import Table as _Table
         t = _Table(title="Cayley Iterations/Depth Pareto (lower is better)", show_header=True, header_style="bold magenta")
         t.add_column("layers")
         t.add_column("iters")
         t.add_column("time_ms", justify="right")
         t.add_column("peak_mem_MB", justify="right")
+        # Collect arrays for sparklines
+        tm_by_iter = {}
+        mem_by_iter = {}
+        tm_by_depth = {}
+        mem_by_depth = {}
         for Ls in [1, 2, 3, 4]:
             m_sweep = make_model(k, Ls, d, d_a, hidden, bins, B)
+            tm_by_iter[Ls] = []
+            mem_by_iter[Ls] = []
             for iters in [1, 2, 3, 4]:
                 set_reversible_cayley_iters(iters)
                 tracemalloc.start()
@@ -908,9 +938,29 @@ def demo():
                 peak_mb = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
                 tracemalloc.stop()
                 t.add_row(str(Ls), str(iters), f"{dt:.2f}", f"{peak_mb:.2f}")
+                tm_by_iter[Ls].append(dt)
+                mem_by_iter[Ls].append(peak_mb)
+                tm_by_depth.setdefault(iters, []).append(dt)
+                mem_by_depth.setdefault(iters, []).append(peak_mb)
         if config.use_rich_output:
             from rich.console import Console as _Console
             _Console().print(t)
+            # ASCII sparklines for trends
+            def spark(vals):
+                bars = "▁▂▃▄▅▆▇█"
+                if not vals:
+                    return ""
+                lo, hi = min(vals), max(vals)
+                if hi - lo < 1e-12:
+                    return bars[0] * len(vals)
+                idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(bars) - 1)) for v in vals]
+                return "".join(bars[i] for i in idxs)
+            depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
+            print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
+            print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
+            iter_for_depth = 2 if 2 in tm_by_depth else sorted(tm_by_depth.keys())[0]
+            print(f"depth→time (iters={iter_for_depth}):", spark(tm_by_depth[iter_for_depth]))
+            print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
     if config.use_rich_output:
         from rich.console import Console
         console = Console()
