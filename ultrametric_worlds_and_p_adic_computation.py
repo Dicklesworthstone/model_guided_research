@@ -19,6 +19,7 @@ arrays; the reference trie is explicit for clarity, while a production variant c
 contiguous per‑depth arrays and bitsets for cache‑optimal rank/test/lookup.
 """
 
+import os
 import random
 import time
 from dataclasses import dataclass
@@ -253,6 +254,7 @@ class UltrametricAttention:
         BuckPacked = list[list[dict[int, list[int]]]]
         BuckPackedArrays = list[list[list[list[int]]]]
         BuckUnpacked = list[dict[tuple[int, ...], list[int]]]
+        self._buckets: BuckPackedArrays | BuckPacked | BuckUnpacked
         self._packed_arrays = False
         if self._packed and bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
             # Array-of-lists per level, indexable by code with O(1) access

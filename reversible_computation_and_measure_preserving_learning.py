@@ -401,11 +401,13 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
                 return u * a - v * b
             rhs = y_loc - S_apply(y_loc)
             x_est = rhs
-            for _ in range(max(2, 2 * iters)):
+            # Allow separate inverse iteration count via CAYLEY_INV_ITERS
+            nsteps = max(2, 2 * int(iters))
+            for _ in range(nsteps):
                 # x <- x + α (rhs - (I+S) x)
                 x_est = x_est + alpha * (rhs - (x_est + S_apply(x_est)))
             return cast(Array, x_est)
-        u1 = cayley_inverse(u2, u1, CAYLEY_ITERS)
+        u1 = cayley_inverse(u2, u1, CAYLEY_INV_ITERS if 'CAYLEY_INV_ITERS' in globals() else CAYLEY_ITERS)
     if USE_SYMPLECTIC_HYBRID:
         from jax import custom_jvp as _cjvp
         @_cjvp
@@ -1056,6 +1058,31 @@ def demo():
         if config.use_rich_output:
             from rich.console import Console as _Console
             _Console().print(t)
+            # ASCII sparklines for trends
+            def spark(vals):
+                bars = "▁▂▃▄▅▆▇█"
+                if not vals:
+                    return ""
+                lo, hi = min(vals), max(vals)
+                if hi - lo < 1e-12:
+                    return bars[0] * len(vals)
+                idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(bars) - 1)) for v in vals]
+                return "".join(bars[i] for i in idxs)
+            depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
+            print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
+            print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
+            iter_for_depth = 2 if 2 in tm_by_depth else sorted(tm_by_depth.keys())[0]
+            print(f"depth→time (iters={iter_for_depth}):", spark(tm_by_depth[iter_for_depth]))
+            print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
+            # Inverse timing sparkline (fixed iters)
+            inv_times = []
+            set_reversible_cayley_iters(iter_for_depth)
+            y_tmp, _ = model_forward(x, m_sweep, BitTape(), Reservoir(321), audit_mode=True)
+            for _ in range(3):
+                t0i = time.perf_counter()
+                _ = model_inverse(y_tmp, m_sweep, BitTape(), Reservoir(321))
+                inv_times.append((time.perf_counter() - t0i) * 1000.0)
+            print("inverse time(ms):", spark(inv_times))
             # ASCII sparklines for trends
             def spark(vals):
                 bars = "▁▂▃▄▅▆▇█"
