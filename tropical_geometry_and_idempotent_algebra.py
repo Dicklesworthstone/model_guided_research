@@ -328,14 +328,27 @@ def run():
     tbl.add_column("route_min_gap")
     nshow = min(10, Xte.shape[0])
     gaps = []
+    rows = []
     for i in range(nshow):
         y_i = yhat[i]
         c = int(jnp.argmax(y_i))
         r = route_single(params, Xte[i], cfg_test, c)
-        gaps.append(float(r["margin"]))
-        tbl.add_row(str(i), str(c), f"{float(r['margin']):.4f}")
+        g = float(r["margin"]) 
+        gaps.append(g)
+        tbl.add_row(str(i), str(c), f"{g:.4f}")
+        rows.append({"idx": int(i), "pred": int(c), "route_min_gap": g})
     _Console().print(tbl)
     print("Min route gap/2 certificate:", f"{(min(gaps)/2.0):.4f}")
+    # Exportable diagnostics for CLI
+    try:
+        global last_diagnostics
+        last_diagnostics = {
+            "route_certs": rows,
+            "min_gap_over_2": float(min(gaps) / 2.0),
+            "median_margin": float(jnp.median(cert)),
+        }
+    except Exception:
+        pass
 
 
 # (adapter defined above)

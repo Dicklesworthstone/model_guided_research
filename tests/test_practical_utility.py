@@ -585,12 +585,12 @@ class TestSimplicialComplexUtility:
             graph.add_triangle(*nodes)
 
         # Learned linear readout over simplicial flow (tiny logistic regression)
-        flows = []
+        flows_list: list[np.ndarray] = []
         for i in range(len(X)):
             node_scalar = X[i].mean(axis=1)  # project features to node scalars
             flow = graph.hodge_laplacian_flow(node_scalar, steps=8)
-            flows.append(flow)
-        flows = np.stack(flows)
+            flows_list.append(flow)
+        flows = np.stack(flows_list)
         y_arr = y.astype(float)
 
         # Train/test split for readout

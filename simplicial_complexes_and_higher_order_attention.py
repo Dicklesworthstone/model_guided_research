@@ -446,6 +446,9 @@ def laplacian_0_from_adj(A: jnp.ndarray) -> jnp.ndarray:
     return deg - A
 
 
+from typing import cast
+
+
 def hodge_readout(flow: np.ndarray, A: np.ndarray, k_small: int = 3) -> np.ndarray:
     """Project flow onto first k_small eigenvectors of L0 and return coefficients.
 
@@ -457,7 +460,7 @@ def hodge_readout(flow: np.ndarray, A: np.ndarray, k_small: int = 3) -> np.ndarr
     idx = _np.argsort(lam)[:k_small]
     Ub = U[:, idx]
     coeff = Ub.T @ flow
-    return coeff
+    return cast(np.ndarray, coeff)
 
 
 def demo_signed_attention(seed: int = 0):

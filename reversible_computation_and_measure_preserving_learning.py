@@ -35,7 +35,7 @@ Core ideas
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from jax import Array
@@ -263,7 +263,7 @@ def _cayley_primal(u2: Array, u1: Array) -> Array:
     y = rhs
     for _ in range(CAYLEY_ITERS):
         y = rhs + S_apply(y)
-    return y
+    return cast(Array, y)
 
 
 @custom_jvp
@@ -332,7 +332,7 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             for _ in range(max(2, 2 * iters)):
                 # x <- x + α (rhs - (I+S) x)
                 x_est = x_est + alpha * (rhs - (x_est + S_apply(x_est)))
-            return x_est
+            return cast(Array, x_est)
         u1 = cayley_inverse(u2, u1, CAYLEY_ITERS)
     if USE_SYMPLECTIC_HYBRID:
         def grad_H_q(q):
@@ -494,14 +494,14 @@ class MeteredValve:
         # Reshape indices back to the leading shape of a (excluding feature axis)
         lead_shape = tuple(int(s) for s in a.shape[:-1])
         idx_mat = out_idx.reshape(int(np.prod(lead_shape, dtype=np.int64)), self.d_b)
-        bq = np.asarray(dequantize_idx(jnp.array(idx_mat), self.params.centers)).astype(np.float32)
-        bq = bq.reshape(*lead_shape, self.d_b)
-        a_np = np.asarray(a).astype(np.float32)
-        # Concatenate along last feature axis
-        y_out = np.concatenate([a_np, bq], axis=-1).astype(np.float32)
+        bq_np = np.asarray(dequantize_idx(jnp.array(idx_mat), self.params.centers)).astype(np.float32)
+        bq_np = bq_np.reshape(*lead_shape, self.d_b)
+        bq_j = jnp.array(bq_np)
+        # Concatenate along last feature axis in JAX
+        y_out = jnp.concatenate([a, bq_j], axis=-1)
         bw = bw0 + self.B * N
         bc = self.B * N
-        return jnp.array(y_out), ValveStats(bits_written=bw, bits_consumed=bc, delta_bits=bw - bc)
+        return y_out, ValveStats(bits_written=bw, bits_consumed=bc, delta_bits=bw - bc)
 
     def inverse(self, y_out: Array, tape: BitTape, res: Reservoir) -> Array:
         a, bq = jnp.split(y_out, [self.d_a], axis=-1)
@@ -671,7 +671,7 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
     # (kept here to align with reversible theme; not used by tests)
     def cayley_orthogonal_from_skew(A: Array) -> Array:
         eye = jnp.eye(A.shape[-1], dtype=A.dtype)
-        return jnp.linalg.solve(eye - A, eye + A)
+        return cast(Array, jnp.linalg.solve(eye - A, eye + A))
 
     params = []
     for b in m.blocks:
@@ -961,6 +961,19 @@ def demo():
             iter_for_depth = 2 if 2 in tm_by_depth else sorted(tm_by_depth.keys())[0]
             print(f"depth→time (iters={iter_for_depth}):", spark(tm_by_depth[iter_for_depth]))
             print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
+        # Exportable diagnostics for CLI
+        try:
+            global last_diagnostics
+            last_diagnostics = {
+                "pareto": {
+                    "tm_by_iter": {int(k): [float(x) for x in v] for k, v in tm_by_iter.items()},
+                    "mem_by_iter": {int(k): [float(x) for x in v] for k, v in mem_by_iter.items()},
+                    "tm_by_depth": {int(k): [float(x) for x in v] for k, v in tm_by_depth.items()},
+                    "mem_by_depth": {int(k): [float(x) for x in v] for k, v in mem_by_depth.items()},
+                }
+            }
+        except Exception:
+            pass
     if config.use_rich_output:
         from rich.console import Console
         console = Console()

@@ -268,11 +268,11 @@ def run(
                 import numpy as _np
 
                 from tropical_geometry_and_idempotent_algebra import TropicalAttention
-                Q = _np.random.randn(32, 16)
-                K = _np.random.randn(32, 16)
-                V = _np.random.randn(32, 16)
+                Q_np = _np.random.randn(32, 16)
+                K_np = _np.random.randn(32, 16)
+                V_np = _np.random.randn(32, 16)
                 attn = TropicalAttention(16)
-                _ = attn(Q, K, V)
+                _ = attn(Q_np, K_np, V_np)
                 table = Table(title="Tropical Robustness Certificate", show_header=True, header_style="bold magenta")
                 table.add_column("Min (best−second) margin", justify="center")
                 margin = float(getattr(attn, 'last_min_margin', 0.0))
@@ -361,6 +361,14 @@ def run(
             # Run the demo
             with console.status("[bold green]Running demo...[/bold green]"):
                 demo_func()
+
+            # Collect module-level diagnostics if present
+            try:
+                diag = getattr(module, "last_diagnostics", None)
+                if diag is not None:
+                    artifacts.setdefault("diagnostics", {})[demo_name] = diag
+            except Exception:
+                pass
 
 
 

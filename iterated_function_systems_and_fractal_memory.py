@@ -324,7 +324,19 @@ class FractalKV:
             new_s = float(max(0.1, self.cfg.s * 0.9))
             cfg_old = self.cfg
             cfg_new = FractalKVConfig(d_val=cfg_old.d_val, m=cfg_old.m, k=cfg_old.k, s=new_s, dtype=cfg_old.dtype)
-            self.__init__(cfg_new)
+            # Reconfigure derived tensors and jit kernels without resetting payload/state
+            self._reconfigure(cfg_new)
+
+    def _reconfigure(self, cfg_new: FractalKVConfig) -> None:
+        self.cfg = cfg_new
+        self.T = _binary_corners(cfg_new.m, cfg_new.d_val, cfg_new.s).astype(cfg_new.dtype)
+        self.m_pow = _m_powers(cfg_new.m, cfg_new.k)
+        self.level_scales = jnp.array([cfg_new.s ** (cfg_new.k - 1 - j) for j in range(cfg_new.k)], dtype=cfg_new.dtype)
+        # Recreate JIT kernels (pure functions bound to self)
+        self._jit_compute_c = jit(self._compute_c_batch)
+        self._jit_write = jit(self._write_batch)
+        self._jit_read = jit(self._read_batch)
+        self._jit_diag = jit(self._diagnostics)
 
     def maybe_expand_depth(self, util_threshold: float = 0.7) -> FractalKV:
         diag = self.diagnostics()
@@ -339,24 +351,24 @@ def _hashed_paths_for_vectors(V: Array, m: int, k: int, seed: int = 123) -> Arra
     proj = jnp.array(rng.standard_normal((V.shape[-1], 32)), dtype=jnp.float32)
     sig = (V @ proj) > 0
     # Fold to integer and then to base-m digits
-    idxs = []
+    idx_list: list[int] = []
     mod_val = int(m) ** int(k)
     for row in np.asarray(sig):
         code = 0
         for i, b in enumerate(row.tolist()):
             if b:
                 code += (1 << i)
-        idxs.append(code % mod_val)
-    idxs = jnp.array(idxs, dtype=jnp.int32)
-    digs = []
+        idx_list.append(code % mod_val)
+    idxs = jnp.array(idx_list, dtype=jnp.int32)
+    digs_list: list[list[int]] = []
     for code in idxs.tolist():
         x = int(code)
         arr = [0] * int(k)
         for t in range(int(k) - 1, -1, -1):
             arr[t] = x % int(m)
             x //= int(m)
-        digs.append(arr)
-    return jnp.array(digs, dtype=jnp.int32)
+        digs_list.append(arr)
+    return jnp.array(digs_list, dtype=jnp.int32)
 
 
 # --- Minimal adapter expected by tests ---

@@ -33,7 +33,7 @@ import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -201,26 +201,26 @@ class ExponentialGaugeNet:
 
 # --- Experimental helpers: exact/algebraic maps for structured generators ---
 
-def cayley_orthogonal_from_skew(A: jnp.ndarray) -> jnp.ndarray:
+def cayley_orthogonal_from_skew(A: jnp.ndarray) -> Array:
     """Return an orthogonal matrix via the Cayley transform for a skew-symmetric A.
 
     Q = (I - A)^{-1} (I + A)
     For small ||A||, Q ≈ exp(2A) and is exactly orthogonal when A^T = -A and I - A is invertible.
     """
     eye = jnp.eye(A.shape[-1], dtype=A.dtype)
-    return jnp.linalg.solve(eye - A, eye + A)
+    return cast(Array, jnp.linalg.solve(eye - A, eye + A))
 
 
-def spd_from_symmetric(S: jnp.ndarray) -> jnp.ndarray:
+def spd_from_symmetric(S: jnp.ndarray) -> Array:
     """Exponentiate a symmetric matrix to get SPD via eigendecomposition.
 
     Returns exp(S) = V diag(exp(λ)) V^T.
     """
     lam, V = jnp.linalg.eigh(S)
-    return (V * jnp.exp(lam))[..., None, :] @ jnp.swapaxes(V, -1, -2)
+    return cast(Array, (V * jnp.exp(lam))[..., None, :] @ jnp.swapaxes(V, -1, -2))
 
 
-def symplectic_cayley(H: jnp.ndarray) -> jnp.ndarray:
+def symplectic_cayley(H: jnp.ndarray) -> Array:
     """Construct a symplectic map via a Cayley-like transform of a Hamiltonian generator.
 
     For block form J = [[0,I],[-I,0]], a small-step ‘Cayley’ map S = (I - JH)^{-1}(I + JH) is symplectic
@@ -234,7 +234,7 @@ def symplectic_cayley(H: jnp.ndarray) -> jnp.ndarray:
     J = jnp.block([[Z, eye_n], [-eye_n, Z]])
     eye_d2 = jnp.eye(d2, dtype=H.dtype)
     M = J @ H
-    return jnp.linalg.solve(eye_d2 - M, eye_d2 + M)
+    return cast(Array, jnp.linalg.solve(eye_d2 - M, eye_d2 + M))
 
 
 def uniformization_expmv_banded(
@@ -895,6 +895,22 @@ def demo():
         K_uncap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg_uncap]
         K_cap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg]
         print("Uniformization K mean (uncapped vs capped):", list(zip([round(v,2) for v in K_uncap], [round(v,2) for v in K_cap], strict=False)))
+
+    # Exportable diagnostics for CLI (module-level)
+    try:
+        global last_diagnostics
+        last_diagnostics = {
+            "K_mean_per_block": [float(k) for k in Ks],
+            "K_max_per_block": [int(k) for k in Kmaxs],
+            "K_head_stats_block0": [
+                (float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])
+            ] if 'K_bh' in locals() and K_bh.ndim == 2 else [],
+            "curvature_mean_default": float(curv_mean),
+            "curvature_mean_commuting": float(curv_mean_comm),
+            "comm_heatmap_rows": comm_heatmap_rows,
+        }
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

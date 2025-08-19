@@ -220,7 +220,7 @@ class LCPTreeAttention:
 # ---------------------------
 
 
-from typing import Any, Tuple, Union, cast
+from typing import cast
 
 
 class UltrametricAttention:
@@ -250,7 +250,7 @@ class UltrametricAttention:
         # Buckets per head: dict or array-backed by depth depending on mode
         # Buckets type: packed -> list[ list[ dict[int, list[int]] ] ]; unpacked -> list[ dict[tuple[int,...], list[int]] ]
         BuckPacked = list[list[dict[int, list[int]]]]
-        BuckUnpacked = list[dict[Tuple[int, ...], list[int]]]
+        BuckUnpacked = list[dict[tuple[int, ...], list[int]]]
         if self._packed:
             # Packed: per head, per level dict mapping code->list of idx for O(1) access
             packed: BuckPacked = []
@@ -259,11 +259,11 @@ class UltrametricAttention:
                 for __ in range(self.max_depth + 1):
                     levels.append(cast(dict[int, list[int]], {}))
                 packed.append(levels)
-            self._buckets: Union[BuckPacked, BuckUnpacked] = packed
+            self._buckets: BuckPacked | BuckUnpacked = packed
         else:
             unpacked: BuckUnpacked = []
             for _ in range(self._heads):
-                unpacked.append(cast(dict[Tuple[int, ...], list[int]], {}))
+                unpacked.append(cast(dict[tuple[int, ...], list[int]], {}))
             self._buckets = unpacked
         # Store keys by index for quick similarity checks
         self._key_vec: dict[int, _np.ndarray] = {}
