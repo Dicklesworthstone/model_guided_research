@@ -248,18 +248,34 @@ class UltrametricAttention:
             for _ in range(self._heads)
         ]
         # Buckets per head: dict or array-backed by depth depending on mode
-        # Buckets type: packed -> list[ list[ dict[int, list[int]] ] ]; unpacked -> list[ dict[tuple[int,...], list[int]] ]
+        # Buckets type: packed -> list[ list[ dict[int, list[int]] ] ] or array mode -> list[ list[ list[list[int]] ] ]
+        # Unpacked -> list[ dict[tuple[int,...], list[int]] ]
         BuckPacked = list[list[dict[int, list[int]]]]
+        BuckPackedArrays = list[list[list[list[int]]]]
         BuckUnpacked = list[dict[tuple[int, ...], list[int]]]
-        if self._packed:
-            # Packed: per head, per level dict mapping code->list of idx for O(1) access
+        self._packed_arrays = False
+        if self._packed and bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
+            # Array-of-lists per level, indexable by code with O(1) access
+            packed_arr: BuckPackedArrays = []
+            for _ in range(self._heads):
+                levels_ll: list[list[list[int]]] = []
+                for d in range(self.max_depth + 1):
+                    size = 1 << d
+                    levels_ll.append([[] for _ in range(size)])
+                packed_arr.append(levels_ll)
+            self._buckets = packed_arr
+            self._packed_arrays = True
+            # Occupancy bitsets to summarize
+            self._occ = [[np.zeros((1 << d,), dtype=np.uint8) for d in range(self.max_depth + 1)] for _ in range(self._heads)]
+        elif self._packed:
+            # dict-based packed
             packed_buckets: BuckPacked = []
             for _ in range(self._heads):
                 levels: list[dict[int, list[int]]] = []
                 for __ in range(self.max_depth + 1):
                     levels.append(cast(dict[int, list[int]], {}))
                 packed_buckets.append(levels)
-            self._buckets: BuckPacked | BuckUnpacked = packed_buckets
+            self._buckets = packed_buckets
         else:
             unpacked: BuckUnpacked = []
             for _ in range(self._heads):
@@ -288,9 +304,14 @@ class UltrametricAttention:
                 code = 0
                 for d in range(1, self.max_depth + 1):
                     code = (code << 1) | int(sig[d - 1])
-                    buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
-                    level = buckets_p[h][d]
-                    level.setdefault(code, []).append(int(idx))
+                    if self._packed_arrays:
+                        buckets_pa = cast(list[list[list[list[int]]]], self._buckets)
+                        buckets_pa[h][d][code].append(int(idx))
+                        self._occ[h][d][code] = 1
+                    else:
+                        buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+                        level = buckets_p[h][d]
+                        level.setdefault(code, []).append(int(idx))
             else:
                 for pref in self._prefixes(sig):
                     buckets_u = cast(list[dict[tuple[int, ...], list[int]]], self._buckets)
@@ -313,9 +334,13 @@ class UltrametricAttention:
                 code = 0
                 for d in range(self.max_depth, 0, -1):
                     code = (code << 1) | int(sig[d - 1])
-                    buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
-                    level = buckets_p[h][d] if d < len(buckets_p[h]) else {}
-                    lst = level.get(code, [])
+                    if self._packed_arrays:
+                        buckets_pa = cast(list[list[list[list[int]]]], self._buckets)
+                        lst = buckets_pa[h][d][code] if (d < len(buckets_pa[h]) and code < len(buckets_pa[h][d])) else []
+                    else:
+                        buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+                        level = buckets_p[h][d] if d < len(buckets_p[h]) else {}
+                        lst = level.get(code, [])
                     if lst:
                         candidate_idxs = lst
                         break
@@ -518,6 +543,16 @@ def demo():
             _ = U.attend(q, vals)
             t2 = _time.perf_counter()
             print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms")
+        # Occupancy summary per level when array-packed
+        if bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
+            p, K, H = 5, 12, 2
+            os.environ.setdefault("ULTRA_PACKED_ARRAYS", "1")
+            U2 = UltrametricAttention(dim=32, p=p, max_depth=K, packed=True, heads=H)
+            for i in range(512):
+                U2.insert(i, np.random.randn(32))
+            for h in range(H):
+                occ = [float(np.mean(U2._occ[h][d])) for d in range(1, K + 1)]
+                print(f"head {h} occupancy per level:", [round(x, 3) for x in occ])
     except Exception:
         pass
 
