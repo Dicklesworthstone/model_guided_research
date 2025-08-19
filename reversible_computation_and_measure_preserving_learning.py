@@ -146,6 +146,50 @@ def orth_mix(x, h_vec):
     y = reflect(y, v2)
     return y
 
+# Optional Givens mixing with custom JVP (O(1) memory)
+from jax import custom_jvp as _custom_jvp
+
+def _even_odd_pairs(d):
+    m = (d // 2) * 2
+    i = jnp.arange(0, m, 2)
+    j = jnp.arange(1, m, 2)
+    return jnp.stack([i, j], axis=0)  # (2, npairs)
+
+@_custom_jvp
+def givens_mix(x, angles):
+    # x: (..., d), angles: (...,) used repeatedly across disjoint pairs
+    d = x.shape[-1]
+    pairs = _even_odd_pairs(d)
+    npairs = pairs.shape[-1]
+    # Tile/reduce angles to npairs length
+    if angles.ndim == 1:
+        a = jnp.resize(angles, (npairs,))
+    else:
+        a = jnp.resize(angles[..., 0], (npairs,))
+    def body(k, vec):
+        i = pairs[0, k]
+        j = pairs[1, k]
+        theta = a[k]
+        c = jnp.cos(theta)
+        s = jnp.sin(theta)
+        xi = jax.lax.dynamic_slice_in_dim(vec, i, 1, axis=-1)[..., 0]
+        xj = jax.lax.dynamic_slice_in_dim(vec, j, 1, axis=-1)[..., 0]
+        new_i = c * xi - s * xj
+        new_j = s * xi + c * xj
+        vec = jax.lax.dynamic_update_slice_in_dim(vec, new_i[..., None], i, axis=-1)
+        vec = jax.lax.dynamic_update_slice_in_dim(vec, new_j[..., None], j, axis=-1)
+        return vec
+    return jax.lax.fori_loop(0, npairs, body, x)
+
+@givens_mix.defjvp
+def _givens_jvp(primals, tangents):
+    x, angles = primals
+    dx, dangles = tangents
+    y = givens_mix(x, jax.lax.stop_gradient(angles))
+    dy = givens_mix(dx, jax.lax.stop_gradient(angles))  # ignore angle sensitivity for O(1)
+    _ = dangles
+    return y, dy
+
 
 def orth_mix_inverse(x, h_vec):
     """Inverse of orth_mix composed of two reflections: apply in reverse order."""
@@ -216,7 +260,9 @@ def symplectic_leapfrog_step(qp: Array, grad_H_q, grad_H_p, step: float = 0.1) -
 USE_CAYLEY_HYBRID: bool = False
 CAYLEY_O1_GRAD: bool = True  # O(1) memory custom JVP by default for Cayley step
 CAYLEY_ITERS: int = 1
+CAYLEY_INV_ITERS: int = 1
 USE_SYMPLECTIC_HYBRID: bool = False
+USE_GIVENS_MIX: bool = False
 
 
 def set_reversible_cayley(enabled: bool) -> None:
@@ -237,10 +283,18 @@ def set_reversible_cayley_iters(n_iters: int) -> None:
     global CAYLEY_ITERS
     CAYLEY_ITERS = max(1, int(n_iters))
 
+def set_reversible_cayley_inv_iters(n_iters: int) -> None:
+    global CAYLEY_INV_ITERS
+    CAYLEY_INV_ITERS = max(1, int(n_iters))
+
 
 def set_reversible_symplectic(enabled: bool) -> None:
     global USE_SYMPLECTIC_HYBRID
     USE_SYMPLECTIC_HYBRID = bool(enabled)
+
+def set_reversible_givens_mix(enabled: bool) -> None:
+    global USE_GIVENS_MIX
+    USE_GIVENS_MIX = bool(enabled)
 
 
 def _cayley_primal(u2: Array, u1: Array) -> Array:
@@ -286,8 +340,11 @@ def _cayley_apply_o1_jvp(primals, tangents):
 
 
 def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
-    # Apply orthogonal mixing first
-    x = orth_mix(x, p.mix)
+    # Apply mixing first
+    if USE_GIVENS_MIX:
+        x = givens_mix(x, p.mix)
+    else:
+        x = orth_mix(x, p.mix)
     x1, x2 = jnp.split(x, 2, axis=-1)
     u1 = x1
     u2 = x2 + affine_nonlinear(x1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
@@ -345,7 +402,7 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
     x2 = u2 - affine_nonlinear(u1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
     x1 = u1
     x = jnp.concatenate([x1, x2], axis=-1)
-    x = orth_mix_inverse(x, p.mix)
+    x = orth_mix_inverse(x, p.mix) if not USE_GIVENS_MIX else givens_mix(x, -p.mix)
     return x  # type: ignore[no-any-return]
 
 

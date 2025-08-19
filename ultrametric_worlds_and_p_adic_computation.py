@@ -253,13 +253,13 @@ class UltrametricAttention:
         BuckUnpacked = list[dict[tuple[int, ...], list[int]]]
         if self._packed:
             # Packed: per head, per level dict mapping code->list of idx for O(1) access
-            packed: BuckPacked = []
+            packed_buckets: BuckPacked = []
             for _ in range(self._heads):
                 levels: list[dict[int, list[int]]] = []
                 for __ in range(self.max_depth + 1):
                     levels.append(cast(dict[int, list[int]], {}))
-                packed.append(levels)
-            self._buckets: BuckPacked | BuckUnpacked = packed
+                packed_buckets.append(levels)
+            self._buckets: BuckPacked | BuckUnpacked = packed_buckets
         else:
             unpacked: BuckUnpacked = []
             for _ in range(self._heads):
@@ -288,11 +288,13 @@ class UltrametricAttention:
                 code = 0
                 for d in range(1, self.max_depth + 1):
                     code = (code << 1) | int(sig[d - 1])
-                    level = cast(dict[int, list[int]], self._buckets[h][d])
+                    buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+                    level = buckets_p[h][d]
                     level.setdefault(code, []).append(int(idx))
             else:
                 for pref in self._prefixes(sig):
-                    bucket = self._buckets[h].setdefault(pref, [])
+                    buckets_u = cast(list[dict[Tuple[int, ...], list[int]]], self._buckets)
+                    bucket = buckets_u[h].setdefault(pref, [])
                     bucket.append(int(idx))
 
     def attend(self, q, V):
@@ -311,7 +313,8 @@ class UltrametricAttention:
                 code = 0
                 for d in range(self.max_depth, 0, -1):
                     code = (code << 1) | int(sig[d - 1])
-                    level = cast(dict[int, list[int]], self._buckets[h][d]) if d < len(self._buckets[h]) else {}
+                    buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+                    level = buckets_p[h][d] if d < len(buckets_p[h]) else {}
                     lst = level.get(code, [])
                     if lst:
                         candidate_idxs = lst
@@ -319,8 +322,9 @@ class UltrametricAttention:
             else:
                 for d in range(self.max_depth, 0, -1):
                     pref = tuple(int(b) for b in sig[:d])
-                    if pref in self._buckets[h] and self._buckets[h][pref]:
-                        candidate_idxs = self._buckets[h][pref]
+                    buckets_u = cast(list[dict[Tuple[int, ...], list[int]]], self._buckets)
+                    if pref in buckets_u[h] and buckets_u[h][pref]:
+                        candidate_idxs = buckets_u[h][pref]
                         break
             if not candidate_idxs:
                 candidate_idxs = list(self._key_vec.keys())
