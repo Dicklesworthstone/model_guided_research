@@ -909,6 +909,23 @@ def demo():
     curv_mean_def = float(jnp.mean(dbg[0]["curvature_proxy"]))
     print("Curvature mean default:", f"{curv_mean_def:.4f}")
     print("Curvature mean BCH-aware (even commuting):", f"{curv_mean_comm:.4f}")
+    # Curvature/comm summary table per block
+    try:
+        from rich.console import Console as _Console
+        from rich.table import Table as _Table
+        sumtbl = _Table(title="Per-block Curvature/Comm Summary", show_header=True, header_style="bold magenta")
+        sumtbl.add_column("Block")
+        sumtbl.add_column("curv_mean", justify="right")
+        sumtbl.add_column("so_spd", justify="right")
+        sumtbl.add_column("so_sp", justify="right")
+        sumtbl.add_column("spd_sp", justify="right")
+        for bi, b in enumerate(dbg):
+            curv_b = float(jnp.mean(b["curvature_proxy"]))
+            cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
+            sumtbl.add_row(str(bi), f"{curv_b:.3e}", f"{float(cm.get('so_spd',0.0)):.3e}", f"{float(cm.get('so_sp',0.0)):.3e}", f"{float(cm.get('spd_sp',0.0)):.3e}")
+        _Console().print(sumtbl)
+    except Exception:
+        pass
 
     # Alternate structured/unstructured: zero out generators on odd blocks (env GAUGE_ALT_STRUCT=1)
     if os.environ.get("GAUGE_ALT_STRUCT", "0") == "1":
@@ -951,6 +968,15 @@ def demo():
             "curvature_mean_default": float(curv_mean_def),
             "curvature_mean_commuting": float(curv_mean_comm),
             "sampling_smoothness_var_mean": float(var_mean) if ('var_mean' in locals()) else None,
+            "per_block_curv_comm": [
+                {
+                    "block": int(bi),
+                    "curv_mean": float(jnp.mean(b["curvature_proxy"])) ,
+                    "so_spd": float(b.get("comm_norms", {}).get("so_spd", 0.0)) if isinstance(b, dict) else 0.0,
+                    "so_sp": float(b.get("comm_norms", {}).get("so_sp", 0.0)) if isinstance(b, dict) else 0.0,
+                    "spd_sp": float(b.get("comm_norms", {}).get("spd_sp", 0.0)) if isinstance(b, dict) else 0.0,
+                } for bi, b in enumerate(dbg)
+            ],
         }
     except Exception:
         pass

@@ -31,6 +31,7 @@ tmm (tropical GEMM), T2 block, tropical pooling/classifier, hinge loss, route ex
 length‑generalization dataset (“pivot amid crowd”) where max–plus attention is trivially length‑invariant.
 """
 
+import os
 from dataclasses import dataclass
 from functools import partial
 
@@ -319,6 +320,28 @@ def run():
         jnp.array([jnp.inf]),
     )
     print("median margin:", float(jnp.median(cert)))
+
+    # Optional: sparse mixtures of tropical polynomials (param-efficient)
+    mix_rows = []
+    if int(os.environ.get("TROP_SPARSE_MIX", "0")):
+        k_sparse = int(os.environ.get("TROP_SPARSE_K", "4"))
+        lam = float(os.environ.get("TROP_SPARSE_LAMBDA", "0.5"))
+        # Build a sparse mask over classifier weights per class
+        mask = jnp.zeros_like(params.Wcls)
+        for c in range(cfg.C):
+            idx = jax.random.permutation(jax.random.PRNGKey(42 + c), cfg.d)[:k_sparse]
+            mask = mask.at[c, idx].set(1.0)
+        # Apply mixture at test time
+        def forward_sparse(p, X):
+            y0 = forward(p, X, cfg_test)
+            p_mix = Params(p.WQ, p.WK, p.WV, p.Wcls + lam * mask)
+            y1 = forward(p_mix, X, cfg_test)
+            return y0, y1
+        Y0, Y1 = jax.vmap(lambda x: forward_sparse(params, x))(Xte)
+        acc0 = float(jnp.mean((predict(Y0) == yte).astype(jnp.float32)))
+        acc1 = float(jnp.mean((predict(Y1) == yte).astype(jnp.float32)))
+        print(f"sparse mix (k={k_sparse}, lam={lam}): acc0={acc0:.3f} acc1={acc1:.3f}")
+        mix_rows.append({"k": k_sparse, "lambda": lam, "acc0": acc0, "acc1": acc1})
     # Route-level certificates: min runner-up margins along predicted routes for a small batch
     from rich.console import Console as _Console
     from rich.table import Table as _Table
@@ -346,6 +369,7 @@ def run():
             "route_certs": rows,
             "min_gap_over_2": float(min(gaps) / 2.0),
             "median_margin": float(jnp.median(cert)),
+            "sparse_mix": mix_rows,
         }
     except Exception:
         pass

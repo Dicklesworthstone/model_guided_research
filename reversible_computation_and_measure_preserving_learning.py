@@ -1000,6 +1000,51 @@ def demo():
                 inv.add_row("||S^T J S−J||_F", f"{float(jnp.linalg.norm(S.T @ J @ S - J)):.2e}")
         from rich.console import Console as _Console
         _Console().print(inv)
+
+    # Per-layer property checkers table (mix norm proxy, Cayley proxy, symplectic proxy)
+    if config.use_rich_output:
+        from rich.table import Table as _Table
+        tbl = _Table(title="Per-layer Property Checks", show_header=True, header_style="bold magenta")
+        tbl.add_column("Layer")
+        tbl.add_column("mix_norm_err", justify="right")
+        tbl.add_column("cayley_proxy", justify="right")
+        tbl.add_column("symp_proxy", justify="right")
+        # Sample-based proxies for readability and speed
+        k_local = key(123)
+        for i, b in enumerate(m.blocks):
+            # Mix norm error: average relative | ||x|| - ||M(x)|| |
+            vx = jax.random.normal(k_local, (8, d), dtype=jnp.float32)
+            if USE_GIVENS_MIX:
+                mv = givens_mix(vx, b.coup.mix)
+            else:
+                mv = orth_mix(vx, b.coup.mix)
+            mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
+            # Cayley proxy (reusing approach above)
+            u2 = jax.random.normal(k_local, (2, d_a), dtype=jnp.float32)
+            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
+            v = jnp.roll(u, 1, axis=-1)
+            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+            def S_apply(xv, u=u, v=v):
+                a = jnp.sum(v * xv, axis=-1, keepdims=True)
+                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
+                return u * a - v * b_
+            yv = jax.random.normal(k_local, (2, d_a), dtype=jnp.float32)
+            Qy = yv + S_apply(yv)
+            cayley_err = float(jnp.mean(jnp.linalg.norm(Qy - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+            # Symplectic proxy (constant per demo if enabled)
+            symp_err = 0.0
+            if USE_SYMPLECTIC_HYBRID:
+                n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
+                if n > 0:
+                    Z = jnp.zeros((n, n))
+                    eye_n = jnp.eye(n)
+                    J = jnp.block([[Z, eye_n], [-eye_n, Z]])
+                    Hs = jnp.eye(2 * n) * 0.1
+                    Smap = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
+                    symp_err = float(jnp.linalg.norm(Smap.T @ J @ Smap - J))
+            tbl.add_row(str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}")
+        from rich.console import Console as _Console
+        _Console().print(tbl)
         # ASCII sparklines for aggregated trends
         def spark(vals):
             bars = "▁▂▃▄▅▆▇█"

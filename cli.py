@@ -173,6 +173,11 @@ def run(
         "--rev-symplectic",
         help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)"
     )] = False,
+    rev_inv_iters: Annotated[int, typer.Option(
+        "--rev-inv-iters",
+        help="Inverse fixed-point iteration count for Cayley inverse",
+        min=1
+    )] = 1,
     rev_pareto: Annotated[bool, typer.Option(
         "--rev-pareto",
         help="Run a small Cayley-iterations Pareto sweep (time vs memory)"
@@ -302,7 +307,7 @@ def run(
                 console.print(t)
                 artifacts["certificates"]["simplicial_hodge_coeffs"] = [float(c) for c in coeff]
 
-            if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid):
+            if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid or (rev_inv_iters != 1)):
                 import numpy as _np
 
                 from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
@@ -351,6 +356,12 @@ def run(
                 if rev_pareto:
                     import os as _os
                     _os.environ["REV_PARETO"] = "1"
+                if rev_inv_iters and rev_inv_iters != 1:
+                    try:
+                        import os as _os
+                        _os.environ["REV_INV_ITERS"] = str(int(rev_inv_iters))
+                    except Exception:
+                        pass
                 if rev_symp_hybrid:
                     try:
                         from reversible_computation_and_measure_preserving_learning import set_reversible_symplectic

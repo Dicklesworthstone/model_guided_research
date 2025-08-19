@@ -367,6 +367,11 @@ class UltrametricAttention:
             sims.append(best_sim)
         # Aggregate heads: average selected values (could also pick best across heads)
         out = np.mean([V[int(j)] for j in picks], axis=0)
+        # Store head sims for variance reporting
+        try:
+            self.last_head_sims = sims  # type: ignore[attr-defined]
+        except Exception:
+            pass
         return _np.asarray(out)
 
 
@@ -544,7 +549,8 @@ def demo():
             q = np.random.randn(dim)
             _ = U.attend(q, vals)
             t2 = _time.perf_counter()
-            print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms")
+            var_heads = np.var(np.array(getattr(U, 'last_head_sims', [0.0])), ddof=1) if hasattr(U, 'last_head_sims') else 0.0
+            print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms | head var {var_heads:.3e}")
         # Occupancy summary per level when array-packed
         if bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
             p, K, H = 5, 12, 2
