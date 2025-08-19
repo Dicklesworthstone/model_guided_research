@@ -326,7 +326,7 @@ class FractalKV:
             cfg_new = FractalKVConfig(d_val=cfg_old.d_val, m=cfg_old.m, k=cfg_old.k, s=new_s, dtype=cfg_old.dtype)
             self.__init__(cfg_new)
 
-    def maybe_expand_depth(self, util_threshold: float = 0.7) -> "FractalKV":
+    def maybe_expand_depth(self, util_threshold: float = 0.7) -> FractalKV:
         diag = self.diagnostics()
         if diag["utilization"] > util_threshold:
             return self.reindex_increase_depth()
@@ -340,12 +340,13 @@ def _hashed_paths_for_vectors(V: Array, m: int, k: int, seed: int = 123) -> Arra
     sig = (V @ proj) > 0
     # Fold to integer and then to base-m digits
     idxs = []
+    mod_val = int(m) ** int(k)
     for row in np.asarray(sig):
         code = 0
         for i, b in enumerate(row.tolist()):
             if b:
                 code += (1 << i)
-        idxs.append(code % (m ** k))
+        idxs.append(code % mod_val)
     idxs = jnp.array(idxs, dtype=jnp.int32)
     digs = []
     for code in idxs.tolist():

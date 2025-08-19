@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -40,7 +41,6 @@ import numpy as np
 import optax
 from flax import linen as nn
 from jax import Array, lax
-import os
 
 # Compatibility alias for tests that refer to np.math.factorial
 try:
@@ -749,7 +749,7 @@ def demo():
     dh2 = dh if (dh % 2 == 0) else dh - 1
     if dh2 >= 4:
         # Build small skew, symmetric, and Hamiltonian generators
-        v = jax.random.normal(key, (dh2,))
+        jax.random.normal(key, (dh2,))
         skew = jnp.zeros((dh2, dh2))
         skew = skew.at[jnp.triu_indices(dh2, 1)].set(0.1)
         skew = skew - skew.T
@@ -757,9 +757,9 @@ def demo():
         Hsym = jnp.diag(jnp.linspace(0.1, 0.3, dh2 // 2))
         A = jnp.block([[Hsym, jnp.zeros_like(Hsym)], [jnp.zeros_like(Hsym), Hsym]])
         # Exponentiate
-        Q = cayley_orthogonal_from_skew(skew)
-        S = spd_from_symmetric(sym)
-        Sp = symplectic_cayley(A)
+        cayley_orthogonal_from_skew(skew)
+        spd_from_symmetric(sym)
+        symplectic_cayley(A)
         # BCH proxy: measure commutator norms
         def comm_norm(X, Y):
             return float(jnp.linalg.norm(X @ Y - Y @ X))

@@ -43,10 +43,10 @@ else:
     Array = Any
 
 import jax
-from jax import custom_jvp
 import jax.numpy as jnp
 import numpy as np
 import optax
+from jax import custom_jvp
 
 key = jax.random.PRNGKey
 
@@ -825,7 +825,7 @@ def demo():
         t.add_column("||Q^T Q − I||_F", justify="right")
         # Probe with a small random batch
         probe = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
-        for i, b in enumerate(m.blocks):
+        for i, _b in enumerate(m.blocks):
             # Build S from a random u2 probe and compute Cayley Q on one slice
             u2 = probe
             u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
@@ -839,7 +839,7 @@ def demo():
             # Build Qy ≈ y + S(y)
             yv = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
             Qy = yv + S_apply(yv)
-            I = jnp.eye(d_a)
+            jnp.eye(d_a)
             # Compute err per slice
             # Use a proxy by sampling vectors rather than forming Q explicitly
             # err ≈ ||(Q^T Q y - y)|| / ||y|| averaged
@@ -856,6 +856,7 @@ def demo():
     if _os.environ.get("REV_PARETO", "0") == "1":
         import time
         import tracemalloc
+
         from rich.table import Table as _Table
         t = _Table(title="Cayley Iterations Pareto (smaller mem better)", show_header=True, header_style="bold magenta")
         t.add_column("iters")

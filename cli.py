@@ -160,6 +160,15 @@ def run(
         "--rev-cayley",
         help="Demonstrate Cayley orthogonal property check (skew → orthogonal)"
     )] = False,
+    rev_cayley_o1: Annotated[bool, typer.Option(
+        "--rev-cayley-o1/--no-rev-cayley-o1",
+        help="Use O(1)-memory custom gradient for Cayley step (default on)"
+    )] = True,
+    rev_cayley_iters: Annotated[int, typer.Option(
+        "--rev-cayley-iters",
+        help="Cayley fixed-point iterations (trade compute for accuracy)",
+        min=1
+    )] = 1,
     rev_symplectic: Annotated[bool, typer.Option(
         "--rev-symplectic",
         help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)"
@@ -171,6 +180,10 @@ def run(
     rev_symp_hybrid: Annotated[bool, typer.Option(
         "--rev-symplectic-hybrid",
         help="Enable a symplectic leapfrog step inside coupling (hybrid)"
+    )] = False,
+    gauge_structured: Annotated[bool, typer.Option(
+        "--gauge-structured",
+        help="Enable structured SO/SPD/Sp channel blocks in matrix-gauge demo"
     )] = False,
     export_json: Annotated[Path | None, typer.Option(
         "--export-json",
@@ -211,6 +224,9 @@ def run(
     if ultra_packed:
         import os as _os
         _os.environ["ULTRA_PACKED"] = "1"
+    if gauge_structured:
+        import os as _os
+        _os.environ["GAUGE_STRUCTURED"] = "1"
 
     if demo_name not in DEMOS:
         console.print(f"[bold red]Error:[/bold red] Demo '{demo_name}' not found")
@@ -289,6 +305,19 @@ def run(
                 from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
                 # Cayley orthogonal check
                 if rev_cayley:
+                    try:
+                        from reversible_computation_and_measure_preserving_learning import (
+                            set_reversible_cayley,
+                            set_reversible_cayley_o1,
+                            set_reversible_cayley_iters,
+                        )
+                        set_reversible_cayley(True)
+                        set_reversible_cayley_o1(bool(rev_cayley_o1))
+                        set_reversible_cayley_iters(int(rev_cayley_iters))
+                        import os as _os
+                        _os.environ["REV_LAYER_CERT"] = "1"
+                    except Exception:
+                        pass
                     M = _np.random.randn(16, 16)
                     A = 0.1 * (M - M.T)  # skew
                     import jax.numpy as _jnp
@@ -641,16 +670,3 @@ def eval(
         with export_json.open("w") as f:
             json.dump({"results": payload}, f, indent=2)
         console.print(f"[dim]Wrote suite JSON to {export_json}[/dim]")
-            if demo_name == "simplicial" and simplicial_signed:
-                from simplicial_complexes_and_higher_order_attention import demo_signed_attention
-                demo_signed_attention()
-
-            if demo_name == "reversible" and rev_cayley:
-                # enable hybrid in reversible model for the main demo run
-                try:
-                    from reversible_computation_and_measure_preserving_learning import set_reversible_cayley
-                    set_reversible_cayley(True)
-                    import os as _os
-                    _os.environ["REV_LAYER_CERT"] = "1"
-                except Exception:
-                    pass

@@ -490,7 +490,8 @@ if __name__ == "__main__":
 
 def p_adic_encode(n: int, p: int, precision: int) -> np.ndarray:
     """Encode integer n modulo p^precision as base‑p digits least significant first."""
-    n_mod = n % (p ** precision)
+    p_pow = p ** precision
+    n_mod = n % p_pow
     digits = []
     for _ in range(precision):
         digits.append(n_mod % p)
