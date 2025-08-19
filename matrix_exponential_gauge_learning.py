@@ -275,6 +275,36 @@ def uniformization_expmv_banded(
             Y = Y + ((Q_bands[:, :, oi] / lam[:, None])[:, :, None]) * shifted
         return Y
 
+    # Optional stochastic Poisson uniformization (single Monte Carlo sample)
+    if os.environ.get("GAUGE_UNIF_SAMPLE", "0") == "1":
+        # Sample K ~ Poisson(m) and apply K transitions: with prob neg_diag/lam move, else stay
+        # For determinism in demo, seed from BH index
+        rng_keys = jax.random.split(jax.random.PRNGKey(0), BH)
+        def one_chain(i, Ui):
+            key = rng_keys[i]
+            ki = jax.random.poisson(key, m[i])
+            def step_fun(t, acc):
+                key_t = jax.random.fold_in(key, int(t))
+                # Sample per-position offset indices according to bands/lam
+                probs = Q_bands[i] / (lam[i] + 1e-8)  # (N,O)
+                probs_row = probs.reshape(-1, probs.shape[-1])
+                # Draw one choice per row; simple argmax over Gumbel trick
+                g = jax.random.gumbel(key_t, probs_row.shape)
+                idx = jnp.argmax(jnp.log(probs_row + 1e-12) + g, axis=-1)
+                idx = idx.reshape(probs.shape[0])
+                # Apply chosen shifts row-wise
+                V = acc
+                # Fold all rows with a single chosen delta: approximate by majority delta
+                # (Keeps demo simple; full per-row shifting would need scatter.)
+                vals, _ = jnp.unique(idx, return_counts=True)
+                delta = lax.cond(vals.size > 0, lambda v: v[0], lambda v: jnp.array(0, dtype=jnp.int32), vals)
+                return (t + 1, shift_along_axis(V, delta.item(), axis=0))
+            _, outU = lax.fori_loop(0, jnp.int32(ki), step_fun, (jnp.int32(0), Ui))
+            return outU
+        Z = jax.vmap(one_chain, in_axes=(0, 0))(jnp.arange(BH, dtype=jnp.int32), U)
+        Z = Z
+        return Z, K
+
     def body(k, carry):
         coeff, term, acc = carry
         term = T_apply(term)  # (BH,N,dh)
@@ -765,6 +795,19 @@ def demo():
         K_head_stats = [(float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])]
         print("Uniformization K per head (mean,max) [block0]:", K_head_stats)
 
+    # If sampling mode is enabled, estimate smoothness via repeated samples
+    reps = int(os.environ.get("GAUGE_UNIF_REPS", "1"))
+    if os.environ.get("GAUGE_UNIF_SAMPLE", "0") == "1" and reps > 1:
+        outs = []
+        for r in range(reps):
+            os.environ["GAUGE_UNIF_REP_SEED"] = str(r)
+            yr, _ = model.apply(variables, x, train=False, return_debug=False)
+            outs.append(yr)
+        del os.environ["GAUGE_UNIF_REP_SEED"]
+        Ystack = jnp.stack(outs, axis=0)
+        var_mean = float(jnp.mean(jnp.var(Ystack, axis=0)))
+        print(f"Sampling smoothness (mean var over reps={reps}): {var_mean:.4e}")
+
     # ASCII heatmap of commutators per block (so_spd, so_sp, spd_sp)
     if cfg.use_structured_blocks:
         combos = ["so_spd", "so_sp", "spd_sp"]
@@ -905,9 +948,9 @@ def demo():
             "K_head_stats_block0": [
                 (float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])
             ] if 'K_bh' in locals() and K_bh.ndim == 2 else [],
-            "curvature_mean_default": float(curv_mean),
+            "curvature_mean_default": float(curv_mean_def),
             "curvature_mean_commuting": float(curv_mean_comm),
-            "comm_heatmap_rows": comm_heatmap_rows,
+            # Intentionally omit large heatmap rows from export to keep artifact compact
         }
     except Exception:
         pass

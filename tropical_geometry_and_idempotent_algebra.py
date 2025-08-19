@@ -333,7 +333,7 @@ def run():
         y_i = yhat[i]
         c = int(jnp.argmax(y_i))
         r = route_single(params, Xte[i], cfg_test, c)
-        g = float(r["margin"]) 
+        g = float(r["margin"])
         gaps.append(g)
         tbl.add_row(str(i), str(c), f"{g:.4f}")
         rows.append({"idx": int(i), "pred": int(c), "route_min_gap": g})

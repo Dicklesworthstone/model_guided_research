@@ -293,7 +293,7 @@ class UltrametricAttention:
                     level.setdefault(code, []).append(int(idx))
             else:
                 for pref in self._prefixes(sig):
-                    buckets_u = cast(list[dict[Tuple[int, ...], list[int]]], self._buckets)
+                    buckets_u = cast(list[dict[tuple[int, ...], list[int]]], self._buckets)
                     bucket = buckets_u[h].setdefault(pref, [])
                     bucket.append(int(idx))
 
@@ -322,7 +322,7 @@ class UltrametricAttention:
             else:
                 for d in range(self.max_depth, 0, -1):
                     pref = tuple(int(b) for b in sig[:d])
-                    buckets_u = cast(list[dict[Tuple[int, ...], list[int]]], self._buckets)
+                    buckets_u = cast(list[dict[tuple[int, ...], list[int]]], self._buckets)
                     if pref in buckets_u[h] and buckets_u[h][pref]:
                         candidate_idxs = buckets_u[h][pref]
                         break

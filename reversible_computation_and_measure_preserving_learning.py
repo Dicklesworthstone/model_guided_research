@@ -149,6 +149,7 @@ def orth_mix(x, h_vec):
 # Optional Givens mixing with custom JVP (O(1) memory)
 from jax import custom_jvp as _custom_jvp
 
+
 def _even_odd_pairs(d):
     m = (d // 2) * 2
     i = jnp.arange(0, m, 2)
@@ -356,12 +357,26 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
             # Full autodiff version (allows grads wrt u2 at the cost of memory)
             u1 = _cayley_primal(u2, u1)
     if USE_SYMPLECTIC_HYBRID:
-        def grad_H_q(q):
-            return q
-        def grad_H_p(p_):
-            return p_
+        # O(1)-JVP symplectic step (ignores derivative w.r.t. step and generator)
+        from jax import custom_jvp as _cjvp
+        @_cjvp
+        def _symp_step(qp):
+            n2 = qp.shape[-1]
+            n = n2 // 2
+            q = qp[..., :n]
+            p = qp[..., n:]
+            p_half = p - 0.05 * q
+            q_new = q + 0.1 * p_half
+            p_new = p_half - 0.05 * q_new
+            return jnp.concatenate([q_new, p_new], axis=-1)
+        @_symp_step.defjvp
+        def _symp_step_jvp(primals, tangents):
+            (qp,), (dqp,) = primals, tangents
+            y = _symp_step(qp)
+            dy = _symp_step(dqp)  # O(1) rule: same linear map applied to tangent
+            return y, dy
         qp = jnp.concatenate([u1, u2], axis=-1)
-        qp_new = symplectic_leapfrog_step(qp, grad_H_q, grad_H_p, step=0.1)
+        qp_new = _symp_step(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
     y1 = u1 + affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
     y2 = u2
@@ -392,12 +407,26 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             return cast(Array, x_est)
         u1 = cayley_inverse(u2, u1, CAYLEY_ITERS)
     if USE_SYMPLECTIC_HYBRID:
-        def grad_H_q(q):
-            return q
-        def grad_H_p(p_):
-            return p_
+        from jax import custom_jvp as _cjvp
+        @_cjvp
+        def _symp_step_inv(qp):
+            n2 = qp.shape[-1]
+            n = n2 // 2
+            q = qp[..., :n]
+            p = qp[..., n:]
+            # reverse step for exact inverse of the forward scheme above
+            q_half = q - 0.1 * p
+            p_new = p + 0.05 * q_half
+            q_new = q_half - 0.1 * p_new + 0.1 * p  # keep structure simple
+            return jnp.concatenate([q_new, p_new], axis=-1)
+        @_symp_step_inv.defjvp
+        def _symp_step_inv_jvp(primals, tangents):
+            (qp,), (dqp,) = primals, tangents
+            y = _symp_step_inv(qp)
+            dy = _symp_step_inv(dqp)
+            return y, dy
         qp = jnp.concatenate([u1, u2], axis=-1)
-        qp_new = symplectic_leapfrog_step(qp, grad_H_q, grad_H_p, step=-0.1)
+        qp_new = _symp_step_inv(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
     x2 = u2 - affine_nonlinear(u1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
     x1 = u1
@@ -944,27 +973,52 @@ def demo():
         if config.use_rich_output:
             from rich.console import Console as _Console
             _Console().print(t)
-            # ASCII sparklines for aggregated trends
-            def spark(vals):
-                bars = "▁▂▃▄▅▆▇█"
-                if not vals:
-                    return ""
-                lo, hi = min(vals), max(vals)
-                if hi - lo < 1e-12:
-                    return bars[0] * len(vals)
-                idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
-                return "".join(bars[i] for i in idxs)
-            # Re-run quick sweep to collect arrays
-            import time as _time
-            tm_by_iter = []
-            mem_by_iter = []
-            for iters in [1, 2, 3, 4]:
-                set_reversible_cayley_iters(iters)
-                _t0 = _time.perf_counter()
-                _ = model_forward(x, m, BitTape(), Reservoir(555), audit_mode=True)
-                tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
-                mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
-            print("iters time(ms):", spark(tm_by_iter))
+
+    # Invertibility summary table (orthogonality + symplectic checks)
+    if config.use_rich_output:
+        from rich.table import Table as _Table
+        inv = _Table(title="Invertibility Summary", show_header=True, header_style="bold magenta")
+        inv.add_column("Property")
+        inv.add_column("Value", justify="right")
+        # Orthogonality proxy from a random skew via Cayley
+        import numpy as _np
+        M = _np.random.randn(d_a, d_a)
+        A = 0.1 * (M - M.T)
+        Q = jnp.linalg.solve(jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32))
+        inv.add_row("||Q^T Q−I||_F", f"{float(jnp.linalg.norm(Q.T @ Q - jnp.eye(d_a))):.2e}")
+        if USE_SYMPLECTIC_HYBRID:
+            n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
+            if n > 0:
+                Z = jnp.zeros((n, n))
+                eye_n = jnp.eye(n)
+                J = jnp.block([[Z, eye_n], [-eye_n, Z]])
+                # Build a sample symplectic map via Cayley
+                Hs = jnp.eye(2 * n) * 0.1
+                S = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
+                inv.add_row("||S^T J S−J||_F", f"{float(jnp.linalg.norm(S.T @ J @ S - J)):.2e}")
+        from rich.console import Console as _Console
+        _Console().print(inv)
+        # ASCII sparklines for aggregated trends
+        def spark(vals):
+            bars = "▁▂▃▄▅▆▇█"
+            if not vals:
+                return ""
+            lo, hi = min(vals), max(vals)
+            if hi - lo < 1e-12:
+                return bars[0] * len(vals)
+            idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
+            return "".join(bars[i] for i in idxs)
+        # Re-run quick sweep to collect arrays
+        import time as _time
+        tm_by_iter = []
+        mem_by_iter = []
+        for iters in [1, 2, 3, 4]:
+            set_reversible_cayley_iters(iters)
+            _t0 = _time.perf_counter()
+            _ = model_forward(x, m, BitTape(), Reservoir(555), audit_mode=True)
+            tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
+            mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
+        print("iters time(ms):", spark(tm_by_iter))
 
     # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":

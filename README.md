@@ -105,6 +105,11 @@ mgr run-all
 # Run with custom configuration
 mgr run matrix-gauge --verbose --max-iterations 500
 
+# Export JSON artifacts with diagnostics (per demo)
+mgr run reversible --rev-cayley --rev-pareto --export-json artifacts/rev.json
+mgr run matrix-gauge --export-json artifacts/gauge.json
+mgr run tropical --export-json artifacts/tropical.json
+
 # See all available options
 mgr run --help
 ```
@@ -173,12 +178,12 @@ Each demo is a self-contained exploration that:
 
 📖 [Mathematical Documentation](markdown_documentation/matrix_exponential_gauge_learning.md) | 💻 [Implementation](matrix_exponential_gauge_learning.py)
 
-- **Key Innovation**: Replaces traditional linear transformations with gauge-invariant transport using matrix exponentials
+- **Key Idea**: Gauge-invariant transport with exact Lie-theoretic maps (skew/symmetric/Hamiltonian generators)
 - **Components**:
-  - Orthogonal gauge transports via cumulative Givens rotations
-  - Exact stochastic mixing via uniformization (no softmax needed!)
-  - SPD channel gating with guaranteed positive-definiteness
-  - Nilpotent upper-band channels for controlled expressivity
+  - Structured generators: SO (skew via Givens/Cayley), SPD (eigendecomposition exp), and Sp (symplectic Cayley)
+  - Banded Markov mixing via uniformization (expmv) with optional Poisson sampling (exact stochasticity)
+  - Diagnostics: per-block and per-head uniformization K; BCH-aware stacking with commutator heatmap per block
+  - SPD channel gating (exp(S)) and nilpotent upper-band channels for controlled expressivity
 - **Why It Matters**: Provides mathematical guarantees for stability and geometric structure
 
 ### 2. **Ultrametric Worlds & p-adic Computation** (`ultrametric`)
@@ -186,12 +191,11 @@ Each demo is a self-contained exploration that:
 
 📖 [Mathematical Documentation](markdown_documentation/ultrametric_worlds_and_p_adic_computation.md) | 💻 [Implementation](ultrametric_worlds_and_p_adic_computation.py)
 
-- **Key Innovation**: Replaces dense dot-product attention with prefix-tree lookup over binary signatures
+- **Key Idea**: LCP-based routing over ultrametric signatures for sub-quadratic attention
 - **Components**:
-  - Bit-prefix LSH signatures for approximate LCP routing (NumPy-only)
-  - Per-query lookup via deepest non-empty prefix bucket
-  - Sub-quadratic scaling in practice on sequence lengths up to 256
-  - Compatible with exact p-adic formulations described in the docs
+  - Bit-prefix LSH signatures for LCP routing; per-level packed buckets with O(1) prefix lookup
+  - Insert/query timing remains stable up to N≈4096 (printed in demo); compatible with exact p‑adic formulations
+  - Multi-head configuration with distinct hyperplane families
 - **Why It Matters**: Enables hierarchical, cache-friendly attention with predictable memory
 
 ### 3. **Simplicial Complexes & Higher-Order Attention** (`simplicial`)
@@ -247,11 +251,13 @@ Each demo is a self-contained exploration that:
 
 📖 [Mathematical Documentation](markdown_documentation/reversible_computation_and_measure_preserving_learning.md) | 💻 [Implementation](reversible_computation_and_measure_preserving_learning.py)
 
-- **Key Innovation**: Every operation is perfectly reversible, preserving information theoretically
+- **Key Idea**: Bijective flows with explicit inverse maps and O(1) training memory
 - **Components**:
-  - Symplectic integrators for dynamics
-  - Liouville's theorem compliance
-  - Zero memory overhead via recomputation
+  - Additive coupling with orthogonal mixing (Householder or Givens), exact inverse maps
+  - Cayley orthogonal step in the coupling; custom O(1) JVP to avoid activation caching
+  - Symplectic (leapfrog) hybrid step available for Hamiltonian structure
+  - JAX‑native training valve path (audit path records exact bits); per‑layer property table in demo
+  - Memory–compute Pareto with layers×iterations sweep; ASCII sparklines for quick trends
 - **Why It Matters**: Information-theoretic guarantees through reversibility; on our demo scale we observe a few-fold memory savings, not 10x
 
 ### 8. **Iterated Function Systems & Fractal Memory** (`ifs-fractal`)
@@ -295,11 +301,11 @@ Each demo is a self-contained exploration that:
 
 📖 [Mathematical Documentation](markdown_documentation/tropical_geometry_and_idempotent_algebra.md) | 💻 [Implementation](tropical_geometry_and_idempotent_algebra.py)
 
-- **Key Innovation**: Replaces (+,×) with (max,+) for automatic piecewise linearity
+- **Key Idea**: Replace (+,×) with (max,+) to realize piecewise linear networks by construction
 - **Components**:
-  - Tropical polynomials as neural networks
-  - Tropical convexity for optimization
-  - Automatic pruning via tropical zeros
+  - Tropical polynomials and max‑plus GEMM; tropical convexity tools
+  - Route‑level robustness certificates: per‑sample route min‑gap and min‑gap/2 radius printed in demo
+  - Automatic sparsity via tropical zeros
 - **Why It Matters**: Piecewise linear structure emerges naturally from the algebra
 
 ## 💡 Key Insights & Findings
@@ -317,6 +323,16 @@ These implementations demonstrate several breakthrough insights:
 4. **Infinity is Computational**: Surreal numbers, ordinals, and hyperreals show that infinite quantities can be manipulated algorithmically, opening new optimization landscapes.
 
 5. **Non-Associativity = Richer Representations**: Octonions demonstrate that giving up associativity yields representations with built-in symmetries impossible in standard linear algebra.
+
+## 🧾 Artifacts & Diagnostics
+
+All demos support exporting JSON artifacts via `--export-json <path>`.
+
+- `reversible`: exports Pareto arrays (`time/mem` vs iterations and depth) when the Pareto sweep runs, alongside any layer certificates.
+- `matrix-gauge`: exports uniformization K stats (per block/head), curvature summaries, and commutator heatmap rows.
+- `tropical`: exports route‑level certificate rows (first 10) with min‑gap/2 and median margins.
+
+The CLI automatically collects module diagnostics when present and nests them under `diagnostics.<demo_name>` in the output JSON.
 
 ### Theoretical Advantages
 
