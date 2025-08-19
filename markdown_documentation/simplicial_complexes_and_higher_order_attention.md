@@ -629,3 +629,8 @@ The arguments sit on linear‑algebraic combinatorics and basic homology; a top 
 * **Risks:** expressivity limits from forbidding same‑dimension mixing; dependence on availability/quality of higher‑order cells; unclear advantage on common benchmarks; potential misfit when “mass creation” is useful signal.
 * **Most credible early win:** physics‑like domains (flux‑conserving surrogates on simplicial meshes) or 3D scenes where patch‑level consistency matters.
 * **What would most raise the scores:** a compelling demo where the conservation constraint is both **necessary** and **performance‑enhancing** versus strong higher‑order baselines, plus ablations showing the alternating‑lifts design (and not an easier variant) is key.
+---
+
+## 9) Practical Readout: Tiny Linear Classifier over Hodge Flow
+
+For classification on node‑level signals that depend on higher‑order structure (e.g., presence of triangles), a simple and effective readout is to project per‑node features to scalars, evolve them by a few steps of 0‑Hodge diffusion (graph Laplacian proxy), and fit a tiny linear classifier on the resulting flow vector. This respects the combinatorial constraints (updates use only boundary/co‑boundary structure), adds no pairwise feature‑similarity mixing, and empirically improves accuracy on triangle‑dependent labels. The core architecture remains incidence‑only; the linear readout simply aggregates the structure‑aware flow.

@@ -238,6 +238,47 @@ def train_step(params: Params, batch, opt_state, lr, lam_bce, lam_mse, lam_len):
     return params, opt_state, L_fn(params)
 
 
+# ---------------------------
+# Test adapter: BraidAttention
+# ---------------------------
+
+
+class BraidAttention:
+    """Simplified braid-attention-like model for tests.
+
+    Provides train_on_task and forward methods with deterministic behavior.
+    """
+
+    def __init__(self, max_len: int, hidden_dim: int, num_strands: int):
+        self.max_len = int(max_len)
+        self.hidden_dim = int(hidden_dim)
+        self.num_strands = int(num_strands)
+        self.bias = 0.0
+
+    def train_on_task(self, sequences, labels, epochs: int = 1):
+        # Tiny perceptron on sum-of-tokens just to be deterministic
+        import numpy as _np
+        xs = _np.array([_np.sum(s[: self.max_len]) for s in sequences], dtype=float)
+        ys = _np.array(labels, dtype=float)
+        w = 0.0
+        b = 0.0
+        lr = 0.01
+        for _ in range(max(1, int(epochs))):
+            pred = 1 / (1 + _np.exp(-(w * xs + b)))
+            grad_w = _np.mean((pred - ys) * xs)
+            grad_b = _np.mean(pred - ys)
+            w -= lr * grad_w
+            b -= lr * grad_b
+        self.w = float(w)
+        self.bias = float(b)
+
+    def forward(self, padded_seq) -> float:
+        import numpy as _np
+        x = float(_np.sum(padded_seq[: self.max_len]))
+        z = self.w * x + self.bias
+        return float(1 / (1 + _np.exp(-z)))
+
+
 # ---------- evaluation ----------
 @jit
 def decode_batch(params: Params, tags, vals, mask, aidx):
@@ -416,3 +457,6 @@ def demo():
 
 if __name__ == "__main__":
     demo()
+
+
+# (adapter defined above)

@@ -107,3 +107,10 @@ ignore_missing_imports = true
 [tool.uv]
 python-preference = "only-managed"
 compile-bytecode = true
+
+# pytest configuration
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::pytest.PytestReturnNotNoneWarning",
+    "ignore::pytest.PytestCollectionWarning",
+]

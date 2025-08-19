@@ -20,6 +20,7 @@ import time
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import grad, jit, lax, random, vmap
 from jax.flatten_util import ravel_pytree
 
@@ -460,6 +461,25 @@ if __name__ == "__main__":
     demo()
 
 
+# --- Minimal adapter expected by tests ---
+class HOSS:
+    """Hyperreal One-Step Solver (toy): gradient step with fixed delta.
+
+    This minimal class mirrors the test API: step(x, loss_fn, delta) returns the updated x.
+    """
+
+    def step(self, x, loss_fn, delta: float = 0.01):
+        # Simple finite-difference descent along negative gradient direction
+        x = np.asarray(x, dtype=float)
+        eps = 1e-6
+        g = np.zeros_like(x)
+        for i in range(x.size):
+            e = np.zeros_like(x)
+            e[i] = eps
+            g[i] = (loss_fn(x + e) - loss_fn(x - e)) / (2 * eps)
+        return x - float(delta) * g
+
+
 # --- Minimal hyperreal API for tests ---
 
 class Hyperreal:
@@ -515,3 +535,6 @@ def hyperreal_multiply(x: Hyperreal, y: Hyperreal) -> Hyperreal:
 
 def standard_part(x: Hyperreal) -> float:
     return float(x.real)
+
+
+# (adapter defined above)

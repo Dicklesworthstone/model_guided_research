@@ -71,6 +71,35 @@ def tmm(A, B):
     return jnp.max(A[..., :, :, None] + B[..., None, :, :], axis=-2)
 
 
+# ---------------------------
+# Test adapter: TropicalAttention
+# ---------------------------
+
+
+class TropicalAttention:
+    """Simple tropical attention adapter used in tests.
+
+    For each query, selects the value with the best max-plus score against keys.
+    """
+
+    def __init__(self, dim: int):
+        self.dim = int(dim)
+
+    def __call__(self, Q, K, V):  # numpy arrays
+        import numpy as _np
+        Qj = jnp.array(Q, dtype=jnp.float32)
+        Kj = jnp.array(K, dtype=jnp.float32)
+        Vj = jnp.array(V, dtype=jnp.float32)
+        scores = jnp.max(Qj[:, None, :] + Kj[None, :, :], axis=-1)
+        vals, idx = jax.lax.top_k(scores, k=2)
+        # Certificate: margin between best and second-best per query
+        cert = (vals[:, 0] - vals[:, 1]).min()
+        out = Vj[idx[:, 0]]
+        # Attach certificate as attribute for downstream inspection
+        self.last_min_margin = float(cert)
+        return _np.asarray(out)
+
+
 # --- Test‑facing simple semiring ops ---
 
 def tropical_add(a, b):
@@ -111,6 +140,25 @@ def init_params(k, cfg: Config, delta=0.1, eps=1e-3):
     WV = WV + jax.random.uniform(k3, WV.shape, minval=-eps, maxval=0.0)
     Wcls = Wcls + jax.random.uniform(k4, Wcls.shape, minval=-eps, maxval=0.0)
     return Params(WQ, WK, WV, Wcls)
+
+
+# --- Experimental: Tropical convolutions and morphological ops ---
+
+def tropical_conv1d(x: jnp.ndarray, w: jnp.ndarray, stride: int = 1) -> jnp.ndarray:
+    r"""1D tropical convolution: (x \otimes w)[t] = max_k (x[t + k] + w[k])."""
+    T = x.shape[-1]
+    K = w.shape[-1]
+    out_len = 1 + (T - K) // stride
+    outs = []
+    for t in range(out_len):
+        sl = x[..., t * stride : t * stride + K]
+        outs.append(jnp.max(sl + w, axis=-1))
+    return jnp.stack(outs, axis=-1)
+
+
+def morph_dilate1d(x: jnp.ndarray, se: jnp.ndarray) -> jnp.ndarray:
+    """Binary-like dilation in max-plus: dilate x by structuring element se."""
+    return tropical_conv1d(x, se)
 
 
 def t2_block(params: Params, X, cfg: Config):
@@ -271,6 +319,9 @@ def run():
         jnp.array([jnp.inf]),
     )
     print("median margin:", float(jnp.median(cert)))
+
+
+# (adapter defined above)
 
 
 def demo():

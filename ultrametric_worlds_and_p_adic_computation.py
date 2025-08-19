@@ -211,6 +211,117 @@ class LCPTreeAttention:
         return float(jnp.mean(eq.astype(jnp.float32)))
 
 
+# --- Minimal adapter expected by tests ---
+# (adapter defined below)
+
+
+# ---------------------------
+# Test adapter: UltrametricAttention
+# ---------------------------
+
+
+class UltrametricAttention:
+    """Approximate ultrametric attention via LSH-based LCP trie.
+
+    - Builds a binary prefix tree over random hyperplane signatures of keys.
+    - Insert: O(D) where D = `max_depth` bits.
+    - Attend: descend to deepest non-empty prefix; select the best candidate
+      in that bucket by cosine similarity. Expected O(D) with tiny buckets.
+
+    This keeps the core idea (prefix-tree lookups) while remaining NumPy-only
+    and CPU-friendly for tests.
+    """
+
+    def __init__(self, dim: int, p: int = 5, max_depth: int = 10, packed: bool = False, heads: int = 1):
+        import numpy as _np
+        self.dim = int(dim)
+        self.max_depth = int(max_depth)
+        self._packed = bool(packed)
+        self._heads = max(1, int(heads))
+        # Random hyperplanes define a binary signature per depth
+        rng = _np.random.default_rng(0)
+        self._planes = [
+            rng.standard_normal((self.max_depth, self.dim)).astype(_np.float64)
+            for _ in range(self._heads)
+        ]
+        # Buckets per head: dict or array-backed by depth depending on mode
+        if self._packed:
+            self._buckets = [[list() for _ in range(self.max_depth + 1)] for _ in range(self._heads)]
+        else:
+            self._buckets = [dict() for _ in range(self._heads)]  # type: ignore[list-item]
+        # Store keys by index for quick similarity checks
+        self._key_vec: dict[int, _np.ndarray] = {}
+
+    @staticmethod
+    def _signature(planes, vec):
+        import numpy as _np
+        proj = planes @ vec  # [D]
+        return (proj > 0.0).astype(_np.int8)
+
+    def _prefixes(self, bits):
+        for d in range(1, len(bits) + 1):
+            yield tuple(int(b) for b in bits[:d])
+
+    def insert(self, idx: int, key_vec):
+        import numpy as _np
+        v = _np.asarray(key_vec, dtype=_np.float64)
+        self._key_vec[int(idx)] = v
+        for h in range(self._heads):
+            sig = self._signature(self._planes[h], v)
+            if self._packed:
+                code = 0
+                for d in range(1, self.max_depth + 1):
+                    code = (code << 1) | int(sig[d - 1])
+                    self._buckets[h][d].append((code, int(idx)))
+            else:
+                for pref in self._prefixes(sig):
+                    bucket = self._buckets[h].setdefault(pref, [])
+                    bucket.append(int(idx))
+
+    def attend(self, q, V):
+        import numpy as _np
+        if not self._key_vec:
+            return _np.zeros_like(V[0])
+        Q = _np.asarray(q, dtype=_np.float64)
+        picks = []
+        sims = []
+        qn = _np.linalg.norm(Q) + 1e-12
+        for h in range(self._heads):
+            sig = self._signature(self._planes[h], Q)
+            # Find deepest non-empty bucket
+            candidate_idxs: list[int] = []
+            if self._packed:
+                code = 0
+                for d in range(self.max_depth, 0, -1):
+                    code = (code << 1) | int(sig[d - 1])
+                    level = self._buckets[h][d] if d < len(self._buckets[h]) else []
+                    lst = [idx for (c, idx) in level if c == code]
+                    if lst:
+                        candidate_idxs = lst
+                        break
+            else:
+                for d in range(self.max_depth, 0, -1):
+                    pref = tuple(int(b) for b in sig[:d])
+                    if pref in self._buckets[h] and self._buckets[h][pref]:
+                        candidate_idxs = self._buckets[h][pref]
+                        break
+            if not candidate_idxs:
+                candidate_idxs = list(self._key_vec.keys())
+            best_j = None
+            best_sim = -_np.inf
+            for j in candidate_idxs:
+                kv = self._key_vec[j]
+                sim = float((kv @ Q) / ((_np.linalg.norm(kv) + 1e-12) * qn))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_j = j
+            picks.append(int(best_j))
+            sims.append(best_sim)
+        # Aggregate heads: average selected values (could also pick best across heads)
+        out = np.mean([V[int(j)] for j in picks], axis=0)
+        return _np.asarray(out)
+
+
 def sample_digits(N, K, p, seed=0):
     rng = np.random.default_rng(seed)
     return rng.integers(0, p, size=(N, K), dtype=np.int32)

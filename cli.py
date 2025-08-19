@@ -12,6 +12,7 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+import json
 
 app = typer.Typer(
     name="model-guided-research",
@@ -139,6 +140,42 @@ def run(
         "--debug",
         help="Enable debug mode with numerical checking"
     )] = False,
+    ultra_packed: Annotated[bool, typer.Option(
+        "--ultra-packed",
+        help="Use packed bit-trie implementation in ultrametric demo (and set ULTRA_PACKED for tests)"
+    )] = False,
+    tropical_cert: Annotated[bool, typer.Option(
+        "--tropical-cert",
+        help="Compute a tropical attention robustness margin certificate"
+    )] = False,
+    simplicial_hodge: Annotated[bool, typer.Option(
+        "--simplicial-hodge",
+        help="Demonstrate Hodge-based readout coefficients on a tiny graph"
+    )] = False,
+    simplicial_signed: Annotated[bool, typer.Option(
+        "--simplicial-signed",
+        help="Demonstrate signed (orientation-aware) diffusion vs unsigned"
+    )] = False,
+    rev_cayley: Annotated[bool, typer.Option(
+        "--rev-cayley",
+        help="Demonstrate Cayley orthogonal property check (skew → orthogonal)"
+    )] = False,
+    rev_symplectic: Annotated[bool, typer.Option(
+        "--rev-symplectic",
+        help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)"
+    )] = False,
+    rev_pareto: Annotated[bool, typer.Option(
+        "--rev-pareto",
+        help="Run a small Cayley-iterations Pareto sweep (time vs memory)"
+    )] = False,
+    rev_symp_hybrid: Annotated[bool, typer.Option(
+        "--rev-symplectic-hybrid",
+        help="Enable a symplectic leapfrog step inside coupling (hybrid)"
+    )] = False,
+    export_json: Annotated[Path | None, typer.Option(
+        "--export-json",
+        help="Write a JSON artifact with any computed certificates/readouts"
+    )] = None,
 ):
     """Run a specific demo by name"""
 
@@ -170,6 +207,11 @@ def run(
     # Set the global config
     set_config(config)
 
+    # Optional environment knobs for tests/internals
+    if ultra_packed:
+        import os as _os
+        _os.environ["ULTRA_PACKED"] = "1"
+
     if demo_name not in DEMOS:
         console.print(f"[bold red]Error:[/bold red] Demo '{demo_name}' not found")
         console.print("\nAvailable demos:")
@@ -190,6 +232,7 @@ def run(
     console.print()
 
     try:
+        artifacts: dict = {"demo": demo_name, "certificates": {}}
         # Import the module dynamically
         if verbose:
             console.print(f"[dim]Importing module: {demo_info['module']}[/dim]")
@@ -204,9 +247,99 @@ def run(
             if verbose:
                 console.print(f"[dim]Running function: {func_name}()[/dim]\n")
 
+            # Pre-demo feature showcases
+            if demo_name == "tropical" and tropical_cert:
+                from tropical_geometry_and_idempotent_algebra import TropicalAttention
+                import numpy as _np
+                Q = _np.random.randn(32, 16)
+                K = _np.random.randn(32, 16)
+                V = _np.random.randn(32, 16)
+                attn = TropicalAttention(16)
+                _ = attn(Q, K, V)
+                table = Table(title="Tropical Robustness Certificate", show_header=True, header_style="bold magenta")
+                table.add_column("Min (best−second) margin", justify="center")
+                margin = float(getattr(attn, 'last_min_margin', 0.0))
+                table.add_row(f"{margin:.4f}")
+                console.print(table)
+                artifacts["certificates"]["tropical_min_margin"] = margin
+                # Toggle ASCII summary of K if matrix-gauge demo is run too
+                # (No-op here; matrix-gauge prints uniformization K when demo runs.)
+
+            if demo_name == "simplicial" and simplicial_hodge:
+                import numpy as _np
+                from simplicial_complexes_and_higher_order_attention import hodge_readout
+                n = 8
+                A = _np.zeros((n, n))
+                for _ in range(12):
+                    i, j = _np.random.randint(0, n, 2)
+                    if i != j:
+                        A[i, j] = A[j, i] = 1
+                flow = _np.random.randn(n)
+                coeff = hodge_readout(flow, A, k_small=3)
+                t = Table(title="Hodge Readout Coefficients (k=3)", show_header=True, header_style="bold magenta")
+                t.add_column("Mode", justify="center")
+                t.add_column("Coeff", justify="right")
+                for i, c in enumerate(coeff):
+                    t.add_row(str(i), f"{float(c):.4f}")
+                console.print(t)
+                artifacts["certificates"]["simplicial_hodge_coeffs"] = [float(c) for c in coeff]
+
+            if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid):
+                import numpy as _np
+                from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
+                # Cayley orthogonal check
+                if rev_cayley:
+                    M = _np.random.randn(16, 16)
+                    A = 0.1 * (M - M.T)  # skew
+                    import jax.numpy as _jnp
+                    Q = cayley_orthogonal_from_skew(_jnp.array(A))
+                    I = _jnp.eye(Q.shape[-1])
+                    err = float(_jnp.linalg.norm(Q.T @ Q - I))
+                    table = Table(title="Cayley Orthogonality Check", show_header=True, header_style="bold magenta")
+                    table.add_column("||Q^T Q − I||_F", justify="right")
+                    table.add_row(f"{err:.2e}")
+                    console.print(table)
+                    artifacts["certificates"]["reversible_cayley_orth_err"] = err
+                # Symplectic check
+                if rev_symplectic:
+                    n = 8
+                    H = _np.random.randn(2 * n, 2 * n)
+                    H = 0.1 * (H + H.T)
+                    import jax.numpy as _jnp
+                    S = symplectic_cayley(_jnp.array(H))
+                    Z = _jnp.zeros((n, n)); I = _jnp.eye(n)
+                    J = _jnp.block([[Z, I], [-I, Z]])
+                    err = float(_jnp.linalg.norm(S.T @ J @ S - J))
+                    t2 = Table(title="Symplectic Cayley Check", show_header=True, header_style="bold magenta")
+                    t2.add_column("||S^T J S − J||_F", justify="right")
+                    t2.add_row(f"{err:.2e}")
+                    console.print(t2)
+                    artifacts["certificates"]["reversible_symplectic_err"] = err
+                if rev_pareto:
+                    import os as _os
+                    _os.environ["REV_PARETO"] = "1"
+                if rev_symp_hybrid:
+                    try:
+                        from reversible_computation_and_measure_preserving_learning import set_reversible_symplectic
+                        set_reversible_symplectic(True)
+                    except Exception:
+                        pass
+
             # Run the demo
             with console.status("[bold green]Running demo...[/bold green]"):
                 demo_func()
+
+        # Write artifacts if requested
+        if export_json is not None:
+            try:
+                export_json.parent.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+            with export_json.open("w") as f:
+                json.dump(artifacts, f, indent=2)
+            if verbose:
+                console.print(f"[dim]Wrote JSON artifact to {export_json}[/dim]
+")
         else:
             console.print(f"[bold red]Error:[/bold red] Function '{func_name}' not found in module")
             raise typer.Exit(1)
@@ -457,3 +590,67 @@ def main(
 
 if __name__ == "__main__":
     app()
+@app.command()
+def eval(
+    ultra_packed: Annotated[bool, typer.Option(
+        "--ultra-packed",
+        help="Use packed bit-trie implementation for ultrametric tests (sets ULTRA_PACKED=1)"
+    )] = False,
+    export_json: Annotated[Path | None, typer.Option(
+        "--export-json",
+        help="Write a combined JSON artifact of the practical utility suite"
+    )] = None,
+    print_ultra_table: Annotated[bool, typer.Option(
+        "--print-ultra-table",
+        help="Print ultrametric exponent table"
+    )] = False,
+    print_trop_table: Annotated[bool, typer.Option(
+        "--print-trop-table",
+        help="Print tropical Lipschitz table"
+    )] = False,
+):
+    """Run the practical utility test suite and optionally export a JSON artifact."""
+    import os as _os
+    if ultra_packed:
+        _os.environ["ULTRA_PACKED"] = "1"
+    if print_ultra_table:
+        _os.environ["PRINT_ULTRA_TABLE"] = "1"
+    if print_trop_table:
+        _os.environ["PRINT_TROP_TABLE"] = "1"
+
+    from tests.test_practical_utility import run_all_utility_tests
+    results = run_all_utility_tests()
+
+    if export_json is not None:
+        payload = []
+        for r in results:
+            payload.append({
+                "approach": r.approach_name,
+                "claim": r.claim,
+                "baseline": float(r.baseline_metric),
+                "proposed": float(r.proposed_metric),
+                "improvement": float(r.improvement_ratio),
+                "is_better": bool(r.is_better),
+                "verdict": r.verdict,
+                "details": r.details,
+            })
+        try:
+            export_json.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        with export_json.open("w") as f:
+            json.dump({"results": payload}, f, indent=2)
+        console.print(f"[dim]Wrote suite JSON to {export_json}[/dim]")
+            if demo_name == "simplicial" and simplicial_signed:
+                from simplicial_complexes_and_higher_order_attention import demo_signed_attention
+                demo_signed_attention()
+
+            if demo_name == "reversible" and rev_cayley:
+                # enable hybrid in reversible model for the main demo run
+                try:
+                    from reversible_computation_and_measure_preserving_learning import set_reversible_cayley
+                    set_reversible_cayley(True)
+                    import os as _os
+                    _os.environ["REV_LAYER_CERT"] = "1"
+                except Exception:
+                    pass

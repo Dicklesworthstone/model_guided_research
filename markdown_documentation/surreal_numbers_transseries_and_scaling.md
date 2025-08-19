@@ -195,7 +195,7 @@ All three emerge from **tropical algebra** over valuations: addition becomes “
 
 ### (a) Curriculum = staged elimination of the current leading term
 
-A curriculum is a path $(M_t,D_t,C_t,\eta_t)$ so that at each stage the largest error term by order is driven down until it matches the next one. Algebraically:
+    A curriculum is a path $(M_t,D_t,C_t,\eta_t)$ so that at each stage the largest error term by order is driven down until it matches the next one. Algebraically:
 
 $$
 \nu(E_{t+1})=\min\{\nu(B_{t+1}),\nu(G_{t+1}),\nu(O_{t+1})\}>\nu(E_t),
@@ -440,3 +440,8 @@ Scores are 0–100, higher is better. For “Establishability,” higher means *
 * **B** is a crisp, low‑overhead heuristic that could be practically useful even if the theory is only approximately right.
 
 If you want, I can draft a compact experimental playbook that probes both ideas in <1 GPU‑day per task (covering classification, language modeling, and a masked‑autoencoder variant) to empirically map where the dominance ordering holds or breaks.
+---
+
+## 8) Practical Selection Rule: Rank/Z‑Score Dominance
+
+When mapping the algebra of orders to discrete design choices ("invest in data, depth, or width?"), a robust empirical rule is to normalize each axis by its training distribution and choose the largest standardized deficit. Concretely, compute z‑scores $z_d, z_{\text{depth}}, z_{\text{width}}$ on a calibration set and select the axis with the most negative $z$ (largest need). In regions where a strong baseline rule is already trustworthy (e.g., obviously data‑limited or obviously shallow), defer to that baseline to preserve performance. This bridges the valuation‑theoretic dominance with stable, data‑driven decisions while maintaining the spirit of surreal dominance comparisons.

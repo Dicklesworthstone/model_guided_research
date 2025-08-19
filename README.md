@@ -134,7 +134,7 @@ model_guided_research/
 │   └── ... (one for each implementation)
 │
 ├── tests/                           # Test suite
-│   └── test_demos.py                # Demo validation tests
+│   └── test_practical_utility.py    # Practical utility + property tests
 │
 └── *.py                             # Implementation modules (11 demos)
     ├── matrix_exponential_gauge_learning.py
@@ -182,17 +182,17 @@ Each demo is a self-contained exploration that:
 - **Why It Matters**: Provides mathematical guarantees for stability and geometric structure
 
 ### 2. **Ultrametric Worlds & p-adic Computation** (`ultrametric`)
-*Hierarchical attention using p-adic numbers and ultrametric spaces*
+*Hierarchical attention using ultrametric-prefix trees*
 
 📖 [Mathematical Documentation](markdown_documentation/ultrametric_worlds_and_p_adic_computation.md) | 💻 [Implementation](ultrametric_worlds_and_p_adic_computation.py)
 
-- **Key Innovation**: Replaces dot-product attention with longest-common-prefix (LCP) tree structures
+- **Key Innovation**: Replaces dense dot-product attention with prefix-tree lookup over binary signatures
 - **Components**:
-  - p-adic integer representations for tokens
-  - Valuation-Ordered Local Fix (VOLF) learning without gradients
-  - O(n log n) complexity for attention operations
-  - Lossless pruning and exact quantization
-- **Why It Matters**: Natural hierarchy and tree-based attention mechanisms
+  - Bit-prefix LSH signatures for approximate LCP routing (NumPy-only)
+  - Per-query lookup via deepest non-empty prefix bucket
+  - Sub-quadratic scaling in practice on sequence lengths up to 256
+  - Compatible with exact p-adic formulations described in the docs
+- **Why It Matters**: Enables hierarchical, cache-friendly attention with predictable memory
 
 ### 3. **Simplicial Complexes & Higher-Order Attention** (`simplicial`)
 *Multi-body interactions beyond pairwise attention*
@@ -204,7 +204,7 @@ Each demo is a self-contained exploration that:
   - Higher-order Laplacians for multi-token relationships
   - Hodge decomposition for gradient-free components
   - Persistent homology for topological features
-- **Why It Matters**: Captures group dynamics and emergent patterns impossible with pairwise attention
+- **Why It Matters**: Captures group dynamics beyond pairwise interactions; in our toy task the advantage is modest but consistent
 
 ### 4. **Nonstandard Analysis & Hyperreal Training** (`nonstandard`)
 *Infinitesimal perturbations and transfer principles*
@@ -240,7 +240,7 @@ Each demo is a self-contained exploration that:
   - Ordinal arithmetic for schedule composition
   - Well-founded descent guarantees
   - Limit ordinal checkpointing
-- **Why It Matters**: Escapes local minima systematically, provable convergence
+- **Why It Matters**: Provides a principled restart/anneal framework; in our noisy toy setup performance is comparable to cosine schedules
 
 ### 7. **Reversible Computation & Measure-Preserving Learning** (`reversible`)
 *Bijective networks with perfect information preservation*
@@ -252,7 +252,7 @@ Each demo is a self-contained exploration that:
   - Symplectic integrators for dynamics
   - Liouville's theorem compliance
   - Zero memory overhead via recomputation
-- **Why It Matters**: Information-theoretic guarantees through reversibility
+- **Why It Matters**: Information-theoretic guarantees through reversibility; on our demo scale we observe a few-fold memory savings, not 10x
 
 ### 8. **Iterated Function Systems & Fractal Memory** (`ifs-fractal`)
 *Self-similar memory structures with infinite capacity*
@@ -264,7 +264,7 @@ Each demo is a self-contained exploration that:
   - Barnsley fern-like memory encoding
   - Hutchinson operators for retrieval
   - Fractal dimension as capacity measure
-- **Why It Matters**: Self-similar structures for hierarchical memory
+- **Why It Matters**: Self-similar structures for hierarchical memory; current demo shows mixed results on catastrophic forgetting vs a simple baseline
 
 ### 9. **Knot-Theoretic Programs & Braid-Based Attention** (`knot-braid`)
 *Topological invariants for robust representations*
@@ -276,7 +276,7 @@ Each demo is a self-contained exploration that:
   - Braid group representations
   - Jones polynomial features
   - Reidemeister move equivariance
-- **Why It Matters**: Topologically protected information, invariant features
+- **Why It Matters**: Topologically protected information, invariant features; in length generalization tests we see small improvements rather than perfect generalization
 
 ### 10. **Surreal Numbers, Transseries & Scaling** (`surreal`)
 *Infinitely large and small scales simultaneously*
@@ -288,7 +288,7 @@ Each demo is a self-contained exploration that:
   - Transseries expansions for asymptotic behavior
   - Surreal arithmetic for infinite hierarchies
   - Automatic scale selection
-- **Why It Matters**: Natural handling of multiple scales, exact asymptotics
+- **Why It Matters**: Natural handling of multiple scales, exact asymptotics; currently underperforms simple heuristics in our toy allocation test
 
 ### 11. **Tropical Geometry & Idempotent Algebra** (`tropical`)
 *Max-plus algebra for piecewise-linear deep learning*
@@ -495,3 +495,43 @@ As Wigner wrote of *"The unreasonable effectiveness of mathematics in the natura
 ---
 
 **Remember**: Each demo can be run independently, and the mathematical documentation provides deep dives into the theory. Start with whatever captures your imagination—the mathematics will guide you the rest of the way.
+## 🧪 Testing & Evaluation
+
+This repo includes a comprehensive, scriptable evaluation that checks both mathematical properties and practical utility across all demos. It uses rich console output for clarity.
+
+- `tests/test_practical_utility.py` (primary): Runs eleven mini-benchmarks — one per demo — and reports:
+  - Practical benefits (e.g., memory savings, scaling exponents, generalization)
+  - Claimed mathematical properties (e.g., 1‑Lipschitz, norm preservation)
+  - A green/yellow/red verdict plus a summary table and recommendations
+
+What each sub‑test does:
+- Reversible Computation: Compares peak activation memory of a standard residual MLP vs. an invertible coupling stack with explicit recomputation. Also prints a checkpoint K‑sweep table (store every K‑th activation) for a fair baseline comparison.
+- IFS Fractal Memory: Stresses catastrophic forgetting by constraining a FIFO baseline capacity; compares average recall error vs. a contractive IFS store with signature‑based routing.
+- Ordinal Schedules: Uses a piecewise‑stationary (regime‑shift) quadratic objective to test whether ordinal restarts/anneals improve final‑window loss over a cosine schedule.
+- Matrix Exponential Gauge: Checks gradient stability against a standard deep network (vanish/explode detection), illustrating the conditioning benefits.
+- Tropical Geometry: Verifies the 1‑Lipschitz property of a tropical attention adapter via finite‑difference perturbations.
+- Simplicial Complexes: Constructs a higher‑order (triangle‑dependent) label and evaluates an incidence‑only flow with a tiny linear readout over a Hodge‑like diffusion.
+- Ultrametric Worlds: Estimates scaling exponents on sequence lengths and confirms sub‑quadratic behavior with an LSH‑based prefix‑trie attention.
+- Quaternions/Octonions: Measures norm drift after many layers; quaternion layer should preserve norms without additional normalization.
+- Knot/Braid: Dyck‑1 (balanced parentheses) length generalization with a simple curriculum; braid model trained on short/medium lengths and tested on longer sequences.
+- Surreal Numbers: Resource‑allocation choices via rank/z‑score dominance with small guardbands, preserving ≥ baseline performance on a held‑out split.
+- Hyperreal Training: Robustness to learning‑rate choice on a stiff quadratic; compares variance of final losses across rates.
+
+How it works:
+- All sub‑tests compute a baseline metric, a proposed metric from the demo module, an improvement ratio, and a boolean `is_better` used for the verdict.
+- Output includes per‑test metrics and a final summary table with “Worth Further Investigation?” recommendations. Rich tables and panels make results easy to scan.
+- CPU‑only by default (sets `JAX_PLATFORM_NAME=cpu`) for reproducible CI without CUDA.
+
+Running the tests:
+- Activate your `uv` venv, then run:
+  - `python tests/test_practical_utility.py`
+  - Optional: pipe output to a file to archive results.
+
+Interpreting results:
+- Green “SUCCESS” means the claimed advantage or property holds under the benchmark conditions.
+- Yellow “MARGINAL/PARTIAL” indicates a small or context‑dependent advantage.
+- Red indicates the claim did not hold under the benchmark (tweakable via test knobs as desired).
+
+Notes & reproducibility:
+- The tests favor determinism and modest sizes; they are not micro‑optimized for speed but are structured to be robust and interpretable.
+- Most demos also include lightweight sanity checks or helper functions inside the modules themselves (e.g., `simplicial.sanity_suite`) that can be used interactively.

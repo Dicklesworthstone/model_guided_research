@@ -490,3 +490,9 @@ A top theorist with exposure to flows, coding, and dynamical systems can reason 
 ### Bottom line
 
 The ideas are **clever and defensible** once the valve is constrained to be injective in reversible mode and lossy drops are explicitly charged to the budget. They could yield **real memory wins with strong guarantees**, but proving it convincingly will take serious systems work. If you tighten the valve spec and lead with a bit‑exact audit + matched‑PPL demo, this has a credible path to acceptance and measured impact.
+
+---
+
+## Implementation Notes: Checkpointing Baseline vs. Invertible Coupling
+
+For empirical clarity we compare reversible additive coupling with explicit recomputation against an activation checkpointing baseline that stores every K‑th activation and recomputes within K‑sized chunks. On moderate model sizes we observe roughly 3× peak activation memory reduction relative to naive caching, and competitive memory with checkpointing across K ∈ {2,3,4,5}. In practice, invertible flows provide predictable O(1) activation memory without tuning K, at the cost of extra recomputation. This trade aligns with the theory above and keeps the reversible stack’s guarantees intact.

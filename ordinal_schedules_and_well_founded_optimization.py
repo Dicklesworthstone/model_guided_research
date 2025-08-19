@@ -88,6 +88,8 @@ class OrdinalState(NamedTuple):
     eta: jnp.float32
     L_best: jnp.float32
     L_ema: jnp.float32
+    anneals: jnp.int32
+    restarts: jnp.int32
 
 
 class OrdinalParams(NamedTuple):
@@ -135,7 +137,7 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
 
     def on_improved(_):
         return (
-            OrdinalState(st.A, st.B, st.C, st.eta, jnp.minimum(st.L_best, L_ema_new), L_ema_new),
+            OrdinalState(st.A, st.B, st.C, st.eta, jnp.minimum(st.L_best, L_ema_new), L_ema_new, st.anneals, st.restarts),
             jnp.bool_(False),
             jnp.bool_(False),
         )
@@ -143,21 +145,21 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
     def on_not_improved(_):
         def dec_C(_):
             C_new = jnp.maximum(st.C - jnp.int32(1), jnp.int32(0))
-            return OrdinalState(st.A, st.B, C_new, st.eta, st.L_best, L_ema_new), jnp.bool_(False), jnp.bool_(False)
+            return OrdinalState(st.A, st.B, C_new, st.eta, st.L_best, L_ema_new, st.anneals, st.restarts), jnp.bool_(False), jnp.bool_(False)
 
         def consolidate(_):
             def anneal_branch(_):
                 B_new = st.B - jnp.int32(1)
                 eta_new = st.eta * jnp.float32(params.gamma)
                 C_new = patience_for_B(B_new, params)
-                return OrdinalState(st.A, B_new, C_new, eta_new, jnp.inf, L_ema_new), jnp.bool_(False), jnp.bool_(True)
+                return OrdinalState(st.A, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals + 1, st.restarts), jnp.bool_(False), jnp.bool_(True)
 
             def restart_branch(_):
                 A_new = st.A - jnp.int32(1)
                 B_new = jnp.int32(params.B_init)
                 eta_new = jnp.float32(params.eta0)
                 C_new = patience_for_B(B_new, params)
-                return OrdinalState(A_new, B_new, C_new, eta_new, jnp.inf, L_ema_new), jnp.bool_(True), jnp.bool_(True)
+                return OrdinalState(A_new, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals, st.restarts + 1), jnp.bool_(True), jnp.bool_(True)
 
             return lax.cond(st.B > 0, anneal_branch, restart_branch, operand=None)
 
@@ -175,6 +177,8 @@ def ordinal_state_init(params: OrdinalParams):
         eta=jnp.float32(params.eta0),
         L_best=jnp.float32(jnp.inf),
         L_ema=jnp.float32(jnp.inf),
+        anneals=jnp.int32(0),
+        restarts=jnp.int32(0),
     )
 
 
@@ -209,6 +213,42 @@ def mse_loss(theta, x, y):
 
 
 grad_loss = jit(grad(mse_loss))
+
+
+# -----------------------------
+# Test adapter: OrdinalSchedule class
+# -----------------------------
+
+
+class OrdinalSchedule:
+    """Lightweight wrapper exposing a class-based API expected by tests.
+
+    Uses the functional scheduler to update internal state and exposes a
+    simple rank tuple for readability.
+    """
+
+    def __init__(self, **kwargs):
+        params = OrdinalParams.from_test_kwargs(**kwargs)
+        self.params = params
+        self.state = ordinal_state_init(params)
+
+    def step(self, loss_val: float) -> None:
+        st, _reset_mom, _fired = ordinal_scheduler_step(self.state, jnp.float32(loss_val), self.params)
+        self.state = st
+
+    @property
+    def current_rank(self) -> tuple[int, int, int]:
+        st = self.state
+        return (int(st.A), int(st.B), int(st.C))
+
+    @property
+    def current_eta(self) -> float:
+        return float(self.state.eta)
+
+    @property
+    def events(self) -> dict[str, int]:
+        st = self.state
+        return {"anneals": int(st.anneals), "restarts": int(st.restarts)}
 
 # -----------------------------
 # Training Loops (JIT)
@@ -445,6 +485,9 @@ def summarize(results):
         "pass_dominance": bool(pass_dominance),
         "passed": bool(passed),
     }
+
+
+# (adapter defined above)
 
 
 # -----------------------------

@@ -312,6 +312,98 @@ class FractalKV:
         new_store.write(paths_new, v_vals)
         return new_store
 
+    # --- Experimental: adaptive contractivity and auto reindexing ---
+    def adjust_contractivity(self, target_collisions: float = 0.05) -> None:
+        """Lower s (increase separation) if collision rate is high; conservative step.
+
+        This rebuilds internal precomputes; payload is unchanged. For exact value preservation,
+        call reindex_increase_depth and rewrite exact values.
+        """
+        diag = self.diagnostics()
+        if diag["collision_rate"] > target_collisions and self.cfg.s > 0.2:
+            new_s = float(max(0.1, self.cfg.s * 0.9))
+            cfg_old = self.cfg
+            cfg_new = FractalKVConfig(d_val=cfg_old.d_val, m=cfg_old.m, k=cfg_old.k, s=new_s, dtype=cfg_old.dtype)
+            self.__init__(cfg_new)
+
+    def maybe_expand_depth(self, util_threshold: float = 0.7) -> "FractalKV":
+        diag = self.diagnostics()
+        if diag["utilization"] > util_threshold:
+            return self.reindex_increase_depth()
+        return self
+
+
+def _hashed_paths_for_vectors(V: Array, m: int, k: int, seed: int = 123) -> Array:
+    """Generate pseudo-addresses via random projection signatures (consistent hashing)."""
+    rng = np.random.default_rng(seed)
+    proj = jnp.array(rng.standard_normal((V.shape[-1], 32)), dtype=jnp.float32)
+    sig = (V @ proj) > 0
+    # Fold to integer and then to base-m digits
+    idxs = []
+    for row in np.asarray(sig):
+        code = 0
+        for i, b in enumerate(row.tolist()):
+            if b:
+                code += (1 << i)
+        idxs.append(code % (m ** k))
+    idxs = jnp.array(idxs, dtype=jnp.int32)
+    digs = []
+    for code in idxs.tolist():
+        x = int(code)
+        arr = [0] * int(k)
+        for t in range(int(k) - 1, -1, -1):
+            arr[t] = x % int(m)
+            x //= int(m)
+        digs.append(arr)
+    return jnp.array(digs, dtype=jnp.int32)
+
+
+# --- Minimal adapter expected by tests ---
+class IFSMemory:
+    """Thin wrapper exposing store/recall API over FractalKV for tests.
+
+    Uses A = s I and the corner-translation scheme; provides store(value) and
+    recall(query) hooks similar to a KV interface used in tests.
+    """
+
+    def __init__(self, feature_dim: int, max_transforms: int):
+        # Map arguments into our config; choose a small m^k capacity >= max_transforms
+        m = 16
+        k = max(1, int(math.ceil(math.log(max(1, max_transforms), m))))
+        self.cfg = FractalKVConfig(d_val=feature_dim, m=m, k=k, s=0.4, dtype=jnp.float32)
+        self.store_impl = FractalKV(self.cfg)
+        # Signature-based router: sign of random projections -> integer hash -> path
+        rng = np.random.default_rng(123)
+        self._proj = jnp.array(rng.standard_normal((feature_dim, 32)), dtype=jnp.float32)
+
+    def _hash_to_path(self, vec: jnp.ndarray) -> jnp.ndarray:
+        # Compute 32-bit signature → integer (use Python ints to avoid int32 overflow)
+        import numpy as _np
+        v_np = _np.asarray(vec, dtype=_np.float32)
+        proj = _np.asarray(self._proj, dtype=_np.float32)
+        sig = (v_np @ proj) > 0.0  # bool[32]
+        idx_val: int = 0
+        for i, bit in enumerate(sig.tolist()):
+            if bit:
+                idx_val += (1 << i)
+        idx = idx_val % int(self.cfg.capacity)
+        # Convert idx to base-m digits of length k
+        x = idx
+        digs = [0] * int(self.cfg.k)
+        for t in range(int(self.cfg.k) - 1, -1, -1):
+            digs[t] = x % int(self.cfg.m)
+            x //= int(self.cfg.m)
+        return jnp.array([digs], dtype=jnp.int32)
+
+    def store(self, v: jnp.ndarray) -> None:
+        path = self._hash_to_path(v.reshape(-1))
+        self.store_impl.write(path, v.reshape(1, -1))
+
+    def recall(self, q: jnp.ndarray):
+        path = self._hash_to_path(q.reshape(-1))
+        v, present = self.store_impl.read(path)
+        return v.reshape(-1), bool(present[0])
+
 
 # ------------------------------
 # Learned router (k independent m‑way classifiers)
@@ -606,6 +698,40 @@ def catastrophic_forgetting_benchmark(
             f"[Reindex] New depth k={store.cfg.k}, new capacity={store.cfg.capacity}, "
             f"separation margin={diag2['separation_margin']:.3f}"
         )
+
+    # --- Optional: Router distillation from hashed routes ---
+    import os as _os
+    if _os.environ.get("IFS_DISTILL", "0") == "1":
+        print("\n=== Router distillation from hashed routes ===")
+        hashed = _hashed_paths_for_vectors(Q, m, k)
+        # Train a fresh router on hashed targets
+        router2 = LearnedRouter(rng_jax, d_key=d_key, m=m, k=k, dtype=jnp.float32)
+        router2.train(Q, hashed, epochs=router_epochs // 2, batch_size=512, lr=5e-3, verbose=False)
+        # Measure collisions/recall on a subset using hashed vs learned
+        cfg2 = FractalKVConfig(d_val=d_val, m=m, k=k, s=s, dtype=jnp.float32)
+        store_h = FractalKV(cfg2)
+        P_h = hashed
+        store_h.write(P_h, V)
+        diag_h = store_h.diagnostics()
+        vhat_h, present_h = store_h.read(P_h)
+        mse_h = float(mse(vhat_h, V))
+
+        store_r = FractalKV(cfg2)
+        P_r = router2.predict(Q)
+        store_r.write(P_r, V)
+        diag_r = store_r.diagnostics()
+        vhat_r, present_r = store_r.read(P_r)
+        mse_r = float(mse(vhat_r, V))
+
+        from rich.table import Table as _Table
+        t = _Table(title="Distillation: Hashed vs Learned Router", show_header=True, header_style="bold magenta")
+        t.add_column("Metric")
+        t.add_column("Hashed", justify="right")
+        t.add_column("Learned", justify="right")
+        t.add_row("Utilization", f"{diag_h['utilization']:.3f}", f"{diag_r['utilization']:.3f}")
+        t.add_row("CollisionRate", f"{diag_h['collision_rate']:.3f}", f"{diag_r['collision_rate']:.3f}")
+        t.add_row("Readback MSE", f"{mse_h:.4f}", f"{mse_r:.4f}")
+        print(t)
 
 
 # ------------------------------

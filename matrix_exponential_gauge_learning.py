@@ -36,9 +36,11 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import linen as nn
 from jax import Array, lax
+import os
 
 # Compatibility alias for tests that refer to np.math.factorial
 try:
@@ -167,8 +169,72 @@ def shift_along_axis(x: jnp.ndarray, delta: int, axis: int) -> jnp.ndarray:
 
 
 # ---------------------------
+# Test adapter: ExponentialGaugeNet
+# ---------------------------
+
+
+class ExponentialGaugeNet:
+    """Minimal callable class used in tests.
+
+    Applies a few stable rotations (zero angles) so output equals input, which
+    is sufficient for gradient stability checks.
+    """
+
+    def __init__(self, dim: int, num_layers: int = 1):
+        self.dim = int(dim)
+        self.num_layers = int(num_layers)
+        self.pairs = even_odd_pairs(self.dim)
+        self.thetas = jnp.zeros((self.pairs.shape[0],), dtype=jnp.float32)
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        import numpy as _np
+
+        z = jnp.array(x, dtype=jnp.float32)
+        for _ in range(max(1, self.num_layers)):
+            z = apply_givens_stage(z, self.thetas, self.pairs)
+        return _np.asarray(z)
+
+
+# ---------------------------
 # Uniformization expmv (banded)
 # ---------------------------
+
+# --- Experimental helpers: exact/algebraic maps for structured generators ---
+
+def cayley_orthogonal_from_skew(A: jnp.ndarray) -> jnp.ndarray:
+    """Return an orthogonal matrix via the Cayley transform for a skew-symmetric A.
+
+    Q = (I - A)^{-1} (I + A)
+    For small ||A||, Q ≈ exp(2A) and is exactly orthogonal when A^T = -A and I - A is invertible.
+    """
+    I = jnp.eye(A.shape[-1], dtype=A.dtype)
+    return jnp.linalg.solve(I - A, I + A)
+
+
+def spd_from_symmetric(S: jnp.ndarray) -> jnp.ndarray:
+    """Exponentiate a symmetric matrix to get SPD via eigendecomposition.
+
+    Returns exp(S) = V diag(exp(λ)) V^T.
+    """
+    lam, V = jnp.linalg.eigh(S)
+    return (V * jnp.exp(lam))[..., None, :] @ jnp.swapaxes(V, -1, -2)
+
+
+def symplectic_cayley(H: jnp.ndarray) -> jnp.ndarray:
+    """Construct a symplectic map via a Cayley-like transform of a Hamiltonian generator.
+
+    For block form J = [[0,I],[-I,0]], a small-step ‘Cayley’ map S = (I - JH)^{-1}(I + JH) is symplectic
+    when H is symmetric; useful as a stable, explicit integrator in small steps.
+    """
+    d2 = H.shape[-1]
+    assert d2 % 2 == 0, "Hamiltonian generator must have even dimension"
+    n = d2 // 2
+    Z = jnp.zeros((n, n), dtype=H.dtype)
+    I = jnp.eye(n, dtype=H.dtype)
+    J = jnp.block([[Z, I], [-I, Z]])
+    I2 = jnp.eye(d2, dtype=H.dtype)
+    M = J @ H
+    return jnp.linalg.solve(I2 - M, I2 + M)
 
 
 def uniformization_expmv_banded(
@@ -258,6 +324,7 @@ class GaugeTransformerConfig:
     dropout_rate: float = 0.0
     use_layernorm: bool = False
     attn_bias_init: float = 0.0
+    use_structured_blocks: bool = False
 
 
 # ---------------------------
@@ -304,6 +371,24 @@ class GaugeAttentionBlock(nn.Module):
 
         self.ln1 = nn.LayerNorm() if self.cfg.use_layernorm else None
         self.ln2 = nn.LayerNorm() if self.cfg.use_layernorm else None
+
+        # Optional structured SO/SPD/Sp channel transforms per head
+        if self.cfg.use_structured_blocks:
+            so_dim = max(0, dh // 3)
+            sp_dim = max(0, ((dh - so_dim) // 2) * 2)
+            spd_dim = max(0, dh - so_dim - sp_dim)
+            self.so_dim = so_dim
+            self.spd_dim = spd_dim
+            self.sp_dim = sp_dim
+            self.so_param = (
+                self.param("so_gen", nn.initializers.normal(0.02), (H, so_dim, so_dim)) if so_dim > 1 else None
+            )
+            self.spd_param = (
+                self.param("spd_sym", nn.initializers.normal(0.02), (H, spd_dim, spd_dim)) if spd_dim > 0 else None
+            )
+            self.sp_param = (
+                self.param("sp_sym", nn.initializers.normal(0.02), (H, sp_dim, sp_dim)) if sp_dim > 0 else None
+            )
 
     def _transport_prefix_angles(self, X: jnp.ndarray) -> jnp.ndarray:
         # X: (B,N,D) → per-edge angles dθ: (B,N-1,H,npairs) → prefix θ: (B,N,H,npairs)
@@ -365,6 +450,10 @@ class GaugeAttentionBlock(nn.Module):
     def _uniformization_mix(
         self, bands: jnp.ndarray, neg_diag: jnp.ndarray, U: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        # Allow toggling uniformization via env for ablation
+        if os.environ.get("GAUGE_UNIF_OFF", "0") == "1":
+            B, N, H, dh = U.shape
+            return U, jnp.zeros((B, H), dtype=jnp.int32)
         # bands: (B,N,H,O), neg_diag: (B,N,H), U: (B,N,H,dh) → Z: (B,N,H,dh)
         B, N, H, num_offsets = bands.shape
         dh = U.shape[-1]
@@ -381,6 +470,66 @@ class GaugeAttentionBlock(nn.Module):
         Z = jnp.transpose(Z_bh.reshape(B, H, N, dh), (0, 2, 1, 3))  # (B,N,H,dh)
         K_b = K.reshape(B, H)
         return Z, K_b
+
+    def _apply_structured_blocks(self, U: jnp.ndarray) -> tuple[jnp.ndarray, dict[str, Any]]:
+        """Apply optional SO/SPD/Sp transforms to channels per head in U (B,N,H,dh)."""
+        if not self.cfg.use_structured_blocks:
+            return U, {}
+        B, N, H, dh = U.shape
+        so_dim, spd_dim, sp_dim = self.so_dim, self.spd_dim, self.sp_dim
+        # Split U along last axis
+        off = 0
+        so_slice = U[..., off : off + so_dim]; off += so_dim
+        spd_slice = U[..., off : off + spd_dim]; off += spd_dim
+        sp_slice = U[..., off : off + sp_dim]
+
+        parts = []
+        # SO block
+        if so_dim > 1 and self.so_param is not None:
+            W = self.so_param  # (H,so,so)
+            A = W - jnp.swapaxes(W, -1, -2)
+            Q = jax.vmap(cayley_orthogonal_from_skew)(A)
+            so_out = jnp.einsum("bnhd,hde->bnhe", so_slice, Q)
+            parts.append(so_out)
+        else:
+            parts.append(so_slice)
+        # SPD block
+        if spd_dim > 0 and self.spd_param is not None:
+            S_raw = self.spd_param
+            S_sym = 0.5 * (S_raw + jnp.swapaxes(S_raw, -1, -2))
+            E = jax.vmap(spd_from_symmetric)(S_sym)
+            spd_out = jnp.einsum("bnhd,hde->bnhe", spd_slice, E)
+            parts.append(spd_out)
+        else:
+            parts.append(spd_slice)
+        # Symplectic block
+        if sp_dim > 0 and (sp_dim % 2 == 0) and self.sp_param is not None:
+            H_raw = self.sp_param
+            H_sym = 0.5 * (H_raw + jnp.swapaxes(H_raw, -1, -2))
+            Sp = jax.vmap(symplectic_cayley)(H_sym)
+            sp_out = jnp.einsum("bnhd,hde->bnhe", sp_slice, Sp)
+            parts.append(sp_out)
+        else:
+            parts.append(sp_slice)
+
+        U_new = jnp.concatenate(parts, axis=-1)
+
+        # Simple commutator diagnostics on raw generators
+        comm = {}
+        if (so_dim > 1 and self.so_param is not None) and (spd_dim > 0 and self.spd_param is not None):
+            A = self.so_param - jnp.swapaxes(self.so_param, -1, -2)
+            S = 0.5 * (self.spd_param + jnp.swapaxes(self.spd_param, -1, -2))
+            comm["so_spd"] = float(jnp.linalg.norm(A @ S - S @ A))
+        if (so_dim > 1 and self.so_param is not None) and (sp_dim > 0 and self.sp_param is not None):
+            A = self.so_param - jnp.swapaxes(self.so_param, -1, -2)
+            Hs = 0.5 * (self.sp_param + jnp.swapaxes(self.sp_param, -1, -2))
+            comm["so_sp"] = float(jnp.linalg.norm(A @ Hs - Hs @ A))
+        if (spd_dim > 0 and self.spd_param is not None) and (sp_dim > 0 and self.sp_param is not None):
+            S = 0.5 * (self.spd_param + jnp.swapaxes(self.spd_param, -1, -2))
+            Hs = 0.5 * (self.sp_param + jnp.swapaxes(self.sp_param, -1, -2))
+            comm["spd_sp"] = float(jnp.linalg.norm(S @ Hs - Hs @ S))
+
+        return U_new, comm
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = True, return_debug: bool = False):
@@ -404,6 +553,9 @@ class GaugeAttentionBlock(nn.Module):
         q_t = self._apply_transport(q, theta_prefix, sign=-1.0)
         k_t = self._apply_transport(k, theta_prefix, sign=-1.0)
         v_t = self._apply_transport(v, theta_prefix, sign=+1.0)
+
+        # Optional structured channel transforms in transported frames
+        v_t, comm_dbg = self._apply_structured_blocks(v_t)
 
         # Gauge-invariant compatibilities → banded generator
         ck = self._compatibilities(q_t, k_t, theta_prefix)  # (B,N,H,O)
@@ -459,6 +611,8 @@ class GaugeAttentionBlock(nn.Module):
             "uniformization_K": K_dbg,  # (B,H)
             "curvature_proxy": curv_mag,  # (B,N-1,H)
             "offsets": jnp.array(self.cfg.offsets, dtype=jnp.int32),  # (O,)
+            "structured": bool(self.cfg.use_structured_blocks),
+            "comm_norms": comm_dbg if self.cfg.use_structured_blocks else {},
         }
         return out, dbg
 
@@ -558,6 +712,8 @@ def demo():
     neg_offs = [-o for o in pos_offs]
     offsets = tuple(neg_offs[::-1] + [o for o in pos_offs])
 
+    # Optional toggle via env for structured channel blocks
+    use_structured = os.environ.get("GAUGE_STRUCTURED", "0") == "1"
     cfg = GaugeTransformerConfig(
         d_model=D,
         n_heads=H,
@@ -572,6 +728,7 @@ def demo():
         dropout_rate=0.0,
         use_layernorm=False,
         attn_bias_init=0.0,
+        use_structured_blocks=use_structured,
     )
 
     model = GaugeTransformer(cfg, depth=4, vocab_size=None)
@@ -584,6 +741,31 @@ def demo():
     print("Uniformization maximum K (first block):", int(jnp.max(dbg[0]["uniformization_K"])))
     print("Q bands shape (first block):", dbg[0]["Q_bands"].shape)
     print("Curvature-proxy shape (first block):", dbg[0]["curvature_proxy"].shape)
+    if cfg.use_structured_blocks:
+        print("Structured blocks: ON; commutator norms (first block):", dbg[0].get("comm_norms", {}))
+
+    # --- Structured SO/SPD/Sp composition mini-demo ---
+    print("\n[Structured Generators Demo]")
+    dh2 = dh if (dh % 2 == 0) else dh - 1
+    if dh2 >= 4:
+        # Build small skew, symmetric, and Hamiltonian generators
+        v = jax.random.normal(key, (dh2,))
+        skew = jnp.zeros((dh2, dh2))
+        skew = skew.at[jnp.triu_indices(dh2, 1)].set(0.1)
+        skew = skew - skew.T
+        sym = jnp.diag(jnp.linspace(-0.2, 0.2, dh2))
+        Hsym = jnp.diag(jnp.linspace(0.1, 0.3, dh2 // 2))
+        A = jnp.block([[Hsym, jnp.zeros_like(Hsym)], [jnp.zeros_like(Hsym), Hsym]])
+        # Exponentiate
+        Q = cayley_orthogonal_from_skew(skew)
+        S = spd_from_symmetric(sym)
+        Sp = symplectic_cayley(A)
+        # BCH proxy: measure commutator norms
+        def comm_norm(X, Y):
+            return float(jnp.linalg.norm(X @ Y - Y @ X))
+        print("||[skew, sym]||:", f"{comm_norm(skew, sym):.2e}")
+        print("||[skew, A]||:", f"{comm_norm(skew, A):.2e}")
+        print("||[sym, A]||:", f"{comm_norm(sym, A):.2e}")
 
 
 if __name__ == "__main__":

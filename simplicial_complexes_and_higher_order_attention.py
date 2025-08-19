@@ -13,6 +13,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 try:
     from jax.experimental.sparse import BCOO
@@ -238,6 +239,60 @@ def boundary_inconsistency(h, complex_):
     return s
 
 
+# ---------------------------
+# Test adapter: SimplicialComplex
+# ---------------------------
+
+
+class SimplicialComplex:
+    """Minimal graph-like simplicial complex for tests.
+
+    Supports adding edges/triangles and a simple Hodge-Laplacian-inspired flow
+    over node signals.
+    """
+
+    def __init__(self, num_nodes: int):
+        import numpy as _np
+
+        self.n = int(num_nodes)
+        self.edges: set[tuple[int, int]] = set()
+        self.triangles: set[tuple[int, int, int]] = set()
+        self._adj = _np.zeros((self.n, self.n), dtype=float)
+
+    def add_edge(self, i: int, j: int) -> None:
+        i, j = (int(i), int(j)) if i < j else (int(j), int(i))
+        if i == j:
+            return
+        self.edges.add((i, j))
+        self._adj[i, j] = 1.0
+        self._adj[j, i] = 1.0
+
+    def add_triangle(self, i: int, j: int, k: int) -> None:
+        tri = tuple(sorted((int(i), int(j), int(k))))
+        if len(set(tri)) < 3:
+            return
+        tri_fixed: tuple[int, int, int] = (int(tri[0]), int(tri[1]), int(tri[2]))
+        self.triangles.add(tri_fixed)
+        # Ensure edges exist
+        self.add_edge(tri[0], tri[1])
+        self.add_edge(tri[0], tri[2])
+        self.add_edge(tri[1], tri[2])
+
+    def hodge_laplacian_flow(self, x, steps: int = 5):
+        import numpy as _np
+
+        x = _np.asarray(x, dtype=float).reshape(self.n)
+        # Graph Laplacian as a proxy for 0-Hodge Laplacian
+        deg = _np.diag(self._adj.sum(axis=1))
+        L = deg - self._adj
+        # Simple diffusion
+        y = x.copy()
+        alpha = 0.1
+        for _ in range(max(0, int(steps))):
+            y = y - alpha * (L @ y)
+        return y
+
+
 def total_mass(m):
     return sum([jnp.sum(mk) for mk in m])
 
@@ -385,6 +440,66 @@ def sanity_suite(params, complex_, d):
     }
 
 
+# --- Experimental helpers: Hodge-based readout ---
+def laplacian_0_from_adj(A: jnp.ndarray) -> jnp.ndarray:
+    deg = jnp.diag(jnp.sum(A, axis=1))
+    return deg - A
+
+
+def hodge_readout(flow: np.ndarray, A: np.ndarray, k_small: int = 3) -> np.ndarray:
+    """Project flow onto first k_small eigenvectors of L0 and return coefficients.
+
+    For small graphs, use dense eigh; this is for interpretability/readout only.
+    """
+    import numpy as _np
+    L0 = _np.diag(A.sum(axis=1)) - A
+    lam, U = _np.linalg.eigh(L0)
+    idx = _np.argsort(lam)[:k_small]
+    Ub = U[:, idx]
+    coeff = Ub.T @ flow
+    return coeff
+
+
+def demo_signed_attention(seed: int = 0):
+    """Mini demo: orientation-aware (signed) vs unsigned diffusion on direction-sensitive labels."""
+    import numpy as _np
+    from rich.table import Table as _Table
+
+    rng = _np.random.default_rng(seed)
+    n = 10
+    # Build a directed ring with orientations
+    A = _np.zeros((n, n))
+    for i in range(n):
+        j = (i + 1) % n
+        A[i, j] = 1  # directed edge i->j
+    # Labels depend on direction: nodes in the first half are positive
+    y = _np.zeros(n)
+    y[: n // 2] = 1
+    x = rng.normal(size=(n,))
+    # Unsigned diffusion
+    L0u = _np.diag(A.sum(1)) - ((A + A.T) > 0).astype(float)
+    xu = x.copy()
+    for _ in range(8):
+        xu = xu - 0.1 * (L0u @ xu)
+    # Signed diffusion (use A - A^T as a proxy skew influence)
+    S = A - A.T
+    Ls = _np.diag(A.sum(1)) - A
+    xs = x.copy()
+    for _ in range(8):
+        xs = xs - 0.1 * (Ls @ xs + 0.05 * (S @ xs))
+    # Simple threshold readout
+    preds_u = (xu > 0).astype(int)
+    preds_s = (xs > 0).astype(int)
+    acc_u = (preds_u == y).mean()
+    acc_s = (preds_s == y).mean()
+    t = _Table(title="Signed vs Unsigned Diffusion", show_header=True, header_style="bold magenta")
+    t.add_column("Model")
+    t.add_column("Accuracy", justify="right")
+    t.add_row("Unsigned", f"{acc_u:.2f}")
+    t.add_row("Signed", f"{acc_s:.2f}")
+    print(t)
+
+
 def main():
     from config import get_config
     from utils import check_nan_inf, conditional_print, log_metrics_conditionally, print_model_summary, save_checkpoint
@@ -474,3 +589,6 @@ def demo():
 
 if __name__ == "__main__":
     demo()
+
+
+# (adapter defined above)
