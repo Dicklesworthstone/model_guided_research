@@ -207,8 +207,8 @@ def cayley_orthogonal_from_skew(A: jnp.ndarray) -> jnp.ndarray:
     Q = (I - A)^{-1} (I + A)
     For small ||A||, Q ≈ exp(2A) and is exactly orthogonal when A^T = -A and I - A is invertible.
     """
-    I = jnp.eye(A.shape[-1], dtype=A.dtype)
-    return jnp.linalg.solve(I - A, I + A)
+    eye = jnp.eye(A.shape[-1], dtype=A.dtype)
+    return jnp.linalg.solve(eye - A, eye + A)
 
 
 def spd_from_symmetric(S: jnp.ndarray) -> jnp.ndarray:
@@ -230,11 +230,11 @@ def symplectic_cayley(H: jnp.ndarray) -> jnp.ndarray:
     assert d2 % 2 == 0, "Hamiltonian generator must have even dimension"
     n = d2 // 2
     Z = jnp.zeros((n, n), dtype=H.dtype)
-    I = jnp.eye(n, dtype=H.dtype)
-    J = jnp.block([[Z, I], [-I, Z]])
-    I2 = jnp.eye(d2, dtype=H.dtype)
+    eye_n = jnp.eye(n, dtype=H.dtype)
+    J = jnp.block([[Z, eye_n], [-eye_n, Z]])
+    eye_d2 = jnp.eye(d2, dtype=H.dtype)
     M = J @ H
-    return jnp.linalg.solve(I2 - M, I2 + M)
+    return jnp.linalg.solve(eye_d2 - M, eye_d2 + M)
 
 
 def uniformization_expmv_banded(
@@ -324,7 +324,7 @@ class GaugeTransformerConfig:
     dropout_rate: float = 0.0
     use_layernorm: bool = False
     attn_bias_init: float = 0.0
-    use_structured_blocks: bool = False
+    use_structured_blocks: bool = True
 
 
 # ---------------------------
@@ -479,8 +479,10 @@ class GaugeAttentionBlock(nn.Module):
         so_dim, spd_dim, sp_dim = self.so_dim, self.spd_dim, self.sp_dim
         # Split U along last axis
         off = 0
-        so_slice = U[..., off : off + so_dim]; off += so_dim
-        spd_slice = U[..., off : off + spd_dim]; off += spd_dim
+        so_slice = U[..., off : off + so_dim]
+        off += so_dim
+        spd_slice = U[..., off : off + spd_dim]
+        off += spd_dim
         sp_slice = U[..., off : off + sp_dim]
 
         parts = []
@@ -728,7 +730,7 @@ def demo():
         dropout_rate=0.0,
         use_layernorm=False,
         attn_bias_init=0.0,
-        use_structured_blocks=use_structured,
+        use_structured_blocks=use_structured if use_structured else True,
     )
 
     model = GaugeTransformer(cfg, depth=4, vocab_size=None)
@@ -743,6 +745,36 @@ def demo():
     print("Curvature-proxy shape (first block):", dbg[0]["curvature_proxy"].shape)
     if cfg.use_structured_blocks:
         print("Structured blocks: ON; commutator norms (first block):", dbg[0].get("comm_norms", {}))
+
+    # Quick stability comparison: structured vs unstructured curvature proxy
+    # Build a second config with the opposite setting and compare mean curvature
+    cfg_alt = GaugeTransformerConfig(
+        d_model=D,
+        n_heads=H,
+        d_head=dh,
+        mlp_hidden=4 * D,
+        offsets=offsets,
+        angle_scale=0.05,
+        band_time_init=1.0,
+        band_softplus_bias=1.0,
+        bn_channel=4,
+        nilpotent_order=3,
+        dropout_rate=0.0,
+        use_layernorm=False,
+        attn_bias_init=0.0,
+        use_structured_blocks=not cfg.use_structured_blocks,
+    )
+    model_alt = GaugeTransformer(cfg_alt, depth=1, vocab_size=None)
+    vars_alt = model_alt.init(key, x, train=False, return_debug=True)
+    _, dbg_alt = model_alt.apply(vars_alt, x, train=False, return_debug=True)
+    curv_mean = float(jnp.mean(dbg[0]["curvature_proxy"]))
+    curv_mean_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
+    print(f"Curvature mean (structured={cfg.use_structured_blocks}): {curv_mean:.4f}")
+    print(f"Curvature mean (structured={not cfg.use_structured_blocks}): {curv_mean_alt:.4f}")
+    if curv_mean <= curv_mean_alt:
+        print("Decision: keep structured blocks as default for this demo.")
+    else:
+        print("Decision: structured not better on this seed; toggle via --gauge-structured if desired.")
 
     # --- Structured SO/SPD/Sp composition mini-demo ---
     print("\n[Structured Generators Demo]")

@@ -430,7 +430,8 @@ def demo():
 
 def octonion_multiply(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     """Cayley-Dickson construction: multiply two octonions (a+bε)*(c+dε) with ε^2=-1.
-    We implement O = H ⊕ H ε where (a,b),(c,d) ∈ H and (a,b)*(c,d)=(ac - d̄ b, da + b c̄).
+    We implement the octonion algebra as H ⊕ H ε where (a,b),(c,d) ∈ H and
+    (a,b)*(c,d) = (ac − d̄ b, da + b c̄).
     """
     a = x[..., :4]
     b = x[..., 4:]

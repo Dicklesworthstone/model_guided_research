@@ -90,7 +90,7 @@ def make_dataset(rng, n_train, n_val, in_dim, K):
 
 
 def init_params(rng, in_dim, d_model, ff_mult, H, K):
-    kE, kO = rng.split(2)
+    kE, k_out = rng.split(2)
     W_e = glorot(kE, (in_dim, d_model))
     b_e = jnp.zeros((d_model,))
     blocks = []
@@ -103,7 +103,7 @@ def init_params(rng, in_dim, d_model, ff_mult, H, K):
         g = jnp.ones((d_model,))
         be = jnp.zeros((d_model,))
         blocks.append({"W1": W1, "b1": b1, "W2": W2, "b2": b2, "g": g, "be": be})
-    W_o = glorot(kO, (d_model, K))
+    W_o = glorot(k_out, (d_model, K))
     b_o = jnp.zeros((K,))
     return {"emb": {"W": W_e, "b": b_e}, "blocks": tuple(blocks), "out": {"W": W_o, "b": b_o}}
 

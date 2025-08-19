@@ -4,6 +4,7 @@ Model Guided Research CLI - Run experimental mathematical models for ML research
 """
 
 import importlib
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -12,7 +13,6 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-import json
 
 app = typer.Typer(
     name="model-guided-research",
@@ -265,8 +265,9 @@ def run(
 
             # Pre-demo feature showcases
             if demo_name == "tropical" and tropical_cert:
-                from tropical_geometry_and_idempotent_algebra import TropicalAttention
                 import numpy as _np
+
+                from tropical_geometry_and_idempotent_algebra import TropicalAttention
                 Q = _np.random.randn(32, 16)
                 K = _np.random.randn(32, 16)
                 V = _np.random.randn(32, 16)
@@ -283,6 +284,7 @@ def run(
 
             if demo_name == "simplicial" and simplicial_hodge:
                 import numpy as _np
+
                 from simplicial_complexes_and_higher_order_attention import hodge_readout
                 n = 8
                 A = _np.zeros((n, n))
@@ -302,14 +304,15 @@ def run(
 
             if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid):
                 import numpy as _np
+
                 from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
                 # Cayley orthogonal check
                 if rev_cayley:
                     try:
                         from reversible_computation_and_measure_preserving_learning import (
                             set_reversible_cayley,
-                            set_reversible_cayley_o1,
                             set_reversible_cayley_iters,
+                            set_reversible_cayley_o1,
                         )
                         set_reversible_cayley(True)
                         set_reversible_cayley_o1(bool(rev_cayley_o1))
@@ -322,8 +325,8 @@ def run(
                     A = 0.1 * (M - M.T)  # skew
                     import jax.numpy as _jnp
                     Q = cayley_orthogonal_from_skew(_jnp.array(A))
-                    I = _jnp.eye(Q.shape[-1])
-                    err = float(_jnp.linalg.norm(Q.T @ Q - I))
+                    eye_q = _jnp.eye(Q.shape[-1])
+                    err = float(_jnp.linalg.norm(Q.T @ Q - eye_q))
                     table = Table(title="Cayley Orthogonality Check", show_header=True, header_style="bold magenta")
                     table.add_column("||Q^T Q − I||_F", justify="right")
                     table.add_row(f"{err:.2e}")
@@ -336,8 +339,9 @@ def run(
                     H = 0.1 * (H + H.T)
                     import jax.numpy as _jnp
                     S = symplectic_cayley(_jnp.array(H))
-                    Z = _jnp.zeros((n, n)); I = _jnp.eye(n)
-                    J = _jnp.block([[Z, I], [-I, Z]])
+                    Z = _jnp.zeros((n, n))
+                    eye_n = _jnp.eye(n)
+                    J = _jnp.block([[Z, eye_n], [-eye_n, Z]])
                     err = float(_jnp.linalg.norm(S.T @ J @ S - J))
                     t2 = Table(title="Symplectic Cayley Check", show_header=True, header_style="bold magenta")
                     t2.add_column("||S^T J S − J||_F", justify="right")
@@ -358,6 +362,8 @@ def run(
             with console.status("[bold green]Running demo...[/bold green]"):
                 demo_func()
 
+
+
         # Write artifacts if requested
         if export_json is not None:
             try:
@@ -367,11 +373,8 @@ def run(
             with export_json.open("w") as f:
                 json.dump(artifacts, f, indent=2)
             if verbose:
-                console.print(f"[dim]Wrote JSON artifact to {export_json}[/dim]
-")
-        else:
-            console.print(f"[bold red]Error:[/bold red] Function '{func_name}' not found in module")
-            raise typer.Exit(1)
+                console.print(f"[dim]Wrote JSON artifact to {export_json}[/dim]")
+
 
     except ImportError as e:
         console.print(f"[bold red]Import Error:[/bold red] {e}")

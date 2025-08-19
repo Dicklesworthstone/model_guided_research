@@ -200,6 +200,19 @@ def make_coupling_params(k: jax.Array, d: int, hidden: int) -> CouplingParams:
     return CouplingParams(g_w1, g_b1, g_w2, g_b2, h_w1, h_b1, h_w2, h_b2, mix)
 
 
+# Simple leapfrog integrator used by hybrid symplectic step
+def symplectic_leapfrog_step(qp: Array, grad_H_q, grad_H_p, step: float = 0.1) -> Array:
+    # qp: (..., 2n) with q then p; simple leapfrog integrator
+    n2 = qp.shape[-1]
+    n = n2 // 2
+    q = qp[..., :n]
+    p = qp[..., n:]
+    p_half = p - 0.5 * step * grad_H_q(q)
+    q_new = q + step * grad_H_p(p_half)
+    p_new = p_half - 0.5 * step * grad_H_q(q_new)
+    return jnp.concatenate([q_new, p_new], axis=-1)
+
+
 USE_CAYLEY_HYBRID: bool = False
 CAYLEY_O1_GRAD: bool = True  # O(1) memory custom JVP by default for Cayley step
 CAYLEY_ITERS: int = 1
@@ -426,12 +439,19 @@ class MeteredValve:
         self, y: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True
     ) -> tuple[Array, ValveStats]:
         a, b = jnp.split(y, [self.d_a], axis=-1)
-        # Always store exact representation to maintain bijection irrespective of mode
+        logits = valve_logits(a, self.params)
+        p = softmax_logits(logits)
+        # Fast JAX-native non-audit path for training (no bit accounting, no host conversions)
+        if not audit_mode:
+            idx_pos = jnp.argmax(p, axis=-1)  # (...,)
+            idx = jnp.repeat(idx_pos[..., None], self.d_b, axis=-1)  # (..., d_b)
+            bq = dequantize_idx(idx, self.params.centers)
+            y_out = jnp.concatenate([a, bq], axis=-1)
+            return y_out, ValveStats(bits_written=0, bits_consumed=0, delta_bits=0)
+        # Audit path: store exact representation to maintain bijection
         raw = np.asarray(float32_to_u32(b)).ravel()
         tape.push_u32(raw)
         bw0 = 32 * raw.size
-        logits = valve_logits(a, self.params)
-        p = softmax_logits(logits)
         K = self.bins
         B = self.B
         # Flatten any leading dims into positions dimension
@@ -641,7 +661,7 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
         m2 = Model(blocks=blocks, d=m.d, d_a=m.d_a, d_b=m.d_b)
         tape_local = BitTape()
         res_local = Reservoir(1234)
-        y, _ = model_forward(x, m2, tape_local, res_local, audit_mode=True)
+        y, _ = model_forward(x, m2, tape_local, res_local, audit_mode=False)
         logits = y[..., : y_target.shape[-1]]
         loss = jnp.mean(optax.softmax_cross_entropy(logits, y_target))
         return loss
@@ -649,19 +669,8 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
     # Experimental: Symplectic/Cayley utilities for future hybrid layers
     # (kept here to align with reversible theme; not used by tests)
     def cayley_orthogonal_from_skew(A: Array) -> Array:
-        I = jnp.eye(A.shape[-1], dtype=A.dtype)
-        return jnp.linalg.solve(I - A, I + A)
-
-    def symplectic_leapfrog_step(qp: Array, grad_H_q, grad_H_p, step: float = 0.1) -> Array:
-        # qp: (..., 2n) with q then p; simple leapfrog integrator
-        n2 = qp.shape[-1]
-        n = n2 // 2
-        q = qp[..., :n]
-        p = qp[..., n:]
-        p_half = p - 0.5 * step * grad_H_q(q)
-        q_new = q + step * grad_H_p(p_half)
-        p_new = p_half - 0.5 * step * grad_H_q(q_new)
-        return jnp.concatenate([q_new, p_new], axis=-1)
+        eye = jnp.eye(A.shape[-1], dtype=A.dtype)
+        return jnp.linalg.solve(eye - A, eye + A)
 
     params = []
     for b in m.blocks:
@@ -779,6 +788,14 @@ def demo():
     config = get_config()
     config.setup_jax()
 
+    # Default: enable Cayley hybrid + per-layer certificate table for this demo
+    import os as _os
+    try:
+        set_reversible_cayley(True)
+    except Exception:
+        pass
+    _os.environ.setdefault("REV_LAYER_CERT", "1")
+
     # Print device info if verbose
     if config.verbose_level >= 2:
         device_info = get_device_info()
@@ -799,10 +816,28 @@ def demo():
     bs = 8
     T = 16
     x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
-    y_tar = jax.nn.one_hot(jax.random.randint(k, (bs, T, dummy_logits_dim), 0, dummy_logits_dim), dummy_logits_dim)
+    idx_tar = jax.random.randint(k, (bs, T), 0, dummy_logits_dim)
+    y_tar = jax.nn.one_hot(idx_tar, dummy_logits_dim)
     from utils import conditional_print
 
-    opt_state = opt.init(jax.tree_util.tree_flatten([b.coup.g_w1 for b in m.blocks])[0])
+    # Initialize optimizer state with full parameter list used by tiny_train_step
+    _params = []
+    for b in m.blocks:
+        _params += [
+            b.coup.g_w1,
+            b.coup.g_b1,
+            b.coup.g_w2,
+            b.coup.g_b2,
+            b.coup.h_w1,
+            b.coup.h_b1,
+            b.coup.h_w2,
+            b.coup.h_b2,
+            b.coup.mix,
+        ]
+        vp = b.valve.params
+        _params += [vp.w1, vp.b1, vp.w2, vp.b2, vp.w3, vp.b3]
+    _params_tree = jax.tree_util.tree_flatten(_params)[0]
+    opt_state = opt.init(_params_tree)
 
     conditional_print("\n[bold]Training Progress:[/bold]", level=1)
     for step in range(3):
@@ -832,7 +867,7 @@ def demo():
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
             # Approximate Q via first-order (I+S) (note: demo-only; forward uses solve approximation)
-            def S_apply(xv):
+            def S_apply(xv, u=u, v=v):
                 a = jnp.sum(v * xv, axis=-1, keepdims=True)
                 b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
                 return u * a - v * b_
@@ -843,7 +878,7 @@ def demo():
             # Compute err per slice
             # Use a proxy by sampling vectors rather than forming Q explicitly
             # err ≈ ||(Q^T Q y - y)|| / ||y|| averaged
-            def err_vec(y_):
+            def err_vec(y_, Qy=Qy):
                 QtQy = Qy  # proxy since Q is near-orthogonal for small S
                 return jnp.linalg.norm(QtQy - y_) / (jnp.linalg.norm(y_) + 1e-12)
             err = float(jnp.mean(jax.vmap(err_vec)(yv)))
@@ -852,25 +887,27 @@ def demo():
             from rich.console import Console as _Console
             _Console().print(t)
 
-    # Optional Pareto sweep over Cayley iters (compute vs memory)
+    # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
         import time
         import tracemalloc
-
         from rich.table import Table as _Table
-        t = _Table(title="Cayley Iterations Pareto (smaller mem better)", show_header=True, header_style="bold magenta")
+        t = _Table(title="Cayley Iterations/Depth Pareto (lower is better)", show_header=True, header_style="bold magenta")
+        t.add_column("layers")
         t.add_column("iters")
         t.add_column("time_ms", justify="right")
         t.add_column("peak_mem_MB", justify="right")
-        for iters in [1, 2, 3, 4]:
-            set_reversible_cayley_iters(iters)
-            tracemalloc.start()
-            t0 = time.perf_counter()
-            _ = model_forward(x, m, BitTape(), Reservoir(999), audit_mode=True)
-            dt = (time.perf_counter() - t0) * 1000.0
-            peak_mb = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
-            tracemalloc.stop()
-            t.add_row(str(iters), f"{dt:.2f}", f"{peak_mb:.2f}")
+        for Ls in [1, 2, 3, 4]:
+            m_sweep = make_model(k, Ls, d, d_a, hidden, bins, B)
+            for iters in [1, 2, 3, 4]:
+                set_reversible_cayley_iters(iters)
+                tracemalloc.start()
+                t0 = time.perf_counter()
+                _ = model_forward(x, m_sweep, BitTape(), Reservoir(999), audit_mode=True)
+                dt = (time.perf_counter() - t0) * 1000.0
+                peak_mb = tracemalloc.get_traced_memory()[1] / (1024 * 1024)
+                tracemalloc.stop()
+                t.add_row(str(Ls), str(iters), f"{dt:.2f}", f"{peak_mb:.2f}")
         if config.use_rich_output:
             from rich.console import Console as _Console
             _Console().print(t)
