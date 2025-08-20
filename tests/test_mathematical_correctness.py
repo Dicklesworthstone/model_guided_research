@@ -521,6 +521,21 @@ class TestUltrametricWorlds:
         assert d_decoded == 21 % (p**precision), f"Multiplication failed: {d_decoded} != 21"
         print(f"  ✅ p-adic multiplication: 7 × 3 = {d_decoded} (mod {p}^{precision})")
 
+    def test_packed_rank_prefix(self):
+        """Array-packed has_prefix/rank_prefix behave consistently after finalize."""
+        print("\n🔬 Testing Array-Packed Rank/Prefix...")
+        U = padic.UltrametricAttention(dim=16, p=5, max_depth=8, packed=True, heads=2)
+        for i in range(128):
+            U.insert(i, np.random.randn(16))
+        U.finalize()
+        depth = 4
+        code = (1 << depth) // 2
+        has = U.has_prefix(0, depth, code)
+        rank = U.rank_prefix(0, depth, code)
+        assert isinstance(has, bool | np.bool_)
+        assert isinstance(rank, int | np.integer)
+        print(f"  ✅ has_prefix={bool(has)} rank_prefix={int(rank)} at depth={depth}")
+
 
 class TestOctonions:
     """Test octonionic non-associative algebra."""

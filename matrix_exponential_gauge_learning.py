@@ -808,6 +808,42 @@ def demo():
         var_mean = float(jnp.mean(jnp.var(Ystack, axis=0)))
         print(f"Sampling smoothness (mean var over reps={reps}): {var_mean:.4e}")
 
+    # Optional sampling schedule comparison: compare deterministic vs sampled outputs
+    if os.environ.get("GAUGE_SAMPLE_SCHEDULE", "0") == "1":
+        y_det, _ = model.apply(variables, x, train=False, return_debug=False)
+        os.environ.setdefault("GAUGE_UNIF_SAMPLE", "1")
+        os.environ.setdefault("GAUGE_UNIF_REPS", "3")
+        outs = []
+        for r in range(int(os.environ.get("GAUGE_UNIF_REPS", "3"))):
+            os.environ["GAUGE_UNIF_REP_SEED"] = str(r + 77)
+            ys, _ = model.apply(variables, x, train=False, return_debug=False)
+            outs.append(ys)
+        try:
+            del os.environ["GAUGE_UNIF_REP_SEED"]
+        except Exception:
+            pass
+        YS = jnp.stack(outs, axis=0)
+        diff = float(jnp.mean(jnp.linalg.norm(YS - y_det, axis=-1)))
+        print(f"Schedule compare: mean ||Y_sampled − Y_det|| = {diff:.4e}")
+
+    # Optional lightweight train/eval schedule comparison
+    if os.environ.get("GAUGE_SAMPLE_TRAIN", "0") == "1":
+        # Build small train/eval batches
+        Btr, Ntr = 2, N
+        Xtr = jax.random.normal(key, (Btr, Ntr, D))
+        state = create_train_state(key, model, Xtr, lr=1e-3, wd=0.0)
+        # Deterministic few steps
+        os.environ["GAUGE_UNIF_SAMPLE"] = "0"
+        for _ in range(2):
+            state, loss_det = train_step(state, Xtr)
+        eval_det = float(eval_step(state, Xtr))
+        # Sampled few steps
+        os.environ["GAUGE_UNIF_SAMPLE"] = "1"
+        for _ in range(2):
+            state, loss_sam = train_step(state, Xtr)
+        eval_sam = float(eval_step(state, Xtr))
+        print(f"Train schedule MSE: det={float(loss_det):.4e} sam={float(loss_sam):.4e} | eval det={eval_det:.4e} sam={eval_sam:.4e}")
+
     # ASCII heatmap of commutators per block (so_spd, so_sp, spd_sp)
     if cfg.use_structured_blocks:
         combos = ["so_spd", "so_sp", "spd_sp"]
@@ -944,6 +980,50 @@ def demo():
         _, dbg_alt = model.apply(variables_alt, x, train=False, return_debug=True)
         curv_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
         print("Curvature mean alt (odd unstructured):", f"{curv_alt:.4f}")
+        # Compact compare table
+        try:
+            from rich.console import Console as _Console
+            from rich.table import Table as _Table
+            ct = _Table(title="Curvature Means Compare", show_header=True, header_style="bold magenta")
+            ct.add_column("mode")
+            ct.add_column("mean")
+            ct.add_row("baseline", f"{curv_mean_def:.4f}")
+            ct.add_row("even commuting", f"{curv_mean_comm:.4f}")
+            ct.add_row("odd unstructured", f"{curv_alt:.4f}")
+            _Console().print(ct)
+            # Commutator norms compare (sum across blocks)
+            def comm_sums(dbgl):
+                s = {"so_spd": 0.0, "so_sp": 0.0, "spd_sp": 0.0}
+                for b in dbgl:
+                    cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
+                    for k in s.keys():
+                        s[k] += float(cm.get(k, 0.0))
+                return s
+            sums_def = comm_sums(dbg)
+            sums_comm = comm_sums(dbg_comm)
+            sums_alt = comm_sums(dbg_alt)
+            ct2 = _Table(title="Commutator Sums Compare", show_header=True, header_style="bold magenta")
+            ct2.add_column("mode")
+            ct2.add_column("so_spd")
+            ct2.add_column("so_sp")
+            ct2.add_column("spd_sp")
+            ct2.add_row("baseline", f"{sums_def['so_spd']:.2e}", f"{sums_def['so_sp']:.2e}", f"{sums_def['spd_sp']:.2e}")
+            ct2.add_row("even commuting", f"{sums_comm['so_spd']:.2e}", f"{sums_comm['so_sp']:.2e}", f"{sums_comm['spd_sp']:.2e}")
+            ct2.add_row("odd unstructured", f"{sums_alt['so_spd']:.2e}", f"{sums_alt['so_sp']:.2e}", f"{sums_alt['spd_sp']:.2e}")
+            _Console().print(ct2)
+            # Delta table (baseline → commuting, baseline → alt)
+            ct3 = _Table(title="Curvature/Commutator Deltas (vs baseline)", show_header=True, header_style="bold magenta")
+            ct3.add_column("metric")
+            ct3.add_column("Δ(commuting-baseline)")
+            ct3.add_column("Δ(alt-baseline)")
+            ct3.add_row("curvature", f"{(curv_mean_comm - curv_mean_def):.4f}", f"{(curv_alt - curv_mean_def):.4f}")
+            for name in ("so_spd", "so_sp", "spd_sp"):
+                d1 = sums_comm[name] - sums_def[name]
+                d2 = sums_alt[name] - sums_def[name]
+                ct3.add_row(name, f"{d1:.2e}", f"{d2:.2e}")
+            _Console().print(ct3)
+        except Exception:
+            pass
 
     # If GAUGE_UNIF_CAP_K is set, compare vs uncapped K means
     cap_val = os.environ.get("GAUGE_UNIF_CAP_K", "")
@@ -959,6 +1039,28 @@ def demo():
     # Exportable diagnostics for CLI (module-level)
     try:
         global last_diagnostics
+        # aggregate min/mean/max summaries across blocks and include schedule comparison
+        curv_list = [float(jnp.mean(b["curvature_proxy"])) for b in dbg]
+        so_spd_list = [float(b.get("comm_norms", {}).get("so_spd", 0.0)) if isinstance(b, dict) else 0.0 for b in dbg]
+        so_sp_list = [float(b.get("comm_norms", {}).get("so_sp", 0.0)) if isinstance(b, dict) else 0.0 for b in dbg]
+        spd_sp_list = [float(b.get("comm_norms", {}).get("spd_sp", 0.0)) if isinstance(b, dict) else 0.0 for b in dbg]
+
+        # Optional commutator sums in alternation mode
+        def _comm_sums(dbgl):
+            s = {"so_spd": 0.0, "so_sp": 0.0, "spd_sp": 0.0}
+            for b in dbgl:
+                cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
+                for k in s.keys():
+                    s[k] += float(cm.get(k, 0.0))
+            return s
+        comm_compare = None
+        if 'dbg_alt' in locals():
+            comm_compare = {
+                "baseline": _comm_sums(dbg),
+                "even_commuting": _comm_sums(dbg_comm),
+                "odd_unstructured": _comm_sums(dbg_alt),
+            }
+
         last_diagnostics = {
             "K_mean_per_block": [float(k) for k in Ks],
             "K_max_per_block": [int(k) for k in Kmaxs],
@@ -967,6 +1069,11 @@ def demo():
             ] if 'K_bh' in locals() and K_bh.ndim == 2 else [],
             "curvature_mean_default": float(curv_mean_def),
             "curvature_mean_commuting": float(curv_mean_comm),
+            "curvature_mean_alt_struct": float(curv_alt) if 'curv_alt' in locals() else None,
+            "curvature_deltas": {
+                "default_to_commuting": float(curv_mean_comm - curv_mean_def),
+                "default_to_alt": float(curv_alt - curv_mean_def) if 'curv_alt' in locals() else None,
+            },
             "sampling_smoothness_var_mean": float(var_mean) if ('var_mean' in locals()) else None,
             "per_block_curv_comm": [
                 {
@@ -977,6 +1084,23 @@ def demo():
                     "spd_sp": float(b.get("comm_norms", {}).get("spd_sp", 0.0)) if isinstance(b, dict) else 0.0,
                 } for bi, b in enumerate(dbg)
             ],
+            "comm_compare": comm_compare,
+            "bch_summary": {
+                "curvature": {"min": min(curv_list), "mean": float(sum(curv_list)/len(curv_list)), "max": max(curv_list)},
+                "so_spd": {"min": min(so_spd_list), "mean": float(sum(so_spd_list)/len(so_spd_list)), "max": max(so_spd_list)},
+                "so_sp": {"min": min(so_sp_list), "mean": float(sum(so_sp_list)/len(so_sp_list)), "max": max(so_sp_list)},
+                "spd_sp": {"min": min(spd_sp_list), "mean": float(sum(spd_sp_list)/len(spd_sp_list)), "max": max(spd_sp_list)},
+                "sample_schedule": {
+                    "mean_var": float(var_mean) if ('var_mean' in locals()) else None,
+                    "diff_mean_to_det": float(diff) if ('diff' in locals()) else None,
+                },
+                "train_schedule": {
+                    "mse_det": float(loss_det) if ('loss_det' in locals()) else None,
+                    "mse_sam": float(loss_sam) if ('loss_sam' in locals()) else None,
+                    "eval_det": float(eval_det) if ('eval_det' in locals()) else None,
+                    "eval_sam": float(eval_sam) if ('eval_sam' in locals()) else None,
+                },
+            },
         }
     except Exception:
         pass

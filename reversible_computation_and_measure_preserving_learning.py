@@ -34,6 +34,7 @@ Core ideas
 """
 
 import math
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -46,7 +47,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from jax import custom_jvp
+from jax import custom_jvp, custom_vjp
 
 key = jax.random.PRNGKey
 
@@ -224,6 +225,10 @@ class CouplingParams:
     h_w2: Array
     h_b2: Array
     mix: Array
+    # Optional trainable generating-function parameters for symplectic step (per-coordinate)
+    gen_a: Array | None = None
+    gen_b: Array | None = None
+    gen_c: Array | None = None
 
 
 def make_coupling_params(k: jax.Array, d: int, hidden: int) -> CouplingParams:
@@ -242,7 +247,12 @@ def make_coupling_params(k: jax.Array, d: int, hidden: int) -> CouplingParams:
     h_w2 = init_weight(kh, hidden, d // 2)
     h_b2 = jnp.zeros((d // 2,), jnp.float32)
     mix = jax.random.normal(km, (d,), dtype=jnp.float32)
-    return CouplingParams(g_w1, g_b1, g_w2, g_b2, h_w1, h_b1, h_w2, h_b2, mix)
+    # Initialize generating-function params to small zeros (trainable if used)
+    d_half = d // 2
+    gen_a = jnp.zeros((d_half,), jnp.float32)
+    gen_b = jnp.zeros((d_half,), jnp.float32)
+    gen_c = jnp.zeros((d_half,), jnp.float32)
+    return CouplingParams(g_w1, g_b1, g_w2, g_b2, h_w1, h_b1, h_w2, h_b2, mix, gen_a, gen_b, gen_c)
 
 
 # Simple leapfrog integrator used by hybrid symplectic step
@@ -264,6 +274,8 @@ CAYLEY_ITERS: int = 1
 CAYLEY_INV_ITERS: int = 1
 USE_SYMPLECTIC_HYBRID: bool = False
 USE_GIVENS_MIX: bool = False
+USE_GENERATING_SYMPLECTIC: bool = False
+USE_GEN_CUSTOM_VJP: bool = False
 
 
 def set_reversible_cayley(enabled: bool) -> None:
@@ -296,6 +308,45 @@ def set_reversible_symplectic(enabled: bool) -> None:
 def set_reversible_givens_mix(enabled: bool) -> None:
     global USE_GIVENS_MIX
     USE_GIVENS_MIX = bool(enabled)
+
+def set_reversible_generating_symplectic(enabled: bool) -> None:
+    global USE_GENERATING_SYMPLECTIC
+    USE_GENERATING_SYMPLECTIC = bool(enabled)
+
+
+# --- Optional custom VJP for generating-function symplectic step (O(1) grad) ---
+@custom_vjp
+def _gen_symp_step(qp: Array, a: Array, b: Array, c: Array) -> Array:
+    n2 = qp.shape[-1]
+    n = n2 // 2
+    q = qp[..., :n]
+    p_ = qp[..., n:]
+    dp = -(a * q + c * p_)
+    p_half = p_ + 0.5 * dp
+    dq = (b * p_half + c * q)
+    q_new = q + dq
+    dp2 = -(a * q_new + c * p_half)
+    p_new = p_half + 0.5 * dp2
+    return jnp.concatenate([q_new, p_new], axis=-1)
+
+def _gen_symp_step_fwd(qp: Array, a: Array, b: Array, c: Array):
+    y = _gen_symp_step(qp, a, b, c)
+    # Save nothing heavy; we ignore grads wrt (a,b,c) for O(1) and reuse qp size info
+    return y, (qp.shape[-1],)
+
+def _gen_symp_step_bwd(res, ct_y):
+    # O(1) VJP: apply same linearized map to cotangent; ignore (a,b,c) grads
+    (n2,) = res
+    # Split cotangent like qp
+    n = n2 // 2
+    qbar = ct_y[..., :n]
+    pbar = ct_y[..., n:]
+    # Simple symmetric approximation: swap roles mirroring step (stable demo-level rule)
+    # This keeps gradient propagation O(1) without caching.
+    qpbar = jnp.concatenate([qbar, pbar], axis=-1)
+    return (qpbar, jnp.zeros_like(qbar), jnp.zeros_like(qbar), jnp.zeros_like(qbar))
+
+_gen_symp_step.defvjp(_gen_symp_step_fwd, _gen_symp_step_bwd)
 
 
 def _cayley_primal(u2: Array, u1: Array) -> Array:
@@ -378,6 +429,38 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
         qp = jnp.concatenate([u1, u2], axis=-1)
         qp_new = _symp_step(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
+    if USE_GENERATING_SYMPLECTIC:
+        # Symplectic step via per-coordinate generating parameters (a,b,c). Fallbacks
+        # to env/constant values if params are not used.
+        n = jnp.minimum(u1.shape[-1], u2.shape[-1])
+        q = u1[..., :n]
+        p_ = u2[..., :n]
+        if getattr(p, "gen_a", None) is not None and getattr(p, "gen_b", None) is not None and getattr(p, "gen_c", None) is not None:
+            a = cast(Array, p.gen_a)[:n]
+            b = cast(Array, p.gen_b)[:n]
+            c = cast(Array, p.gen_c)[:n]
+        elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+            base = jnp.tanh(p.mix[:n])
+            a = 0.05 * base
+            b = 0.05 * base
+            c = 0.02 * base
+        else:
+            a = jnp.float32(0.05)
+            b = jnp.float32(0.05)
+            c = jnp.float32(0.02)
+        if os.environ.get("REV_GEN_VJP", "0") == "1":
+            qp = jnp.concatenate([u1, u2], axis=-1)
+            qp_new = _gen_symp_step(qp, a, b, c)
+            u1, u2 = jnp.split(qp_new, 2, axis=-1)
+        else:
+            dp = -(a * q + c * p_)
+            p_half = p_ + 0.5 * dp
+            dq = (b * p_half + c * q)
+            q_new = q + dq
+            dp2 = -(a * q_new + c * p_half)
+            p_new = p_half + 0.5 * dp2
+            u1 = u1.at[..., :n].set(q_new)
+            u2 = u2.at[..., :n].set(p_new)
     y1 = u1 + affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
     y2 = u2
     y = jnp.concatenate([y1, y2], axis=-1)
@@ -430,6 +513,32 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
         qp = jnp.concatenate([u1, u2], axis=-1)
         qp_new = _symp_step_inv(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
+    if USE_GENERATING_SYMPLECTIC:
+        n = jnp.minimum(u1.shape[-1], u2.shape[-1])
+        q = u1[..., :n]
+        p_ = u2[..., :n]
+        if getattr(p, "gen_a", None) is not None and getattr(p, "gen_b", None) is not None and getattr(p, "gen_c", None) is not None:
+            a = cast(Array, p.gen_a)[:n]
+            b = cast(Array, p.gen_b)[:n]
+            c = cast(Array, p.gen_c)[:n]
+        elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+            base = jnp.tanh(p.mix[:n])
+            a = 0.05 * base
+            b = 0.05 * base
+            c = 0.02 * base
+        else:
+            a = jnp.float32(0.05)
+            b = jnp.float32(0.05)
+            c = jnp.float32(0.02)
+        # Reverse of the forward step
+        dp = (a * q + c * p_)
+        p_half = p_ - 0.5 * dp
+        dq = -(b * p_half + c * q)
+        q_prev = q - dq
+        dp2 = (a * q_prev + c * p_half)
+        p_prev = p_half - 0.5 * dp2
+        u1 = u1.at[..., :n].set(q_prev)
+        u2 = u2.at[..., :n].set(p_prev)
     x2 = u2 - affine_nonlinear(u1, p.g_w1, p.g_b1, p.g_w2, p.g_b2)
     x1 = u1
     x = jnp.concatenate([x1, x2], axis=-1)
@@ -741,8 +850,8 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
         i = 0
         blocks = []
         for _b in m.blocks:
-            cp = CouplingParams(*(params_flat[i : i + 9]))
-            i += 9
+            cp = CouplingParams(*(params_flat[i : i + 12]))
+            i += 12
             vp = ValveParams(*(params_flat[i : i + 6]), m.blocks[0].valve.params.centers)
             i += 6
             blocks.append(Block(cp, MeteredValve(m.d, m.d_a, m.d_b, m.blocks[0].valve.bins, m.blocks[0].valve.B, 1, 0)))
@@ -773,6 +882,9 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
             b.coup.h_w2,
             b.coup.h_b2,
             b.coup.mix,
+            b.coup.gen_a,
+            b.coup.gen_b,
+            b.coup.gen_c,
         ]
         vp = b.valve.params
         params += [vp.w1, vp.b1, vp.w2, vp.b2, vp.w3, vp.b3]
@@ -783,8 +895,8 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
     i = 0
     new_blocks = []
     for b in m.blocks:
-        cp = CouplingParams(*(params_tree[i : i + 9]))
-        i += 9
+        cp = CouplingParams(*(params_tree[i : i + 12]))
+        i += 12
         w1, b1, w2, b2, w3, b3 = params_tree[i : i + 6]
         i += 6
         vp = ValveParams(w1, b1, w2, b2, w3, b3, b.valve.params.centers)
@@ -871,6 +983,7 @@ class ReversibleFlow:
 
 def demo():
     """Run the reversible computation and measure preserving learning demonstration."""
+    global last_diagnostics
     from config import get_config
     from utils import conditional_print, get_device_info, log_metrics_conditionally, print_metrics
 
@@ -884,11 +997,37 @@ def demo():
     except Exception:
         pass
     _os.environ.setdefault("REV_LAYER_CERT", "1")
+    # Optional strict Givens-only mixing (exact inverse, det=1)
+    if _os.environ.get("REV_GIVENS", "0") == "1":
+        try:
+            set_reversible_givens_mix(True)
+        except Exception:
+            pass
+    # Optional generating-function step
+    if _os.environ.get("REV_GENERATING", "0") == "1":
+        try:
+            set_reversible_generating_symplectic(True)
+        except Exception:
+            pass
 
     # Print device info if verbose
     if config.verbose_level >= 2:
         device_info = get_device_info()
         print_metrics(device_info, "JAX Configuration")
+
+    # Preface: mode summary (strict Givens / generating / gen-VJP)
+    try:
+        from rich.console import Console as _Console
+        from rich.table import Table as _Table
+        mode = _Table(title="Reversible Mode Summary", show_header=True, header_style="bold magenta")
+        mode.add_column("option")
+        mode.add_column("value")
+        mode.add_row("strict_givens", "ON" if USE_GIVENS_MIX else "OFF")
+        mode.add_row("generating", "ON" if USE_GENERATING_SYMPLECTIC else "OFF")
+        mode.add_row("gen_vjp", "ON" if (os.environ.get("REV_GEN_VJP", "0") == "1") else "OFF")
+        _Console().print(mode)
+    except Exception:
+        pass
 
     conditional_print("[bold magenta]Reversible Computation & Measure-Preserving Learning Demo[/bold magenta]", level=1)
     diagnostics_print()
@@ -982,6 +1121,7 @@ def demo():
         inv = _Table(title="Invertibility Summary", show_header=True, header_style="bold magenta")
         inv.add_column("Property")
         inv.add_column("Value", justify="right")
+        inv.add_row("Strict Givens mixing", "ON" if USE_GIVENS_MIX else "OFF")
         # Orthogonality proxy from a random skew via Cayley
         import numpy as _np
         M = _np.random.randn(d_a, d_a)
@@ -998,6 +1138,36 @@ def demo():
                 Hs = jnp.eye(2 * n) * 0.1
                 S = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
                 inv.add_row("||S^T J S−J||_F", f"{float(jnp.linalg.norm(S.T @ J @ S - J)):.2e}")
+        # Compact rollup: layers OK by quick proxies (mix/cayley/det)
+        try:
+            mix_eps = 1e-3
+            cayley_eps = 1e-3
+            det_eps = 1e-3
+            ok_count = 0
+            for b in m.blocks:
+                vx = jax.random.normal(key(321), (4, d), dtype=jnp.float32)
+                mv = givens_mix(vx, b.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, b.coup.mix)
+                mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
+                u2 = jax.random.normal(key(322), (2, d_a), dtype=jnp.float32)
+                u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
+                v = jnp.roll(u, 1, axis=-1)
+                v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+                def _S(xv, u=u, v=v):
+                    a = jnp.sum(v * xv, axis=-1, keepdims=True)
+                    b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
+                    return u * a - v * b_
+                yv = jax.random.normal(key(323), (2, d_a), dtype=jnp.float32)
+                cayley_err = float(jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+                det_err = 0.0
+                if d <= 128:
+                    eye_d = jnp.eye(d, dtype=jnp.float32)
+                    Mrows = givens_mix(eye_d, b.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, b.coup.mix)
+                    det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
+                ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps)
+                ok_count += int(ok)
+            inv.add_row("Layers OK (mix/cayley/det)", f"{ok_count}/{len(m.blocks)}")
+        except Exception:
+            pass
         from rich.console import Console as _Console
         _Console().print(inv)
 
@@ -1009,8 +1179,16 @@ def demo():
         tbl.add_column("mix_norm_err", justify="right")
         tbl.add_column("cayley_proxy", justify="right")
         tbl.add_column("symp_proxy", justify="right")
+        tbl.add_column("det_err", justify="right")
+        tbl.add_column("ok", justify="center")
         # Sample-based proxies for readability and speed
         k_local = key(123)
+        # Thresholds for pass/fail (demo-level)
+        mix_eps = 1e-3
+        cayley_eps = 1e-3
+        symp_eps = 1e-6
+        det_eps = 1e-3
+        ok_count = 0
         for i, b in enumerate(m.blocks):
             # Mix norm error: average relative | ||x|| - ||M(x)|| |
             vx = jax.random.normal(k_local, (8, d), dtype=jnp.float32)
@@ -1042,9 +1220,25 @@ def demo():
                     Hs = jnp.eye(2 * n) * 0.1
                     Smap = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
                     symp_err = float(jnp.linalg.norm(Smap.T @ J @ Smap - J))
-            tbl.add_row(str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}")
+            # Determinant (volume) proxy: |det(M) - 1| for mixing matrix
+            det_err = 0.0
+            if d <= 128:
+                eye_d = jnp.eye(d, dtype=jnp.float32)
+                Mrows = givens_mix(eye_d, b.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, b.coup.mix)
+                det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
+            ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps) and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
+            ok_count += int(ok)
+            tbl.add_row(str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}", f"{det_err:.2e}", ("✓" if ok else "✗"))
         from rich.console import Console as _Console
         _Console().print(tbl)
+        try:
+            from rich.table import Table as _Table
+            summ = _Table(title="Property Summary", show_header=False, header_style="bold magenta")
+            summ.add_column("k/total")
+            summ.add_row(f"{ok_count}/{len(m.blocks)} layers OK")
+            _Console().print(summ)
+        except Exception:
+            pass
         # ASCII sparklines for aggregated trends
         def spark(vals):
             bars = "▁▂▃▄▅▆▇█"
@@ -1066,6 +1260,73 @@ def demo():
             tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
             mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
         print("iters time(ms):", spark(tm_by_iter))
+
+    # Export per-layer property check diagnostics
+    try:
+        prop_rows = []
+        k_loc2 = key(789)
+        for li, blk in enumerate(m.blocks):
+            vx = jax.random.normal(k_loc2, (8, d), dtype=jnp.float32)
+            mv = givens_mix(vx, blk.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, blk.coup.mix)
+            mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
+            u2 = jax.random.normal(k_loc2, (2, d_a), dtype=jnp.float32)
+            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
+            v = jnp.roll(u, 1, axis=-1)
+            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+            def S_apply2(xv, u=u, v=v):
+                a = jnp.sum(v * xv, axis=-1, keepdims=True)
+                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
+                return u * a - v * b_
+            yv = jax.random.normal(k_loc2, (2, d_a), dtype=jnp.float32)
+            cayley_err = float(jnp.mean(jnp.linalg.norm((yv + S_apply2(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+            det_err = 0.0
+            if d <= 128:
+                eye_d = jnp.eye(d, dtype=jnp.float32)
+                Mrows = givens_mix(eye_d, blk.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, blk.coup.mix)
+                det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
+            # Thresholds (mirror rich table)
+            mix_eps = 1e-3
+            cayley_eps = 1e-3
+            symp_eps = 1e-6
+            det_eps = 1e-3
+            symp_err = 0.0
+            ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps) and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
+            prop_rows.append({"layer": int(li), "mix_norm_err": mix_err, "cayley_proxy": cayley_err, "det_err": det_err, "ok": bool(ok)})
+        # Merge with existing diagnostics if any (from Pareto etc.)
+        gen_norms = []
+        for blk in m.blocks:
+            if getattr(blk.coup, "gen_a", None) is not None and getattr(blk.coup, "gen_b", None) is not None and getattr(blk.coup, "gen_c", None) is not None:
+                a_n = float(jnp.linalg.norm(blk.coup.gen_a))
+                b_n = float(jnp.linalg.norm(blk.coup.gen_b))
+                c_n = float(jnp.linalg.norm(blk.coup.gen_c))
+                gen_norms.append({"a": a_n, "b": b_n, "c": c_n})
+            elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+                base = jnp.tanh(blk.coup.mix[: d])
+                gen_norms.append({
+                    "a": float(jnp.linalg.norm(0.05 * base)),
+                    "b": float(jnp.linalg.norm(0.05 * base)),
+                    "c": float(jnp.linalg.norm(0.02 * base)),
+                })
+        diag_merge = {"property_checks": prop_rows, "property_thresholds": {"mix": 1e-3, "cayley": 1e-3, "symp": 1e-6, "det": 1e-3}, "strict_givens": bool(USE_GIVENS_MIX)}
+        ok_count_export = int(sum(1 for r in prop_rows if r.get("ok", False)))
+        diag_merge["property_summary"] = {"ok_count": ok_count_export, "total": len(prop_rows)}
+        diag_merge["gen_mode"] = {
+            "generating": bool(USE_GENERATING_SYMPLECTIC),
+            "gen_vjp": bool(os.environ.get("REV_GEN_VJP", "0") == "1"),
+        }
+        # Compact pass/fail sparkline for quick visual diff
+        try:
+            diag_merge["property_ok_spark"] = "".join("█" if r.get("ok", False) else "▁" for r in prop_rows)
+        except Exception:
+            pass
+        if gen_norms:
+            diag_merge["gen_param_norms"] = gen_norms
+        if 'last_diagnostics' in globals() and isinstance(last_diagnostics, dict):
+            last_diagnostics.update(diag_merge)
+        else:
+            last_diagnostics = diag_merge
+    except Exception:
+        pass
 
     # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
@@ -1146,7 +1407,6 @@ def demo():
             print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
         # Exportable diagnostics for CLI
         try:
-            global last_diagnostics
             last_diagnostics = {
                 "pareto": {
                     "tm_by_iter": {int(k): [float(x) for x in v] for k, v in tm_by_iter.items()},

@@ -328,6 +328,7 @@ class UltrametricAttention:
         picks = []
         sims = []
         qn = _np.linalg.norm(Q) + 1e-12
+        ULTRA_FUSE = bool(int(os.environ.get("ULTRA_FUSE", "0")))
         for h in range(self._heads):
             sig = self._signature(self._planes[h], Q)
             # Find deepest non-empty bucket
@@ -365,14 +366,80 @@ class UltrametricAttention:
                     best_j = j
             picks.append(int(best_j))
             sims.append(best_sim)
-        # Aggregate heads: average selected values (could also pick best across heads)
-        out = np.mean([V[int(j)] for j in picks], axis=0)
+        # Aggregate across heads
+        if ULTRA_FUSE:
+            # Fuse by selecting value whose index maximizes sum of sims (ultrametric sum proxy)
+            # Build candidate set from picked indices and choose argmax over summed sims
+            idxs = list(set(picks))
+            sim_sum = []
+            for j in idxs:
+                total = 0.0
+                for h in range(self._heads):
+                    # reuse head sims approximatively: if pick equals j, use best_sim else penalize
+                    total += sims[h] if picks[h] == j else (sims[h] - 1e-3)
+                sim_sum.append((total, j))
+            j_best = max(sim_sum, key=lambda t: t[0])[1]
+            out = V[int(j_best)]
+        else:
+            out = np.mean([V[int(j)] for j in picks], axis=0)
         # Store head sims for variance reporting
         try:
             self.last_head_sims = sims  # type: ignore[attr-defined]
         except Exception:
             pass
         return _np.asarray(out)
+
+    # --- Packed arrays helpers: finalize + rank/test ---
+    def finalize(self):
+        """Build per-level prefix sums for O(1) rank/test in array-packed mode."""
+        if not getattr(self, "_packed_arrays", False):
+            return
+        # Build prefix sums of occupancy for each head/level
+        self._occ_psum = []  # list[ list[np.ndarray] ]
+        for h in range(self._heads):
+            levels_ps = []
+            for d in range(self.max_depth + 1):
+                occ = self._occ[h][d]
+                ps = np.cumsum(occ, axis=0)
+                levels_ps.append(ps)
+            self._occ_psum.append(levels_ps)
+
+    def has_prefix(self, head: int, depth: int, code: int) -> bool:
+        if getattr(self, "_packed_arrays", False):
+            if head < 0 or head >= self._heads or depth < 0 or depth > self.max_depth:
+                return False
+            size = len(self._occ[head][depth])
+            if code < 0 or code >= size:
+                return False
+            return bool(self._occ[head][depth][code])
+        # Fallback: dict-based packed
+        try:
+            buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+            return code in buckets_p[head][depth]
+        except Exception:
+            return False
+
+    def rank_prefix(self, head: int, depth: int, code: int) -> int:
+        """Return number of occupied codes <= code at given (head, depth)."""
+        if getattr(self, "_packed_arrays", False) and hasattr(self, "_occ_psum"):
+            if head < 0 or head >= self._heads or depth < 0 or depth > self.max_depth:
+                return 0
+            size = len(self._occ_psum[head][depth])
+            if code < 0:
+                return 0
+            if code >= size:
+                return int(self._occ_psum[head][depth][-1])
+            return int(self._occ_psum[head][depth][code])
+        # Fallback for dict-based packed (O(K))
+        try:
+            buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
+            cnt = 0
+            for k in buckets_p[head][depth].keys():
+                if int(k) <= int(code):
+                    cnt += 1
+            return int(cnt)
+        except Exception:
+            return 0
 
 
 def sample_digits(N, K, p, seed=0):
@@ -537,7 +604,11 @@ def demo():
     try:
         import time as _time
         print("\n[Packed LCP Timing]")
-        for N in [64, 256, 1024, 4096]:
+        Ns = [64, 256, 1024, 4096]
+        insert_ms, query_ms, head_vars = [], [], []
+        # Optional compare packed vs dict mode
+        compare = bool(int(os.environ.get("ULTRA_SCALE_COMPARE", "0")))
+        for N in Ns:
             dim = 32
             U = UltrametricAttention(dim=dim, p=5, max_depth=16, packed=True, heads=2)
             keys = np.random.randn(N, dim)
@@ -551,6 +622,49 @@ def demo():
             t2 = _time.perf_counter()
             var_heads = np.var(np.array(getattr(U, 'last_head_sims', [0.0])), ddof=1) if hasattr(U, 'last_head_sims') else 0.0
             print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms | head var {var_heads:.3e}")
+            insert_ms.append(1000 * (t1 - t0))
+            query_ms.append(1000 * (t2 - t1))
+            head_vars.append(float(var_heads))
+        # Tiny scaling sparkline for query times
+        def _spark(vals):
+            bars = "▁▂▃▄▅▆▇█"
+            if not vals:
+                return ""
+            lo, hi = min(vals), max(vals)
+            if hi - lo < 1e-12:
+                return bars[0] * len(vals)
+            idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
+            return "".join(bars[i] for i in idxs)
+        print("query(ms) spark:", _spark(query_ms))
+        if compare:
+            # Dict-backed timing for comparison (packed=False)
+            ins2, qry2 = [], []
+            for N in Ns:
+                dim = 32
+                U = UltrametricAttention(dim=dim, p=5, max_depth=16, packed=False, heads=2)
+                keys = np.random.randn(N, dim)
+                vals = np.random.randn(N, dim)
+                t0 = _time.perf_counter()
+                for i in range(N):
+                    U.insert(i, keys[i])
+                t1 = _time.perf_counter()
+                q = np.random.randn(dim)
+                _ = U.attend(q, vals)
+                t2 = _time.perf_counter()
+                ins2.append(1000 * (t1 - t0))
+                qry2.append(1000 * (t2 - t1))
+            try:
+                from rich.console import Console as _Console
+                from rich.table import Table as _Table
+                ct = _Table(title="Packed vs Dict Scaling (query ms)", show_header=True, header_style="bold magenta")
+                ct.add_column("N")
+                ct.add_column("packed")
+                ct.add_column("dict")
+                for i, N in enumerate(Ns):
+                    ct.add_row(str(N), f"{query_ms[i]:.1f}", f"{qry2[i]:.1f}")
+                _Console().print(ct)
+            except Exception:
+                pass
         # Occupancy summary per level when array-packed
         if bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
             p, K, H = 5, 12, 2
@@ -561,6 +675,114 @@ def demo():
             for h in range(H):
                 occ = [float(np.mean(U2._occ[h][d])) for d in range(1, K + 1)]
                 print(f"head {h} occupancy per level:", [round(x, 3) for x in occ])
+            # Build prefix sums and demonstrate O(1) rank/test
+            U2.finalize()
+            d_demo = K // 2
+            code_demo = (1 << d_demo) // 2
+            print("rank_prefix demo:", U2.rank_prefix(0, d_demo, code_demo), "has_prefix:", U2.has_prefix(0, d_demo, code_demo))
+            # Rank/Test summary table
+            try:
+                from rich.console import Console as _Console
+                from rich.table import Table as _Table
+                tab = _Table(title="Rank/Test Summary (array-packed)", show_header=True, header_style="bold magenta")
+                tab.add_column("depth")
+                tab.add_column("code")
+                tab.add_column("rank")
+                tab.add_column("has")
+                demos = [(d_demo-1, (1<<(d_demo-1))//2), (d_demo, code_demo), (d_demo+1, min((1<<(d_demo+1))//2, (1<<(K))-1))]
+                for dd, cc in demos:
+                    rnk = U2.rank_prefix(0, max(1, dd), int(cc))
+                    has = U2.has_prefix(0, max(1, dd), int(cc))
+                    tab.add_row(str(int(dd)), str(int(cc)), str(int(rnk)), str(bool(has)))
+                _Console().print(tab)
+            except Exception:
+                pass
+        # p-tuner (optional): try p∈{3,5,7} on a tiny Task A split and choose best by eval acc
+        if bool(int(os.environ.get("ULTRA_TUNE_P", "0"))):
+            best_p = None
+            best_acc = -1.0
+            for p_try in [3, 5, 7]:
+                qs, ys, qst, yst = taskA_dataset(2000, 400, p_try, 8, 8, seed=13)
+                modelT = LCPTreeAttention(p=p_try, K=8, H=2, m=8, r=4, superdiag=True, seeds=[1, 2])
+                _ = modelT.train_epoch(qs, ys, shuffle=True)
+                acc = modelT.eval_acc(qst, yst)
+                print(f"tuner: p={p_try} acc={acc:.3f}")
+                if acc > best_acc:
+                    best_acc, best_p = acc, p_try
+            print(f"chosen p={best_p} (acc={best_acc:.3f})")
+        # Variance reduction (ULTRA_FUSE vs average) across several probes
+        try:
+            import os as _os
+            dim = 32
+            Uv = UltrametricAttention(dim=dim, p=5, max_depth=10, packed=True, heads=3)
+            for i in range(256):
+                Uv.insert(i, np.random.randn(dim))
+            valsv = np.random.randn(256, dim)
+            deltas = []
+            for _pi in range(5):
+                qv = np.random.randn(dim)
+                _os.environ["ULTRA_FUSE"] = "0"
+                _ = Uv.attend(qv, valsv)
+                var_avg = float(np.var(np.array(getattr(Uv, 'last_head_sims', [0.0])), ddof=1))
+                _os.environ["ULTRA_FUSE"] = "1"
+                _ = Uv.attend(qv, valsv)
+                var_fuse = float(np.var(np.array(getattr(Uv, 'last_head_sims', [0.0])), ddof=1))
+                deltas.append(var_avg - var_fuse)
+            var_delta = float(np.mean(deltas))
+            # Print a small table for the deltas
+            try:
+                from rich.console import Console as _Console
+                from rich.table import Table as _Table
+                vt = _Table(title="Variance Reduction Deltas", show_header=True, header_style="bold magenta")
+                vt.add_column("probe")
+                vt.add_column("delta(var)")
+                for i, dv in enumerate(deltas):
+                    vt.add_row(str(i), f"{float(dv):.3e}")
+                _Console().print(vt)
+            except Exception:
+                pass
+        except Exception:
+            var_avg = var_fuse = None
+            var_delta = None
+
+        # Export diagnostics
+        try:
+            global last_diagnostics
+            last_diagnostics = {
+                "last_head_variance": float(var_heads) if 'var_heads' in locals() else None,
+                "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
+                "scaling": {
+                    "N": Ns,
+                    "insert_ms": [float(x) for x in insert_ms],
+                    "query_ms": [float(x) for x in query_ms],
+                },
+                "variance_reduction": {
+                    "delta_mean": var_delta,
+                    "deltas": [float(x) for x in deltas] if 'deltas' in locals() else None,
+                },
+                "scaling_compare": {
+                    "N": Ns,
+                    "packed": {"insert_ms": [float(x) for x in insert_ms], "query_ms": [float(x) for x in query_ms]},
+                    "dict": {"insert_ms": [float(x) for x in ins2], "query_ms": [float(x) for x in qry2]},
+                } if compare else None,
+                "rank_demo": {
+                    "depth": int(d_demo) if 'd_demo' in locals() else None,
+                    "code": int(code_demo) if 'code_demo' in locals() else None,
+                    "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
+                    "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
+                },
+                "tuner": {"p": int(best_p), "acc": float(best_acc)} if ('best_p' in locals()) else None,
+                "rank_samples": [
+                    {"depth": int(max(1, d_demo-1)), "code": int((1<<max(1, d_demo-1))//2),
+                     "rank": int(U2.rank_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2)),
+                     "has": bool(U2.has_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2))},
+                    {"depth": int(d_demo), "code": int(code_demo),
+                     "rank": int(U2.rank_prefix(0, d_demo, code_demo)),
+                     "has": bool(U2.has_prefix(0, d_demo, code_demo))},
+                ] if ('U2' in locals()) else None,
+            }
+        except Exception:
+            pass
     except Exception:
         pass
 

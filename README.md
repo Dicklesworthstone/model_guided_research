@@ -110,6 +110,12 @@ mgr run reversible --rev-cayley --rev-pareto --export-json artifacts/rev.json
 mgr run matrix-gauge --export-json artifacts/gauge.json
 mgr run tropical --export-json artifacts/tropical.json
 
+# Additional focused runs
+# Ultrametric packed vs dict scaling comparison
+ULTRA_SCALE_COMPARE=1 mgr run ultrametric
+# Tropical sparse-train K grid (sweep top-k supports)
+TROP_SPARSE_TRAIN=1 TROP_SPARSE_TRAIN_KS=4,8,16 mgr run tropical --export-json artifacts/tropical_sparse.json
+
 # See all available options
 mgr run --help
 ```
@@ -181,8 +187,8 @@ Each demo is a self-contained exploration that:
 - **Key Idea**: Gauge-invariant transport with exact Lie-theoretic maps (skew/symmetric/Hamiltonian generators)
 - **Components**:
   - Structured generators: SO (skew via Givens/Cayley), SPD (eigendecomposition exp), and Sp (symplectic Cayley)
-  - Banded Markov mixing via uniformization (expmv) with optional Poisson sampling (exact stochasticity)
-  - Diagnostics: per-block and per-head uniformization K; BCH-aware stacking with commutator heatmap per block
+  - Banded Markov mixing via uniformization (expmv) with an exact Poisson sampling mode
+  - BCH-aware stacking with a compact per-block summary (curvature/commutators) and per-head/ per-block K diagnostics
   - SPD channel gating (exp(S)) and nilpotent upper-band channels for controlled expressivity
 - **Why It Matters**: Provides mathematical guarantees for stability and geometric structure
 
@@ -193,9 +199,9 @@ Each demo is a self-contained exploration that:
 
 - **Key Idea**: LCP-based routing over ultrametric signatures for sub-quadratic attention
 - **Components**:
-  - Bit-prefix LSH signatures for LCP routing; per-level packed buckets with O(1) prefix lookup
-  - Insert/query timing remains stable up to N≈4096 (printed in demo); compatible with exact p‑adic formulations
-  - Multi-head configuration with distinct hyperplane families
+  - Bit-prefix LSH signatures for LCP routing; per-level packed buckets with O(1) prefix lookup (array-packed with prefix sums)
+  - Insert/query timing remains stable up to N≈4096; per-level occupancy and constant-time rank/test utilities
+  - Multi-head configuration with ultrametric fusion and head-variance diagnostics; simple p tuner for LCPTree pipelines
 - **Why It Matters**: Enables hierarchical, cache-friendly attention with predictable memory
 
 ### 3. **Simplicial Complexes & Higher-Order Attention** (`simplicial`)
@@ -253,11 +259,10 @@ Each demo is a self-contained exploration that:
 
 - **Key Idea**: Bijective flows with explicit inverse maps and O(1) training memory
 - **Components**:
-  - Additive coupling with orthogonal mixing (Householder or Givens), exact inverse maps
-  - Cayley orthogonal step in the coupling; custom O(1) JVP to avoid activation caching
-  - Symplectic (leapfrog) hybrid step available for Hamiltonian structure
-  - JAX‑native training valve path (audit path records exact bits); per‑layer property table in demo
-  - Memory–compute Pareto with layers×iterations sweep; ASCII sparklines for quick trends
+  - Additive coupling with orthogonal mixing (Householder or Givens), exact inverse maps; per-layer det≈1 checks
+  - Cayley orthogonal step with custom O(1) JVP; symplectic hybrid and generating-function steps (exact inverse)
+  - JAX‑native training valve path (audit path records exact bits); consolidated per‑layer property table
+  - Memory–compute Pareto with layers×iterations sweep; ASCII sparklines for forward/inverse trends
 - **Why It Matters**: Information-theoretic guarantees through reversibility; on our demo scale we observe a few-fold memory savings, not 10x
 
 ### 8. **Iterated Function Systems & Fractal Memory** (`ifs-fractal`)
@@ -304,8 +309,8 @@ Each demo is a self-contained exploration that:
 - **Key Idea**: Replace (+,×) with (max,+) to realize piecewise linear networks by construction
 - **Components**:
   - Tropical polynomials and max‑plus GEMM; tropical convexity tools
-  - Route‑level robustness certificates: per‑sample route min‑gap and min‑gap/2 radius printed in demo
-  - Automatic sparsity via tropical zeros
+  - Route‑level certificates: per‑sample route min‑gap, per‑node runner-up gaps along routes, and min‑gap/2 radius (plus per-node min-gap/2)
+  - Param‑efficient mixtures: sparse mixture grid (k, λ) with accuracy trade-offs and tidy JSON export; optional sparse-support training with per-class sparsity
 - **Why It Matters**: Piecewise linear structure emerges naturally from the algebra
 
 ## 💡 Key Insights & Findings
@@ -328,9 +333,31 @@ These implementations demonstrate several breakthrough insights:
 
 All demos support exporting JSON artifacts via `--export-json <path>`.
 
-- `reversible`: exports Pareto arrays (`time/mem` vs iterations and depth) when the Pareto sweep runs, alongside any layer certificates.
+- `reversible`: exports Pareto arrays (`time/mem` vs iterations and depth), per-layer property checks (with thresholds and pass/fail), strict Givens flag, and optional generating‑param norms.
 - `matrix-gauge`: exports uniformization K stats (per block/head), curvature summaries, and commutator heatmap rows.
+- `matrix-gauge` also exports a compact BCH summary and sampling schedule comparisons (variance and deterministic diff), plus an optional train/eval schedule compare.
 - `tropical`: exports route‑level certificate rows (first 10) with min‑gap/2 and median margins.
+  - `tropical` also exports node‑wise route margin details and sparse mixture grid results, plus optional sparse-train summary.
+- `ultrametric`: exports timing summaries, head variance, constant‑time rank/test samples, occupancy per level, a small scaling block, variance‑reduction deltas, and (optionally) a simple p tuner decision.
+  - `ultrametric` can also print a packed vs dict scaling compare table when `ULTRA_SCALE_COMPARE=1`.
+ - `reversible`: additionally exports a small `gen_mode` block and a `property_summary` rollup.
+
+### CLI Knobs (selected)
+
+- `reversible`:
+  - `--rev-givens`: enforce strict Givens mixing (det=1, exact inverse)
+  - `--rev-generating`: enable generating-function symplectic step (exact inverse)
+  - `--rev-gen-vjp`: use custom VJP for generating step (O(1) grads; ignores ∂/∂(a,b,c))
+  - `--rev-cayley`, `--rev-cayley-iters`, `--rev-inv-iters`, `--rev-symplectic-hybrid`, `--rev-pareto`
+- `matrix-gauge`:
+  - `--gauge-bch-compact`: only compact per-block summary
+  - `--gauge-alt-struct`: alternate structured/unstructured on odd blocks and print compare
+- `tropical`:
+  - `TROP_SPARSE_MIX=1` with `TROP_SPARSE_KS`/`TROP_SPARSE_LAMBDAS` to sweep sparse mixtures
+  - `TROP_SPARSE_TRAIN=1` (env) to run a tiny sparse-support training loop; knobs: `TROP_SPARSE_TRAIN_K`, `TROP_SPARSE_STEPS`, `TROP_SPARSE_LR`
+- `ultrametric`:
+  - `ULTRA_PACKED_ARRAYS=1` to enable array-packed prefix rank/test; `ULTRA_FUSE=1` for fusion mode
+  - `ULTRA_SCALE_COMPARE=1` to print packed vs dict scaling compare table
 
 The CLI automatically collects module diagnostics when present and nests them under `diagnostics.<demo_name>` in the output JSON.
 

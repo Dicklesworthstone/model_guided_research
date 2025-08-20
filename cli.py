@@ -186,9 +186,29 @@ def run(
         "--rev-symplectic-hybrid",
         help="Enable a symplectic leapfrog step inside coupling (hybrid)"
     )] = False,
+    rev_givens: Annotated[bool, typer.Option(
+        "--rev-givens",
+        help="Use strict Givens mixing (exact inverse; det=1)"
+    )] = False,
+    rev_generating: Annotated[bool, typer.Option(
+        "--rev-generating",
+        help="Enable generating-function symplectic step (exact inverse)"
+    )] = False,
+    rev_gen_vjp: Annotated[bool, typer.Option(
+        "--rev-gen-vjp",
+        help="Use custom VJP for generating step (O(1) grads; ignores ∂/∂(a,b,c))"
+    )] = False,
     gauge_structured: Annotated[bool, typer.Option(
         "--gauge-structured",
         help="Enable structured SO/SPD/Sp channel blocks in matrix-gauge demo"
+    )] = False,
+    gauge_bch_compact: Annotated[bool, typer.Option(
+        "--gauge-bch-compact",
+        help="Print only compact BCH summary table (skip heatmap)"
+    )] = False,
+    gauge_alt_struct: Annotated[bool, typer.Option(
+        "--gauge-alt-struct",
+        help="Alternate structured/unstructured on odd blocks in matrix-gauge demo"
     )] = False,
     export_json: Annotated[Path | None, typer.Option(
         "--export-json",
@@ -232,6 +252,21 @@ def run(
     if gauge_structured:
         import os as _os
         _os.environ["GAUGE_STRUCTURED"] = "1"
+    if gauge_bch_compact:
+        import os as _os
+        _os.environ["GAUGE_BCH_COMPACT"] = "1"
+    if gauge_alt_struct:
+        import os as _os
+        _os.environ["GAUGE_ALT_STRUCT"] = "1"
+    if rev_givens:
+        import os as _os
+        _os.environ["REV_GIVENS"] = "1"
+    if rev_generating:
+        import os as _os
+        _os.environ["REV_GENERATING"] = "1"
+    if rev_gen_vjp:
+        import os as _os
+        _os.environ["REV_GEN_VJP"] = "1"
 
     if demo_name not in DEMOS:
         console.print(f"[bold red]Error:[/bold red] Demo '{demo_name}' not found")

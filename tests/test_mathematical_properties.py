@@ -122,6 +122,23 @@ class TestReversibleComputation:
         assert jnp.abs(norm_x - norm_y) < 1e-5, f"Norm not preserved: {norm_x:.6f} -> {norm_y:.6f}"
         print(f"  ✅ Norm preservation: {norm_x:.6f} ≈ {norm_y:.6f}")
 
+    def test_generating_mode_toggle(self):
+        """Ensure enabling generating mode does not break coupling inverses."""
+        print("\n🔬 Testing Generating Mode Toggle...")
+        try:
+            reversible.set_reversible_generating_symplectic(True)
+            key = random.PRNGKey(7)
+            d, hidden = 16, 32
+            params = reversible.make_coupling_params(key, d, hidden)
+            x = random.normal(key, (2, d))
+            y = reversible.rev_coupling_forward(x, params)
+            x_rec = reversible.rev_coupling_inverse(y, params)
+            err = jnp.max(jnp.abs(x - x_rec))
+            assert float(err) < 1e-4
+            print(f"  ✅ Generating mode invertibility OK: max error {float(err):.2e}")
+        finally:
+            reversible.set_reversible_generating_symplectic(False)
+
 
 class TestIFSFractalMemory:
     """Test IFS contractivity and fixed point properties."""
