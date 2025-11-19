@@ -32,6 +32,18 @@ class CausalSelfAttention(nn.Module):
         v = self.c_v(x).reshape(B, T, self.n_kv_head, self.head_dim)
 
         # Apply Rotary Embeddings
+        # cos, sin are expected to be broadcastable to [B, T, H, D/2]
+        # Usually passed as [1, T, 1, D/2]
+        # But q is [B, T, H, D]
+        # We need to ensure shapes align.
+        # cos: [1, T, 1, D/2]
+        # q: [B, T, H, D]
+        # apply_rotary_emb expects q to be [..., D]
+        # It splits D into D/2.
+        # It multiplies by cos/sin.
+        # cos/sin should broadcast to [B, T, H, D/2].
+        # [1, T, 1, D/2] broadcasts to [B, T, H, D/2] fine.
+        
         q = apply_rotary_emb(q, cos, sin)
         k = apply_rotary_emb(k, cos, sin)
 
@@ -79,16 +91,17 @@ class CausalSelfAttention(nn.Module):
             
             # If mask is None, we create one.
             if mask is None:
-                # Create mask for [B, 1, 1, Max_Len]
-                # We want to attend to positions < idx + T
-                # i.e., positions 0..idx
+                # Create mask for [B, 1, T, Max_Len]
+                # We want to attend to positions j where j <= idx + i
+                # i is query index (0..T-1)
+                # j is key index (0..MaxLen-1)
+                
                 total_len = self.config.sequence_len
-                # mask: True where pos < idx + T
-                mask_idx = jnp.arange(total_len)
-                mask = mask_idx < (idx + T)
-                # Broadcast to [B, 1, 1, Total_Len]
-                mask = mask[None, None, None, :]
-                # Convert to attention bias
+                query_idx = jnp.arange(T) + idx
+                key_idx = jnp.arange(total_len)
+                
+                # [1, 1, T, MaxLen]
+                mask = key_idx[None, None, None, :] <= query_idx[None, None, :, None]
                 mask = jnp.where(mask, 0, -jnp.inf)
 
         elif init_cache:
@@ -126,7 +139,7 @@ class CausalSelfAttention(nn.Module):
 
         # Attention
         if mask is None:
-             # Default causal mask for training (T x T)
+             # Default causal mask for training (T x T) or non-cached inference
              mask = nn.make_causal_mask(jnp.ones((B, T), dtype=jnp.int32))
 
         y = nn.dot_product_attention(q, k, v, mask=mask)
@@ -293,8 +306,19 @@ class GPT(nn.Module):
             
             # Update sequence
             # current_seq is [B, Max_Len]
-            # We update at T + i
-            current_seq = lax.dynamic_update_slice(current_seq, next_token, (0, T + i))
+            # We update at T + i + 1 because next_token is the (i+1)-th generated token
+            # i=0 -> next_token is the 1st generated token (after the initial one sampled before loop)
+            # The initial sampled token was placed at T.
+            # So this one goes at T + 1.
+            # Wait, let's re-verify the loop state.
+            # init_state has next_token (the one sampled from prefill).
+            # loop_body takes curr_token (which is that next_token).
+            # It generates *another* token (let's call it next_next_token).
+            # We want to append next_next_token.
+            # If i=0, we are generating the token at T+1.
+            # So we should update at T + i + 1.
+            
+            current_seq = lax.dynamic_update_slice(current_seq, next_token, (0, T + i + 1))
             
             return i + 1, next_token, current_seq, rng
 
