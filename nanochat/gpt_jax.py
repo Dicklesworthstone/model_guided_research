@@ -32,18 +32,6 @@ class CausalSelfAttention(nn.Module):
         v = self.c_v(x).reshape(B, T, self.n_kv_head, self.head_dim)
 
         # Apply Rotary Embeddings
-        # cos, sin are expected to be broadcastable to [B, T, H, D/2]
-        # Usually passed as [1, T, 1, D/2]
-        # But q is [B, T, H, D]
-        # We need to ensure shapes align.
-        # cos: [1, T, 1, D/2]
-        # q: [B, T, H, D]
-        # apply_rotary_emb expects q to be [..., D]
-        # It splits D into D/2.
-        # It multiplies by cos/sin.
-        # cos/sin should broadcast to [B, T, H, D/2].
-        # [1, T, 1, D/2] broadcasts to [B, T, H, D/2] fine.
-        
         q = apply_rotary_emb(q, cos, sin)
         k = apply_rotary_emb(k, cos, sin)
 
@@ -62,7 +50,6 @@ class CausalSelfAttention(nn.Module):
             
             idx = cache_index.value
             # Update cache
-            # We use dynamic_update_slice for JIT compatibility
             k_cache = cached_key.value
             v_cache = cached_val.value
             
@@ -73,29 +60,12 @@ class CausalSelfAttention(nn.Module):
             cached_val.value = v_cache
             cache_index.value = idx + T
             
-            # For attention, we use the full cache up to current length
-            # If T=1, we are decoding. We need to attend to 0..idx+1
-            # If T>1 (prefill), we attend to 0..T (which is idx+T since idx=0 usually)
-            
-            # We need to retrieve the relevant part of the cache for attention
-            # But nn.dot_product_attention expects full tensors or we mask.
-            # We can pass the full cache and a mask.
-            
+            # Use cached k, v
             k = k_cache
             v = v_cache
             
-            # We need to adjust the mask to only attend to valid positions
-            # The mask passed in is usually for the current query block.
-            # If we are decoding (T=1), the mask should be [B, 1, 1, Total_Len]
-            # and mask out positions > idx.
-            
-            # If mask is None, we create one.
             if mask is None:
                 # Create mask for [B, 1, T, Max_Len]
-                # We want to attend to positions j where j <= idx + i
-                # i is query index (0..T-1)
-                # j is key index (0..MaxLen-1)
-                
                 total_len = self.config.sequence_len
                 query_idx = jnp.arange(T) + idx
                 key_idx = jnp.arange(total_len)
@@ -242,6 +212,9 @@ class GPT(nn.Module):
         """
         Autoregressive generation with KV caching.
         Must be called via apply(..., method=GPT.generate, mutable=['cache'])
+        
+        Uses a Python loop for flexibility and correctness with Flax variables.
+        For high performance, compile the step function externally.
         """
         if rng is None:
             rng = random.PRNGKey(0)
@@ -260,7 +233,6 @@ class GPT(nn.Module):
             scaled_logits = last_logit / temperature
             # Top-k
             if top_k is not None:
-                # Naive top-k for JAX (masking)
                 vals, _ = lax.top_k(scaled_logits, top_k)
                 min_val = vals[:, -1]
                 scaled_logits = jnp.where(scaled_logits < min_val[:, None], -jnp.inf, scaled_logits)
@@ -271,14 +243,13 @@ class GPT(nn.Module):
             
         next_token = next_token[:, None] # [B, 1]
         
-        # 2. Decode loop
-        def loop_cond(state):
-            i, _, _, _ = state
-            return i < max_new_tokens
-
-        def loop_body(state):
-            i, curr_token, current_seq, rng = state
-            
+        # Initialize output sequence
+        out_seq = jnp.concatenate([idx, next_token], axis=1)
+        
+        # 2. Decode loop (Python loop)
+        curr_token = next_token
+        
+        for _ in range(max_new_tokens - 1):
             # Run model
             logits = self.__call__(curr_token, train=False)
             last_logit = logits[:, -1, :]
@@ -297,41 +268,8 @@ class GPT(nn.Module):
                 
             next_token = next_token[:, None]
             
-            # Append to sequence
-            # We can't easily append to a dynamic array in JAX without pre-allocation.
-            # But here we just want to return the sequence at the end.
-            # We can use dynamic_update_slice if we pre-allocated.
-            # Or just carry the tokens.
-            # For simplicity, let's assume we pre-allocated 'current_seq' outside.
-            
             # Update sequence
-            # current_seq is [B, Max_Len]
-            # We update at T + i + 1 because next_token is the (i+1)-th generated token
-            # i=0 -> next_token is the 1st generated token (after the initial one sampled before loop)
-            # The initial sampled token was placed at T.
-            # So this one goes at T + 1.
-            # Wait, let's re-verify the loop state.
-            # init_state has next_token (the one sampled from prefill).
-            # loop_body takes curr_token (which is that next_token).
-            # It generates *another* token (let's call it next_next_token).
-            # We want to append next_next_token.
-            # If i=0, we are generating the token at T+1.
-            # So we should update at T + i + 1.
+            out_seq = jnp.concatenate([out_seq, next_token], axis=1)
+            curr_token = next_token
             
-            current_seq = lax.dynamic_update_slice(current_seq, next_token, (0, T + i + 1))
-            
-            return i + 1, next_token, current_seq, rng
-
-        # Pre-allocate output sequence
-        out_seq = jnp.zeros((B, T + max_new_tokens), dtype=jnp.int32)
-        out_seq = lax.dynamic_update_slice(out_seq, idx, (0, 0))
-        
-        init_state = (0, next_token, out_seq, rng)
-        
-        # We need to update out_seq with the first sampled token too
-        out_seq = lax.dynamic_update_slice(out_seq, next_token, (0, T))
-        init_state = (0, next_token, out_seq, rng)
-        
-        _, _, final_seq, _ = lax.while_loop(loop_cond, loop_body, init_state)
-        
-        return final_seq
+        return out_seq
