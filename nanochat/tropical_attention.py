@@ -9,7 +9,7 @@ from flax import linen as nn
 from typing import Optional
 import math
 
-from nanochat.gpt_jax import GPTConfig, apply_rotary_emb, rms_norm
+from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
 
 def tropical_dot_product(q, k):
     """

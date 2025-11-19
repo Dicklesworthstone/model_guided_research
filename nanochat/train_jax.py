@@ -12,7 +12,8 @@ from flax.training import train_state
 import numpy as np
 
 # Import local modules
-from nanochat.gpt_jax import GPT, GPTConfig
+from nanochat.common_jax import GPTConfig
+from nanochat.gpt_jax import GPT
 from nanochat.muon_jax import muon
 from nanochat.dataloader import tokenizing_distributed_data_loader
 
