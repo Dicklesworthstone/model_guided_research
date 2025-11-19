@@ -24,7 +24,7 @@ classifiers = [
 
 dependencies = [
     # Core ML libraries
-    "jax[cpu]>=0.4.0",
+    "jax[cuda12]>=0.4.0",
     "jaxlib>=0.4.0",
     "numpy>=1.26.0",
     # Neural network libraries
@@ -36,6 +36,12 @@ dependencies = [
     "typer>=0.15.0",
     "rich>=13.7.0",
     "psutil>=7.0.0",
+    # Nanochat dependencies
+    "torch>=2.0.0",
+    "pyarrow>=14.0.0",
+    "tiktoken>=0.5.0",
+    "filelock>=3.13.0",
+    "tokenizers>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -55,11 +61,6 @@ test = [
     "pytest>=8.3.0",
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.0.0",  # For parallel test execution
-]
-
-# GPU support
-gpu = [
-    "jax[cuda12]>=0.4.0",
 ]
 
 [project.scripts]
