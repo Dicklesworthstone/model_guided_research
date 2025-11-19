@@ -6,8 +6,7 @@ Implements attention using Max-Plus algebra for similarity.
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional
-import math
+from jax import lax
 
 from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
 
@@ -60,35 +59,71 @@ class TropicalCausalSelfAttention(nn.Module):
         q = rms_norm(q)
         k = rms_norm(k)
 
+        # KV Cache handling
+        if self.has_variable('cache', 'cached_key'):
+            cached_key = self.variable('cache', 'cached_key', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), k.dtype)
+            cached_val = self.variable('cache', 'cached_val', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), v.dtype)
+            cache_index = self.variable('cache', 'cache_index', lambda: jnp.array(0, dtype=jnp.int32))
+            
+            idx = cache_index.value
+            # Update cache
+            k_cache = cached_key.value
+            v_cache = cached_val.value
+            
+            k_cache = lax.dynamic_update_slice(k_cache, k, (0, idx, 0, 0))
+            v_cache = lax.dynamic_update_slice(v_cache, v, (0, idx, 0, 0))
+            
+            cached_key.value = k_cache
+            cached_val.value = v_cache
+            cache_index.value = idx + T
+            
+            k = k_cache
+            v = v_cache
+            
+            if mask is None:
+                total_len = self.config.sequence_len
+                query_idx = jnp.arange(T) + idx
+                key_idx = jnp.arange(total_len)
+                
+                # [1, 1, T, MaxLen]
+                mask = key_idx[None, None, None, :] <= query_idx[None, None, :, None]
+                mask = jnp.where(mask, 0, -jnp.inf)
+
+        elif init_cache:
+            self.variable('cache', 'cached_key', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), k.dtype)
+            self.variable('cache', 'cached_val', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), v.dtype)
+            self.variable('cache', 'cache_index', lambda: jnp.array(0, dtype=jnp.int32))
+            
+            if T > 0:
+                 cached_key = self.variable('cache', 'cached_key')
+                 cached_val = self.variable('cache', 'cached_val')
+                 cache_index = self.variable('cache', 'cache_index')
+                 
+                 k_cache = cached_key.value
+                 v_cache = cached_val.value
+                 
+                 k_cache = lax.dynamic_update_slice(k_cache, k, (0, 0, 0, 0))
+                 v_cache = lax.dynamic_update_slice(v_cache, v, (0, 0, 0, 0))
+                 
+                 cached_key.value = k_cache
+                 cached_val.value = v_cache
+                 cache_index.value = T
+
+        # GQA
+        if self.n_kv_head != self.n_head:
+            n_rep = self.n_head // self.n_kv_head
+            k = jnp.repeat(k, n_rep, axis=2) # axis 2 is n_kv_head in [B, T, H, D]
+            v = jnp.repeat(v, n_rep, axis=2)
+
         # Transpose to [B, H, T, D]
         q = jnp.transpose(q, (0, 2, 1, 3))
         k = jnp.transpose(k, (0, 2, 1, 3))
         v = jnp.transpose(v, (0, 2, 1, 3))
 
-        # KV Cache handling (Placeholder for Tropical)
-        if self.has_variable('cache', 'cached_key'):
-             # TODO: Implement Tropical KV Cache
-             pass
-        elif init_cache:
-             # TODO: Init Tropical KV Cache
-             pass
-
-        # GQA
-        if self.n_kv_head != self.n_head:
-            n_rep = self.n_head // self.n_kv_head
-            k = jnp.repeat(k, n_rep, axis=1)
-            v = jnp.repeat(v, n_rep, axis=1)
-
         # Tropical Attention Scores
         # Instead of dot product (sum of products), we use tropical dot product (max of sums)
         # This measures "similarity" in the max-plus semiring.
         attn_scores = tropical_dot_product(q, k)
-        
-        # Scale? 
-        # In standard attention we scale by 1/sqrt(D).
-        # In tropical, scaling q+k by alpha is just alpha*(q+k).
-        # Maybe we don't need scaling or we scale the inputs?
-        # Let's try without scaling first, or scale by 1.0.
         
         if mask is not None:
             attn_scores = attn_scores + mask
@@ -116,4 +151,3 @@ class TropicalCausalSelfAttention(nn.Module):
         y = jnp.transpose(y, (0, 2, 1, 3)).reshape(B, T, C)
         y = self.c_proj(y)
         return y
-
