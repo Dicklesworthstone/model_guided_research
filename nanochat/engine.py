@@ -11,6 +11,8 @@ Notes:
 The whole thing is made as efficient as possible.
 """
 
+import ast
+import operator as _op
 from nanochat.torch_imports import torch, F, Tensor
 import signal
 import warnings
@@ -32,15 +34,55 @@ def timeout(duration, formula):
     yield
     signal.alarm(0)
 
-def eval_with_timeout(formula, max_time=3):
+_SAFE_BIN_OPS = {
+    ast.Add: _op.add,
+    ast.Sub: _op.sub,
+    ast.Mult: _op.mul,
+    ast.Div: _op.truediv,
+    ast.FloorDiv: _op.floordiv,
+    ast.Mod: _op.mod,
+}
+
+_SAFE_UNARY_OPS = {
+    ast.UAdd: _op.pos,
+    ast.USub: _op.neg,
+}
+
+
+def _eval_safe_node(node):
+    if isinstance(node, ast.Expression):
+        return _eval_safe_node(node.body)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float, str)):
+            return node.value
+        raise ValueError("Unsupported constant type")
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BIN_OPS:
+        return _SAFE_BIN_OPS[type(node.op)](_eval_safe_node(node.left), _eval_safe_node(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARY_OPS:
+        return _SAFE_UNARY_OPS[type(node.op)](_eval_safe_node(node.operand))
+    if isinstance(node, ast.Call):
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Constant)
+            and isinstance(func.value.value, str)
+            and func.attr == "count"
+            and not node.keywords
+            and len(node.args) == 1
+        ):
+            target = func.value.value
+            needle = _eval_safe_node(node.args[0])
+            return target.count(needle if isinstance(needle, str) else str(needle))
+    raise ValueError("Unsupported expression")
+
+
+def _safe_eval_expression(expr: str, max_time: int = 3):
     try:
-        with timeout(max_time, formula):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", SyntaxWarning)
-                return eval(formula, {"__builtins__": {}}, {})
+        tree = ast.parse(expr, mode="eval")
+        with timeout(max_time, expr):
+            return _eval_safe_node(tree)
     except Exception:
         signal.alarm(0)
-        # print(f"Warning: Failed to eval {formula}, exception: {e}") # it's ok ignore wrong calculator usage
         return None
 
 def use_calculator(expr):
@@ -50,33 +92,7 @@ def use_calculator(expr):
     """
     # Remove commas from numbers
     expr = expr.replace(",", "")
-
-    # Check if it's a pure math expression (old behavior)
-    if all([x in "0123456789*+-/.() " for x in expr]):
-        if "**" in expr:  # disallow power operator
-            return None
-        return eval_with_timeout(expr)
-
-    # Check if it's a string operation we support
-    # Allow: strings (single/double quotes), .count(), letters, numbers, spaces, parens
-    allowed_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'\"()._ "
-    if not all([x in allowed_chars for x in expr]):
-        return None
-
-    # Disallow dangerous patterns
-    dangerous_patterns = ['__', 'import', 'exec', 'eval', 'compile', 'open', 'file',
-                         'input', 'raw_input', 'globals', 'locals', 'vars', 'dir',
-                         'getattr', 'setattr', 'delattr', 'hasattr']
-    expr_lower = expr.lower()
-    if any(pattern in expr_lower for pattern in dangerous_patterns):
-        return None
-
-    # Only allow .count() method for now (can expand later)
-    if '.count(' not in expr:
-        return None
-
-    # Evaluate with timeout
-    return eval_with_timeout(expr)
+    return _safe_eval_expression(expr)
 
 # -----------------------------------------------------------------------------
 class KVCache:
@@ -104,19 +120,24 @@ class KVCache:
         multiple samples in parallel from there.
         """
         # 1) validate the shapes
-        assert self.kv_cache is None, "Cannot prefill a non-empty KV cache"
-        assert other.kv_cache is not None, "Cannot prefill with a None KV cache"
+        if self.kv_cache is not None:
+            raise RuntimeError("Cannot prefill a non-empty KV cache")
+        if other.kv_cache is None:
+            raise RuntimeError("Cannot prefill with a None KV cache")
         for ix, (dim1, dim2) in enumerate(zip(self.kv_shape, other.kv_shape)):
             # ix 0: num_layers, 1: k/v, 2: batch_size, 3: num_heads, 4: seq_len, 5: head_dim
             if ix in [0, 1, 3, 5]:
                 # num_layers, k/v, num_heads, head_dim must match
-                assert dim1 == dim2, f"Dim {ix} mismatch: {dim1} != {dim2}"
+                if dim1 != dim2:
+                    raise ValueError(f"Dim {ix} mismatch: {dim1} != {dim2}")
             elif ix == 2:
                 # batch_size can be expanded
-                assert dim1 == dim2 or dim2 == 1, f"Batch dim mismatch: {dim1} != {dim2}"
+                if not (dim1 == dim2 or dim2 == 1):
+                    raise ValueError(f"Batch dim mismatch: {dim1} != {dim2}")
             elif ix == 4:
                 # seq_len: self must be longer than other
-                assert dim1 >= dim2, f"Seq len mismatch: {dim1} < {dim2}"
+                if dim1 < dim2:
+                    raise ValueError(f"Seq len mismatch: {dim1} < {dim2}")
         # 2) initialize the cache
         dtype, device = other.kv_cache.dtype, other.kv_cache.device
         self.kv_cache = torch.empty(self.kv_shape, dtype=dtype, device=device)
@@ -157,7 +178,8 @@ class KVCache:
 @torch.inference_mode()
 def sample_next_token(logits, rng, temperature=1.0, top_k=None):
     """Sample a single next token from given logits of shape (B, vocab_size). Returns (B, 1)."""
-    assert temperature >= 0.0, "temperature must be non-negative"
+    if temperature < 0.0:
+        raise ValueError("temperature must be non-negative")
     if temperature == 0.0:
         return torch.argmax(logits, dim=-1, keepdim=True)
     if top_k is not None:
@@ -192,7 +214,8 @@ class Engine:
     @torch.inference_mode()
     def generate(self, tokens, num_samples=1, max_tokens=None, temperature=1.0, top_k=None, seed=42):
         """Same as generate, but does single prefill and then clones the KV cache."""
-        assert isinstance(tokens, list) and isinstance(tokens[0], int), "expecting list of ints"
+        if not (isinstance(tokens, list) and tokens and isinstance(tokens[0], int)):
+            raise TypeError("expecting list of ints for tokens")
         device = self.model.get_device()
         rng = torch.Generator(device=device)
         rng.manual_seed(seed)
