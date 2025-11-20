@@ -43,7 +43,7 @@ class TropicalCausalSelfAttention(nn.Module):
         self.c_v = nn.Dense(self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
         self.c_proj = nn.Dense(self.n_embd, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
 
-    def __call__(self, x, cos, sin, mask=None, init_cache=False):
+    def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape
         
         q = self.c_q(x).reshape(B, T, self.n_head, self.head_dim)
@@ -58,6 +58,8 @@ class TropicalCausalSelfAttention(nn.Module):
         # But let's keep it for stability consistency with the backbone
         q = rms_norm(q)
         k = rms_norm(k)
+
+        init_cache = self.config.init_cache
 
         # KV Cache handling
         if self.has_variable('cache', 'cached_key'):

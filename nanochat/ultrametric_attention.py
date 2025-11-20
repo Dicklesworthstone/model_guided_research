@@ -65,7 +65,7 @@ class UltrametricCausalSelfAttention(nn.Module):
         self.to_digits_k = nn.Dense(self.ult_config.K, use_bias=False)
 
 
-    def __call__(self, x, cos, sin, mask=None, init_cache=False):
+    def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape
         
         # Project to Q, K, V
