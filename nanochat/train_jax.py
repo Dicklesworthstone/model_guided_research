@@ -180,6 +180,8 @@ def main():
                 break
                 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Failed to run training loop: {e}")
         print("Note: This is expected if no parquet data is found in ~/.cache/bio_inspired_nanochat")
         print("Please ensure data is available or modify dataloader to use synthetic data.")
