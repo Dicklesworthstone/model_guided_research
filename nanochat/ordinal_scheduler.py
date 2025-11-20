@@ -2,14 +2,17 @@
 Ordinal Scheduler (PyTorch)
 Implements transfinite learning rate scheduling based on ordinal ranking.
 Rank rho = omega^2 * A + omega * B + C
-A: Restart budget
-B: Anneal levels
+A: Restart budget (highest order)
+B: Anneal levels / curriculum
 C: Patience (steps)
 
-Transitions:
-- Step: C -> C-1 (if loss improves, C resets to P(B))
-- Anneal (Limit of C): B -> B-1, lr -> lr * gamma, C -> P(B)
-- Restart (Limit of B): A -> A-1, B -> B_init, lr -> lr_init, C -> P(B_init)
+Transitions (mirroring JAX ordinal logic):
+- Step: Update EMA loss.
+  - If improved: C is reset (or kept, per policy).
+  - Else: C -> C-1.
+- Limit (C=0):
+  - Anneal (B>0): B->B-1, lr->lr*gamma, C->P(B).
+  - Restart (B=0, A>0): A->A-1, B->B_init, lr->lr_init, C->P(B_init).
 """
 
 import torch
@@ -45,15 +48,9 @@ class OrdinalLRScheduler:
         # Check for improvement
         if self.ema_loss < self.best_loss:
             self.best_loss = self.ema_loss
-            # Reset patience for current level B
-            # Logic: If we improve, we stay in current B but refresh C?
-            # Or does C always tick down?
-            # JAX code: "If improved: keep (A,B,C). Else: C := max(C-1, 0)."
-            # Wait, if improved, we DON'T decrement C.
-            # This effectively resets patience if we keep improving.
-            # But we don't reset C to max. We just don't decrement.
-            # Actually, usually patience resets to max on improvement.
-            # Let's follow JAX doc: "If improved: keep (A,B,C)". So C stays constant.
+            # JAX logic: "If improved: keep (A,B,C)".
+            # This means we DON'T decrement C. 
+            # It effectively extends patience indefinitely as long as we improve.
             pass
         else:
             # No improvement
@@ -63,7 +60,7 @@ class OrdinalLRScheduler:
         if self.C <= 0:
             # Limit reached
             if self.B > 0:
-                # Anneal
+                # Anneal (omega-term drop)
                 self.B -= 1
                 self.C = self.P_init # Reset patience
                 # Decay LR
@@ -71,29 +68,24 @@ class OrdinalLRScheduler:
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = max(self.min_lr, param_group['lr'] * self.gamma)
                     new_lr = param_group['lr']
-                # Reset best loss to allow new exploration?
-                # JAX: "reset best metric"
+                # Reset best loss to allow new exploration (JAX: "reset best metric")
                 self.best_loss = float('inf') 
-                # print(f"Ordinal Anneal: B={self.B}, lr={new_lr:.2e}")
                 
             elif self.A > 0:
-                # Restart
+                # Restart (omega^2-term drop)
                 self.A -= 1
                 self.B = self.B_init
                 self.C = self.P_init
                 # Reset LR to init
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.eta_init
-                # Reset optimizer state?
-                # "reset optimizer state"
+                # Reset optimizer state
                 self.optimizer.state.clear()
                 
                 self.best_loss = float('inf')
-                # print(f"Ordinal Restart: A={self.A}, lr={self.eta_init:.2e}")
             
             else:
-                # Terminate? Or just stay at min LR?
-                # Default: Just stay.
+                # Terminate or plateau
                 pass
 
     def get_last_lr(self):

@@ -1,6 +1,17 @@
 """
 Fractal Memory / Attention Module (PyTorch)
 Implements attention over a "Fractal" memory structure (IFS).
+
+Mathematical core (from JAX reference):
+  - Values live as fixed points x*_w of composed contractions F_w.
+  - Keys are depth-k paths w = (i_1, ..., i_k).
+  - c_w = sum_{j=1..k} A^{k-j} t_{j, i_j}.
+  - Read v_hat = x*_w = (c_w + u_w) / (1 - s^k).
+  
+PyTorch Implementation:
+  - We simulate the "Path Matching" aspect via Hierarchical Soft-Routing.
+  - Q defines a target path. K defines a storage path.
+  - Attention weight ~ Probability(Path(Q) == Path(K)).
 """
 
 import torch
@@ -22,25 +33,8 @@ class FractalCausalSelfAttention(nn.Module):
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         
-        # IFS Parameters
+        # IFS Router
         # "A learned router (k independent m-way classifiers) maps query q->w"
-        # "Inference composes exactly k maps"
-        # Here we interpret Fractal Memory as a specific attention pattern or key-value structure.
-        # If we treat K/V cache as the "IFS Memory":
-        # Writing to memory = finding a fixed point.
-        # Reading = retrieving.
-        
-        # Simplification for Attention:
-        # Use a hierarchical/fractal addressing scheme.
-        # Q determines a "path" in the fractal.
-        # K determines a "location" in the fractal.
-        # Attention ~ Proximity in fractal space.
-        
-        # We map K to a code `c_k` and Q to a code `c_q`.
-        # Score = -Distance(c_q, c_k).
-        # Code is a sequence of discrete choices (m-ary digits).
-        # This is effectively Soft-Routing or Hierarchical Attention.
-        
         self.m = 4 # Branching factor
         self.depth = 4 # Depth of IFS
         self.router = nn.Linear(self.head_dim, self.depth * self.m, bias=False)
@@ -60,49 +54,38 @@ class FractalCausalSelfAttention(nn.Module):
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
             
-        # Fractal Addressing
-        # Compute routing logits for Q and K
-        # Shape: (B, H, T, depth, m)
+        # Fractal Addressing / Similarity
+        # We compute the "Soft Path" for Q and K.
+        # Path is a sequence of categorical distributions over m branches at each depth d.
+        # q_route: (B, H, Tq, Depth, m)
         q_route = self.router(q).view(B, self.n_head, -1, self.depth, self.m)
         k_route = self.router(k).view(B, self.n_kv_head, -1, self.depth, self.m)
         
-        # Softmax over m to get probabilities of taking each branch
+        # Softmax over m to get branch probabilities
         q_prob = F.softmax(q_route, dim=-1)
         k_prob = F.softmax(k_route, dim=-1)
         
-        # Similarity: Probability of taking the SAME path.
-        # Product of dot products at each depth.
-        # Sim(q, k) = prod_{d=1..D} (q_d . k_d)
-        # We need sum over m, then product over depth.
+        # Similarity = Probability that Q and K took the SAME path.
+        # P(overlap) = prod_{d=1..Depth} (sum_{i=1..m} q_{d,i} * k_{d,i})
+        # Log-Sim = sum_{d} log(q_d . k_d)
         
-        # q_prob: (B, H, Tq, D, m)
-        # k_prob: (B, H, Tk, D, m)
-        # Inner product over m: (B, H, Tq, Tk, D)
-        # This is huge if realized.
+        # Implementation:
+        # 1. Flatten (Depth, m) -> (Depth*m).
+        # 2. This is just creating a "Fractal Embedding" of size Depth*m.
+        # 3. Standard dot product approximates the similarity if normalized correctly.
         
-        # Standard attention uses dot product (sum over dim).
-        # Here we want product over depth.
-        # Log-Sim = sum_{d=1..D} log(q_d . k_d)
+        # Better approximation:
+        # Compute per-depth overlap, then sum/prod.
+        # q_prob: (..., D, m)
+        # Overlap at depth d: O_d = (q_d * k_d).sum(m)
+        # Total Sim = prod(O_d) or sum(O_d) or sum(log O_d).
+        # We use dot product of flattened probs as a proxy for "Total path overlap mass".
+        # Score = (Q_flat . K_flat) / sqrt(Depth)
         
-        # Let's do it efficiently:
-        # Reshape to (B, H, T, D*m)
-        # This is just a weird dot product attention?
-        # No, strictly: sum_d log(sum_m q_dm * k_dm)
-        
-        # Let's approximate or standard "Fractal Distance"
-        # Let's just concatenate the routing probabilities and use them as keys/queries?
-        # Q' = q_prob.flatten()
-        # K' = k_prob.flatten()
-        # Score = Q' @ K'.T
-        # This corresponds to sum_{d,m} q_dm * k_dm.
-        # This is close to "expected overlap" but adds across depths.
-        # IFS suggests strictly hierarchical: overlap at depth d matters more?
-        # Or "Address" matching.
-        
-        # Implementation: Use the router outputs as the embedding for attention.
         q_flat = q_prob.view(B, self.n_head, -1, self.depth * self.m)
         k_flat = k_prob.view(B, self.n_kv_head, -1, self.depth * self.m)
         
+        # We treat these probability vectors as the keys/queries for attention
         scores = (q_flat @ k_flat.transpose(-2, -1)) * (1.0 / (self.depth ** 0.5))
         
         # Masking
