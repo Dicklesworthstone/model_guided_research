@@ -24,6 +24,10 @@ import numpy as np
 from jax import grad, jit, lax, random, vmap
 from jax.flatten_util import ravel_pytree
 
+
+def _is_close_zero(val: float, eps: float = 1e-12) -> bool:
+    return math.fabs(val) < eps
+
 ############################
 # Linear-algebraic primitives matching the math
 ############################
@@ -35,14 +39,14 @@ def _symmetrize(M):
 
 
 @jit
-def _phi_delta_eval(lam, delta):
+def _phi_delta_fraction(lam, delta):
     return jnp.where(jnp.abs(lam) > 1e-12, (1.0 - jnp.exp(-delta * lam)) / lam, delta * jnp.ones_like(lam))
 
 
 @jit
 def _phi_delta_from_eigh(T, delta):
     lam, V = jnp.linalg.eigh(_symmetrize(T))
-    phi_vals = _phi_delta_eval(lam, delta)
+    phi_vals = _phi_delta_fraction(lam, delta)
     return (V * phi_vals) @ V.T
 
 
@@ -510,17 +514,17 @@ def hyperreal_multiply(x: Hyperreal, y: Hyperreal) -> Hyperreal:
     real = x.real * y.real
     k_raw = int(x.eps_order)
     m_raw = int(y.eps_order)
-    k_eff = k_raw + (1 if x.inf != 0.0 and k_raw == 0 else 0)
-    m_eff = m_raw + (1 if y.inf != 0.0 and m_raw == 0 else 0)
+    k_eff = k_raw + (1 if (not _is_close_zero(x.inf)) and k_raw == 0 else 0)
+    m_eff = m_raw + (1 if (not _is_close_zero(y.inf)) and m_raw == 0 else 0)
 
     # No infinitesimal parts
-    if (x.inf == 0.0 or k_eff == 0) and (y.inf == 0.0 or m_eff == 0):
+    if (_is_close_zero(x.inf) or k_eff == 0) and (_is_close_zero(y.inf) or m_eff == 0):
         return Hyperreal(real, 0.0, 0)
 
     # One side carries ε only
-    if (x.inf != 0.0 and k_eff > 0) and (y.inf == 0.0 or m_eff == 0):
+    if ((not _is_close_zero(x.inf)) and k_eff > 0) and (_is_close_zero(y.inf) or m_eff == 0):
         return Hyperreal(real, y.real * x.inf, k_eff)
-    if (y.inf != 0.0 and m_eff > 0) and (x.inf == 0.0 or k_eff == 0):
+    if ((not _is_close_zero(y.inf)) and m_eff > 0) and (_is_close_zero(x.inf) or k_eff == 0):
         return Hyperreal(real, x.real * y.inf, m_eff)
 
     # Both sides carry ε: retain lowest-order cross terms; drop higher-order ε^{k_eff+m_eff}

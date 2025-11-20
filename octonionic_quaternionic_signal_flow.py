@@ -216,7 +216,8 @@ def merge_heads(xh):
 
 
 def mha_init(rng, d, H):
-    assert d % H == 0
+    if d % H != 0:
+        raise ValueError("mha_init expects d divisible by H")
     C = d // H
     ks = random.split(rng, 13)
     return dict(

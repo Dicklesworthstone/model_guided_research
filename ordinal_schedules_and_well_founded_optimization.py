@@ -185,7 +185,8 @@ def ordinal_state_init(params: OrdinalParams):
 # Test convenience wrapper accepting test-style kwargs
 def OrdinalParams_test(**kwargs) -> OrdinalParams:
     result = OrdinalParams.from_test_kwargs(**kwargs)
-    assert isinstance(result, OrdinalParams)  # Help mypy understand the type
+    if not isinstance(result, OrdinalParams):
+        raise TypeError("OrdinalParams_test expected OrdinalParams result")
     return result
 
 

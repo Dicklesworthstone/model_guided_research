@@ -80,9 +80,11 @@ def _binary_corners(m: int, d: int, s: float) -> Array:
     Return T \in R^{m x d} where each row is a hypercube corner scaled by (1 - s).
     Requires m = 2^{de} and d >= de.
     """
-    assert _is_power_of_two(m), "m must be a power of two to use binary-corner translations."
+    if not _is_power_of_two(m):
+        raise ValueError("m must be a power of two to use binary-corner translations.")
     de = int(math.log2(m))
-    assert d >= de, f"d (value dimension) must be >= log2(m). Got d={d}, log2(m)={de}."
+    if d < de:
+        raise ValueError(f"d (value dimension) must be >= log2(m). Got d={d}, log2(m)={de}.")
 
     # Build all m binary codes of length de (little-endian: bit j is (i >> j) & 1)
     bits = ((jnp.arange(m)[:, None] >> jnp.arange(de)[None, :]) & 1).astype(jnp.float32)
@@ -176,9 +178,8 @@ class FractalKV:
                 lambda s: ((s.payload_u, s.written_mask, s.total_writes, s.total_collisions), None),
                 lambda _, c: FractalKVState(*c),
             )
-        except Exception:
-            # Safe to ignore if already registered
-            pass
+        except Exception as err:
+            print(f"[fractal-kv] PyTree registration skipped: {err}")
 
         # JIT‑compiled kernels (no static args; keep pure for tracing)
         self._jit_compute_c = jit(self._compute_c_batch)
@@ -447,12 +448,11 @@ try:
     )
     _tree.register_pytree_node(
         RouterOptState,
-        lambda s: ((s.t, s.mW, s.vW, s.mb, s.vb), None),
-        lambda _, xs: RouterOptState(t=xs[0], mW=xs[1], vW=xs[2], mb=xs[3], vb=xs[4]),
-    )
-except Exception:
-    # Safe to ignore if already registered
-    pass
+    lambda s: ((s.t, s.mW, s.vW, s.mb, s.vb), None),
+    lambda _, xs: RouterOptState(t=xs[0], mW=xs[1], vW=xs[2], mb=xs[3], vb=xs[4]),
+)
+except Exception as err:
+    print(f"[fractal-kv] Router PyTree registration skipped: {err}")
 
 
 class LearnedRouter:
@@ -765,9 +765,11 @@ def _sanity_small():
     store.write(P, V)
     Vh, present = store.read(P)
     err = float(mse(V, Vh))
-    assert err < 1e-6, f"Readback mismatch: MSE={err}"
+    if err >= 1e-6:
+        raise RuntimeError(f"Readback mismatch: MSE={err}")
     d = store.diagnostics()
-    assert 0.0 <= d["collision_rate"] <= 1.0
+    if not (0.0 <= d["collision_rate"] <= 1.0):
+        raise RuntimeError("Collision rate out of bounds")
     print("[Sanity] Exact write/read OK, MSE ~", err)
 
 
