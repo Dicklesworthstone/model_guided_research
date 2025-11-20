@@ -22,6 +22,10 @@ import torch.nn.functional as F
 from nanochat.common import get_dist_info
 from nanochat.muon import Muon, DistMuon
 from nanochat.adamw import DistAdamW
+from nanochat.model_utils import norm, apply_rotary_emb
+from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
+from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
+from nanochat.hoss_opt_torch import HOSS
 
 @dataclass
 class GPTConfig:
@@ -31,23 +35,8 @@ class GPTConfig:
     n_head: int = 6 # number of query heads
     n_kv_head: int = 6 # number of key/value heads (GQA)
     n_embd: int = 768
-
-
-def norm(x):
-    # Purely functional rmsnorm with no learnable params
-    return F.rms_norm(x, (x.size(-1),))
-
-
-def apply_rotary_emb(x, cos, sin):
-    if x.ndim != 4:
-        raise ValueError("apply_rotary_emb expects tensor of shape (B, T, H, D)")
-    d = x.shape[3] // 2
-    x1, x2 = x[..., :d], x[..., d:] # split up last time into two halves
-    y1 = x1 * cos + x2 * sin # rotate pairs of dims
-    y2 = x1 * (-sin) + x2 * cos
-    out = torch.cat([y1, y2], 3) # re-assemble
-    out = out.to(x.dtype) # ensure input/output dtypes match
-    return out
+    attention_type: str = "standard"
+    optimizer_type: str = "adamw"
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -129,7 +118,12 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
-        self.attn = CausalSelfAttention(config, layer_idx)
+        if config.attention_type == "tropical":
+            self.attn = TropicalCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "ultrametric":
+            self.attn = UltrametricCausalSelfAttention(config, layer_idx)
+        else:
+            self.attn = CausalSelfAttention(config, layer_idx)
         self.mlp = MLP(config)
 
     def forward(self, x, cos_sin, kv_cache):
@@ -214,6 +208,10 @@ class GPT(nn.Module):
         return num_flops_per_token
 
     def setup_optimizers(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02, weight_decay=0.0):
+        if self.config.optimizer_type == "hoss":
+            print("Using HOSS optimizer")
+            return [HOSS(self.parameters(), lr=matrix_lr)]
+
         model_dim = self.config.n_embd
         ddp, rank, local_rank, world_size = get_dist_info()
         # Separate out all parameters into 3 groups (matrix, embedding, lm_head)
