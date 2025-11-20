@@ -132,6 +132,7 @@ class HuggingFaceTokenizer:
         return bos
 
     def encode(self, text, *args, **kwargs):
+        kwargs.pop('num_threads', None) # Support num_threads arg but ignore it
         if isinstance(text, str):
             return self._encode_one(text, *args, **kwargs)
         elif isinstance(text, list):
@@ -427,8 +428,13 @@ def get_tokenizer():
     from nanochat.common import get_base_dir
     base_dir = get_base_dir()
     tokenizer_dir = os.path.join(base_dir, "tokenizer")
-    return HuggingFaceTokenizer.from_directory(tokenizer_dir)
-    # return RustBPETokenizer.from_directory(tokenizer_dir)
+    try:
+        return HuggingFaceTokenizer.from_directory(tokenizer_dir)
+    except Exception:
+        print(f"Tokenizer not found in {tokenizer_dir}. Downloading GPT-2 tokenizer...")
+        tokenizer = HuggingFaceTokenizer.from_pretrained("gpt2")
+        tokenizer.save(tokenizer_dir)
+        return tokenizer
 
 def get_token_bytes(device="cpu"):
     import torch

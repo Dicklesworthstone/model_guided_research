@@ -162,7 +162,7 @@ def main():
         step = 0
         t0 = time.time()
         
-        for inputs, targets, _ in loader:
+        for inputs, targets in loader:
             # Convert to numpy/jax
             inputs = jnp.array(inputs.numpy())
             targets = jnp.array(targets.numpy())
@@ -173,7 +173,7 @@ def main():
                 t1 = time.time()
                 dt = t1 - t0
                 t0 = t1
-                print(f"Step {step}: loss {loss:.4f}, time {dt*1000/10:.2f}ms/step")
+                print(f"Step {step}: loss {float(loss):.4f}, time {float(dt*1000/10):.2f}ms/step")
                 
             step += 1
             if step >= 100:

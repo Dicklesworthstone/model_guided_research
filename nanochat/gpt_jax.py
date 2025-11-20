@@ -31,7 +31,7 @@ class CausalSelfAttention(nn.Module):
         )
         self.c_proj = nn.Dense(self.n_embd, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
 
-    def __call__(self, x, cos, sin, mask=None, init_cache=False):
+    def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape
 
         q = self.c_q(x).reshape(B, T, self.n_head, self.head_dim)
@@ -48,6 +48,8 @@ class CausalSelfAttention(nn.Module):
 
         # Scale query
         q = q * (1.0 / jnp.sqrt(self.head_dim))
+
+        init_cache = self.config.init_cache
 
         # KV Cache handling
         if self.has_variable("cache", "cached_key"):
@@ -159,14 +161,14 @@ class Block(nn.Module):
             self.attn = CausalSelfAttention(self.config, self.layer_idx)
         self.mlp = MLP(self.config)
 
-    def __call__(self, x, cos, sin, mask=None, init_cache=False):
+    def __call__(self, x, cos, sin, mask=None):
         x_norm = rms_norm(x)
-        x = x + self.attn(x_norm, cos, sin, mask, init_cache=init_cache)
+        x = x + self.attn(x_norm, cos, sin, mask)
         x_norm = rms_norm(x)
         x = x + self.mlp(x_norm)
-        return x
+        return x.astype(jnp.bfloat16) # Ensure output dtype matches input (bfloat16) for scan carry
 
-# Define Rematted Block globally to avoid re-definition in scan loop
+# Define Rematted Block globally
 RematBlock = nn.remat(Block)
 
 class ScanBlock(nn.Module):
@@ -174,10 +176,10 @@ class ScanBlock(nn.Module):
     
     @nn.compact
     def __call__(self, x, ctx):
-        cos, sin, mask, init_cache, layer_idx = ctx
-        # We use RematBlock which is the gradient-checkpointed version of Block
+        cos, sin, mask, layer_idx = ctx
+        # Use RematBlock
         block = RematBlock(self.config, layer_idx=0) 
-        x = block(x, cos, sin, mask, init_cache)
+        x = block(x, cos, sin, mask)
         return x, None
 
 class GPT(nn.Module):
@@ -191,7 +193,7 @@ class GPT(nn.Module):
         
         # Use nn.scan for layers
         # We scan over the 'params' and 'cache' collections.
-        # We broadcast the context (cos, sin, mask, init_cache).
+        # We broadcast the context (cos, sin, mask).
         self.blocks = nn.scan(
             ScanBlock,
             variable_axes={'params': 0, 'cache': 0, 'prime': 0},
@@ -202,38 +204,16 @@ class GPT(nn.Module):
         
         self.lm_head = nn.Dense(self.config.vocab_size, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02), dtype=jnp.bfloat16)
 
-    def __call__(self, idx, targets=None, train=True, init_cache=False):
+    def __call__(self, idx, targets=None, train=True):
         B, T = idx.shape
 
         # Determine start position for rotary embeddings
         start_pos = 0
         if self.has_variable("cache", "cache_index"):
-            # Accessing cache in scan is tricky if we need it here.
-            # Actually, with scan, the cache variable is inside the scanned module.
-            # We can't easily access it outside without peering into the variable dict.
-            # But we only need start_pos to compute cos/sin.
-            # For training, start_pos=0.
-            # For inference, we usually run one step.
-            # If we use scan, `cache_index` is also scanned?
-            # `cache_index` is a scalar per layer.
-            # We can read it from the first layer? Or just track it externally?
-            # Let's assume for now we passed it or the cache is handled correctly.
-            # In the original code: `cache_index` is a variable in `CausalSelfAttention`.
-            # With scan, it becomes `cache_index` array of shape [L].
-            # They should all be in sync.
-            pass
-
-        # For simplicity in this optimized version, let's assume simple training or prefill.
-        # Inference with scan + cache + rotary is complex.
-        # But for training (which is the FLOPS target), it's fine.
-        # Let's just compute cos/sin for full T.
-        
-        # If inference (init_cache=True or using cache), we need proper position.
-        # Let's peek at the cache index if possible, or just assume 0 for training.
-        if not train and not init_cache:
-             # This path is complex with scan. Let's support training primary.
-             # Ideally we pass `start_pos` as an argument.
-             pass
+            start_pos = self.variable("cache", "cache_index").value
+            # Using config.init_cache to check
+            if self.config.init_cache:
+                start_pos = 0
 
         head_dim = self.config.n_embd // self.config.n_head
         cos, sin = self.precompute_rotary_embeddings(T, head_dim, start_pos=start_pos)
@@ -247,8 +227,8 @@ class GPT(nn.Module):
 
         # Run scanned blocks
         # Pack context
-        # We pass a dummy layer_idx=0 in ctx, though it's unused/shadowed.
-        ctx = (cos, sin, mask, init_cache, 0)
+        # Pass dummy layer_idx=0.
+        ctx = (cos, sin, mask, 0)
         x, _ = self.blocks(x, ctx)
 
         x = rms_norm(x)
@@ -279,9 +259,6 @@ class GPT(nn.Module):
         """
         Autoregressive generation with KV caching.
         Must be called via apply(..., method=GPT.generate, mutable=['cache'])
-
-        Uses a Python loop for flexibility and correctness with Flax variables.
-        For high performance, compile the step function externally.
         """
         if rng is None:
             rng = random.PRNGKey(0)
@@ -291,7 +268,7 @@ class GPT(nn.Module):
             raise ValueError("Batch size 1 for now")
 
         # 1. Prefill
-        logits = self.__call__(idx, init_cache=True, train=False)
+        logits = self.__call__(idx, train=False)
 
         # Sample first token
         last_logit = logits[:, -1, :]
