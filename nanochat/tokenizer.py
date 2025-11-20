@@ -6,6 +6,8 @@ Two implementations are available:
 2) Our own RustBPE Tokenizer for training and tiktoken for efficient inference
 """
 
+import base64
+import json
 import os
 import copy
 from functools import lru_cache
@@ -110,7 +112,7 @@ class HuggingFaceTokenizer:
     def _encode_one(self, text, prepend=None, append=None):
         # encode a single string
         # prepend/append can be either a string of a special token or a token id directly.
-        assert isinstance(text, str)
+        _ensure(isinstance(text, str), "Tokenizer expects text input")
         ids = []
         if prepend is not None:
             prepend_id = prepend if isinstance(prepend, int) else self.encode_special(prepend)
@@ -152,12 +154,40 @@ class HuggingFaceTokenizer:
 
 # -----------------------------------------------------------------------------
 # Tokenizer based on rustbpe + tiktoken combo
-import pickle
 try:
     import rustbpe
 except ImportError:
     rustbpe = None
 import tiktoken
+
+
+def _encoding_to_json(enc: tiktoken.Encoding) -> dict:
+    mergeable_ranks = {
+        base64.b64encode(k).decode("ascii"): v for k, v in enc._mergeable_ranks.items()
+    }
+    return {
+        "name": getattr(enc, "name", "rustbpe"),
+        "pat_str": enc._pat_str,
+        "mergeable_ranks": mergeable_ranks,
+        "special_tokens": enc._special_tokens,
+    }
+
+
+def _encoding_from_json(data: dict) -> tiktoken.Encoding:
+    mergeable_ranks = {
+        base64.b64decode(k.encode("ascii")): v for k, v in data["mergeable_ranks"].items()
+    }
+    return tiktoken.Encoding(
+        name=data.get("name", "rustbpe"),
+        pat_str=data["pat_str"],
+        mergeable_ranks=mergeable_ranks,
+        special_tokens=data["special_tokens"],
+    )
+
+
+def _ensure(condition: bool, message: str):
+    if not condition:
+        raise ValueError(message)
 
 class RustBPETokenizer:
     """Light wrapper around tiktoken (for efficient inference) but train with rustbpe"""
@@ -172,7 +202,7 @@ class RustBPETokenizer:
         tokenizer = rustbpe.Tokenizer()
         # the special tokens are inserted later in __init__, we don't train them here
         vocab_size_no_special = vocab_size - len(SPECIAL_TOKENS)
-        assert vocab_size_no_special >= 256, f"vocab_size_no_special must be at least 256, got {vocab_size_no_special}"
+        _ensure(vocab_size_no_special >= 256, f"vocab_size_no_special must be at least 256, got {vocab_size_no_special}")
         tokenizer.train_from_iterator(text_iterator, vocab_size_no_special, pattern=SPLIT_PATTERN)
         # 2) construct the associated tiktoken encoding for inference
         pattern = tokenizer.get_pattern()
@@ -190,18 +220,16 @@ class RustBPETokenizer:
 
     @classmethod
     def from_directory(cls, tokenizer_dir):
-        pickle_path = os.path.join(tokenizer_dir, "tokenizer.pkl")
-        if not os.path.exists(pickle_path):
-            # Fallback: if tokenizer.pkl doesn't exist, try to find it in the package data or regenerate it
-            # For now, let's just try to regenerate it if we are in the main process
-            print(f"Tokenizer not found at {pickle_path}, attempting to regenerate...")
-            # This is a bit hacky, but we need to ensure the tokenizer exists
-            # We can't easily regenerate it here without the training data.
-            # So we'll raise a more informative error.
-            raise FileNotFoundError(f"Tokenizer not found at {pickle_path}. Please run 'python -m nanochat.tokenizer' to generate it.")
-            
-        with open(pickle_path, "rb") as f:
-            enc = pickle.load(f)
+        encoding_path = os.path.join(tokenizer_dir, "tokenizer_encoding.json")
+        if not os.path.exists(encoding_path):
+            print(f"Tokenizer not found at {encoding_path}, attempting to regenerate...")
+            raise FileNotFoundError(
+                f"Tokenizer not found at {encoding_path}. Please run 'python -m nanochat.tokenizer' to generate it."
+            )
+
+        with open(encoding_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        enc = _encoding_from_json(data)
         return cls(enc, "<|bos|>")
 
     @classmethod
@@ -266,10 +294,10 @@ class RustBPETokenizer:
     def save(self, tokenizer_dir):
         # save the encoding object to disk
         os.makedirs(tokenizer_dir, exist_ok=True)
-        pickle_path = os.path.join(tokenizer_dir, "tokenizer.pkl")
-        with open(pickle_path, "wb") as f:
-            pickle.dump(self.enc, f)
-        print(f"Saved tokenizer encoding to {pickle_path}")
+        encoding_path = os.path.join(tokenizer_dir, "tokenizer_encoding.json")
+        with open(encoding_path, "w", encoding="utf-8") as f:
+            json.dump(_encoding_to_json(self.enc), f, indent=2)
+        print(f"Saved tokenizer encoding to {encoding_path}")
 
     def render_conversation(self, conversation, max_tokens=2048):
         """
@@ -292,12 +320,12 @@ class RustBPETokenizer:
             # some conversation surgery is necessary here for now...
             conversation = copy.deepcopy(conversation) # avoid mutating the original
             messages = conversation["messages"]
-            assert messages[1]["role"] == "user", "System message must be followed by a user message"
+            _ensure(messages[1]["role"] == "user", "System message must be followed by a user message")
             messages[1]["content"] = messages[0]["content"] + "\n\n" + messages[1]["content"]
             messages = messages[1:]
         else:
             messages = conversation["messages"]
-        assert len(messages) >= 1, f"Conversation has less than 1 message: {messages}"
+        _ensure(len(messages) >= 1, f"Conversation has less than 1 message: {messages}")
 
         # fetch all the special tokens we need
         bos = self.get_bos_token_id()
@@ -312,13 +340,13 @@ class RustBPETokenizer:
 
             # some sanity checking here around assumptions, to prevent footguns
             must_be_from = "user" if i % 2 == 0 else "assistant"
-            assert message["role"] == must_be_from, f"Message {i} is from {message['role']} but should be from {must_be_from}"
+            _ensure(message["role"] == must_be_from, f"Message {i} is from {message['role']} but should be from {must_be_from}")
 
             # content can be either a simple string or a list of parts (e.g. containing tool calls)
             content = message["content"]
 
             if message["role"] == "user":
-                assert isinstance(content, str), "User messages are simply expected to be strings"
+                _ensure(isinstance(content, str), "User messages are simply expected to be strings")
                 value_ids = self.encode(content)
                 add_tokens(user_start, 0)
                 add_tokens(value_ids, 0)
@@ -381,7 +409,7 @@ class RustBPETokenizer:
         # We have some surgery to do: we need to pop the last message (of the Assistant)
         conversation = copy.deepcopy(conversation) # avoid mutating the original
         messages = conversation["messages"]
-        assert messages[-1]["role"] == "assistant", "Last message must be from the Assistant"
+        _ensure(messages[-1]["role"] == "assistant", "Last message must be from the Assistant")
         messages.pop() # remove the last message (of the Assistant) inplace
 
         # Now tokenize the conversation
@@ -408,7 +436,7 @@ def get_token_bytes(device="cpu"):
     base_dir = get_base_dir()
     tokenizer_dir = os.path.join(base_dir, "tokenizer")
     token_bytes_path = os.path.join(tokenizer_dir, "token_bytes.pt")
-    assert os.path.exists(token_bytes_path), f"Token bytes not found at {token_bytes_path}? It gets written by tok_train.py"
+    _ensure(os.path.exists(token_bytes_path), f"Token bytes not found at {token_bytes_path}? It gets written by tok_train.py")
     with open(token_bytes_path, "rb") as f:
-        token_bytes = torch.load(f, map_location=device)
+        token_bytes = torch.load(f, map_location=device, weights_only=True)
     return token_bytes
