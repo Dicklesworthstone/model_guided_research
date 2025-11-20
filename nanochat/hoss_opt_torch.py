@@ -1,5 +1,11 @@
 """
 HOSS (Hyperreal OU Shadow Step) optimizer for PyTorch.
+Implements nonstandard analysis optimization with infinitesimal perturbations.
+
+Core logic:
+- Uses a shadow step `mean_update` based on curvature (Lanczos).
+- Adds `noise` scaled by Lyapunov integral of the Hessian.
+- Requires Hessian-Vector Products (HVP), so `closure` must be passed to `step`.
 """
 
 import math
@@ -11,7 +17,7 @@ def _symmetrize(M):
 
 def _phi_delta_fraction(lam, delta):
     # (1 - exp(-delta * lam)) / lam
-    # Handle small lambda for stability
+    # Handle small lambda for stability via Taylor or mask
     mask = torch.abs(lam) > 1e-12
     res = torch.zeros_like(lam)
     res[mask] = (1.0 - torch.exp(-delta * lam[mask])) / lam[mask]
@@ -22,6 +28,8 @@ def _exp_delta_fraction(lam, delta):
     return torch.exp(-delta * lam)
 
 def _lyapunov_integral_from_eigh(T, S, delta):
+    # Computes int_0^delta exp(-sT) S exp(-sT) ds
+    # via eigendecomposition of T.
     lam, V = torch.linalg.eigh(_symmetrize(T))
     S_hat = V.T @ S @ V
     lam_i = lam[:, None]
@@ -40,6 +48,7 @@ def _lyapunov_integral_from_eigh(T, S, delta):
     return _symmetrize(C)
 
 def lanczos_sym(hvp_fn, vec_g, r, device):
+    # Symmetric Lanczos iteration to approximate Hessian T from HVP
     d = vec_g.shape[0]
     Q = torch.zeros((d, r), device=device, dtype=vec_g.dtype)
     alpha = torch.zeros((r,), device=device, dtype=vec_g.dtype)
@@ -74,8 +83,7 @@ def lanczos_sym(hvp_fn, vec_g, r, device):
         q_i = q_ip1
         beta_im1 = b_i
 
-    # Construct T
-    # alpha on diag, beta[:-1] on off-diag
+    # Construct T (tridiagonal)
     T = torch.diag(alpha) + torch.diag(beta[:-1], 1) + torch.diag(beta[:-1], -1)
     
     return Q, T, g_norm
@@ -92,7 +100,7 @@ class HOSS(Optimizer):
         """
         Performs a single optimization step.
         closure: A closure that reevaluates the model and returns the loss.
-                 REQUIRED for HOSS to compute HVP.
+                 REQUIRED for HOSS to compute Hessian-Vector Products (HVP).
         """
         loss = None
         if closure is not None:
@@ -114,21 +122,13 @@ class HOSS(Optimizer):
             if not params_list:
                 continue
 
-            # Flatten
-            # We need to handle flattening carefully to support HVP
-            # But hvp_fn needs to call closure? 
-            # No, closure returns loss. We need grad(loss, params).
-            # We already have grads.
-            # HVP: grad(grad(loss) @ v).
-            
-            # Concatenate all params into one vector
+            # Flatten params and grads
             params_flat = torch.cat([p.view(-1) for p in params_list])
             grads_flat = torch.cat([g.view(-1) for g in grads_list])
             
             device = params_flat.device
-            dtype = params_flat.dtype
             
-            # Cast to float32 for stability
+            # Cast to float32 for stability in Lanczos
             params_flat_f32 = params_flat.float()
             grads_flat_f32 = grads_flat.float()
             
@@ -140,25 +140,12 @@ class HOSS(Optimizer):
                     grads_flat_f32.mul_(scale)
 
             # Define HVP function
-            # We need to re-compute gradients inside HVP?
-            # HVP(v) = lim (grad(w + eps*v) - grad(w))/eps
-            # Or using autograd.grad
+            # Uses autograd.grad on existing gradients (double backprop)
+            # Requires gradients to have been created with create_graph=True
             
-            # The closure computes loss.
-            # We need a function that takes params_flat and returns gradients_flat?
-            # This is expensive if we assume closure re-runs forward pass.
-            # Efficient HVP usually relies on `torch.autograd.grad(outputs=grads, inputs=params, grad_outputs=v)`.
-            # But we need `grads` graph to be retained?
-            # In standard training `loss.backward()` frees the graph.
-            # So `p.grad` does NOT have a graph.
-            
-            # CRITICAL: To use HOSS, the training loop must call `loss.backward(create_graph=True)`.
-            # I will update train.py to handle this for HOSS.
-            
-            # HVP function
             def hvp_fn(v):
                 # v is vector of size params
-                # We need to unflatten v to match params_list
+                # Unflatten v to match params_list
                 v_list = []
                 offset = 0
                 for p in params_list:
@@ -166,36 +153,15 @@ class HOSS(Optimizer):
                     v_list.append(v[offset:offset+numel].view_as(p))
                     offset += numel
                 
-                # Compute HVP
-                # grads_list must have been created with create_graph=True
-                # grad_outputs = v_list
-                
-                # We want d(grad_loss)/dw * v
-                # = grad(dot(grad_loss, v), w)
-                
-                # First compute dot product
-                # But we don't have grad_loss as a tensor connected to graph unless we kept it.
-                # This requires `grads_list` to be valid tensors with grad_fn.
-                
-                # If `closure` is passed, we can re-compute gradients?
-                # "Standard" Second Order optimizers (L-BFGS) in PyTorch re-evaluate closure.
-                # But that's for line search.
-                
-                # If we require `create_graph=True` in backward, we can use the existing grads.
-                # Let's assume `grads_list` has graph.
-                
                 # Check if grads have graph
                 if not grads_list[0].requires_grad:
-                     # Fallback: Use finite difference if no graph? 
-                     # Or re-run backward?
-                     # Re-running backward inside HVP is very expensive (R * Backward).
-                     # Better to require create_graph=True once.
+                     # This happens if backward() was called without create_graph=True
+                     # We can't compute HVP efficiently without it.
+                     # Fallback: raise error or warn?
+                     # raise RuntimeError("HOSS requires create_graph=True in backward pass")
                      pass
 
-                # d(loss)/dw
-                # vector-Jacobian product of gradient?
-                # torch.autograd.grad(outputs=grads_list, inputs=params_list, grad_outputs=v_list, retain_graph=True)
-                
+                # Compute HVP: grad( dot(grads, v) )
                 hvp_list = torch.autograd.grad(
                     outputs=grads_list,
                     inputs=params_list,
@@ -214,44 +180,42 @@ class HOSS(Optimizer):
                 
                 return torch.cat(hvp_flat).float()
 
-            # Run Lanczos
+            # Run Lanczos to get Krylov subspace Q and tridiagonal T
             lanczos_rank = group['lanczos_rank']
             Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat_f32, lanczos_rank, device)
             
-            # Eigen decomp
+            # Eigen decomp of T
             lam_T, V_T = torch.linalg.eigh(T)
             lam_T = torch.clamp(lam_T, min=group['min_curvature'])
             
             delta = group['lr']
             
-            # Mean update
+            # Mean update via phi function
             phi_delta_T = (V_T * _phi_delta_fraction(lam_T, delta)) @ V_T.T
             
             # The mean update is -Phi(H)g.
-            # We project g: Q.T @ g
-            # Note: Q[:, 0] is g/norm. So Q.T @ g = [norm, 0, ...]
+            # Project g into Krylov basis: Q.T @ g = [norm, 0, ...]
             projected_grad = torch.zeros(lanczos_rank, device=device, dtype=torch.float32)
             projected_grad[0] = g_norm
             
             mean_update_projected = -phi_delta_T @ projected_grad
             mean_update_flat = Q @ mean_update_projected
             
-            # Noise
-            # Isotropic assumption
+            # Noise injection (Lyapunov integral)
             S_hat = group['isotropic_noise_var'] * torch.eye(lanczos_rank, device=device, dtype=torch.float32)
             C_delta_T = _lyapunov_integral_from_eigh(T, S_hat, delta)
             
-            # Sample noise
+            # Sample noise in Krylov space
             noise_projected = torch.distributions.MultivariateNormal(
                 torch.zeros(lanczos_rank, device=device, dtype=torch.float32), 
-                covariance_matrix=C_delta_T + 1e-6 * torch.eye(lanczos_rank, device=device) # stability
+                covariance_matrix=C_delta_T + 1e-6 * torch.eye(lanczos_rank, device=device)
             ).sample()
             
             noise_flat = group['noise_scale'] * (Q @ noise_projected)
             
             total_update = mean_update_flat + noise_flat
             
-            # Apply update
+            # Apply update to parameters
             offset = 0
             for p in params_list:
                 numel = p.numel()
