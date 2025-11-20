@@ -39,7 +39,8 @@ def norm(x):
 
 
 def apply_rotary_emb(x, cos, sin):
-    assert x.ndim == 4  # multihead attention
+    if x.ndim != 4:
+        raise ValueError("apply_rotary_emb expects tensor of shape (B, T, H, D)")
     d = x.shape[3] // 2
     x1, x2 = x[..., :d], x[..., d:] # split up last time into two halves
     y1 = x1 * cos + x2 * sin # rotate pairs of dims
@@ -56,8 +57,10 @@ class CausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        assert self.n_embd % self.n_head == 0
-        assert self.n_kv_head <= self.n_head and self.n_head % self.n_kv_head == 0
+        if self.n_embd % self.n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
+        if not (self.n_kv_head <= self.n_head and self.n_head % self.n_kv_head == 0):
+            raise ValueError("n_kv_head must divide n_head and be <= n_head")
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
@@ -217,7 +220,9 @@ class GPT(nn.Module):
         matrix_params = list(self.transformer.h.parameters())
         embedding_params = list(self.transformer.wte.parameters())
         lm_head_params = list(self.lm_head.parameters())
-        assert len(list(self.parameters())) == len(matrix_params) + len(embedding_params) + len(lm_head_params)
+        expected = len(matrix_params) + len(embedding_params) + len(lm_head_params)
+        if len(list(self.parameters())) != expected:
+            raise RuntimeError("Parameter count mismatch between blocks, embeddings, and lm_head")
         # Create the AdamW optimizer for the embedding and lm_head
         # Scale the LR for the AdamW parameters by ∝1/√dmodel (having tuned the LRs for 768 dim model)
         dmodel_lr_scale = (model_dim / 768) ** -0.5
@@ -245,9 +250,12 @@ class GPT(nn.Module):
         B, T = idx.size()
 
         # Grab the rotary embeddings for the current sequence length (they are of shape (1, seq_len, 1, head_dim/2))
-        assert T <= self.cos.size(1), f"Sequence length grew beyond the rotary embeddings cache: {T} > {self.cos.size(1)}"
-        assert idx.device == self.cos.device, f"Rotary embeddings and idx are on different devices: {idx.device} != {self.cos.device}"
-        assert self.cos.dtype == torch.bfloat16, "Rotary embeddings must be in bfloat16"
+        if T > self.cos.size(1):
+            raise ValueError(f"Sequence length grew beyond the rotary embeddings cache: {T} > {self.cos.size(1)}")
+        if idx.device != self.cos.device:
+            raise ValueError(f"Rotary embeddings and idx are on different devices: {idx.device} != {self.cos.device}")
+        if self.cos.dtype != torch.bfloat16:
+            raise TypeError("Rotary embeddings must be in bfloat16")
         # if kv cache exists, we need to offset the rotary embeddings to the current position in the cache
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
         cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T] # truncate cache to current sequence length
@@ -283,7 +291,8 @@ class GPT(nn.Module):
         - batch size is 1
         - ids and the yielded tokens are simple Python lists and ints
         """
-        assert isinstance(tokens, list)
+        if not isinstance(tokens, list):
+            raise TypeError("tokens must be a list")
         device = self.get_device()
         rng = None
         if temperature > 0:

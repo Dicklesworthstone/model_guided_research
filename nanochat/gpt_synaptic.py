@@ -154,19 +154,13 @@ class GPTSynaptic(nn.Module):
         T = c.sequence_len
         hd = c.n_embd // c.n_head
         base = c.rope_base
-        inv_freq: Tensor = 1.0 / (
-            base ** (torch.arange(0, hd // 2, dtype=torch.float32) / (hd // 2))
-        )
+        inv_freq: Tensor = 1.0 / (base ** (torch.arange(0, hd // 2, dtype=torch.float32) / (hd // 2)))
         t: Tensor = torch.arange(0, T * 8, dtype=torch.float32)
         freqs: Tensor = torch.outer(t, inv_freq)
         self.cos: Tensor
-        self.register_buffer(
-            "cos", torch.cos(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False
-        )
+        self.register_buffer("cos", torch.cos(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False)
         self.sin: Tensor
-        self.register_buffer(
-            "sin", torch.sin(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False
-        )
+        self.register_buffer("sin", torch.sin(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False)
         for _ in range(c.n_layer):
             self.h.append(
                 Block(
@@ -199,30 +193,22 @@ class GPTSynaptic(nn.Module):
         train_mode=True,
     ):
         B, T = idx.size()
-        assert T <= self.config.sequence_len
+        if T > self.config.sequence_len:
+            raise ValueError("Sequence length exceeds configured maximum")
         tok = self.wte(idx)
         x = self.drop(tok.to(dtype=torch.bfloat16))
         presyn_state = None
         for li, block in enumerate(self.h):
             x, presyn_state = block(x, kv_cache, presyn_state, train_mode)
             if self.config.structural_every and targets is not None:
-                if (li + 1) % self.config.structural_every == 0 and hasattr(
-                    block.mlp, "experts"
-                ):
+                if (li + 1) % self.config.structural_every == 0 and hasattr(block.mlp, "experts"):
                     # Hook point for split/merge (kept as a callable point on purpose)
                     pass
         logits = self.lm_head(x.to(dtype=self.lm_head.weight.dtype))
         if targets is None:
             return logits, None
-        aux = sum(
-            (
-                getattr(b, "last_aux_loss", torch.tensor(0.0, device=logits.device))
-                for b in self.h
-            )
-        )
-        ce = F.cross_entropy(
-            logits.view(-1, logits.size(-1)), targets.view(-1), reduction="mean"
-        )
+        aux = sum((getattr(b, "last_aux_loss", torch.tensor(0.0, device=logits.device)) for b in self.h))
+        ce = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), reduction="mean")
         loss = ce + aux
         return logits, loss
 
@@ -267,37 +253,37 @@ class GPTSynaptic(nn.Module):
 
             model_dim = self.config.n_embd
             ddp, rank, local_rank, world_size = get_dist_info()
-            
+
             # Separate matrix params (2D) for Muon from other params (1D/0D) for AdamW
             matrix_params = []
             other_params = []
-            
+
             # Collect params from transformer blocks
             for p in self.h.parameters():
                 if p.ndim >= 2:
                     matrix_params.append(p)
                 else:
                     other_params.append(p)
-            
+
             embedding_params = list(self.wte.parameters())
             lm_head_params = list(self.lm_head.parameters())
-            
+
             dmodel_lr_scale = (model_dim / 768) ** -0.5
             if rank == 0:
-                print(
-                    f"Scaling the LR for the AdamW parameters ∝1/√({model_dim}/768) = {dmodel_lr_scale:.6f}"
-                )
-            
+                print(f"Scaling the LR for the AdamW parameters ∝1/√({model_dim}/768) = {dmodel_lr_scale:.6f}")
+
             # AdamW gets embedding, lm_head, and all 1D/0D params from blocks (biases, layernorms)
             adam_groups = [
                 dict(params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale),
                 dict(params=embedding_params, lr=embedding_lr * dmodel_lr_scale),
-                dict(params=other_params, lr=embedding_lr * dmodel_lr_scale), # Use embedding LR scale for other params? Or maybe just matrix_lr? Usually AdamW params get higher LR.
+                dict(
+                    params=other_params, lr=embedding_lr * dmodel_lr_scale
+                ),  # Use embedding LR scale for other params? Or maybe just matrix_lr? Usually AdamW params get higher LR.
             ]
             adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
             AdamWFactory = DistAdamW if ddp else partial(torch.optim.AdamW, fused=True)
             adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
-            
+
             muon_kwargs = dict(lr=matrix_lr, momentum=0.95)
             MuonFactory = DistMuon if ddp else Muon
             muon_optimizer = MuonFactory(matrix_params, **muon_kwargs)
