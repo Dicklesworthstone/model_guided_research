@@ -39,6 +39,11 @@ import tropical_geometry_and_idempotent_algebra as tropical
 import ultrametric_worlds_and_p_adic_computation as padic
 
 
+def require(condition, message: str):
+    if not bool(condition):
+        raise AssertionError(message)
+
+
 class TestReversibleComputation:
     """Test that reversible computation is actually bijective and measure-preserving."""
 
@@ -63,7 +68,7 @@ class TestReversibleComputation:
 
         # Check reconstruction error
         error = jnp.max(jnp.abs(x - x_rec))
-        assert error < 1e-5, f"Bijection violated: reconstruction error = {error:.6f}"
+        require(error < 1e-5, f"Bijection violated: reconstruction error = {error:.6f}")
 
         print(f"  ✅ Bijection test passed: max error = {error:.8f}")
         print(f"  📊 Bits written: {stats['bits_written']}, consumed: {stats['bits_consumed']}")
@@ -87,7 +92,7 @@ class TestReversibleComputation:
         jacobian = jax.jacfwd(forward_fn)(x)
         det = jnp.linalg.det(jacobian)
 
-        assert jnp.abs(det - 1.0) < 1e-5, f"Measure not preserved: det(J) = {det:.6f}"
+        require(jnp.abs(det - 1.0) < 1e-5, f"Measure not preserved: det(J) = {det:.6f}")
         print(f"  ✅ Measure preservation test passed: det(J) = {det:.8f}")
 
 
@@ -107,7 +112,7 @@ class TestIFSFractalMemory:
         # Verify separation margin
         margin = store.separation_margin
         expected_margin = 1.0 - 2.0 * s
-        assert jnp.abs(margin - expected_margin) < 1e-6
+        require(jnp.abs(margin - expected_margin) < 1e-6, "Separation margin mismatch")
         print(f"  ✅ Separation margin correct: γ = {margin:.4f}")
 
         # Test contractivity of composed map
@@ -129,7 +134,7 @@ class TestIFSFractalMemory:
         dist_after = jnp.linalg.norm(y2 - y1)
         contraction_ratio = dist_after / dist_before
 
-        assert contraction_ratio <= s**k + 1e-6, f"Not contractive: ratio = {contraction_ratio:.6f}"
+        require(contraction_ratio <= s**k + 1e-6, f"Not contractive: ratio = {contraction_ratio:.6f}")
         print(f"  ✅ Contractivity verified: ratio = {contraction_ratio:.6f} ≤ {s**k:.6f}")
 
     def test_fixed_point_storage(self):
@@ -160,7 +165,7 @@ class TestIFSFractalMemory:
         fixed_point_check = A_k * read_value + c_w + u_w
 
         error = jnp.linalg.norm(fixed_point_check - read_value)
-        assert error < 1e-5, f"Not a fixed point: error = {error:.6f}"
+        require(error < 1e-5, f"Not a fixed point: error = {error:.6f}")
         print(f"  ✅ Fixed point property verified: error = {error:.8f}")
 
 
@@ -192,11 +197,11 @@ class TestOrdinalSchedules:
             ranks.append(rank)
 
             # Verify non-increasing
-            assert rank <= ranks[-2], f"Rank increased: {ranks[-2]} -> {rank}"
+            require(rank <= ranks[-2], f"Rank increased: {ranks[-2]} -> {rank}")
 
             # If limit fired, verify strict decrease
             if fired_limit:
-                assert rank < ranks[-2], "Limit fired but rank didn't decrease strictly"
+                require(rank < ranks[-2], "Limit fired but rank didn't decrease strictly")
 
         print(f"  ✅ Ordinal descent verified over {len(ranks)} steps")
         print(f"  📊 Rank sequence: {ranks[:5]} ... {ranks[-3:]}")
@@ -221,8 +226,8 @@ class TestOrdinalSchedules:
             steps += 1
 
         final_rank = ordinal.ordinal_rank(state)
-        assert final_rank == 0, f"Did not reach rank 0: final rank = {final_rank}"
-        assert steps < max_steps, f"Too many steps to terminate: {steps}"
+        require(final_rank == 0, f"Did not reach rank 0: final rank = {final_rank}")
+        require(steps < max_steps, f"Too many steps to terminate: {steps}")
 
         print(f"  ✅ Well-foundedness verified: terminated at rank 0 in {steps} steps")
 
@@ -260,7 +265,7 @@ class TestMatrixExponentialGauge:
         expected = jax.scipy.linalg.expm(t * M)
         error = jnp.max(jnp.abs(result - expected))
 
-        assert error < 0.01, f"Matrix exp error too large: {error:.6f}"
+        require(error < 0.01, f"Matrix exp error too large: {error:.6f}")
         print(f"  ✅ Matrix exponential accuracy: max error = {error:.6f}")
 
     def test_gauge_covariance(self):
@@ -290,7 +295,7 @@ class TestMatrixExponentialGauge:
         norm_before = jnp.linalg.norm(x)
         norm_after = jnp.linalg.norm(y)
 
-        assert jnp.abs(norm_after - norm_before) < 1e-5, f"Gauge not orthogonal: {norm_before:.6f} -> {norm_after:.6f}"
+        require(jnp.abs(norm_after - norm_before) < 1e-5, f"Gauge not orthogonal: {norm_before:.6f} -> {norm_after:.6f}")
         print(f"  ✅ Gauge transformation preserves norm: {norm_before:.6f} ≈ {norm_after:.6f}")
 
 
@@ -304,19 +309,19 @@ class TestTropicalGeometry:
         # Test idempotency: a ⊕ a = a
         a = jnp.array([1.0, 2.0, 3.0])
         tropical_sum = tropical.tropical_add(a, a)
-        assert jnp.allclose(tropical_sum, a), "Idempotency failed"
+        require(jnp.allclose(tropical_sum, a), "Idempotency failed")
         print("  ✅ Idempotency: a ⊕ a = a")
 
         # Test commutativity: a ⊕ b = b ⊕ a
         b = jnp.array([2.0, 1.0, 4.0])
-        assert jnp.allclose(tropical.tropical_add(a, b), tropical.tropical_add(b, a))
+        require(jnp.allclose(tropical.tropical_add(a, b), tropical.tropical_add(b, a)), "Commutativity failed")
         print("  ✅ Commutativity: a ⊕ b = b ⊕ a")
 
         # Test associativity: (a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)
         c = jnp.array([0.0, 3.0, 2.0])
         left = tropical.tropical_add(tropical.tropical_add(a, b), c)
         right = tropical.tropical_add(a, tropical.tropical_add(b, c))
-        assert jnp.allclose(left, right), "Associativity failed"
+        require(jnp.allclose(left, right), "Associativity failed")
         print("  ✅ Associativity: (a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)")
 
         # Test tropical multiplication distributivity
@@ -324,7 +329,7 @@ class TestTropicalGeometry:
         ac = tropical.tropical_multiply(a, c)
         a_bc = tropical.tropical_multiply(a, tropical.tropical_add(b, c))
         ab_ac = tropical.tropical_add(ab, ac)
-        assert jnp.allclose(a_bc, ab_ac), "Distributivity failed"
+        require(jnp.allclose(a_bc, ab_ac), "Distributivity failed")
         print("  ✅ Distributivity: a ⊗ (b ⊕ c) = (a ⊗ b) ⊕ (a ⊗ c)")
 
     def test_tropical_polynomial(self):
@@ -344,7 +349,7 @@ class TestTropicalGeometry:
 
         # Verify against direct computation
         expected = jnp.maximum(jnp.maximum(2.0 + 2*x, 1.0 + x), 3.0)
-        assert jnp.allclose(p_x, expected), "Polynomial evaluation failed"
+        require(jnp.allclose(p_x, expected), "Polynomial evaluation failed")
         print("  ✅ Tropical polynomial evaluation correct")
         print(f"     p({x[1]}) = {p_x[1]:.2f}")
 
@@ -378,7 +383,7 @@ class TestSimplicialComplexes:
 
         # Verify ∂² = 0
         boundary_squared = B1 @ B2
-        assert jnp.allclose(boundary_squared, 0), f"∂² ≠ 0: {boundary_squared}"
+        require(jnp.allclose(boundary_squared, 0), f"∂² ≠ 0: {boundary_squared}")
         print("  ✅ Boundary operator property ∂² = 0 verified")
 
     def test_hodge_decomposition(self):
@@ -400,15 +405,15 @@ class TestSimplicialComplexes:
 
         # Verify Laplacian properties
         # 1. Symmetric
-        assert jnp.allclose(L, L.T), "Laplacian not symmetric"
+        require(jnp.allclose(L, L.T), "Laplacian not symmetric")
 
         # 2. Positive semi-definite (all eigenvalues ≥ 0)
         eigenvalues = jnp.linalg.eigvalsh(L)
-        assert jnp.all(eigenvalues >= -1e-6), f"Negative eigenvalue: {jnp.min(eigenvalues)}"
+        require(jnp.all(eigenvalues >= -1e-6), f"Negative eigenvalue: {jnp.min(eigenvalues)}")
 
         # 3. Null space contains constant vector
         ones = jnp.ones(n)
-        assert jnp.allclose(L @ ones, 0), "Constant vector not in null space"
+        require(jnp.allclose(L @ ones, 0), "Constant vector not in null space")
 
         print("  ✅ Hodge Laplacian properties verified")
         # Convert to Python floats for pretty printing
@@ -459,7 +464,7 @@ class TestSimplicialComplexes:
         # (otherwise the task is trivial)
         n_in_triangles = jnp.sum(y_edge)
         n_edges = len(y_edge)
-        assert 0 < n_in_triangles < n_edges, "Task should have both positive and negative examples"
+        require(0 < n_in_triangles < n_edges, "Task should have both positive and negative examples")
         print(f"  📊 {int(n_in_triangles)}/{n_edges} edges participate in triangles")
 
 
@@ -495,7 +500,7 @@ class TestUltrametricWorlds:
         d_xz = p ** (-v_xz)
 
         # Verify ultrametric inequality
-        assert d_xz <= max(d_xy, d_yz) + 1e-10, "Ultrametric inequality violated"
+        require(d_xz <= max(d_xy, d_yz) + 1e-10, "Ultrametric inequality violated")
         print(f"  ✅ Ultrametric inequality: d({x},{z}) = {d_xz:.4f} ≤ max({d_xy:.4f}, {d_yz:.4f})")
 
     def test_p_adic_operations(self):
@@ -512,13 +517,13 @@ class TestUltrametricWorlds:
         # Addition
         c = padic.p_adic_add(a, b, p)
         c_decoded = padic.p_adic_decode(c, p)
-        assert c_decoded == 10 % (p**precision), f"Addition failed: {c_decoded} != 10"
+        require(c_decoded == 10 % (p**precision), f"Addition failed: {c_decoded} != 10")
         print(f"  ✅ p-adic addition: 7 + 3 = {c_decoded} (mod {p}^{precision})")
 
         # Multiplication
         d = padic.p_adic_multiply(a, b, p)
         d_decoded = padic.p_adic_decode(d, p)
-        assert d_decoded == 21 % (p**precision), f"Multiplication failed: {d_decoded} != 21"
+        require(d_decoded == 21 % (p**precision), f"Multiplication failed: {d_decoded} != 21")
         print(f"  ✅ p-adic multiplication: 7 × 3 = {d_decoded} (mod {p}^{precision})")
 
     def test_packed_rank_prefix(self):
@@ -532,8 +537,8 @@ class TestUltrametricWorlds:
         code = (1 << depth) // 2
         has = U.has_prefix(0, depth, code)
         rank = U.rank_prefix(0, depth, code)
-        assert isinstance(has, bool | np.bool_)
-        assert isinstance(rank, int | np.integer)
+        require(isinstance(has, bool | np.bool_), "has_prefix return type invalid")
+        require(isinstance(rank, int | np.integer), "rank_prefix return type invalid")
         print(f"  ✅ has_prefix={bool(has)} rank_prefix={int(rank)} at depth={depth}")
 
 
@@ -561,7 +566,7 @@ class TestOctonions:
         expected = norm_x * norm_y
         error = jnp.abs(norm_xy - expected)
 
-        assert error < 1e-5, f"Norm property violated: |xy| = {norm_xy:.6f}, |x||y| = {expected:.6f}"
+        require(error < 1e-5, f"Norm property violated: |xy| = {norm_xy:.6f}, |x||y| = {expected:.6f}")
         print(f"  ✅ Norm multiplication: |xy| = {norm_xy:.6f} ≈ |x||y| = {expected:.6f}")
 
     def test_octonion_conjugation(self):
@@ -582,7 +587,7 @@ class TestOctonions:
         expected = jnp.zeros(8).at[0].set(norm_squared)
         error = jnp.linalg.norm(xx_conj - expected)
 
-        assert error < 1e-5, f"Conjugation property failed: error = {error}"
+        require(error < 1e-5, f"Conjugation property failed: error = {error}")
         print("  ✅ Conjugation: x × x̄ gives norm² in real part")
 
 
@@ -616,7 +621,7 @@ class TestKnotTheory:
         prod2 = sigma_2 @ sigma_0
 
         error = jnp.max(jnp.abs(prod1 - prod2))
-        assert error < 1e-6, f"Braid generators don't commute: error = {error}"
+        require(error < 1e-6, f"Braid generators don't commute: error = {error}")
         print("  ✅ Yang-Baxter relation: non-adjacent generators commute")
 
     def test_kauffman_bracket(self):
@@ -657,9 +662,9 @@ class TestSurrealNumbers:
         half = surreal.SurrealNumber.from_rational(1, 2)
 
         # Test ordering
-        assert surreal.surreal_compare(minus_one, zero) < 0
-        assert surreal.surreal_compare(zero, half) < 0
-        assert surreal.surreal_compare(half, one) < 0
+        require(surreal.surreal_compare(minus_one, zero) < 0, "-1 should be < 0")
+        require(surreal.surreal_compare(zero, half) < 0, "0 should be < 1/2")
+        require(surreal.surreal_compare(half, one) < 0, "1/2 should be < 1")
 
         print("  ✅ Ordering: -1 < 0 < 1/2 < 1")
 
@@ -673,12 +678,12 @@ class TestSurrealNumbers:
 
         # Addition: 1 + 1 = 2
         sum_result = surreal.surreal_add(one, one)
-        assert surreal.surreal_compare(sum_result, two) == 0
+        require(surreal.surreal_compare(sum_result, two) == 0, "1+1 should equal 2")
         print("  ✅ Addition: 1 + 1 = 2")
 
         # Multiplication: 2 × 1/2 = 1
         prod_result = surreal.surreal_multiply(two, half)
-        assert abs(surreal.surreal_compare(prod_result, one)) < 0.1  # Approximate
+        require(abs(surreal.surreal_compare(prod_result, one)) < 0.1, "2*0.5 should be near 1")  # Approximate
         print("  ✅ Multiplication: 2 × 1/2 ≈ 1")
 
 
@@ -696,13 +701,13 @@ class TestNonstandardAnalysis:
         eps_squared = nonstandard.hyperreal_multiply(eps, eps)
 
         # ε² should have higher infinitesimal order
-        assert eps_squared.eps_order > eps.eps_order
+        require(eps_squared.eps_order > eps.eps_order, "ε² should be smaller order than ε")
         print("  ✅ Infinitesimal ordering: ε² << ε")
 
         # Test standard part
         x = nonstandard.Hyperreal(3.14, 0.001, 0)  # 3.14 + 0.001ε
         st_x = nonstandard.standard_part(x)
-        assert jnp.abs(st_x - 3.14) < 1e-10
+        require(jnp.abs(st_x - 3.14) < 1e-10, "Standard part incorrect")
         print(f"  ✅ Standard part: st(3.14 + 0.001ε) = {st_x}")
 
     def test_transfer_principle(self):
@@ -722,15 +727,15 @@ class TestNonstandardAnalysis:
         # Test at standard point
         x_std = 3.0
         p_std = p(x_std)
-        assert jnp.abs(p_std - 4.0) < 1e-10
+        require(jnp.abs(p_std - 4.0) < 1e-10, "Polynomial evaluation at standard point incorrect")
         print(f"  ✅ Standard evaluation: p(3) = {p_std}")
 
         # Test at hyperreal point
         x_hyp = nonstandard.Hyperreal(3.0, 0.1, 0)  # 3 + 0.1ε
         p_hyp = p(x_hyp)
         # Should be approximately 4 + derivative*0.1ε = 4 + 4*0.1ε
-        assert jnp.abs(p_hyp.real - 4.0) < 1e-6
-        assert jnp.abs(p_hyp.inf - 0.4) < 0.1  # Approximate
+        require(jnp.abs(p_hyp.real - 4.0) < 1e-6, "Hyperreal real part incorrect")
+        require(jnp.abs(p_hyp.inf - 0.4) < 0.1, "Hyperreal infinitesimal part incorrect")
         print("  ✅ Hyperreal evaluation: p(3 + 0.1ε) ≈ 4 + 0.4ε")
 
 

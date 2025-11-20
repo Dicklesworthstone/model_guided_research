@@ -11,6 +11,11 @@ from rich.console import Console
 
 console = Console()
 
+
+def require(condition, message: str):
+    if not bool(condition):
+        raise AssertionError(message)
+
 # List of all demo modules
 DEMO_MODULES = [
     "iterated_function_systems_and_fractal_memory",
@@ -31,8 +36,8 @@ DEMO_MODULES = [
 def test_demo_exists(module_name):
     """Test that each module has a demo function."""
     module = importlib.import_module(module_name)
-    assert hasattr(module, 'demo'), f"Module {module_name} missing demo() function"
-    assert callable(module.demo), f"demo in {module_name} is not callable"
+    require(hasattr(module, 'demo'), f"Module {module_name} missing demo() function")
+    require(callable(module.demo), f"demo in {module_name} is not callable")
 
 
 @pytest.mark.parametrize("module_name", DEMO_MODULES)
@@ -40,7 +45,7 @@ def test_module_imports(module_name):
     """Test that each module can be imported without errors."""
     try:
         module = importlib.import_module(module_name)
-        assert module is not None
+        require(module is not None, f"Import returned None for {module_name}")
     except ImportError as e:
         pytest.fail(f"Failed to import {module_name}: {e}")
 
@@ -48,19 +53,19 @@ def test_module_imports(module_name):
 def test_jax_available():
     """Test that JAX is properly installed and configured."""
     devices = jax.devices()
-    assert len(devices) > 0, "No JAX devices available"
+    require(len(devices) > 0, "No JAX devices available")
 
     # Test basic JAX operation
     x = jax.numpy.array([1.0, 2.0, 3.0])
     y = jax.numpy.sum(x)
-    assert float(y) == 6.0, "Basic JAX operation failed"
+    require(float(y) == 6.0, "Basic JAX operation failed")
 
 
 def test_documentation_exists():
     """Test that markdown documentation exists for each module."""
     doc_dir = Path("markdown_documentation")
-    assert doc_dir.exists(), "Documentation directory missing"
+    require(doc_dir.exists(), "Documentation directory missing")
 
     for module_name in DEMO_MODULES:
         doc_file = doc_dir / f"{module_name}.md"
-        assert doc_file.exists(), f"Documentation missing for {module_name}"
+        require(doc_file.exists(), f"Documentation missing for {module_name}")

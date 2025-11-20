@@ -38,6 +38,11 @@ import tropical_geometry_and_idempotent_algebra as tropical
 import ultrametric_worlds_and_p_adic_computation as padic
 
 
+def require(condition, message: str):
+    if not bool(condition):
+        raise AssertionError(message)
+
+
 class TestReversibleComputation:
     """Test that reversible computation is actually bijective and measure-preserving."""
 
@@ -49,8 +54,8 @@ class TestReversibleComputation:
             # Test the cycle_test function which tests bijection
             ok, error, ledger, tape_size, res_size = reversible.cycle_test()
 
-            assert ok, f"Bijection test failed: cycle_test returned False with error {error}"
-            assert error < 1e-5, f"Bijection violated: reconstruction error = {error:.6f}"
+            require(ok, f"Bijection test failed: cycle_test returned False with error {error}")
+            require(error < 1e-5, f"Bijection violated: reconstruction error = {error:.6f}")
 
             print(f"  ✅ Bijection test passed: max error = {error:.8f}")
             print(f"  📊 Bits written: {ledger['bits_written']}, consumed: {ledger['bits_consumed']}")
@@ -77,7 +82,7 @@ class TestReversibleComputation:
         x_recovered = reversible.rev_coupling_inverse(y, params)
 
         error = jnp.max(jnp.abs(x - x_recovered))
-        assert error < 1e-5, f"Basic bijection failed: error = {error:.6f}"
+        require(error < 1e-5, f"Basic bijection failed: error = {error:.6f}")
         print(f"  ✅ Basic bijection test passed: max error = {error:.8f}")
 
     def test_coupling_invertibility(self):
@@ -99,7 +104,7 @@ class TestReversibleComputation:
         x_recovered = reversible.rev_coupling_inverse(y, params)
 
         error = jnp.max(jnp.abs(x - x_recovered))
-        assert error < 1e-5, f"Coupling not invertible: error = {error:.6f}"
+        require(error < 1e-5, f"Coupling not invertible: error = {error:.6f}")
 
         print(f"  ✅ Coupling invertibility: max error = {error:.8f}")
 
@@ -119,7 +124,7 @@ class TestReversibleComputation:
         norm_x = jnp.linalg.norm(x)
         norm_y = jnp.linalg.norm(y)
 
-        assert jnp.abs(norm_x - norm_y) < 1e-5, f"Norm not preserved: {norm_x:.6f} -> {norm_y:.6f}"
+        require(jnp.abs(norm_x - norm_y) < 1e-5, f"Norm not preserved: {norm_x:.6f} -> {norm_y:.6f}")
         print(f"  ✅ Norm preservation: {norm_x:.6f} ≈ {norm_y:.6f}")
 
     def test_generating_mode_toggle(self):
@@ -134,7 +139,7 @@ class TestReversibleComputation:
             y = reversible.rev_coupling_forward(x, params)
             x_rec = reversible.rev_coupling_inverse(y, params)
             err = jnp.max(jnp.abs(x - x_rec))
-            assert float(err) < 1e-4
+            require(float(err) < 1e-4, "Generating mode invertibility failed")
             print(f"  ✅ Generating mode invertibility OK: max error {float(err):.2e}")
         finally:
             reversible.set_reversible_generating_symplectic(False)
@@ -154,13 +159,13 @@ class TestIFSFractalMemory:
         # Test separation margin
         margin = cfg.separation_margin
         expected_margin = 1.0 - 2.0 * cfg.s
-        assert jnp.abs(margin - expected_margin) < 1e-6
+        require(jnp.abs(margin - expected_margin) < 1e-6, "Separation margin mismatch")
         print(f"  ✅ Separation margin: γ = {margin:.4f}")
 
         # Test contraction factor
         contraction = cfg.a_pow_k_scalar
         expected_contraction = cfg.s ** cfg.k
-        assert jnp.abs(contraction - expected_contraction) < 1e-6
+        require(jnp.abs(contraction - expected_contraction) < 1e-6, "Contraction factor mismatch")
         print(f"  ✅ Contraction factor: s^k = {contraction:.6f}")
 
     def test_fixed_point_storage_and_retrieval(self):
@@ -184,8 +189,8 @@ class TestIFSFractalMemory:
 
             # Check accuracy
             error = jnp.max(jnp.abs(values - read_values))
-            assert error < 1e-2, f"Fixed point storage error: {error:.6f}"  # Relaxed tolerance
-            assert jnp.all(present), "Some values not marked as present"
+            require(error < 1e-2, f"Fixed point storage error: {error:.6f}")  # Relaxed tolerance
+            require(jnp.all(present), "Some values not marked as present")
 
             print(f"  ✅ Fixed point storage accuracy: max error = {error:.8f}")
         except Exception as e:
@@ -225,9 +230,9 @@ class TestOrdinalSchedules:
         initial_C = int(state.C)
 
         # Verify the rank components are initialized correctly
-        assert initial_A == params.A0
-        assert initial_B == params.B_init
-        assert initial_C == ordinal.patience_for_B(jnp.int32(params.B_init), params)
+        require(initial_A == params.A0, "A0 not initialized correctly")
+        require(initial_B == params.B_init, "B_init not initialized correctly")
+        require(initial_C == ordinal.patience_for_B(jnp.int32(params.B_init), params), "C patience mismatch")
 
         print(f"  ✅ Initial ordinal state: A={initial_A}, B={initial_B}, C={initial_C}")
 
@@ -259,7 +264,7 @@ class TestOrdinalSchedules:
             # If limit fired, should have strict decrease in higher-order term
             if fired_limit:
                 if new_B < old_B:
-                    assert new_A == old_A, "A changed when B decreased"
+                    require(new_A == old_A, "A changed when B decreased")
                 elif new_A < old_A:
                     pass  # Valid restart
                 else:
@@ -290,7 +295,7 @@ class TestMatrixExponentialGauge:
         norm_before = jnp.linalg.norm(x)
         norm_after = jnp.linalg.norm(y)
 
-        assert jnp.abs(norm_after - norm_before) < 1e-5, f"Norm not preserved: {norm_before:.6f} -> {norm_after:.6f}"
+        require(jnp.abs(norm_after - norm_before) < 1e-5, f"Norm not preserved: {norm_before:.6f} -> {norm_after:.6f}")
         print(f"  ✅ Givens rotation preserves norm: {norm_before:.6f} ≈ {norm_after:.6f}")
 
     def test_uniformization_properties(self):
@@ -312,9 +317,9 @@ class TestMatrixExponentialGauge:
         Y, K = gauge.uniformization_expmv_banded(Q_bands, neg_diag, U, offsets, t_bh)
 
         # Basic consistency checks
-        assert Y.shape == U.shape, f"Output shape mismatch: {Y.shape} vs {U.shape}"
-        assert K.shape == (BH,), f"K shape mismatch: {K.shape} vs {(BH,)}"
-        assert jnp.all(K >= 1), "Truncation depth should be at least 1"
+        require(Y.shape == U.shape, f"Output shape mismatch: {Y.shape} vs {U.shape}")
+        require(K.shape == (BH,), f"K shape mismatch: {K.shape} vs {(BH,)}")
+        require(jnp.all(K >= 1), "Truncation depth should be at least 1")
 
         print(f"  ✅ Uniformization shapes correct, K range: {int(jnp.min(K))}-{int(jnp.max(K))}")
 
@@ -332,7 +337,7 @@ class TestMatrixExponentialGauge:
         result = gauge.upper_band_expm(weights, y, order=3)
 
         # Check shape preservation
-        assert result.shape == y.shape, f"Shape mismatch: {result.shape} vs {y.shape}"
+        require(result.shape == y.shape, f"Shape mismatch: {result.shape} vs {y.shape}")
 
         # For small weights, should be approximately y (first-order term dominates)
         y_approx = y + gauge.upper_band_apply(weights, y)
@@ -363,7 +368,7 @@ class TestTropicalGeometry:
         ABC_right = tropical.tmm(A, BC)
 
         error = jnp.max(jnp.abs(ABC_left - ABC_right))
-        assert error < 1e-5, f"Tropical associativity failed: error = {error:.6f}"
+        require(error < 1e-5, f"Tropical associativity failed: error = {error:.6f}")
         print(f"  ✅ Tropical matrix multiplication associativity: error = {error:.8f}")
 
     def test_tropical_attention_properties(self):
@@ -383,8 +388,8 @@ class TestTropicalGeometry:
         y = tropical.forward(params, X, cfg)
 
         # Basic properties
-        assert y.shape == (cfg.C,), f"Output shape mismatch: {y.shape} vs {(cfg.C,)}"
-        assert jnp.all(jnp.isfinite(y)), "Output contains non-finite values"
+        require(y.shape == (cfg.C,), f"Output shape mismatch: {y.shape} vs {(cfg.C,)}")
+        require(jnp.all(jnp.isfinite(y)), "Output contains non-finite values")
 
         print(f"  ✅ Tropical attention forward pass successful, output range: [{float(jnp.min(y)):.3f}, {float(jnp.max(y)):.3f}]")
 
@@ -399,7 +404,7 @@ class TestTropicalGeometry:
 
         # After gauging, each column should have maximum value 0
         col_maxes = jnp.max(X_gauged, axis=0)
-        assert jnp.allclose(col_maxes, 0.0, atol=1e-6), f"Gauge time failed: col maxes = {col_maxes}"
+        require(jnp.allclose(col_maxes, 0.0, atol=1e-6), f"Gauge time failed: col maxes = {col_maxes}")
 
         print("  ✅ Gauge time normalization: all column maxes ≈ 0")
 
@@ -422,7 +427,7 @@ class TestSimplicialComplexes:
         boundary_squared = D1 @ D2
         max_error = jnp.max(jnp.abs(boundary_squared))
 
-        assert max_error < 1e-10, f"∂² ≠ 0: max error = {max_error:.6e}"
+        require(max_error < 1e-10, f"∂² ≠ 0: max error = {max_error:.6e}")
         print(f"  ✅ Boundary operator nilpotency: ∂² = 0 (max error = {max_error:.2e})")
 
         # Print complex structure info
@@ -450,7 +455,7 @@ class TestSimplicialComplexes:
 
         # Mass should be conserved
         mass_change = jnp.abs(final_mass - initial_mass)
-        assert mass_change < 1e-5, f"Mass not conserved: {initial_mass:.6f} -> {final_mass:.6f}"
+        require(mass_change < 1e-5, f"Mass not conserved: {initial_mass:.6f} -> {final_mass:.6f}")
 
         print(f"  ✅ Mass conservation: {initial_mass:.6f} ≈ {final_mass:.6f} (Δ = {mass_change:.2e})")
 
@@ -465,7 +470,7 @@ class TestSimplicialComplexes:
             r = simplicial.cycle_indicator_on_edges(p, cycle_vertices)
 
             # For a valid cycle, the indicator should have specific structure
-            assert r.shape[0] > 0, "Cycle indicator should be non-empty"
+            require(r.shape[0] > 0, "Cycle indicator should be non-empty")
 
             # Sum of cycle indicator around closed loop should have specific parity
             print(f"  ✅ Cycle indicator computed: {r.shape[0]} edges, sum = {float(jnp.sum(r))}")
@@ -496,7 +501,7 @@ class TestUltrametricWorlds:
         y2 = model.lookup([digits1])  # Same input
 
         error = jnp.max(jnp.abs(y1 - y2))
-        assert error < 1e-10, f"Lookup not deterministic: error = {error:.6e}"
+        require(error < 1e-10, f"Lookup not deterministic: error = {error:.6e}")
 
         print(f"  ✅ Ultrametric lookup deterministic: error = {error:.2e}")
 
@@ -511,14 +516,14 @@ class TestUltrametricWorlds:
         result = padic.mod_add(a, b, p)
         expected = (a + b) % p
 
-        assert result == expected, f"Modular addition failed: {result} != {expected}"
+        require(result == expected, f"Modular addition failed: {result} != {expected}")
         print(f"  ✅ p-adic addition: {a} + {b} ≡ {result} (mod {p})")
 
         # Test modular subtraction
         result_sub = padic.mod_sub(a, b, p)
         expected_sub = (a - b) % p
 
-        assert result_sub == expected_sub, f"Modular subtraction failed: {result_sub} != {expected_sub}"
+        require(result_sub == expected_sub, f"Modular subtraction failed: {result_sub} != {expected_sub}")
         print(f"  ✅ p-adic subtraction: {a} - {b} ≡ {result_sub} (mod {p})")
 
     def test_volf_update_properties(self):
@@ -572,7 +577,7 @@ class TestOctonions:
         expected = norm_q * norm_r
         error = jnp.abs(norm_qr - expected)
 
-        assert error < 1e-5, f"Norm multiplication failed: |qr| = {norm_qr:.6f}, |q||r| = {expected:.6f}"
+        require(error < 1e-5, f"Norm multiplication failed: |qr| = {norm_qr:.6f}, |q||r| = {expected:.6f}")
         print(f"  ✅ Quaternion norm multiplication: |qr| = {norm_qr:.6f} ≈ |q||r| = {expected:.6f}")
 
     def test_quaternion_conjugation(self):
@@ -593,7 +598,7 @@ class TestOctonions:
         expected = jnp.array([norm_squared, 0, 0, 0])
         error = jnp.linalg.norm(qq_conj - expected)
 
-        assert error < 1e-5, f"Conjugation property failed: error = {error:.6e}"
+        require(error < 1e-5, f"Conjugation property failed: error = {error:.6e}")
         print("  ✅ Quaternion conjugation: q * q̄ gives norm² in real part")
 
     def test_rotor_gate_properties(self):
@@ -613,7 +618,7 @@ class TestOctonions:
         y = octonion.rotor_gate_apply(x, **params)
 
         # Check that shapes are preserved
-        assert y.shape == x.shape, f"Shape not preserved: {y.shape} vs {x.shape}"
+        require(y.shape == x.shape, f"Shape not preserved: {y.shape} vs {x.shape}")
 
         # For scale=0, should approximately preserve norms
         norms_before = octonion.qnorm(x)
@@ -642,7 +647,7 @@ class TestKnotTheory:
         total_payload_before = a_y + b_y
         total_payload_after = new_a_y + new_b_y
 
-        assert jnp.abs(total_payload_before - total_payload_after) < 1e-10, "Payload not conserved"
+        require(jnp.abs(total_payload_before - total_payload_after) < 1e-10, "Payload not conserved")
         print(f"  ✅ Crossing conserves payload: {total_payload_before} ≈ {total_payload_after}")
 
         # Test invertibility
@@ -660,11 +665,11 @@ class TestKnotTheory:
 
         # Test verification
         is_allowed = word.verify_allowed()
-        assert is_allowed, "Valid braid word marked as not allowed"
+        require(is_allowed, "Valid braid word marked as not allowed")
 
         # Test normalization (should be idempotent)
         normalized = word.normalize_local()
-        assert normalized.k == word.k, "Normalization changed valid word"
+        require(normalized.k == word.k, "Normalization changed valid word")
 
         print(f"  ✅ Braid word σ₁^{word.k} verified and normalized")
 
@@ -702,13 +707,13 @@ class TestSurrealNumbers:
         move = surreal.choose_move(TD, TH, TW, eps=0.02)
 
         # Should choose "data" (highest ratio)
-        assert move == "data", f"Expected 'data', got '{move}'"
+        require(move == "data", f"Expected 'data', got '{move}'")
         print(f"  ✅ Scaling decision: T_D={TD}, T_H={TH}, T_W={TW} -> {move}")
 
         # Test tie case
         TD2, TH2, TW2 = 1.0, 1.01, 0.8  # Within epsilon
         move2 = surreal.choose_move(TD2, TH2, TW2, eps=0.02)
-        assert move2 == "data", f"Expected 'data' for tie case, got '{move2}'"
+        require(move2 == "data", f"Expected 'data' for tie case, got '{move2}'")
         print(f"  ✅ Tie breaking: T_D={TD2}, T_H={TH2}, T_W={TW2} -> {move2}")
 
     def test_dominance_probes(self):
@@ -744,11 +749,11 @@ class TestSurrealNumbers:
             )
 
             # Basic sanity checks
-            assert TD > 0, f"T_D should be positive: {TD}"
-            assert TH > 0, f"T_H should be positive: {TH}"
-            assert TW > 0, f"T_W should be positive: {TW}"
-            assert Ltr > 0, f"Training loss should be positive: {Ltr}"
-            assert Lva > 0, f"Validation loss should be positive: {Lva}"
+            require(TD > 0, f"T_D should be positive: {TD}")
+            require(TH > 0, f"T_H should be positive: {TH}")
+            require(TW > 0, f"T_W should be positive: {TW}")
+            require(Ltr > 0, f"Training loss should be positive: {Ltr}")
+            require(Lva > 0, f"Validation loss should be positive: {Lva}")
 
             print(f"  ✅ Dominance ratios: T_D={TD:.4f}, T_H={TH:.4f}, T_W={TW:.4f}")
         except Exception as e:
@@ -778,7 +783,7 @@ class TestNonstandardAnalysis:
         loss_before = prob.F(w0)
         loss_after = prob.F(w_shadow)
 
-        assert loss_after < loss_before, f"No progress: {loss_before:.6f} -> {loss_after:.6f}"
+        require(loss_after < loss_before, f"No progress: {loss_before:.6f} -> {loss_after:.6f}")
         print(f"  ✅ Shadow step progress: loss {loss_before:.6f} -> {loss_after:.6f}")
 
         # Test HOSS step (stochastic)
@@ -814,7 +819,7 @@ class TestNonstandardAnalysis:
         QTQ = Q.T @ Q
         ortho_error = jnp.max(jnp.abs(QTQ - jnp.eye(r)))
 
-        assert ortho_error < 1e-4, f"Q not orthogonal: error = {ortho_error:.6e}"
+        require(ortho_error < 1e-4, f"Q not orthogonal: error = {ortho_error:.6e}")
         print(f"  ✅ Lanczos orthogonality: error = {ortho_error:.2e}")
 
         # Check tridiagonal structure of T
@@ -822,7 +827,7 @@ class TestNonstandardAnalysis:
         T_lower = jnp.tril(T, k=-2)
         tri_error = jnp.max(jnp.abs(T_upper)) + jnp.max(jnp.abs(T_lower))
 
-        assert tri_error < 1e-10, f"T not tridiagonal: error = {tri_error:.6e}"
+        require(tri_error < 1e-10, f"T not tridiagonal: error = {tri_error:.6e}")
         print(f"  ✅ Lanczos tridiagonal structure: error = {tri_error:.2e}")
 
 
