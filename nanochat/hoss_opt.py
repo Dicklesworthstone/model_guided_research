@@ -93,130 +93,271 @@ def lanczos_sym(hvp, vec_g, r):
     alpha_init = jnp.zeros((r,), dtype=jnp.float32)
     beta_init = jnp.zeros((r,), dtype=jnp.float32)
 
-    # Perform the loop
-    q_im1_final, q_i_final, beta_im1_final, Q_final, alpha_final, beta_final = lax.fori_loop(
-        0, r, body, (q_im1_init, q_i_init, beta_im1_init, Q_init, alpha_init, beta_init)
-    )
+        # Perform the loop
 
-    # The last beta needs to be adjusted as the loop runs r times for alpha and beta up to r-1
-    # For a square T matrix (r x r), we need beta up to r-1. So beta_final is correct.
-    
-    # Construct tridiagonal T matrix
-    T = jnp.diag(alpha_final) + jnp.diag(beta_final[:-1], k=1) + jnp.diag(beta_final[:-1], k=-1)
-    
-    return Q_final, T, g_norm # Return Q_final which has all q_i vectors, and T, and the initial g_norm
+        q_im1_final, q_i_final, beta_im1_final, Q_final, alpha_final, beta_final = lax.fori_loop(
 
+            0, r, body, (q_im1_init, q_i_init, beta_im1_init, Q_init, alpha_init, beta_init)
 
-# --- HOSS Optax Optimizer ---
+        )
 
-def hoss(
-    learning_rate: float,
-    delta: float = 1.0,  # Macro time step
-    lanczos_rank: int = 10,
-    noise_scale: float = 1.0, # scale for the injected noise
-    # We will approximate Sigma with an isotropic noise for now for simplicity
-    # A more advanced version would estimate Sigma from minibatches
-    isotropic_noise_var: float = 1e-4, 
-    min_curvature: float = 1e-6, # min eigenvalue for numerical stability
-    gradient_norm_clip: float = 1.0 # Clip gradient norm for stability
-) -> optax.GradientTransformation:
-    """
-    HOSS (Hyperreal OU Shadow Step) optimizer.
-
-    Args:
-        learning_rate: Global scaling factor which sets the macro time step (delta).
-        delta: (Optional) ignored if learning_rate is provided, kept for API compatibility.
-        lanczos_rank: Rank of the Krylov subspace.
-    """
-    # Use learning_rate as delta
-    delta = learning_rate
-
-    def init_fn(params):
-        # HOSS state needs a PRNGKey for sampling noise
-        return HossState(rng_key=random.PRNGKey(0))
-
-    def update_fn(grads, state, params, **kwargs):
-        # Check if the grads are empty (e.g. some layers are frozen)
-        if not grads:
-            return grads, state
-
-        # Unflatten params and grads for HVP calculation
-        params_flat_orig, unravel_params = ravel_pytree(params)
-        params_flat_f32 = params_flat_orig.astype(jnp.float32) # Ensure params for HVP are float32
-        grads_flat_orig, _ = ravel_pytree(grads)
-        grads_flat_f32 = grads_flat_orig.astype(jnp.float32) # Ensure grads for HVP are float32
-
-        # Apply gradient clipping manually
-        if gradient_norm_clip is not None:
-            g_norm = jnp.linalg.norm(grads_flat_f32)
-            scale = jnp.where(g_norm > gradient_norm_clip, gradient_norm_clip / g_norm, 1.0)
-            grads_flat_f32 = grads_flat_f32 * scale
-
-        # Function to compute loss for HVP
-        if 'loss_fn' not in kwargs:
-            raise ValueError(
-                "HOSS optimizer requires `loss_fn(params)` to be passed in `kwargs` "
-                "to compute Hessian-vector products."
-            )
-        loss_fn = kwargs['loss_fn']
         
-        # Define HVP function
-        def hvp_fn(v):
-            def loss_flat_fn(p_flat):
-                p_tree = unravel_params(p_flat)
-                return loss_fn(p_tree)
+
+        # Debug print
+
+        jax.debug.print("Lanczos g_norm: {}", g_norm)
+
+    
+
+        # The last beta needs to be adjusted as the loop runs r times for alpha and beta up to r-1
+
+        # For a square T matrix (r x r), we need beta up to r-1. So beta_final is correct.
+
+        
+
+        # Construct tridiagonal T matrix
+
+        T = jnp.diag(alpha_final) + jnp.diag(beta_final[:-1], k=1) + jnp.diag(beta_final[:-1], k=-1)
+
+        
+
+        return Q_final, T, g_norm # Return Q_final which has all q_i vectors, and T, and the initial g_norm
+
+    
+
+    
+
+    # --- HOSS Optax Optimizer ---
+
+    
+
+    def hoss(
+
+        learning_rate: float,
+
+        delta: float = 1.0,  # Macro time step
+
+        lanczos_rank: int = 10,
+
+        noise_scale: float = 1.0, # scale for the injected noise
+
+        # We will approximate Sigma with an isotropic noise for now for simplicity
+
+        # A more advanced version would estimate Sigma from minibatches
+
+        isotropic_noise_var: float = 1e-4, 
+
+        min_curvature: float = 1e-6, # min eigenvalue for numerical stability
+
+        gradient_norm_clip: float = 1.0 # Clip gradient norm for stability
+
+    ) -> optax.GradientTransformation:
+
+        """
+
+        HOSS (Hyperreal OU Shadow Step) optimizer.
+
+    
+
+        Args:
+
+            learning_rate: Global scaling factor which sets the macro time step (delta).
+
+            delta: (Optional) ignored if learning_rate is provided, kept for API compatibility.
+
+            lanczos_rank: Rank of the Krylov subspace.
+
+        """
+
+        # Use learning_rate as delta
+
+        delta = learning_rate
+
+    
+
+    
+
+        def init_fn(params):
+
+            # HOSS state needs a PRNGKey for sampling noise
+
+            return HossState(rng_key=random.PRNGKey(0))
+
+    
+
+        def update_fn(grads, state, params, **kwargs):
+
+            # Check if the grads are empty (e.g. some layers are frozen)
+
+            if not grads:
+
+                return grads, state
+
+    
+
+            # Unflatten params and grads for HVP calculation
+
+            params_flat_orig, unravel_params = ravel_pytree(params)
+
+            params_flat_f32 = params_flat_orig.astype(jnp.float32) # Ensure params for HVP are float32
+
+            grads_flat_orig, _ = ravel_pytree(grads)
+
+            grads_flat_f32 = grads_flat_orig.astype(jnp.float32) # Ensure grads for HVP are float32
+
+    
+
+    
+
+            # Apply gradient clipping manually
+
+            if gradient_norm_clip is not None:
+
+                g_norm = jnp.linalg.norm(grads_flat_f32)
+
+                scale = jnp.where(g_norm > gradient_norm_clip, gradient_norm_clip / g_norm, 1.0)
+
+                grads_flat_f32 = grads_flat_f32 * scale
+
+    
+
+            # Function to compute loss for HVP
+
+            if 'loss_fn' not in kwargs:
+
+                raise ValueError(
+
+                    "HOSS optimizer requires `loss_fn(params)` to be passed in `kwargs` "
+
+                    "to compute Hessian-vector products."
+
+                )
+
+            loss_fn = kwargs['loss_fn']
+
             
-            return jax.jvp(grad(loss_flat_fn), (params_flat_f32,), (v,))[1] # HVP of the scalar loss w.r.t. params_flat
 
-        # Use Lanczos to get approximate Hessian (Q, T)
-        Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat_f32, lanczos_rank) # grads_flat is -g for minimize
+            # Define HVP function
 
-        # The input gradient is -g (negative gradient for minimization).
-        # HOSS uses g for its mean step.
-        grad_true_flat = -grads_flat_f32
-        
-        # Project gradient into Krylov subspace
-        projected_grad_g = Q.T @ grad_true_flat
-        
-        # Calculate matrix exponential functions using T's eigen decomposition
-        # T is (r x r) tridiagonal, its eigh is cheap.
-        # Ensure T is float32 for eigh
-        lam_T, V_T = jnp.linalg.eigh(T.astype(jnp.float32)) 
-        
-        # Ensure eigenvalues are not too small (for stability if T is not well-conditioned)
-        lam_T = jnp.maximum(lam_T, min_curvature)
+            def hvp_fn(v):
 
-        phi_delta_T = (V_T * _phi_delta_fraction(lam_T, delta)) @ V_T.T
-        exp_delta_T = (V_T * _exp_delta_fraction(lam_T, delta)) @ V_T.T
+                def loss_flat_fn(p_flat):
 
-        # Mean step: -Phi_delta(H_k) g_k, approximated as -Q @ Phi_delta(T) @ Q.T @ g_k
-        mean_update_projected = -phi_delta_T @ projected_grad_g
-        mean_update_flat = Q @ mean_update_projected
+                    p_tree = unravel_params(p_flat)
 
-        # Noise component (C_delta is the covariance of the noise)
-        S_hat = isotropic_noise_var * jnp.eye(lanczos_rank, dtype=lam_T.dtype) # Use lam_T.dtype for precision
+                    return loss_fn(p_tree)
 
-        C_delta_T = _lyapunov_integral_from_eigh(T.astype(jnp.float32), S_hat.astype(jnp.float32), delta)
+                
 
-        # Sample noise from N(0, C_delta_T) and project back
-        rng_key, noise_key = random.split(state.rng_key)
-        
-        # Sample from N(0, C_delta_T) directly
-        noise_projected = random.multivariate_normal(noise_key, jnp.zeros(lanczos_rank, dtype=jnp.float32), C_delta_T)
-        
-        # Scale noise and project back to original space
-        noise_flat = noise_scale * (Q @ noise_projected)
-        
-        # Total update
-        updates_flat = mean_update_flat + noise_flat
-        
-        # Unflatten updates and cast back to original parameter dtypes
-        updates = jax.tree_util.tree_map(lambda p_orig, u_flat: u_flat.astype(p_orig.dtype), params, unravel_params(updates_flat))
+                return jax.jvp(grad(loss_flat_fn), (params_flat_f32,), (v,))[1] # HVP of the scalar loss w.r.t. params_flat
 
-        # Update the RNG key in the state
-        new_state = HossState(rng_key=rng_key)
+    
 
-        return updates, new_state
+            # Use Lanczos to get approximate Hessian (Q, T)
+
+            Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat_f32, lanczos_rank) # grads_flat is -g for minimize
+
+            
+
+    jax.debug.print("T trace: {}", jnp.trace(T))
+
+    
+
+            # The input gradient is -g (negative gradient for minimization).
+
+            # HOSS uses g for its mean step.
+
+            grad_true_flat = -grads_flat_f32
+
+            
+
+            # Project gradient into Krylov subspace
+
+            projected_grad_g = Q.T @ grad_true_flat
+
+            
+
+            # Calculate matrix exponential functions using T's eigen decomposition
+
+            # T is (r x r) tridiagonal, its eigh is cheap.
+
+            # Ensure T is float32 for eigh
+
+            lam_T, V_T = jnp.linalg.eigh(T.astype(jnp.float32)) 
+
+            
+
+            # Ensure eigenvalues are not too small (for stability if T is not well-conditioned)
+
+            lam_T = jnp.maximum(lam_T, min_curvature)
+
+    
+
+            phi_delta_T = (V_T * _phi_delta_fraction(lam_T, delta)) @ V_T.T
+
+            exp_delta_T = (V_T * _exp_delta_fraction(lam_T, delta)) @ V_T.T
+
+    
+
+            # Mean step: -Phi_delta(H_k) g_k, approximated as -Q @ Phi_delta(T) @ Q.T @ g_k
+
+            mean_update_projected = -phi_delta_T @ projected_grad_g
+
+            mean_update_flat = Q @ mean_update_projected
+
+    
+
+            # Noise component (C_delta is the covariance of the noise)
+
+            S_hat = isotropic_noise_var * jnp.eye(lanczos_rank, dtype=lam_T.dtype) # Use lam_T.dtype for precision
+
+    
+
+            C_delta_T = _lyapunov_integral_from_eigh(T.astype(jnp.float32), S_hat.astype(jnp.float32), delta)
+
+    
+
+            # Sample noise from N(0, C_delta_T) and project back
+
+            rng_key, noise_key = random.split(state.rng_key)
+
+            
+
+            # Sample from N(0, C_delta_T) directly
+
+            noise_projected = random.multivariate_normal(noise_key, jnp.zeros(lanczos_rank, dtype=jnp.float32), C_delta_T)
+
+            
+
+            # Scale noise and project back to original space
+
+            noise_flat = noise_scale * (Q @ noise_projected)
+
+            
+
+            # Total update
+
+            updates_flat = mean_update_flat + noise_flat
+
+            
+
+    jax.debug.print("Update norm: {}", jnp.linalg.norm(updates_flat))
+
+            
+
+            # Unflatten updates and cast back to original parameter dtypes
+
+            updates = jax.tree_util.tree_map(lambda p_orig, u_flat: u_flat.astype(p_orig.dtype), params, unravel_params(updates_flat))
+
+    
+
+            # Update the RNG key in the state
+
+            new_state = HossState(rng_key=rng_key)
+
+    
+
+            return updates, new_state
 
     return optax.GradientTransformation(init_fn, update_fn)
 
