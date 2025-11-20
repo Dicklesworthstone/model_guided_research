@@ -25,6 +25,14 @@ from nanochat.adamw import DistAdamW
 from nanochat.model_utils import norm, apply_rotary_emb
 from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
 from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
+from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
+from nanochat.quaternion_attention_torch import QuaternionCausalSelfAttention
+from nanochat.braid_attention_torch import BraidCausalSelfAttention
+from nanochat.fractal_attention_torch import FractalCausalSelfAttention
+from nanochat.octonion_attention_torch import OctonionCausalSelfAttention
+from nanochat.surreal_torch import SurrealCausalSelfAttention
+from nanochat.reversible_block_torch import ReversibleBlock
+from nanochat.gauge_block_torch import GaugeBlock
 from nanochat.hoss_opt_torch import HOSS
 
 @dataclass
@@ -118,15 +126,63 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
+        self.config = config
+        # Special Block Types that replace the standard Attention+MLP structure
+        if config.attention_type == "gauge":
+            self.special_block = GaugeBlock(config, layer_idx)
+            return
+        if config.attention_type == "reversible":
+            # For reversible, we need to instantiate sub-blocks.
+            # The sub-blocks operate on half the embedding dimension.
+            # We create a sub-config for this.
+            sub_config = dataclass(frozen=False)(lambda: None)() # Simple object
+            # Copy attributes
+            for k, v in config.__dict__.items():
+                setattr(sub_config, k, v)
+            
+            sub_config.n_embd = config.n_embd // 2
+            # We try to keep head_dim constant, so we halve n_head if possible
+            if sub_config.n_head % 2 == 0:
+                sub_config.n_head = sub_config.n_head // 2
+            if sub_config.n_kv_head % 2 == 0:
+                sub_config.n_kv_head = sub_config.n_kv_head // 2
+                
+            # Ensure validity
+            if sub_config.n_embd % sub_config.n_head != 0:
+                # Fallback: Keep n_head, reduce head_dim
+                pass
+            
+            self.special_block = ReversibleBlock(config, layer_idx, 
+                                                CausalSelfAttention(sub_config, layer_idx),
+                                                MLP(sub_config))
+            return
+            
         if config.attention_type == "tropical":
             self.attn = TropicalCausalSelfAttention(config, layer_idx)
         elif config.attention_type == "ultrametric":
             self.attn = UltrametricCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "simplicial":
+            self.attn = SimplicialCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "quaternion":
+            self.attn = QuaternionCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "braid":
+            self.attn = BraidCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "fractal":
+            self.attn = FractalCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "octonion":
+            self.attn = OctonionCausalSelfAttention(config, layer_idx)
+        elif config.attention_type == "surreal":
+            self.attn = SurrealCausalSelfAttention(config, layer_idx)
         else:
             self.attn = CausalSelfAttention(config, layer_idx)
         self.mlp = MLP(config)
 
     def forward(self, x, cos_sin, kv_cache):
+        if self.config.attention_type == "gauge":
+            return self.special_block(x, cos_sin, kv_cache)
+        if self.config.attention_type == "reversible":
+            return self.special_block(x, cos_sin, kv_cache)
+            
         x = x + self.attn(norm(x), cos_sin, kv_cache)
         x = x + self.mlp(norm(x))
         return x
