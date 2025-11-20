@@ -385,8 +385,8 @@ class UltrametricAttention:
         # Store head sims for variance reporting
         try:
             self.last_head_sims = sims  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[ultrametric] Could not cache head sims: {err}")
         return _np.asarray(out)
 
     # --- Packed arrays helpers: finalize + rank/test ---
@@ -416,7 +416,8 @@ class UltrametricAttention:
         try:
             buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
             return code in buckets_p[head][depth]
-        except Exception:
+        except Exception as err:
+            print(f"[ultrametric] has_prefix fallback failed: {err}")
             return False
 
     def rank_prefix(self, head: int, depth: int, code: int) -> int:
@@ -438,7 +439,8 @@ class UltrametricAttention:
                 if int(k) <= int(code):
                     cnt += 1
             return int(cnt)
-        except Exception:
+        except Exception as err:
+            print(f"[ultrametric] rank_prefix fallback failed: {err}")
             return 0
 
 
@@ -663,8 +665,8 @@ def demo():
                 for i, N in enumerate(Ns):
                     ct.add_row(str(N), f"{query_ms[i]:.1f}", f"{qry2[i]:.1f}")
                 _Console().print(ct)
-            except Exception:
-                pass
+            except Exception as err:
+                print(f"[ultrametric] Skipping scaling table: {err}")
         # Occupancy summary per level when array-packed
         if bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
             p, K, H = 5, 12, 2
@@ -695,8 +697,8 @@ def demo():
                     has = U2.has_prefix(0, max(1, dd), int(cc))
                     tab.add_row(str(int(dd)), str(int(cc)), str(int(rnk)), str(bool(has)))
                 _Console().print(tab)
-            except Exception:
-                pass
+            except Exception as err:
+                print(f"[ultrametric] Skipping rank/test table: {err}")
         # p-tuner (optional): try p∈{3,5,7} on a tiny Task A split and choose best by eval acc
         if bool(int(os.environ.get("ULTRA_TUNE_P", "0"))):
             best_p = None
@@ -739,52 +741,50 @@ def demo():
                 for i, dv in enumerate(deltas):
                     vt.add_row(str(i), f"{float(dv):.3e}")
                 _Console().print(vt)
-            except Exception:
-                pass
-        except Exception:
+            except Exception as err:
+                print(f"[ultrametric] Skipping variance table: {err}")
+        except Exception as err:
             var_avg = var_fuse = None
             var_delta = None
+            print(f"[ultrametric] Variance analysis failed: {err}")
 
         # Export diagnostics
-        try:
-            global last_diagnostics
-            last_diagnostics = {
-                "last_head_variance": float(var_heads) if 'var_heads' in locals() else None,
-                "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
-                "scaling": {
-                    "N": Ns,
-                    "insert_ms": [float(x) for x in insert_ms],
-                    "query_ms": [float(x) for x in query_ms],
-                },
-                "variance_reduction": {
-                    "delta_mean": var_delta,
-                    "deltas": [float(x) for x in deltas] if 'deltas' in locals() else None,
-                },
-                "scaling_compare": {
-                    "N": Ns,
-                    "packed": {"insert_ms": [float(x) for x in insert_ms], "query_ms": [float(x) for x in query_ms]},
-                    "dict": {"insert_ms": [float(x) for x in ins2], "query_ms": [float(x) for x in qry2]},
-                } if compare else None,
-                "rank_demo": {
-                    "depth": int(d_demo) if 'd_demo' in locals() else None,
-                    "code": int(code_demo) if 'code_demo' in locals() else None,
-                    "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
-                    "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
-                },
-                "tuner": {"p": int(best_p), "acc": float(best_acc)} if ('best_p' in locals()) else None,
-                "rank_samples": [
-                    {"depth": int(max(1, d_demo-1)), "code": int((1<<max(1, d_demo-1))//2),
-                     "rank": int(U2.rank_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2)),
-                     "has": bool(U2.has_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2))},
-                    {"depth": int(d_demo), "code": int(code_demo),
-                     "rank": int(U2.rank_prefix(0, d_demo, code_demo)),
-                     "has": bool(U2.has_prefix(0, d_demo, code_demo))},
-                ] if ('U2' in locals()) else None,
-            }
-        except Exception:
-            pass
-    except Exception:
-        pass
+        global last_diagnostics
+        last_diagnostics = {
+            "last_head_variance": float(var_heads) if 'var_heads' in locals() else None,
+            "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
+            "scaling": {
+                "N": Ns,
+                "insert_ms": [float(x) for x in insert_ms],
+                "query_ms": [float(x) for x in query_ms],
+            },
+            "variance_reduction": {
+                "delta_mean": var_delta,
+                "deltas": [float(x) for x in deltas] if 'deltas' in locals() else None,
+            },
+            "scaling_compare": {
+                "N": Ns,
+                "packed": {"insert_ms": [float(x) for x in insert_ms], "query_ms": [float(x) for x in query_ms]},
+                "dict": {"insert_ms": [float(x) for x in ins2], "query_ms": [float(x) for x in qry2]},
+            } if compare else None,
+            "rank_demo": {
+                "depth": int(d_demo) if 'd_demo' in locals() else None,
+                "code": int(code_demo) if 'code_demo' in locals() else None,
+                "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
+                "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
+            },
+            "tuner": {"p": int(best_p), "acc": float(best_acc)} if ('best_p' in locals()) else None,
+            "rank_samples": [
+                {"depth": int(max(1, d_demo-1)), "code": int((1<<max(1, d_demo-1))//2),
+                 "rank": int(U2.rank_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2)),
+                 "has": bool(U2.has_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2))},
+                {"depth": int(d_demo), "code": int(code_demo),
+                 "rank": int(U2.rank_prefix(0, d_demo, code_demo)),
+                 "has": bool(U2.has_prefix(0, d_demo, code_demo))},
+            ] if ('U2' in locals()) else None,
+        }
+    except Exception as err:
+        print(f"[ultrametric] Demo failed: {err}")
 
 
 if __name__ == "__main__":

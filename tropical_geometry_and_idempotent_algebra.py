@@ -385,8 +385,8 @@ def run():
         for i in range(nshow):
             t2.add_row(str(i), f"{(node_min_gaps[i]/2.0):.4f}")
         _Console().print(t2)
-    except Exception:
-        pass
+    except Exception as err:
+        _Console().print(f"[yellow]Skipping per-node gap table: {err}[/yellow]")
     # Tiny sparse-support training for classifier (opt-in): L steps of top-k projection
     if int(os.environ.get("TROP_SPARSE_TRAIN", "0")):
         steps = int(os.environ.get("TROP_SPARSE_STEPS", "5"))
@@ -436,28 +436,22 @@ def run():
             for r in grid_rows:
                 gtab.add_row(str(r["k"]), f"{r['acc_post']:.3f}", str(r["nnz_sum"]), f"{r['density']:.3f}")
             _Console().print(gtab)
-        except Exception:
-            pass
+        except Exception as err:
+            _Console().print(f"[yellow]Skipping sparse-train table: {err}[/yellow]")
         # Export
-        try:
-            last_diagnostics["sparse_train"] = {
-                "steps": steps,
-                "k_grid": grid_rows,
-                "acc_pre": acc_pre,
-            }
-        except Exception:
-            pass
-    # Exportable diagnostics for CLI
-    try:
-        last_diagnostics = {
-            "route_certs": rows,
-            "min_gap_over_2": float(min(gaps) / 2.0),
-            "min_node_gap_over_2": float(min(node_min_gaps) / 2.0) if node_min_gaps else None,
-            "median_margin": float(jnp.median(cert)),
-            "sparse_mix": mix_rows,
+        last_diagnostics["sparse_train"] = {
+            "steps": steps,
+            "k_grid": grid_rows,
+            "acc_pre": acc_pre,
         }
-    except Exception:
-        pass
+    # Exportable diagnostics for CLI
+    last_diagnostics = {
+        "route_certs": rows,
+        "min_gap_over_2": float(min(gaps) / 2.0),
+        "min_node_gap_over_2": float(min(node_min_gaps) / 2.0) if node_min_gaps else None,
+        "median_margin": float(jnp.median(cert)),
+        "sparse_mix": mix_rows,
+    }
 
 
 # (adapter defined above)
