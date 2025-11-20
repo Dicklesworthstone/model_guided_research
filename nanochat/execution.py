@@ -27,6 +27,7 @@ import io
 import multiprocessing
 import os
 import platform
+import runpy
 import signal
 import tempfile
 from dataclasses import dataclass
@@ -196,7 +197,7 @@ def reliability_guard(maximum_memory_bytes: Optional[int] = None):
     shutil.move = None
     shutil.chown = None
 
-    import subprocess
+    import subprocess  # nosec B404
 
     subprocess.Popen = None  # type: ignore
 
@@ -237,8 +238,12 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: Optional[in
             "error": None,
         })
 
+        tmp_path = None
         try:
-            exec_globals = {}
+            with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tmp:
+                tmp_path = tmp.name
+                tmp.write(code)
+
             with capture_io() as (stdout_capture, stderr_capture):
                 with time_limit(timeout):
                     # WARNING
@@ -249,9 +254,7 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: Optional[in
                     # Users are strongly encouraged to sandbox this evaluation suite so that it
                     # does not perform destructive actions on their host or network. For more
                     # information on how OpenAI sandboxes its code, see the accompanying paper.
-                    # Once you have read this disclaimer and taken appropriate precautions,
-                    # uncomment the following line and proceed at your own risk:
-                    exec(code, exec_globals)
+                    runpy.run_path(tmp_path, run_name="__main__")
 
             result_dict.update({
                 "success": True,
@@ -275,6 +278,10 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: Optional[in
             result_dict.update({
                 "error": f"{type(e).__name__}: {e}",
             })
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
         # Needed for cleaning up.
         shutil.rmtree = rmtree
@@ -346,4 +353,3 @@ def execute_code(
         timeout=result_dict["timeout"],
         memory_exceeded=result_dict["memory_exceeded"],
     )
-
