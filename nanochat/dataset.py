@@ -47,7 +47,8 @@ def parquets_iter_batched(split, start=0, step=1):
     - split can be "train" or "val". the last parquet file will be val.
     - start/step are useful for skipping rows in DDP. e.g. start=rank, step=world_size
     """
-    assert split in ["train", "val"], "split must be 'train' or 'val'"
+    if split not in ["train", "val"]:
+        raise ValueError("split must be 'train' or 'val'")
     parquet_paths = list_parquet_files()
     parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
     for filepath in parquet_paths:

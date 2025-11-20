@@ -20,7 +20,8 @@ def tokenizing_distributed_data_loader_with_state(B, T, split, tokenizer_threads
 
     Perfect state resumption is possible but would be a lot more bloated, probably not worth it atm.
     """
-    assert split in ["train", "val"], "split must be 'train' or 'val'"
+    if split not in ["train", "val"]:
+        raise ValueError("split must be 'train' or 'val'")
 
     # infinite iterator over document batches (list of text strings)
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
