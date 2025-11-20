@@ -146,8 +146,11 @@ def hoss(
         params_flat, unravel_params = ravel_pytree(params)
         grads_flat, _ = ravel_pytree(grads)
 
-        # Apply gradient clipping if enabled
-        grads_flat = optax.clip_by_global_norm(gradient_norm_clip)(grads_flat, state, params)[0]
+        # Apply gradient clipping manually
+        if gradient_norm_clip is not None:
+            g_norm = jnp.linalg.norm(grads_flat)
+            scale = jnp.where(g_norm > gradient_norm_clip, gradient_norm_clip / g_norm, 1.0)
+            grads_flat = grads_flat * scale
 
         # Function to compute loss for HVP
         # Assumes the `apply_fn` for the model is passed via `kwargs`
@@ -178,10 +181,6 @@ def hoss(
                 return loss_fn(p_tree)
             
             return jax.jvp(grad(loss_flat_fn), (params_flat,), (v,))[1] # HVP of the scalar loss w.r.t. params_flat
-
-        # If grads_flat is all zeros, skip HOSS specific computation and return zero updates
-        if jnp.all(grads_flat == 0.0):
-            return jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), grads), state
 
         # Use Lanczos to get approximate Hessian (Q, T)
         Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat, lanczos_rank) # grads_flat is -g for minimize
@@ -245,3 +244,10 @@ def hoss(
 @dataclass
 class HossState:
     rng_key: jax.Array
+
+# Register HossState as a PyTree
+jax.tree_util.register_pytree_node(
+    HossState,
+    lambda node: ((node.rng_key,), None),
+    lambda _, children: HossState(rng_key=children[0])
+)
