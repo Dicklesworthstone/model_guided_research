@@ -7,6 +7,11 @@ import jax.numpy as jnp
 import numpy as np
 from nanochat.gpt_jax import GPT, GPTConfig
 
+
+def require(condition, message: str):
+    if not bool(condition):
+        raise AssertionError(message)
+
 def test_tropical_forward():
     print("Testing Tropical Attention Forward Pass...")
     
@@ -36,8 +41,8 @@ def test_tropical_forward():
     logits = model.apply({'params': params}, x, train=False)
     
     print(f"Logits shape: {logits.shape}")
-    assert logits.shape == (1, 32, config.vocab_size)
-    assert not jnp.isnan(logits).any()
+    require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")
+    require(not jnp.isnan(logits).any(), "NaNs found in logits")
     
     print("Tropical Attention Forward Pass Successful!")
 
@@ -68,11 +73,10 @@ def test_standard_forward():
     logits = model.apply({'params': params}, x, train=False)
     
     print(f"Logits shape: {logits.shape}")
-    assert logits.shape == (1, 32, config.vocab_size)
+    require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")
     
     print("Standard Attention Forward Pass Successful!")
 
 if __name__ == "__main__":
     test_tropical_forward()
     test_standard_forward()
-

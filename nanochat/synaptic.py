@@ -587,7 +587,8 @@ class SynapticCausalSelfAttention(nn.Module):
         resid_drop=0.0,
     ):
         super().__init__()
-        assert n_embd % n_head == 0
+        if n_embd % n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
         self.n_head = n_head
         self.n_kv_head = n_kv_head
         self.head_dim = n_embd // n_head

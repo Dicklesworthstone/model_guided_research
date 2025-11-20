@@ -310,7 +310,8 @@ def presyn_step(q, k, logits, state, cfg):
     B, H, T, D = q.shape
     
     # Check constraints
-    assert D in {16, 32, 64, 128}, "Head dim must be power of 2 <= 128 for optimal block load"
+    if D not in {16, 32, 64, 128}:
+        raise ValueError("Head dim must be power of 2 <= 128 for optimal block load")
     
     # Flatten batch*head for the grid
     total_sequences = B * H
