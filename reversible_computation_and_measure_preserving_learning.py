@@ -994,21 +994,21 @@ def demo():
     import os as _os
     try:
         set_reversible_cayley(True)
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"[reversible] Failed to enable Cayley mix: {err}")
     _os.environ.setdefault("REV_LAYER_CERT", "1")
     # Optional strict Givens-only mixing (exact inverse, det=1)
     if _os.environ.get("REV_GIVENS", "0") == "1":
         try:
             set_reversible_givens_mix(True)
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Failed to enable Givens mix: {err}")
     # Optional generating-function step
     if _os.environ.get("REV_GENERATING", "0") == "1":
         try:
             set_reversible_generating_symplectic(True)
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Failed to enable generating symplectic: {err}")
 
     # Print device info if verbose
     if config.verbose_level >= 2:
@@ -1026,8 +1026,8 @@ def demo():
         mode.add_row("generating", "ON" if USE_GENERATING_SYMPLECTIC else "OFF")
         mode.add_row("gen_vjp", "ON" if (os.environ.get("REV_GEN_VJP", "0") == "1") else "OFF")
         _Console().print(mode)
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"[reversible] Skipping mode summary: {err}")
 
     conditional_print("[bold magenta]Reversible Computation & Measure-Preserving Learning Demo[/bold magenta]", level=1)
     diagnostics_print()
@@ -1166,8 +1166,8 @@ def demo():
                 ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps)
                 ok_count += int(ok)
             inv.add_row("Layers OK (mix/cayley/det)", f"{ok_count}/{len(m.blocks)}")
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Layer property summary failed: {err}")
         from rich.console import Console as _Console
         _Console().print(inv)
 
@@ -1237,8 +1237,8 @@ def demo():
             summ.add_column("k/total")
             summ.add_row(f"{ok_count}/{len(m.blocks)} layers OK")
             _Console().print(summ)
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Skipping property summary: {err}")
         # ASCII sparklines for aggregated trends
         def spark(vals):
             bars = "▁▂▃▄▅▆▇█"
@@ -1317,16 +1317,16 @@ def demo():
         # Compact pass/fail sparkline for quick visual diff
         try:
             diag_merge["property_ok_spark"] = "".join("█" if r.get("ok", False) else "▁" for r in prop_rows)
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Failed to build sparkline: {err}")
         if gen_norms:
             diag_merge["gen_param_norms"] = gen_norms
         if 'last_diagnostics' in globals() and isinstance(last_diagnostics, dict):
             last_diagnostics.update(diag_merge)
         else:
             last_diagnostics = diag_merge
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"[reversible] Failed to merge diagnostics: {err}")
 
     # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
@@ -1415,8 +1415,8 @@ def demo():
                     "mem_by_depth": {int(k): [float(x) for x in v] for k, v in mem_by_depth.items()},
                 }
             }
-        except Exception:
-            pass
+        except Exception as err:
+            print(f"[reversible] Failed to record Pareto diagnostics: {err}")
     if config.use_rich_output:
         from rich.console import Console
         console = Console()

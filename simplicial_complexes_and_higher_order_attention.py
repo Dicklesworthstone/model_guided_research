@@ -364,7 +364,8 @@ def train_step(params, complex_, L, X, Y, r, lam_bdry, lr):
 
 def generate_dataset(key, complex_, num, r=None, unbalanced=False):
     K = complex_["K"]
-    assert K == 2
+    if K != 2:
+        raise ValueError(f"generate_dataset expects K=2 (got {K})")
     D2 = _to_dense(complex_["D"][2])
     n2 = complex_["dims"][2]
 
