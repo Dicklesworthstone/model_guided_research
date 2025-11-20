@@ -10,6 +10,8 @@ from nanochat.common import get_dist_info, compute_init, compute_cleanup
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.dataloader import tokenizing_distributed_data_loader
 
+from nanochat.ordinal_scheduler import OrdinalLRScheduler
+
 def train(args):
     # Init distributed mode if necessary
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init(device_type="cuda")
@@ -41,6 +43,14 @@ def train(args):
         embedding_lr=args.learning_rate, 
         matrix_lr=args.learning_rate
     )
+    
+    # Scheduler
+    schedulers = []
+    if args.scheduler_type == "ordinal":
+        # We attach an ordinal scheduler to each optimizer
+        # Note: Ordinal scheduler updates LR based on loss.
+        for opt in optimizers:
+            schedulers.append(OrdinalLRScheduler(opt, eta_init=args.learning_rate))
     
     # Dataloader
     loader = tokenizing_distributed_data_loader(
@@ -77,23 +87,7 @@ def train(args):
 
         if is_hoss:
             # Step with closure
-            # Note: HOSS step calls closure internally to get loss and gradients
-            # But we usually do forward/backward once?
-            # Standard PyTorch optimizers with closure (LBFGS) call closure multiple times.
-            # My HOSS implementation calls closure() if provided.
-            # And inside closure, we do backward.
-            # But we also need initial gradients.
-            
-            # Let's follow the pattern:
-            # 1. Zero grad
-            # 2. Step(closure)
-            # Inside Step(closure):
-            #   closure() -> forward, backward(create_graph=True) -> returns loss
-            #   Then HOSS uses existing .grad to compute HVP via autograd.grad
-            
-            # So we just call step(closure).
             loss = optimizers[0].step(closure) 
-            # optimizers list has only 1 optimizer if HOSS
         else:
             # Standard AdamW/Muon
             # Forward
@@ -104,6 +98,12 @@ def train(args):
             
             for opt in optimizers:
                 opt.step()
+                
+        # Scheduler Step
+        if args.scheduler_type == "ordinal":
+            # Step schedulers with current loss
+            for sched in schedulers:
+                sched.step(loss.item())
             
         # Logging
         if step % 1 == 0 and ddp_rank == 0:
@@ -122,8 +122,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=6e-4)
-    parser.add_argument("--optimizer-type", type=str, default="adamw") # Placeholder
-    parser.add_argument("--attention-type", type=str, default="standard") # Placeholder
+    parser.add_argument("--optimizer-type", type=str, default="adamw") 
+    parser.add_argument("--attention-type", type=str, default="standard")
+    parser.add_argument("--scheduler-type", type=str, default="none")
     args = parser.parse_args()
     
     train(args)
