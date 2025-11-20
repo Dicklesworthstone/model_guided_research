@@ -19,7 +19,7 @@ from nanochat.muon_jax import muon
 from nanochat.dataloader import tokenizing_distributed_data_loader
 from nanochat.hoss_opt import hoss # Import HOSS optimizer
 
-    # Ensure we can import from nanochat
+# Ensure we can import from nanochat
 import sys
 sys.path.append(os.getcwd())
 
@@ -169,14 +169,18 @@ def main():
             
             state, loss = train_step(state, inputs, targets)
             
-            if step % 10 == 0:
+            # Check for NaN
+            if jnp.isnan(loss):
+                raise ValueError(f"NaN loss detected at step {step}!")
+
+            if step % 1 == 0:
                 t1 = time.time()
                 dt = t1 - t0
                 t0 = t1
-                print(f"Step {step}: loss {float(loss):.4f}, time {float(dt*1000/10):.2f}ms/step")
+                print(f"Step {step}: loss {float(loss):.4f}, time {float(dt*1000):.2f}ms/step")
                 
             step += 1
-            if step >= 100:
+            if step >= 20: # Short run for debug
                 break
                 
     except Exception as e:
