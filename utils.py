@@ -12,6 +12,7 @@ import jax.numpy as jnp
 from rich import box
 from rich.console import Console
 from rich.table import Table
+from nanochat.torch_imports import torch
 
 console = Console()
 
@@ -116,8 +117,6 @@ def log_metrics_conditionally(step: int, metrics: dict[str, Any]) -> None:
 
 def save_checkpoint(params: Any, step: int, metrics: dict[str, Any] | None = None) -> None:
     """Save model checkpoint if configured."""
-    import pickle
-
     from config import get_config
 
     config = get_config()
@@ -131,8 +130,7 @@ def save_checkpoint(params: Any, step: int, metrics: dict[str, Any] | None = Non
         "metrics": metrics or {}
     }
 
-    with open(checkpoint_path, 'wb') as f:
-        pickle.dump(checkpoint_data, f)
+    torch.save(checkpoint_data, checkpoint_path)
 
     conditional_print(f"[dim]Checkpoint saved to {checkpoint_path}[/dim]", level=2)
 
