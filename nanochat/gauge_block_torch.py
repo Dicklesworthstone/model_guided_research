@@ -1,7 +1,13 @@
 """
 Matrix Exponential Gauge Block (PyTorch)
 Implements Gauge Equivariant Layers using Lie Groups.
-Simulates "Matrix Exponential Gauge Learning" via orthogonal transports.
+Simulates "Matrix Exponential Gauge Learning" via cumulative orthogonal transports.
+
+Mathematical core (from JAX reference):
+  - Transport: T_j = prod_{l<j} exp(A_l), with A_l skew-symmetric.
+  - Implemented as cumulative product of rotations (or sum of angles for U(1)).
+  - Gauge invariance: compare q_i with k_j transported by R_{i<-j} = T_i T_j^{-1}.
+  - R_{i<-j} acts on features to align frames.
 """
 
 import torch
@@ -17,53 +23,34 @@ class GaugeBlock(nn.Module):
         self.dim = config.n_embd
         
         # Lie Algebra Generators
-        # We learn a skew-symmetric matrix A (generator of SO(D)).
-        # Or block-diagonal skew-symmetric matrices for efficiency.
-        # 2x2 blocks => Givens rotations.
+        # We learn a skew-symmetric matrix A (generator of SO(D)) per token.
+        # In the JAX code, this is efficiently handled via "pairs" of indices (Givens rotations).
+        # pairs: npairs = floor(D/2).
+        # angles: (B, T, npairs).
+        # Transport T_j is the cumulative rotation up to j.
         
-        # Simplification: Learn a set of rotation angles for fixed 2x2 pairings.
         self.n_pairs = self.dim // 2
-        self.angles = nn.Parameter(torch.randn(self.n_pairs) * 0.1)
         
-        # Parallel Transport:
-        # T_j = exp(sum_{k<j} A_k)
-        # Here we assume spatial gauge field.
-        # Ideally, we transport features from j to i.
-        # y_i = sum_j K(i,j) * T_{i<-j} x_j
+        # Network to predict local connection A_l (angles) from state x_l
+        self.to_angles = nn.Linear(self.dim, self.n_pairs, bias=False)
         
-        # Standard Attention does: y_i = sum_j A_ij v_j
-        # Gauge Attention: y_i = sum_j A_ij (R_ij v_j)
-        # where R_ij is the rotation from j to i.
-        
-        # If we define global potential Phi_i, then R_ij = Phi_i @ Phi_j.T
-        # Phi_i = exp( theta_i * G )
-        
-        # Implementation:
-        # 1. Learn scalar field theta(x) -> rotation angle per position.
-        # 2. Rotation R_ij is Rotation(theta_i - theta_j).
-        # 3. Apply R_ij to v_j inside attention?
-        
-        # Or apply Phi_j to v_j BEFORE attention, and Phi_i.T AFTER attention.
-        # y_i = Phi_i.T @ sum_j A_ij @ Phi_j @ v_j
-        # This is "Gauge Invariant Attention".
-        
-        # We need a way to compute theta for each token.
-        # Let's use a small network to predict theta from x.
-        self.to_theta = nn.Linear(self.dim, self.n_pairs, bias=False)
-        
-        # Standard Attention mechanism
-        # We reuse the standard attention but wrap it.
-        # For now, use a simple linear projection as "inner block"
+        # Standard Attention mechanism (inner block)
+        # We apply gauge transformation before and after this block.
         self.c_attn = nn.Linear(self.dim, 3 * self.dim, bias=False)
         self.c_proj = nn.Linear(self.dim, self.dim, bias=False)
         self.n_head = config.n_head
         self.head_dim = self.dim // self.n_head
 
     def _apply_rotations(self, x, thetas, inverse=False):
-        # x: (B, T, D)
-        # thetas: (B, T, D/2)
-        # Apply 2x2 rotations.
+        """
+        Apply 2x2 Givens rotations defined by thetas to x.
+        x: (B, T, D)
+        thetas: (B, T, D/2)
         
+        Splits D into even/odd pairs (0,1), (2,3), ...
+        Rotates each pair by corresponding theta.
+        """
+        # De-interleave to get pairs
         x_even = x[..., 0::2]
         x_odd = x[..., 1::2]
         
@@ -73,8 +60,9 @@ class GaugeBlock(nn.Module):
         if inverse:
             s = -s
             
-        # [c -s] [x_e]   [c xe - s xo]
-        # [s  c] [x_o] = [s xe + c xo]
+        # Rotation matrix for pair (x_e, x_o):
+        # [c -s] [x_e]   [c*xe - s*xo]
+        # [s  c] [x_o] = [s*xe + c*xo]
         
         new_even = c * x_even - s * x_odd
         new_odd = s * x_even + c * x_odd
@@ -88,19 +76,32 @@ class GaugeBlock(nn.Module):
     def forward(self, x, cos_sin, kv_cache):
         B, T, C = x.size()
         
-        # 1. Compute Gauge Field (Rotations)
-        thetas = self.to_theta(x) # (B, T, D/2)
+        # 1. Compute Local Connections A_l (Angles)
+        # These represent the "infinitesimal" parallel transport between step t and t+1.
+        # angles_local: (B, T, D/2)
+        angles_local = self.to_angles(x) 
         
-        # 2. Transform to "Global Frame" (Gauge Fixing)
-        # v_global = Phi(x) @ v_local
-        # We treat x itself as the vector to transport? 
-        # Or x contains the frame info?
-        # Let's rotate x itself.
-        x_global = self._apply_rotations(x, thetas)
+        # 2. Compute Cumulative Transport (Gauge Field T_j)
+        # T_j = prod_{l<j} exp(A_l)
+        # Since 2x2 rotations in disjoint planes commute, exp(Sum A) = Prod exp(A).
+        # So we can just sum the angles cumulatively.
+        # angles_global[t] = sum_{k=0}^{t} angles_local[k]
+        # (Note: JAX code says T_j = prod_{l<j}, i.e., exclusive prefix sum?
+        #  "T_j can be applied ... via prefix-summed angles".
+        #  Let's use inclusive sum for T_j, meaning frame j includes rotation A_j.)
         
-        # 3. Apply Standard Operation in Global Frame
-        # (Attention or MLP). 
-        # Here we implement a minimal Attention block in-line for demonstration.
+        angles_global = torch.cumsum(angles_local, dim=1)
+        
+        # 3. Transform to "Global Frame" (Gauge Fixing)
+        # v_global_j = T_j @ v_local_j
+        # This aligns all vectors to the frame at t=0 (or global identity).
+        # Then standard attention (dot product) computes v_global_i . v_global_j
+        # which is equivalent to v_local_i . (T_i^{-1} T_j) . v_local_j
+        # where T_i^{-1} T_j is the parallel transport R_{i<-j}.
+        x_global = self._apply_rotations(x, angles_global)
+        
+        # 4. Apply Standard Operation in Global Frame
+        # In the global frame, vectors are aligned, so we can mix them with standard ops.
         
         qkv = self.c_attn(x_global)
         q, k, v = torch.split(qkv, self.dim, dim=-1)
@@ -108,20 +109,19 @@ class GaugeBlock(nn.Module):
         k = k.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
         v = v.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
         
-        # RoPE (optional, maybe redundant with Gauge?)
-        # Standard RoPE is a specific Gauge field!
-        # Let's keep it for consistency with GPT.
+        # Apply RoPE (optional additional gauge field)
         cos, sin = cos_sin
-        # Apply RoPE
-        # ... (omitted for brevity, usually import apply_rotary_emb)
+        # ... RoPE implementation usually provided in model_utils
+        from nanochat.model_utils import apply_rotary_emb
+        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         
         # Attention
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         y = self.c_proj(y)
         
-        # 4. Transform back to Local Frame
-        # y_local = Phi(x).T @ y_global
-        y_local = self._apply_rotations(y, thetas, inverse=True)
+        # 5. Transform back to Local Frame (Pullback)
+        # y_local_i = T_i^{-1} @ y_global_i
+        y_local = self._apply_rotations(y, angles_global, inverse=True)
         
         return y_local
