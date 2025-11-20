@@ -78,7 +78,8 @@ def build_model(checkpoint_dir, step, device, phase):
     - tokenizer
     - meta data saved during base model training
     """
-    assert phase in ["train", "eval"], f"Invalid phase: {phase}"
+    if phase not in ["train", "eval"]:
+        raise ValueError(f"Invalid phase: {phase}")
     model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, step, device, load_optimizer=False)
     if device.type in {"cpu", "mps"}:
         # Convert bfloat16 tensors to float for CPU inference
@@ -93,7 +94,8 @@ def build_model(checkpoint_dir, step, device, phase):
     
     # Check if this is a synaptic model
     if meta_data.get("synapses", False):
-        assert GPTSynaptic is not None, "gpt_synaptic not found but synapses=True in metadata"
+        if GPTSynaptic is None:
+            raise ImportError("gpt_synaptic not found but synapses=True in metadata")
         from nanochat.synaptic import SynapticConfig
         syn_cfg = SynapticConfig()  # Use defaults; could load from meta_data if saved
         model_config = GPTSynapticConfig(
@@ -118,13 +120,14 @@ def build_model(checkpoint_dir, step, device, phase):
     model.load_state_dict(model_data, strict=True, assign=True)
     # Put the model in the right training phase / mode
     if phase == "eval":
-        model.eval()
+        model.train(mode=False)
     else:
-        model.train()
+        model.train(mode=True)
     # Load the Tokenizer
     tokenizer = get_tokenizer()
     # Sanity check: compatibility between model and tokenizer
-    assert tokenizer.get_vocab_size() == model_config_kwargs["vocab_size"]
+    if tokenizer.get_vocab_size() != model_config_kwargs["vocab_size"]:
+        raise ValueError("Tokenizer vocab size does not match model config")
     return model, tokenizer, meta_data
 
 
@@ -168,7 +171,8 @@ def load_model_from_dir(checkpoints_dir, device, phase, model_tag=None, step=Non
     if step is None:
         # guess the step by defaulting to the last step
         step = find_last_step(checkpoint_dir)
-    assert step is not None, f"No checkpoints found in {checkpoint_dir}"
+    if step is None:
+        raise FileNotFoundError(f"No checkpoints found in {checkpoint_dir}")
     # build the model
     log0(f"Loading model from {checkpoint_dir} with step {step}")
     model, tokenizer, meta_data = build_model(checkpoint_dir, step, device, phase)

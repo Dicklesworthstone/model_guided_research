@@ -14,7 +14,10 @@ class GPTConfig:
     n_head: int = 6 # number of query heads
     n_kv_head: int = 6 # number of key/value heads (GQA)
     n_embd: int = 768
-    use_tropical: bool = False
+    use_tropical: bool = False # Existing tropical flag
+    attention_type: str = "standard"  # Options: "standard", "tropical", "ultrametric"
+    optimizer_type: str = "adamw"     # Options: "adamw", "hoss"
+    init_cache: bool = False
 
 def rms_norm(x):
     # Purely functional rmsnorm with no learnable params

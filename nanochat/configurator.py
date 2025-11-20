@@ -3,11 +3,10 @@ Poor Man's Configurator. Probably a terrible idea. Example usage:
 $ python train.py config/override_file.py --batch_size=32
 this will first run config/override_file.py, then override batch_size to 32
 
-The code in this file will be run as follows from e.g. train.py:
->>> exec(open('configurator.py').read())
-
-So it's not a Python module, it's just shuttling this code away from train.py
-The code in this script then overrides the globals()
+The code in this script then overrides the globals() of the caller. We avoid
+string-based code execution and instead execute configuration files as isolated
+modules via `runpy.run_path`, then merge the exported symbols into the current global
+namespace.
 
 I know people are not going to love this, I just really dislike configuration
 complexity and having to prepend config. to every single variable. If someone
@@ -17,6 +16,7 @@ comes up with a better simple Python solution I am all ears.
 import os
 import sys
 from ast import literal_eval
+import runpy
 
 def print0(s="",**kwargs):
     ddp_rank = int(os.environ.get('RANK', 0))
@@ -26,16 +26,23 @@ def print0(s="",**kwargs):
 for arg in sys.argv[1:]:
     if '=' not in arg:
         # assume it's the name of a config file
-        assert not arg.startswith('--')
+        if arg.startswith('--'):
+            raise ValueError("Config file path should not start with '--'")
         config_file = arg
         print0(f"Overriding config with {config_file}:")
-        with open(config_file) as f:
-            code = f.read()
-            print0(code)
-            exec(code)
+        seed_globals = {"__file__": config_file}
+        seed_globals.update(globals())
+        config_values = runpy.run_path(config_file, run_name="config", init_globals=seed_globals)
+        exported = {k: v for k, v in config_values.items() if not k.startswith("__")}
+        if not exported:
+            raise ValueError(f"No configuration values exported from {config_file}")
+        for key, value in exported.items():
+            globals()[key] = value
+        print0(f"Loaded keys: {', '.join(sorted(exported))}")
     else:
         # assume it's a --key=value argument
-        assert arg.startswith('--')
+        if not arg.startswith('--'):
+            raise ValueError("Override arguments must start with '--'")
         key, val = arg.split('=')
         key = key[2:]
         if key in globals():
@@ -49,7 +56,8 @@ for arg in sys.argv[1:]:
             if globals()[key] is not None:
                 attempt_type = type(attempt)
                 default_type = type(globals()[key])
-                assert attempt_type == default_type, f"Type mismatch: {attempt_type} != {default_type}"
+                if attempt_type != default_type:
+                    raise TypeError(f"Type mismatch: {attempt_type} != {default_type}")
             # cross fingers
             print0(f"Overriding: {key} = {attempt}")
             globals()[key] = attempt

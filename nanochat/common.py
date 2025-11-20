@@ -6,6 +6,7 @@ import os
 import re
 import logging
 import urllib.request
+import urllib.parse
 from nanochat.torch_imports import torch
 import torch.distributed as dist
 from filelock import FileLock
@@ -79,8 +80,11 @@ def download_file_with_lock(url, filename, postprocess_fn=None):
             return file_path
 
         # Download the content as bytes
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(f"Refusing to download from non-http(s) URL: {url}")
         print(f"Downloading {url}...")
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(url) as response:  # nosec B310 scheme validated above
             content = response.read() # bytes
 
         # Write to local file
@@ -119,7 +123,8 @@ def is_ddp():
 
 def get_dist_info():
     if is_ddp():
-        assert all(var in os.environ for var in ['RANK', 'LOCAL_RANK', 'WORLD_SIZE'])
+        if not all(var in os.environ for var in ['RANK', 'LOCAL_RANK', 'WORLD_SIZE']):
+            raise EnvironmentError("DDP env vars RANK/LOCAL_RANK/WORLD_SIZE required")
         ddp_rank = int(os.environ['RANK'])
         ddp_local_rank = int(os.environ['LOCAL_RANK'])
         ddp_world_size = int(os.environ['WORLD_SIZE'])
@@ -140,12 +145,12 @@ def autodetect_device_type():
 
 def compute_init(device_type="cuda"): # cuda|cpu|mps
     """Basic initialization that we keep doing over and over, so make common."""
-
-    assert device_type in ["cuda", "mps", "cpu"], "Invalid device type atm"
-    if device_type == "cuda":
-        assert torch.cuda.is_available(), "Your PyTorch installation is not configured for CUDA but device_type is 'cuda'"
-    if device_type == "mps":
-        assert torch.backends.mps.is_available(), "Your PyTorch installation is not configured for MPS but device_type is 'mps'"
+    if device_type not in ["cuda", "mps", "cpu"]:
+        raise ValueError("Invalid device type atm")
+    if device_type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("Your PyTorch installation is not configured for CUDA but device_type is 'cuda'")
+    if device_type == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("Your PyTorch installation is not configured for MPS but device_type is 'mps'")
 
     # Reproducibility
     # Note that we set the global seeds here, but most of the code uses explicit rng objects.
