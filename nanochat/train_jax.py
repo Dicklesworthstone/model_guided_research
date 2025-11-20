@@ -1,8 +1,9 @@
 """
 Training script for JAX/Flax port of nanochat.
 """
-
 import os
+os.environ["JAX_PLATFORM_NAME"] = "cpu"
+
 import time
 import jax
 import jax.numpy as jnp
@@ -16,8 +17,9 @@ from nanochat.common_jax import GPTConfig
 from nanochat.gpt_jax import GPT
 from nanochat.muon_jax import muon
 from nanochat.dataloader import tokenizing_distributed_data_loader
+from nanochat.hoss_opt import hoss # Import HOSS optimizer
 
-# Ensure we can import from nanochat
+    # Ensure we can import from nanochat
 import sys
 sys.path.append(os.getcwd())
 
@@ -53,22 +55,28 @@ def create_train_state(rng, config, learning_rate):
     # Initialize parameters
     params = model.init(rng, dummy_input, train=False)['params']
     
-    # Define optimizers
-    # AdamW for embeddings/head
-    adamw_optimizer = optax.adamw(learning_rate=learning_rate, weight_decay=0.0)
-    
-    # Muon for internal matrices
-    # Muon lr is usually higher, e.g. 0.02
-    muon_optimizer = muon(learning_rate=0.02, momentum=0.95, ns_steps=5)
-    
-    # Combine
-    tx = optax.multi_transform(
-        {
-            'adamw': adamw_optimizer,
-            'muon': muon_optimizer
-        },
-        get_params_partition(params)
-    )
+    # Define optimizer based on config
+    if config.optimizer_type == "hoss":
+        print("Using HOSS optimizer.")
+        # HOSS needs a loss_fn. It will be passed in train_step.
+        # We pass a dummy learning_rate for now, as HOSS does not tune it directly.
+        tx = hoss(learning_rate=learning_rate) 
+    else:
+        print("Using AdamW + Muon optimizer.")
+        # AdamW for embeddings/head
+        adamw_optimizer = optax.adamw(learning_rate=learning_rate, weight_decay=0.0)
+        
+        # Muon for internal matrices
+        muon_optimizer = muon(learning_rate=0.02, momentum=0.95, ns_steps=5)
+        
+        # Combine
+        tx = optax.multi_transform(
+            {
+                'adamw': adamw_optimizer,
+                'muon': muon_optimizer
+            },
+            get_params_partition(params)
+        )
     
     return TrainState.create(
         apply_fn=model.apply,
@@ -80,12 +88,6 @@ def create_train_state(rng, config, learning_rate):
 def train_step(state, batch, targets):
     def loss_fn(params):
         logits = state.apply_fn({'params': params}, batch, targets=targets, train=True)
-        # logits is actually loss if targets passed? 
-        # Wait, GPT.__call__ returns logits if targets passed?
-        # Let's check gpt_jax.py
-        # It returns logits. We need to compute loss here.
-        
-        # Cross entropy
         # logits: [B, T, V]
         # targets: [B, T]
         
@@ -94,10 +96,24 @@ def train_step(state, batch, targets):
         
     grad_fn = jax.value_and_grad(loss_fn)
     loss, grads = grad_fn(state.params)
-    state = state.apply_gradients(grads=grads)
+    
+    # Pass loss_fn as an extra_args to the optimizer update if HOSS is used
+    # Optax's apply_gradients will pass extra_args to the tx.update function
+    updates, new_opt_state = state.tx.update(grads, state.opt_state, state.params, loss_fn=loss_fn)
+    
+    # We cannot use state.apply_gradients here because we already called tx.update
+    # and we need to manually apply the updates to params.
+    new_params = optax.apply_updates(state.params, updates)
+    state = state.replace(step=state.step + 1, params=new_params, opt_state=new_opt_state)
+    
     return state, loss
-
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Train Nanochat JAX")
+    parser.add_argument("--optimizer-type", type=str, default="adamw", choices=["adamw", "hoss"], help="Optimizer type")
+    parser.add_argument("--attention-type", type=str, default="standard", choices=["standard", "tropical", "ultrametric"], help="Attention mechanism type")
+    args = parser.parse_args()
+
     # Config
     config = GPTConfig()
     # Reduced for testing
@@ -106,6 +122,12 @@ def main():
     config.n_kv_head = 4
     config.n_embd = 128
     config.sequence_len = 256
+    
+    # Set config from CLI args
+    config.optimizer_type = args.optimizer_type
+    config.attention_type = args.attention_type
+    
+    print(f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}")
     
     batch_size = 8
     learning_rate = 6e-4
@@ -118,7 +140,7 @@ def main():
     print("Initializing model...")
     state = create_train_state(init_rng, config, learning_rate)
     print(f"Model initialized. Params: {sum(x.size for x in jax.tree_util.tree_leaves(state.params))/1e6:.2f}M")
-    
+
     # Dataloader
     # We use the tokenizing dataloader from nanochat
     # It yields torch tensors. We convert to numpy.
@@ -164,4 +186,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
