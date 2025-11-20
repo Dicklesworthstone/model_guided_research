@@ -676,8 +676,8 @@ def main(
 
 if __name__ == "__main__":
     app()
-@app.command()
-def eval(
+@app.command("eval")
+def evaluate(
     ultra_packed: Annotated[bool, typer.Option(
         "--ultra-packed",
         help="Use packed bit-trie implementation for ultrametric tests (sets ULTRA_PACKED=1)"
