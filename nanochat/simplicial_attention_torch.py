@@ -67,6 +67,10 @@ class SimplicialCausalSelfAttention(nn.Module):
         # During inference, ignore 2-hop or approximate?
         # For this "modular" demo, we'll support it fully during training/prefill, and skip/approx during generation.
         
+        # WARNING: Inference Inconsistency
+        # In inference (Tq=1), we lack the history of y1 to compute the 2nd hop correctly.
+        # We fallback to y2 = y1, effectively ignoring the 2nd hop mixing during generation.
+        
         if Tq == Tk: # Square case (Training or Prefill)
             y2 = att @ y1 # A @ (A @ v)
         else:

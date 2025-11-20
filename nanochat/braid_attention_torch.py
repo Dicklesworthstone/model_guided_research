@@ -52,43 +52,22 @@ class BraidCausalSelfAttention(nn.Module):
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
             
         # Braid Attention Logic
-        # 1. Compute "sorting scores" for Q and K.
-        # 2. Use sorting permutation to reorder V?
-        # The JAX code describes a process: "Score each token... Output permutation placing aggregator first... Output w = sigma^k... execute left->right."
+        # 1. Compute "sorting scores" for Q and K using the learned braid_score network.
+        # This implements a "Priority-based" attention where interaction is determined by the sum of priorities.
+        # Braid Crossing: (x, y) -> (x+y, y). Aggregation order matters.
+        # Here we approximate the "selection probability" p_ij ~ Sigmoid(Score(q_i) + Score(k_j)).
         
-        # Interpretation for Standard Attention Replacement:
-        # We want a "braid-like" mixing.
-        # A simple version:
-        # Learn a permutation matrix P based on Q and K compatibility.
-        # Y = P @ V.
-        # This is standard attention if P is softmax(Q @ K.T).
-        # Braid attention usually implies local swaps.
-        # Let's implement a "Braid Sort" attention:
-        # Use Q to query the "sortedness" of K?
+        # q: (B, H, Tq, D)
+        # k: (B, H, Tk, D)
         
-        # Let's stick to the JAX paper's "Aggregator" model.
-        # "Score each non-aggregator token j with p_j... Output pi placing aggregator first... Accumulate."
-        # This sounds like Attention where the Query is the "Aggregator" and Keys/Values are tokens.
-        # The "braid" part is the specific accumulation function via crossings.
-        # Crossing (x, y) -> (x+y, y).
-        # If we chain this: x_agg becomes x_agg + sum(y_j for j in Selected).
-        # This is EXACTLY sum-attention (without softmax normalization, maybe gated).
+        # Score(q): (B, H, Tq, 1)
+        s_q = self.braid_score(q)
+        # Score(k): (B, H, Tk, 1)
+        s_k = self.braid_score(k)
         
-        # So Braid Attention (in this specific restricted form) is:
-        # 1. Score each key k_j against query q_i -> probability p_ij.
-        # 2. Hard/Soft selection of keys.
-        # 3. Sum values v_j weighted by p_ij.
-        # Difference from Softmax:
-        # - Probabilities p_ij are independent (sigmoid), not competing (softmax).
-        # - The aggregation is a direct sum, preserving "invariants" (payload sum).
-        
-        # Impl:
-        # Scores = Sigmoid( (Q @ K.T) / sqrt(d) + Bias )
-        # Y = Scores @ V
-        
-        # Q: (B, H, Tq, D)
-        # K: (B, H, Tk, D)
-        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
+        # Pairwise score: s_q + s_k.T
+        # Shape: (B, H, Tq, Tk)
+        scores = s_q + s_k.transpose(-2, -1)
         
         # Masking
         Tq = q.size(2)
@@ -100,8 +79,7 @@ class BraidCausalSelfAttention(nn.Module):
                  mask = torch.cat([torch.ones(Tq, Tk-Tq, device=q.device, dtype=torch.bool), mask], dim=1)
              scores.masked_fill_(~mask, float('-inf'))
         
-        # Sigmoid instead of Softmax
-        # Note: scores might be very negative due to masking, sigmoid(-inf) = 0. Correct.
+        # Sigmoid to get "independent crossing probabilities"
         attn_weights = torch.sigmoid(scores)
         
         # Normalize? The paper says "accumulate sum(y)", so maybe no normalization?
