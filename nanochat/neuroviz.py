@@ -143,9 +143,8 @@ def _fit_2d(emb: np.ndarray) -> np.ndarray:
                 random_state=42,
             )
             return red.fit_transform(emb)
-        except Exception:
-            # UMAP failed (e.g. too few neighbors), fall back
-            pass
+        except Exception as err:
+            print(f"[neuroviz] UMAP failed, falling back to PCA/random: {err}")
             
     if _HAS_SKLEARN:
         return PCA(n_components=2).fit_transform(emb)

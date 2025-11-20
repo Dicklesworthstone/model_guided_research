@@ -5,7 +5,7 @@ Utilities for generating training report cards. More messy code than usual, will
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import shlex
 import socket
 import datetime
@@ -15,12 +15,17 @@ from typing import Any, Dict, List
 import psutil
 from nanochat.torch_imports import torch
 
+ALLOWED_CMDS = {"git", "files-to-prompt"}
+
+
 def run_command(cmd):
-    """Run a shell command and return output, or None if it fails."""
+    """Run a whitelisted shell command and return output, or None if it fails."""
     try:
         if isinstance(cmd, str):
             cmd = shlex.split(cmd)
-        result = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=5)
+        if not cmd or cmd[0] not in ALLOWED_CMDS:
+            return None
+        result = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=5)  # nosec B603 safe allowlist
         if result.returncode == 0:
             return result.stdout.strip()
         return None

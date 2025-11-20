@@ -55,8 +55,9 @@ def _fit_2d(emb):
         try:
             red = umap.UMAP(n_neighbors=min(15, emb.shape[0]-1), min_dist=0.3, metric="cosine", random_state=42)
             return red.fit_transform(emb)
-        except:
-            pass
+        except Exception as err:
+            # UMAP can fail on degenerate embeddings; fall back gracefully while surfacing the reason
+            print(f"[NeuroViz] UMAP reduction failed: {err}")
             
     if _HAS_SKLEARN:
         return PCA(n_components=2).fit_transform(emb)
@@ -137,4 +138,3 @@ class NeuroVizManager:
         serializable_m = {k: _to_np(v).tolist() if isinstance(v, (np.ndarray, jax.Array)) else v for k, v in m.items()}
         with open(data_path, "w") as f:
             json.dump(serializable_m, f)
-

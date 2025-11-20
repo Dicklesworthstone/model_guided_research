@@ -135,8 +135,10 @@ def batch_sequences_lm(tokenizer, prompts):
     tokens = tokenizer(prompts, prepend=tokenizer.get_bos_token_id())
     tokens_without, tokens_with = tokens
     start_idx, end_idx = len(tokens_without), len(tokens_with)
-    assert start_idx < end_idx, "prompt without is supposed to be a prefix of prompt with"
-    assert tokens_without == tokens_with[:start_idx], "prompt without is supposed to be a prefix of prompt with"
+    if not start_idx < end_idx:
+        raise ValueError("prompt without is supposed to be a prefix of prompt with")
+    if tokens_without != tokens_with[:start_idx]:
+        raise ValueError("prompt without is supposed to be a prefix of prompt with")
     # we only need the with continuation prompt in the LM task, i.e. batch size of 1
     return [tokens_with], [start_idx], [end_idx]
 
@@ -175,7 +177,7 @@ def evaluate_example(idx, model, tokenizer, data, device, task_meta):
     # Sample few-shot examples (excluding current item)
     fewshot_examples = []
     if num_fewshot > 0:
-        rng = random.Random(1234 + idx)
+        rng = random.Random(1234 + idx)  # nosec B311 deterministic sampling for evaluation only
         available_indices = [i for i in range(len(data)) if i != idx]
         fewshot_indices = rng.sample(available_indices, num_fewshot)
         fewshot_examples = [data[i] for i in fewshot_indices]
@@ -204,8 +206,8 @@ def evaluate_example(idx, model, tokenizer, data, device, task_meta):
                 new_tokens.append(t[-max_tokens:]) # take the last max_tokens tokens
                 new_start_idxs.append(s - num_to_crop) # shift the indices down
                 new_end_idxs.append(e - num_to_crop)
-                assert s - num_to_crop >= 0, "this should never happen right?"
-                assert e - num_to_crop >= 0, "this should never happen right?"
+                if s - num_to_crop < 0 or e - num_to_crop < 0:
+                    raise ValueError("negative crop length encountered")
             else:
                 new_tokens.append(t) # keep unchanged
                 new_start_idxs.append(s)
