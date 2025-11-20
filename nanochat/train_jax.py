@@ -96,6 +96,7 @@ def train_step(state, batch, targets):
         
     grad_fn = jax.value_and_grad(loss_fn)
     loss, grads = grad_fn(state.params)
+    grad_norm = optax.global_norm(grads)
     
     # Pass loss_fn as an extra_args to the optimizer update if HOSS is used
     # Optax's apply_gradients will pass extra_args to the tx.update function
@@ -106,12 +107,14 @@ def train_step(state, batch, targets):
     new_params = optax.apply_updates(state.params, updates)
     state = state.replace(step=state.step + 1, params=new_params, opt_state=new_opt_state)
     
-    return state, loss
+    return state, loss, grad_norm
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Train Nanochat JAX")
     parser.add_argument("--optimizer-type", type=str, default="adamw", choices=["adamw", "hoss"], help="Optimizer type")
     parser.add_argument("--attention-type", type=str, default="standard", choices=["standard", "tropical", "ultrametric"], help="Attention mechanism type")
+    parser.add_argument("--learning-rate", type=float, default=6e-4, help="Learning rate (delta for HOSS)")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     args = parser.parse_args()
 
     # Config
@@ -127,10 +130,10 @@ def main():
     config.optimizer_type = args.optimizer_type
     config.attention_type = args.attention_type
     
-    print(f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}")
+    batch_size = args.batch_size
+    learning_rate = args.learning_rate
     
-    batch_size = 8
-    learning_rate = 6e-4
+    print(f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}, LR={learning_rate}, BS={batch_size}")
     
     # RNG
     rng = jax.random.PRNGKey(42)
@@ -138,6 +141,15 @@ def main():
     
     # Initialize
     print("Initializing model...")
+    # Check backend
+    try:
+        backend = jax.lib.xla_bridge.get_backend().platform
+        print(f"JAX is using backend: {backend.upper()}")
+        if backend == 'cpu':
+            print("WARNING: JAX IS RUNNING ON CPU! CUDA/TPU WAS NOT DETECTED OR FAILED TO INITIALIZE.")
+    except Exception:
+        print("Could not determine JAX backend.")
+
     state = create_train_state(init_rng, config, learning_rate)
     print(f"Model initialized. Params: {sum(x.size for x in jax.tree_util.tree_leaves(state.params))/1e6:.2f}M")
 
@@ -162,23 +174,41 @@ def main():
         step = 0
         t0 = time.time()
         
+        # For stalled loss detection
+        last_loss = None
+        stagnation_count = 0
+        
         for inputs, targets in loader:
             # Convert to numpy/jax
             inputs = jnp.array(inputs.numpy())
             targets = jnp.array(targets.numpy())
             
-            state, loss = train_step(state, inputs, targets)
+            state, loss, grad_norm = train_step(state, inputs, targets)
             
             # Check for NaN
             if jnp.isnan(loss):
                 raise ValueError(f"NaN loss detected at step {step}!")
 
+            loss_float = float(loss)
+            
+            # Check for stagnation
+            if last_loss is not None:
+                if abs(loss_float - last_loss) < 1e-6:
+                    stagnation_count += 1
+                else:
+                    stagnation_count = 0
+            
+            last_loss = loss_float
+
             if step % 1 == 0:
                 t1 = time.time()
                 dt = t1 - t0
                 t0 = t1
-                print(f"Step {step}: loss {float(loss):.4f}, time {float(dt*1000):.2f}ms/step")
-                
+                print(f"Step {step}: loss {loss_float:.4f}, grad_norm {float(grad_norm):.4f}, time {float(dt*1000):.2f}ms/step")
+            
+            if stagnation_count >= 2:
+                raise RuntimeError(f"Loss stagnated at {loss_float:.4f} for {stagnation_count+1} steps. Aborting to save time.")
+
             step += 1
             if step >= 20: # Short run for debug
                 break
