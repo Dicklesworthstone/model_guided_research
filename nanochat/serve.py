@@ -3,45 +3,55 @@ Inference Server for NanoChat (JAX)
 """
 
 import os
-import sys
-import time
 import json
-import asyncio
-from typing import List, Optional
-from pydantic import BaseModel
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import List
+
+try:
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from pydantic import BaseModel, Field
+except ModuleNotFoundError as e:
+    raise ImportError(
+        "nanochat.serve requires optional server dependencies. "
+        "Install them with `uv sync --extra server`."
+    ) from e
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from rich.console import Console
 
 # Import local modules
 from nanochat.gpt_jax import GPT, GPTConfig
 from nanochat.tokenizer import get_tokenizer
 
-app = FastAPI()
+console = Console()
+_UI_PATH = Path(__file__).with_name("ui.html")
 
 # Global state
 model_state = None
 tokenizer = None
 config = None
 
+
 class ChatMessage(BaseModel):
     role: str
     content: str
 
+
 class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
-    temperature: float = 0.8
-    top_k: int = 50
-    max_tokens: int = 512
+    temperature: float = Field(default=0.8, ge=0.0)
+    top_k: int = Field(default=50, ge=1)
+    max_tokens: int = Field(default=512, ge=1, le=4096)
 
-def load_model():
+
+def load_model() -> None:
     global model_state, tokenizer, config
     
-    print("Loading model...")
+    console.print("[bold cyan]Loading model...[/bold cyan]")
     config = GPTConfig()
     # Use the same config as training
     config.n_layer = 4
@@ -61,18 +71,23 @@ def load_model():
         "apply_fn": model.apply
     }
     
-    print("Loading tokenizer...")
+    console.print("[bold cyan]Loading tokenizer...[/bold cyan]")
     tokenizer = get_tokenizer()
-    print("Model and tokenizer loaded.")
+    console.print("[bold green]Model and tokenizer loaded.[/bold green]")
 
-@app.on_event("startup")
-async def startup_event():
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     load_model()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 @app.get("/", response_class=HTMLResponse)
-async def get_ui():
-    with open("nanochat/ui.html", "r") as f:
-        return f.read()
+async def get_ui() -> str:
+    return _UI_PATH.read_text(encoding="utf-8")
 
 @app.get("/health")
 async def health():
@@ -85,10 +100,6 @@ async def chat_completions(request: ChatCompletionRequest):
     if not model_state:
         return JSONResponse(status_code=503, content={"error": "Model not loaded"})
 
-    # Render conversation
-    # We need to convert pydantic models to dicts for tokenizer
-    conversation = {"messages": [m.dict() for m in request.messages]}
-    
     # Tokenize
     # We use the tokenizer's render_conversation
     # But wait, render_conversation returns (ids, mask). We just need ids.
@@ -130,17 +141,17 @@ async def chat_completions(request: ChatCompletionRequest):
             if request.temperature > 0:
                 next_token_logits = next_token_logits / request.temperature
                 # Top-k
-                # JAX top_k
-                top_k_logits, top_k_indices = jax.lax.top_k(next_token_logits, request.top_k)
+                k = min(int(request.top_k), int(next_token_logits.shape[-1]))
+                top_k_logits, top_k_indices = jax.lax.top_k(next_token_logits, k)
                 # We need to sample from these.
                 # Convert to numpy for sampling (easier)
                 probs = jax.nn.softmax(top_k_logits)
                 probs = np.array(probs)
                 indices = np.array(top_k_indices)
                 
-                next_token_idx = np.random.choice(indices, p=probs)
+                next_token_idx = int(np.random.choice(indices, p=probs))
             else:
-                next_token_idx = np.argmax(next_token_logits)
+                next_token_idx = int(np.argmax(next_token_logits))
             
             # Decode
             token_str = tokenizer.decode([next_token_idx])
@@ -156,9 +167,6 @@ async def chat_completions(request: ChatCompletionRequest):
             # if next_token_idx == tokenizer.eos_token_id:
             #     break
             
-            # Small sleep to simulate streaming if too fast
-            # await asyncio.sleep(0.01)
-
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
 if __name__ == "__main__":
