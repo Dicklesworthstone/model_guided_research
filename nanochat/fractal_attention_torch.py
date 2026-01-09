@@ -17,7 +17,7 @@ PyTorch Implementation:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb
+from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
 
 class FractalCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -53,13 +53,17 @@ class FractalCausalSelfAttention(nn.Module):
 
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
-            
+
+        if self.n_kv_head != self.n_head:
+            # Ensure K/V head count matches Q before routing (router assumes n_head).
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
+
         # Fractal Addressing / Similarity
         # We compute the "Soft Path" for Q and K.
         # Path is a sequence of categorical distributions over m branches at each depth d.
         # q_route: (B, H, Tq, Depth, m)
         q_route = self.router(q).view(B, self.n_head, -1, self.depth, self.m)
-        k_route = self.router(k).view(B, self.n_kv_head, -1, self.depth, self.m)
+        k_route = self.router(k).view(B, self.n_head, -1, self.depth, self.m)
         
         # Softmax over m to get branch probabilities
         q_prob = F.softmax(q_route, dim=-1)
@@ -83,7 +87,7 @@ class FractalCausalSelfAttention(nn.Module):
         # Score = (Q_flat . K_flat) / sqrt(Depth)
         
         q_flat = q_prob.view(B, self.n_head, -1, self.depth * self.m)
-        k_flat = k_prob.view(B, self.n_kv_head, -1, self.depth * self.m)
+        k_flat = k_prob.view(B, self.n_head, -1, self.depth * self.m)
         
         # We treat these probability vectors as the keys/queries for attention
         scores = (q_flat @ k_flat.transpose(-2, -1)) * (1.0 / (self.depth ** 0.5))
@@ -91,12 +95,9 @@ class FractalCausalSelfAttention(nn.Module):
         # Masking
         Tq = q.size(2)
         Tk = k.size(2)
-        is_causal = (kv_cache is None) or (Tq == Tk)
-        if is_causal and Tq > 1:
-             mask = torch.tril(torch.ones(Tq, Tk, device=q.device, dtype=torch.bool))
-             if Tk > Tq:
-                 mask = torch.cat([torch.ones(Tq, Tk-Tq, device=q.device, dtype=torch.bool), mask], dim=1)
-             scores.masked_fill_(~mask, float('-inf'))
+        if kv_cache is None or Tq > 1:
+            mask = causal_attn_mask(Tq, Tk, device=q.device)
+            scores.masked_fill_(~mask, float("-inf"))
              
         attn_weights = F.softmax(scores, dim=-1)
         

@@ -128,26 +128,19 @@ class TropicalCausalSelfAttention(nn.Module):
         attn_scores = tropical_dot_product(q, k)
         
         if mask is not None:
-            attn_scores = attn_scores + mask
+            # `mask` may be boolean (Flax causal masks) or additive (0 / -inf) from KV-cache mode.
+            if mask.dtype == jnp.bool_:
+                attn_scores = jnp.where(mask, attn_scores, -jnp.inf)
+            else:
+                attn_scores = attn_scores + mask
         else:
             causal_mask = jnp.tril(jnp.ones((T, T), dtype=jnp.bool_))
             causal_mask = jnp.where(causal_mask, 0, -jnp.inf)
             attn_scores = attn_scores + causal_mask
 
-        # Softmax or Hardmax?
-        # To be differentiable and usable in standard training, we use Softmax.
-        # This makes it "Soft Tropical Attention".
-        attn_weights = jax.nn.softmax(attn_scores, axis=-1)
-        
-        # Value aggregation
-        # Standard: sum(weights * v)
-        # Tropical: max(weights + v)? 
-        # If we want to go Full Tropical, we should use max-plus for values too.
-        # But that would require "Hard" selection or a soft-max approximation.
-        # Let's stick to "Tropical Similarity, Standard Aggregation" for the first hybrid.
-        # This preserves the "1-Lipschitz" property of the scoring function at least.
-        
-        y = jnp.einsum('bhqk,bhkd->bhqd', attn_weights, v)
+        # Full max-plus (tropical) aggregation:
+        # y_d = max_k (score(q,k) + v_{k,d})
+        y = jnp.max(attn_scores[..., None] + v[:, :, None, :, :], axis=3)
 
         # Re-assemble
         y = jnp.transpose(y, (0, 2, 1, 3)).reshape(B, T, C)

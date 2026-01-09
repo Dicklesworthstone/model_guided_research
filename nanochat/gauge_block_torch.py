@@ -21,6 +21,10 @@ class GaugeBlock(nn.Module):
         self.config = config
         self.layer_idx = layer_idx
         self.dim = config.n_embd
+        if self.dim % 2 != 0:
+            raise ValueError("GaugeBlock requires an even n_embd (pairwise Givens rotations).")
+        if config.n_kv_head != config.n_head:
+            raise ValueError("GaugeBlock does not support GQA; require n_kv_head == n_head.")
         
         # Lie Algebra Generators
         # We learn a skew-symmetric matrix A (generator of SO(D)) per token.
@@ -74,6 +78,11 @@ class GaugeBlock(nn.Module):
         return x_new
 
     def forward(self, x, cos_sin, kv_cache):
+        if kv_cache is not None:
+            raise NotImplementedError(
+                "GaugeBlock does not yet support KV-cache incremental decoding; "
+                "use non-cached generation or standard attention for inference."
+            )
         B, T, C = x.size()
         
         # 1. Compute Local Connections A_l (Angles)

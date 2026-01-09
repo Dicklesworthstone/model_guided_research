@@ -6,7 +6,7 @@ Implements Higher-Order Attention via multi-hop diffusion, mimicking random walk
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb
+from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
 
 class SimplicialCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -38,8 +38,13 @@ class SimplicialCausalSelfAttention(nn.Module):
         q, k = norm(q), norm(k)
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
 
+        t0 = None
         if kv_cache is not None:
+            t0 = kv_cache.get_pos()
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
+
+        if self.n_kv_head != self.n_head:
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
         
         # Standard Attention Weights
         att = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
@@ -47,12 +52,9 @@ class SimplicialCausalSelfAttention(nn.Module):
         # Masking
         Tq = q.size(2)
         Tk = k.size(2)
-        is_causal = (kv_cache is None) or (Tq == Tk)
-        if is_causal and Tq > 1:
-             mask = torch.tril(torch.ones(Tq, Tk, device=q.device, dtype=torch.bool))
-             if Tk > Tq:
-                 mask = torch.cat([torch.ones(Tq, Tk-Tq, device=q.device, dtype=torch.bool), mask], dim=1)
-             att.masked_fill_(~mask, float('-inf'))
+        if kv_cache is None or Tq > 1:
+            mask = causal_attn_mask(Tq, Tk, device=q.device)
+            att.masked_fill_(~mask, float("-inf"))
              
         att = F.softmax(att, dim=-1) # (B, H, Tq, Tk)
         
@@ -60,25 +62,22 @@ class SimplicialCausalSelfAttention(nn.Module):
         y1 = att @ v
         
         # 2-hop Aggregation (Simplicial/Paths)
-        # Ideally A @ A @ v, but A is (Tq, Tk) and might be rectangular if cached.
-        # If cached, Tq=1, Tk=large. A @ A is not well defined unless A is square (T, T).
-        # In inference (Tq=1), we can't easily do 2-hop without full history of A.
-        # Simplification: During training (Tq=Tk), compute A @ y1.
-        # During inference, ignore 2-hop or approximate?
-        # For this "modular" demo, we'll support it fully during training/prefill, and skip/approx during generation.
-        
-        # WARNING: Inference Inconsistency
-        # In inference (Tq=1), we lack the history of y1 to compute the 2nd hop correctly.
-        # We fallback to y2 = y1, effectively ignoring the 2nd hop mixing during generation.
-        
-        if Tq == Tk: # Square case (Training or Prefill)
-            y2 = att @ y1 # A @ (A @ v)
+        #
+        # Cache-backed 2-hop: y2 = A @ y1_all, where y1_all stores the 1-hop outputs
+        # for every past token (and is updated for the current chunk).
+        if kv_cache is None:
+            y2 = att @ y1  # A @ (A @ v)
         else:
-            # Inference step.
-            # We only have the current row of A. We don't have previous rows to do the second hop.
-            # So y2 is just y1 (identity fallback) or 0.
-            # Let's reuse y1 to keep scale.
-            y2 = y1 
+            if t0 is None:
+                raise RuntimeError("Expected t0 to be set when kv_cache is provided")
+            kv_cache.ensure_simplicial_y1_cache(
+                num_heads=self.n_head,
+                head_dim=self.head_dim,
+                dtype=y1.dtype,
+                device=y1.device,
+            )
+            y1_all = kv_cache.insert_simplicial_y1(self.layer_idx, t0, y1)  # (B, H, Tk, D)
+            y2 = att @ y1_all
             
         y = self.mix_1 * y1 + self.mix_2 * y2
         

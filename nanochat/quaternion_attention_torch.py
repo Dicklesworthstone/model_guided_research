@@ -6,7 +6,7 @@ Implements "Rotor-Gate" style attention where features are treated as quaternion
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb
+from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
 
 def qmul(a, b):
     """
@@ -83,17 +83,19 @@ class QuaternionCausalSelfAttention(nn.Module):
 
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
+
+        if self.n_kv_head != self.n_head:
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
             
         # Interpret as Quaternions
         # Reshape (..., D) -> (..., D/4, 4)
         q_q = q.view(B, self.n_head, -1, self.head_dim // 4, 4)
-        k_q = k.view(B, self.n_kv_head, -1, self.head_dim // 4, 4)
-        v_q = v.view(B, self.n_kv_head, -1, self.head_dim // 4, 4)
+        k_q = k.view(B, self.n_head, -1, self.head_dim // 4, 4)
+        v_q = v.view(B, self.n_head, -1, self.head_dim // 4, 4)
         
-        # Normalize to unit quaternions for "Rotor" interpretation?
-        # The paper/code suggests unit rotors. Let's normalize K.
+        # Normalize per-channel quaternions so rotor multiplications are norm-preserving.
+        q_q = qnormalize(q_q)
         k_q = qnormalize(k_q)
-        # q_q = qnormalize(q_q) # Maybe?
 
         # Attention Score = ScalarPart(Q * K_conj)
         # Q: (B, H, Tq, N, 4)
@@ -125,18 +127,14 @@ class QuaternionCausalSelfAttention(nn.Module):
         # 1. Compute Relative Rotors R_ij = Q_i * K_j_conj
         # This is (Tq, Tk, N, 4). Heavy!
         # If we simply compute standard attention scores:
-        scores = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
+        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
         
         # Masking
         Tq = q.size(2)
         Tk = k.size(2)
-        is_causal = (kv_cache is None) or (Tq == Tk) # rough check
-        
-        if is_causal and Tq > 1:
-             mask = torch.tril(torch.ones(Tq, Tk, device=q.device, dtype=torch.bool))
-             if Tk > Tq:
-                 mask = torch.cat([torch.ones(Tq, Tk-Tq, device=q.device, dtype=torch.bool), mask], dim=1)
-             scores.masked_fill_(~mask, float('-inf'))
+        if kv_cache is None or Tq > 1:
+            mask = causal_attn_mask(Tq, Tk, device=q.device)
+            scores.masked_fill_(~mask, float("-inf"))
              
         probs = F.softmax(scores, dim=-1) # (B, H, Tq, Tk)
         

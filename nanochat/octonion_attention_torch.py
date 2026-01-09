@@ -7,7 +7,7 @@ Octonions are 8D hypercomplex numbers. Multiplication is non-associative.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb
+from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
 from nanochat.quaternion_attention_torch import qmul, qconj, qnormalize
 
 # Octonion Multiplication via Cayley-Dickson
@@ -88,14 +88,18 @@ class OctonionCausalSelfAttention(nn.Module):
 
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
+
+        if self.n_kv_head != self.n_head:
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
             
         # Interpret as Octonions
         # (..., D) -> (..., D/8, 8)
         q_o = q.view(B, self.n_head, -1, self.head_dim // 8, 8)
-        k_o = k.view(B, self.n_kv_head, -1, self.head_dim // 8, 8)
-        v_o = v.view(B, self.n_kv_head, -1, self.head_dim // 8, 8)
+        k_o = k.view(B, self.n_head, -1, self.head_dim // 8, 8)
+        v_o = v.view(B, self.n_head, -1, self.head_dim // 8, 8)
         
-        # Normalize Keys (Rotor logic)
+        # Normalize queries/keys so octonion multiplications act as norm-preserving "rotors".
+        q_o = onormalize(q_o)
         k_o = onormalize(k_o)
         
         # Attention Score
@@ -105,13 +109,9 @@ class OctonionCausalSelfAttention(nn.Module):
         # Masking
         Tq = q.size(2)
         Tk = k.size(2)
-        is_causal = (kv_cache is None) or (Tq == Tk)
-        
-        if is_causal and Tq > 1:
-             mask = torch.tril(torch.ones(Tq, Tk, device=q.device, dtype=torch.bool))
-             if Tk > Tq:
-                 mask = torch.cat([torch.ones(Tq, Tk-Tq, device=q.device, dtype=torch.bool), mask], dim=1)
-             scores.masked_fill_(~mask, float('-inf'))
+        if kv_cache is None or Tq > 1:
+            mask = causal_attn_mask(Tq, Tk, device=q.device)
+            scores.masked_fill_(~mask, float("-inf"))
              
         probs = F.softmax(scores, dim=-1) # (B, H, Tq, Tk)
         
@@ -148,6 +148,7 @@ class OctonionCausalSelfAttention(nn.Module):
         # This will OOM if not careful.
         # Loop over Tq?
         
+        k_conj = oconj(k_o)
         y_list = []
         for i in range(Tq):
             # q_i: (B, H, 1, N, 8)
@@ -158,7 +159,6 @@ class OctonionCausalSelfAttention(nn.Module):
             
             # R_i = q_i * k_all_conj
             # We need to broadcast q_i to Tk
-            k_conj = oconj(k_o)
             r_i = omul(q_i, k_conj) # (B, H, Tk, N, 8)
             
             # term = r_i * v_all
@@ -166,11 +166,10 @@ class OctonionCausalSelfAttention(nn.Module):
             
             # weighted sum
             # probs_i: (B, H, 1, Tk)
-            p_i = probs[:, :, i:i+1, :]
-            p_i = p_i.unsqueeze(-1).unsqueeze(-1) # (B, H, 1, Tk, 1, 1)
+            p_i = probs[:, :, i, :].unsqueeze(-1).unsqueeze(-1)  # (B, H, Tk, 1, 1)
             
             # sum over Tk (dim 2)
-            y_i = (term * p_i).sum(dim=2) # (B, H, 1, N, 8)
+            y_i = (term * p_i).sum(dim=2).unsqueeze(2)  # (B, H, 1, N, 8)
             y_list.append(y_i)
             
         y_o = torch.cat(y_list, dim=2) # (B, H, Tq, N, 8)

@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask
+
 class SurrealProbe:
     def __init__(self, model, enabled=False):
         self.model = model
@@ -87,7 +89,6 @@ class SurrealCausalSelfAttention(nn.Module):
         v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
 
         # RoPE
-        from nanochat.model_utils import norm, apply_rotary_emb
         cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
@@ -96,7 +97,16 @@ class SurrealCausalSelfAttention(nn.Module):
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
             
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        Tq = q.size(2)
+        Tk = k.size(2)
+        enable_gqa = self.n_head != self.n_kv_head
+        if kv_cache is None or Tq == Tk:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=enable_gqa)
+        elif Tq == 1:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=False, enable_gqa=enable_gqa)
+        else:
+            attn_mask = causal_attn_mask(Tq, Tk, device=q.device)
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, enable_gqa=enable_gqa)
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
