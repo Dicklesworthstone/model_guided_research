@@ -2,14 +2,17 @@
 Common utilities for nanochat.
 """
 
+import logging
 import os
 import re
-import logging
-import urllib.request
 import urllib.parse
-from nanochat.torch_imports import torch
+import urllib.request
+
 import torch.distributed as dist
 from filelock import FileLock
+
+from nanochat.torch_imports import torch
+
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter that adds colors to log messages."""
@@ -84,12 +87,15 @@ def download_file_with_lock(url, filename, postprocess_fn=None):
         if parsed.scheme not in {"http", "https"}:
             raise ValueError(f"Refusing to download from non-http(s) URL: {url}")
         print(f"Downloading {url}...")
-        with urllib.request.urlopen(url) as response:  # nosec B310 scheme validated above
-            content = response.read() # bytes
-
-        # Write to local file
-        with open(file_path, 'wb') as f:
-            f.write(content)
+        temp_path = file_path + ".tmp"
+        with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310 scheme validated above
+            with open(temp_path, "wb") as f:
+                while True:
+                    chunk = response.read(1024 * 1024)  # 1MiB
+                    if not chunk:
+                        break
+                    f.write(chunk)
+        os.replace(temp_path, file_path)
         print(f"Downloaded to {file_path}")
 
         # Run the postprocess function if provided
@@ -124,7 +130,7 @@ def is_ddp():
 def get_dist_info():
     if is_ddp():
         if not all(var in os.environ for var in ['RANK', 'LOCAL_RANK', 'WORLD_SIZE']):
-            raise EnvironmentError("DDP env vars RANK/LOCAL_RANK/WORLD_SIZE required")
+            raise OSError("DDP env vars RANK/LOCAL_RANK/WORLD_SIZE required")
         ddp_rank = int(os.environ['RANK'])
         ddp_local_rank = int(os.environ['LOCAL_RANK'])
         ddp_world_size = int(os.environ['WORLD_SIZE'])
@@ -143,7 +149,24 @@ def autodetect_device_type():
     print0(f"Autodetected device type: {device_type}")
     return device_type
 
-def compute_init(device_type="cuda"): # cuda|cpu|mps
+
+def seed_everything(seed: int) -> None:
+    """Seed Python, NumPy, and PyTorch RNGs for reproducibility."""
+    if seed < 0:
+        raise ValueError("seed must be non-negative")
+
+    import random
+
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def compute_init(device_type: str = "cuda", *, seed: int = 42): # cuda|cpu|mps
     """Basic initialization that we keep doing over and over, so make common."""
     if device_type not in ["cuda", "mps", "cpu"]:
         raise ValueError("Invalid device type atm")
@@ -151,15 +174,6 @@ def compute_init(device_type="cuda"): # cuda|cpu|mps
         raise RuntimeError("Your PyTorch installation is not configured for CUDA but device_type is 'cuda'")
     if device_type == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("Your PyTorch installation is not configured for MPS but device_type is 'mps'")
-
-    # Reproducibility
-    # Note that we set the global seeds here, but most of the code uses explicit rng objects.
-    # The only place where global rng might be used is nn.Module initialization of the model weights.
-    torch.manual_seed(42)
-    if device_type == "cuda":
-        torch.cuda.manual_seed(42)
-    # skipping full reproducibility for now, possibly investigate slowdown later
-    # torch.use_deterministic_algorithms(True)
 
     # Precision
     if device_type == "cuda":
@@ -174,6 +188,12 @@ def compute_init(device_type="cuda"): # cuda|cpu|mps
         dist.barrier()
     else:
         device = torch.device(device_type) # mps|cpu
+
+    # Reproducibility
+    # Note: seeding must happen after selecting the CUDA device in DDP so ranks don't seed the wrong GPU.
+    seed_everything(int(seed))
+    if ddp_rank == 0:
+        logger.info(f"Seeded RNGs with seed={seed}")
 
     if ddp_rank == 0:
         logger.info(f"Distributed world size: {ddp_world_size}")
