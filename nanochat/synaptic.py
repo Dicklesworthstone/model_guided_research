@@ -18,19 +18,15 @@
 #
 # This file is intentionally verbose and highly instrumented for clarity.
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple, List, Dict, cast
+import os
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from nanochat.torch_imports import torch, nn, F, Tensor
-from decouple import Config as DecoupleConfig, RepositoryEnv
-
-# Initialize decouple config
-try:
-    decouple_config = DecoupleConfig(RepositoryEnv(".env"))
-except Exception:
-    from decouple import Config, AutoConfig
-    decouple_config = Config(RepositoryEnv(".env")) if False else AutoConfig()
+from nanochat.model_utils import causal_attn_mask, repeat_kv_heads
 
 
 # -----------------------------------------------------------------------------
@@ -56,6 +52,12 @@ def _cosine(u: Tensor, v: Tensor, eps=1e-8) -> Tensor:
     v = v / (v.norm(dim=-1, keepdim=True) + eps)
     return (u * v).sum(dim=-1)
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 # -----------------------------------------------------------------------------
 # Config
@@ -76,6 +78,7 @@ class SynapticConfig:
     syt1_slope: float = 8.0
     syt7_slope: float = 3.0
     cpx_thresh: float = 0.55
+    complexin_bias: float = 0.0
     doc2_gain: float = 0.08
     prime_rate: float = 0.075
     unprime_per_release: float = 0.05
@@ -101,6 +104,8 @@ class SynapticConfig:
     # Attention
     lambda_loge: float = 1.0
     barrier_strength: float = 0.1
+    epsilon: float = 1e-6
+    use_flex_attention: bool = False
     
     # Postsynaptic Plasticity
     post_fast_decay: float = 0.95
@@ -128,10 +133,10 @@ class SynapticConfig:
     xi_dim: int = 4  # [alpha_fatigue, alpha_energy, camkii_gain, pp1_gain]
     
     # Native (Rust) Kernel Toggles
-    native_presyn: bool = decouple_config("BIO_FUSED_PRESYN", default=False, cast=bool)
-    native_metrics: bool = decouple_config("BIO_FUSED_METRICS", default=False, cast=bool)
-    native_genetics: bool = decouple_config("BIO_FUSED_GENETICS", default=False, cast=bool)
-    native_plasticity: bool = decouple_config("BIO_FUSED_PLASTICITY", default=False, cast=bool)
+    native_presyn: bool = _env_bool("BIO_FUSED_PRESYN", default=False)
+    native_metrics: bool = _env_bool("BIO_FUSED_METRICS", default=False)
+    native_genetics: bool = _env_bool("BIO_FUSED_GENETICS", default=False)
+    native_plasticity: bool = _env_bool("BIO_FUSED_PLASTICITY", default=False)
 
 
 # -----------------------------------------------------------------------------
@@ -157,7 +162,8 @@ class SynapticPresyn(nn.Module):
         p1 = torch.sigmoid(self.cfg.syt1_slope * (c - 0.55))
         p7 = torch.sigmoid(self.cfg.syt7_slope * (c - 0.25))
         p = p1 * 0.8 + p7 * 0.2 + self.cfg.doc2_gain * torch.sigmoid(4 * (c - 0.12))
-        p = p * (1.0 / (1.0 + torch.exp((self.cfg.cpx_thresh - c) * 8.0))) * sn
+        cpx_gate = torch.sigmoid(8.0 * (c - self.cfg.cpx_thresh) - 2.0 * (clamp + self.cfg.complexin_bias))
+        p = p * cpx_gate * sn
         return torch.clamp(p, 0, 0.999)
 
     def release(
@@ -176,17 +182,27 @@ class SynapticPresyn(nn.Module):
         device = drive.device
         cfg = self.cfg
 
+        # Keep all presynaptic computations in the state's dtype so scatter_add_ destinations
+        # and sources match even under autocast (e.g. LayerNorm → fp32, matmul → fp16).
+        state_dtype = state["c"].dtype
+        if drive.dtype != state_dtype:
+            drive = drive.to(dtype=state_dtype)
+
         # Gather state for the selected keys
         # state tensors are (B, H, T_keys)
         # We gather along dim 2 (T_keys) using idx
-        c = state["c"].gather(2, idx)
-        c = cfg.tau_c * c + cfg.alpha_c * F.softplus(drive)
+        drive_isfinite = torch.isfinite(drive)
+        drive_safe = torch.where(drive_isfinite, drive, torch.zeros_like(drive))
+        T_key = state["c"].size(2)
+        expand_shape = (B, H, T, T_key)
+        c = state["c"].unsqueeze(2).expand(expand_shape).gather(3, idx)
+        c = cfg.tau_c * c + cfg.alpha_c * F.softplus(drive_safe)
         
-        sn = state["sn"].gather(2, idx)
-        clamp = state["cl"].gather(2, idx)
+        sn = state["sn"].unsqueeze(2).expand(expand_shape).gather(3, idx)
+        clamp = state["cl"].unsqueeze(2).expand(expand_shape).gather(3, idx)
         
         p = self._mix_prob(c, clamp, sn)
-        rrp = state["rrp"].gather(2, idx)
+        rrp = state["rrp"].unsqueeze(2).expand(expand_shape).gather(3, idx)
 
         if train and cfg.stochastic_train_frac > 0:
             # Stochastic release on a fraction of edges
@@ -198,8 +214,9 @@ class SynapticPresyn(nn.Module):
             rel = mask * k_rel + (1 - mask) * (p * rrp)
         else:
             rel = p * rrp
+        rel = torch.where(drive_isfinite, rel, torch.zeros_like(rel))
 
-        amp = state["amp"].gather(2, idx)
+        amp = state["amp"].unsqueeze(2).expand(expand_shape).gather(3, idx)
         e = rel * amp
 
         # Scatter updates back to state
@@ -207,8 +224,6 @@ class SynapticPresyn(nn.Module):
         # Actually, idx is (B, H, T_query, K). Keys are T_key.
         # We scatter_add_ into (B, H, T_key).
         
-        T_key = state["c"].size(2)
-        add = torch.zeros(B, H, T, T_key, device=device, dtype=drive.dtype) # Wait, this is huge (T*T). 
         # We should scatter into (B, H, T_key).
         # idx is (B, H, T, K). We flatten T and K?
         # scatter_add_ expects index to have same number of dimensions.
@@ -235,7 +250,8 @@ class SynapticPresyn(nn.Module):
         
         flat_idx = idx.view(B, H, -1) # (B, H, T*K)
         flat_rel = rel.view(B, H, -1)
-        flat_drive = drive.view(B, H, -1)
+        flat_drive = drive_safe.view(B, H, -1)
+        flat_valid = drive_isfinite.view(B, H, -1).to(flat_rel.dtype)
         flat_amp = amp.view(B, H, -1)
         
         # Accumulators
@@ -247,7 +263,7 @@ class SynapticPresyn(nn.Module):
         
         add_vals.scatter_add_(2, flat_idx, flat_rel)
         drv_vals.scatter_add_(2, flat_idx, flat_drive)
-        snu_vals.scatter_add_(2, flat_idx, torch.ones_like(flat_rel)) # Count of accesses
+        snu_vals.scatter_add_(2, flat_idx, flat_valid) # Count of accesses
         rru_vals.scatter_add_(2, flat_idx, flat_rel)
         ampu_vals.scatter_add_(2, flat_idx, flat_amp)
         
@@ -283,10 +299,12 @@ class SynapticPresyn(nn.Module):
         })
         
         # EMA normalization
+        ema = self.ema_e.detach().clone()
         s = e.detach().abs().mean().clamp_min(1e-3)
         self.ema_e.mul_(0.99).add_(0.01 * s)
-        
-        return e / (self.ema_e + 1e-6)
+
+        # IMPORTANT: Use the EMA value *from before* this update so outputs are causal within a chunk.
+        return e / (ema + self.cfg.epsilon)
 
 
 # -----------------------------------------------------------------------------
@@ -314,6 +332,43 @@ class PostsynapticHebb(nn.Module):
         nn.init.normal_(self.U, std=0.02)
         nn.init.normal_(self.V, std=0.02)
 
+    @torch.no_grad()
+    def _delta_out_from_traces(self, traceU: Tensor, traceV: Tensor) -> Tensor:
+        """
+        Compute the per-output (diagonal) eligibility delta from low-rank traces.
+
+        We interpret (traceU, traceV) as a factorization of an update matrix:
+            dW ≈ traceU @ traceV
+        where traceU has shape (d_k, R) and traceV has shape (R, d_v).
+
+        Since PostsynapticHebb only stores per-output gains (fast/slow are (d_v,)),
+        we reduce dW over the pre-synaptic dimension:
+            delta[v] = mean_k dW[k, v]  ==  (mean_k traceU[k, :]) @ traceV[:, v].
+
+        This is well-defined even when d_k == d_v; we intentionally do NOT use
+        diag(dW), which would be an arbitrary input↔output index pairing.
+        """
+        if traceU.ndim != 2 or traceV.ndim != 2:
+            raise ValueError(
+                "PostsynapticHebb expects 2D traces: traceU (d_k, R), traceV (R, d_v). "
+                f"Got traceU shape={tuple(traceU.shape)} (ndim={traceU.ndim}), "
+                f"traceV shape={tuple(traceV.shape)} (ndim={traceV.ndim})."
+            )
+        if traceU.shape[1] != traceV.shape[0]:
+            raise ValueError(
+                "PostsynapticHebb trace rank mismatch: expected traceU.shape[1] == traceV.shape[0]. "
+                f"Got traceU shape={tuple(traceU.shape)}, traceV shape={tuple(traceV.shape)}."
+            )
+
+        delta_out = traceU.mean(dim=0) @ traceV
+        if delta_out.shape != self.fast.shape:
+            raise ValueError(
+                "PostsynapticHebb trace output mismatch: expected delta_out to match (d_v,). "
+                f"Got delta_out shape={tuple(delta_out.shape)}, expected={tuple(self.fast.shape)}. "
+                f"traceU shape={tuple(traceU.shape)}, traceV shape={tuple(traceV.shape)}."
+            )
+        return delta_out
+
     def forward(self, v: Tensor) -> Tensor:
         diag = 1.0 + self.fast + self.slow
         return v * diag + v @ (self.U @ self.V)
@@ -331,107 +386,13 @@ class PostsynapticHebb(nn.Module):
 
     @torch.no_grad()
     def consolidate(self, traceU: Tensor, traceV: Tensor):
-        # traceU: (d_v, R), traceV: (R, d_v) - accumulated traces
-        # We use the mean of trace product to update slow weights
-        # Note: traceU @ traceV is (d_v, d_v), which is huge.
-        # We only update diagonal 'slow' weights here based on the PDF code?
-        # PDF: self.slow.add_(... * torch.mean(traceU@traceV, dim=...))
-        # Wait, traceU@traceV is a matrix. self.slow is a vector (diagonal).
-        # We should probably take the diagonal of the product or similar.
-        # PDF code: torch.mean(traceU@traceV, dim=0) -> This implies traceU/V have a batch dim?
-        # In SynapticLinear, we accumulate u_buf (in, R) and v_buf (R, out).
-        # Here d_k=in, d_v=out.
-        # If we are in SynapticLinear, d_k=in, d_v=out.
-        # self.slow is (out,).
-        # traceU @ traceV is (in, out).
-        # We can't add (in, out) to (out,).
-        # The PDF code for PostsynapticHebb seems to assume d_k=d_v or it's element-wise?
-        # "self.slow = nn.Parameter(torch.zeros(d_v))"
-        # "return v*diag + v @ (self.U@self.V)"
-        # This implies 'v' is the input? No, 'v' is the output of the linear layer?
-        # In SynapticLinear: y = x @ W.t(); y = self.post(y).
-        # So 'v' in PostsynapticHebb is the output vector (d_out).
-        # So d_k should be d_out?
-        # In SynapticLinear init: self.post = PostsynapticHebb(in_features, out_features, cfg)
-        # But PostsynapticHebb init takes (d_k, d_v).
-        # If it operates on 'y' (output), then d_k is irrelevant?
-        # The PDF code:
-        # self.post(y.view(-1,D)) -> y is (B*T, D).
-        # So PostsynapticHebb takes (D,).
-        # It seems PostsynapticHebb in PDF is designed for the Attention output (D=head_dim).
-        # But SynapticLinear uses it too.
-        
-        # Let's look at SynapticLinear in PDF:
-        # self.post=PostsynapticHebb(in_features,out_features,cfg)
-        # But PostsynapticHebb init: __init__(self, d_k, d_v, cfg).
-        # And forward(self, v).
-        # If v is (Batch, d_v), then U must be (d_v, R).
-        # In SynapticLinear, y is (Batch, out_features).
-        # So d_v = out_features.
-        # What is d_k? It seems unused in __init__ except for maybe U/V shapes?
-        # PDF: self.U=nn.Parameter(torch.zeros(d_v,R))
-        # So d_k is ignored?
-        # Wait, SynapticLinear passes (in, out).
-        # So d_k=in, d_v=out.
-        # But U is (d_v, R).
-        # So U projects Output -> R.
-        # This is Hebbian on the *output* activations?
-        # Yes, "y = self.post(y)".
-        
-        # Consolidate:
-        # self.slow.add_(... * torch.mean(traceU@traceV, dim=0))
-        # traceU is (in, R)? No, in SynapticLinear:
-        # self.u_buf (in, R).
-        # self.v_buf (R, out).
-        # traceU @ traceV -> (in, out).
-        # self.slow is (out,).
-        # Dimensions mismatch!
-        
-        # Maybe the PDF code assumes element-wise or something else.
-        # Or maybe SynapticLinear in PDF is different.
-        # PDF SynapticLinear:
-        # self.u_buf (in, R), self.v_buf (R, out).
-        # forward: self.u_buf...add_(... einsum('bid,br->dr'...) -> Wait.
-        # 'bid' is (Batch, In, D?). No.
-        # x is (Batch, In).
-        # The einsum in PDF is cut off: "torch.einsum('bid,br->dr'..."
-        # This looks like it's accumulating gradients or something.
-        
-        # Let's stick to a safe implementation that makes sense.
-        # We want to update 'slow' (diagonal gain on output) based on Hebbian traces.
-        # If 'slow' is (out,), we need a vector of size (out,).
-        # Maybe we just sum the Hebbian matrix columns?
-        # Or maybe 'slow' should be (in, out)?
-        # The PDF says "self.slow=nn.Parameter(torch.zeros(d_v))". So it's diagonal.
-        # I will assume we take the diagonal of the Hebbian update if it was square, or just the mean activation?
-        # Actually, if we want to reinforce the *existing* weights, we might not need 'slow' to be a matrix.
-        # But standard Hebbian is dW = x * y.
-        # If we only have diagonal 'slow', we can only scale the output.
-        # Let's assume we update 'slow' based on the *output* activity trace?
-        # Or maybe we just ignore the dimension mismatch in the PDF and implement a logical consolidation:
-        # Update 'slow' based on 'camkii' (which tracks output activity).
-        
-        # I will implement a simplified consolidation that updates 'slow' based on 'bdnf' and 'camkii'.
-        
-        delta = (traceU @ traceV).diag() if traceU.shape[0] == traceV.shape[1] else (traceU @ traceV).mean(0)
-        # If shapes don't match for diag (e.g. in != out), we take mean over input dim?
-        # (in, out) -> mean(0) -> (out,).
-        
+        delta = self._delta_out_from_traces(traceU, traceV)
         g = torch.sigmoid(self.camkii - 0.5) - 0.3
-        # We use the passed traces (which are likely u_buf/v_buf from Linear)
-        # We need to ensure shapes align.
-        if delta.shape != self.slow.shape:
-             # Fallback: resize or ignore
-             return
-
         self.slow.add_(self.cfg.post_slow_lr * (1.0 + self.cfg.bdnf_scale * self.bdnf) * delta * g)
 
     @torch.no_grad()
     def hebb_fast(self, traceU: Tensor, traceV: Tensor):
-        # Update fast weights (diagonal)
-        delta = (traceU @ traceV).diag() if traceU.shape[0] == traceV.shape[1] else (traceU @ traceV).mean(0)
-        if delta.shape != self.fast.shape:
-            return
+        delta = self._delta_out_from_traces(traceU, traceV)
         self.fast.mul_(self.cfg.post_fast_decay).add_(self.cfg.post_fast_lr * delta)
 
 
@@ -564,6 +525,99 @@ def build_presyn_state(B: int, T: int, H: int, device, dtype, cfg: SynapticConfi
 
 
 # -----------------------------------------------------------------------------
+# FlexAttention (optional)
+# -----------------------------------------------------------------------------
+
+try:
+    from torch.nn.attention.flex_attention import create_block_mask, flex_attention
+except Exception:  # pragma: no cover - depends on torch build
+    create_block_mask = None
+    flex_attention = None
+    _HAS_FLEX = False
+else:
+    _HAS_FLEX = True
+
+
+class SynapticFlexAttention(nn.Module):
+    cfg: SynapticConfig
+
+    def __init__(self, cfg: SynapticConfig):
+        super().__init__()
+        object.__setattr__(self, "cfg", cfg)
+        if not _HAS_FLEX:
+            raise ImportError(
+                "SynapticFlexAttention requires torch.nn.attention.flex_attention "
+                "(FlexAttention, torch>=2.5)."
+            )
+
+    @torch.compiler.disable
+    def _precompute_bio_factors(self, state: Dict[str, Any]) -> tuple[Tensor, Tensor]:
+        c = state["c"]  # (B, H, T)
+        rrp = state["rrp"]
+        cl = state["cl"]
+        sn = state["sn"]
+        amp = state["amp"]
+
+        p1 = torch.sigmoid(self.cfg.syt1_slope * (c - 0.55))
+        p7 = torch.sigmoid(self.cfg.syt7_slope * (c - 0.25))
+        p = p1 * 0.8 + p7 * 0.2 + self.cfg.doc2_gain * torch.sigmoid(4 * (c - 0.12))
+        cpx_gate = torch.sigmoid(8.0 * (c - self.cfg.cpx_thresh) - 2.0 * (cl + self.cfg.complexin_bias))
+        mix_prob = torch.clamp(p * cpx_gate * sn, 0.0, 0.999)
+
+        key_factor = mix_prob * rrp
+        qamp = amp
+        return key_factor, qamp
+
+    def forward(
+        self,
+        q: Tensor,
+        k: Tensor,
+        v: Tensor,
+        presyn_state: Dict[str, Any],
+        *,
+        ema: Tensor,
+        block_mask,
+        enable_gqa: bool,
+        prefix_len: int,
+    ) -> Tensor:
+        if not _HAS_FLEX or flex_attention is None:
+            raise RuntimeError("FlexAttention requested but unavailable at runtime.")
+        B, H, Tq, D = q.shape
+        Tk = k.size(2)
+
+        key_factor, qamp = self._precompute_bio_factors(presyn_state)
+        # Materialize pointwise-computed tensors so torch.compile/Inductor can lower flex_attention.
+        # Without this, Inductor may keep `key_factor` as a FlexibleLayout ComputedBuffer and fail.
+        key_factor = key_factor.clone()
+        qamp = qamp.clone()
+        barrier_strength = self.cfg.barrier_strength
+        epsilon = self.cfg.epsilon
+        lambda_loge = self.cfg.lambda_loge
+        # Make denom a scalar () tensor so score_mod returns a scalar per element (not shape (1,)).
+        denom = (ema.to(dtype=key_factor.dtype, device=key_factor.device) + epsilon).reshape(())
+
+        def score_mod(score, b, h, q_idx, kv_idx):
+            # NOTE: `score` is already scaled by `scale` inside FlexAttention
+            # (defaults to 1/sqrt(head_dim) when scale=None).
+            scaled_score = score
+
+            kf_val = key_factor[b, h, kv_idx]
+            qa_val = qamp[b, h, kv_idx]
+
+            release = kf_val * torch.sigmoid(scaled_score)
+            e_norm = (release * qa_val) / denom
+            bio_bias = lambda_loge * torch.log(e_norm + epsilon)
+
+            abs_q = prefix_len + q_idx
+            dist = torch.abs(abs_q - kv_idx) / float(max(1, Tk))
+            barrier = barrier_strength * dist
+
+            return scaled_score + bio_bias - barrier
+
+        return flex_attention(q, k, v, score_mod=score_mod, block_mask=block_mask, enable_gqa=enable_gqa)
+
+
+# -----------------------------------------------------------------------------
 # Attention and MLP
 # -----------------------------------------------------------------------------
 
@@ -583,6 +637,7 @@ class SynapticCausalSelfAttention(nn.Module):
         rope_cos,
         rope_sin,
         cfg: SynapticConfig,
+        layer_idx: int = 0,
         attn_drop=0.0,
         resid_drop=0.0,
     ):
@@ -591,8 +646,18 @@ class SynapticCausalSelfAttention(nn.Module):
             raise ValueError("n_embd must be divisible by n_head")
         self.n_head = n_head
         self.n_kv_head = n_kv_head
+        self.layer_idx = int(layer_idx)
         self.head_dim = n_embd // n_head
         object.__setattr__(self, "cfg", cfg)
+        if cfg.use_flex_attention:
+            if not _HAS_FLEX:
+                raise ImportError(
+                    "SynapticConfig.use_flex_attention=True but FlexAttention is unavailable "
+                    "(requires torch>=2.5 and torch.nn.attention.flex_attention)."
+                )
+            self.flex = SynapticFlexAttention(cfg)
+        else:
+            self.flex = None
         self.q_proj = nn.Linear(n_embd, n_head * self.head_dim, bias=False)
         self.k_proj = nn.Linear(n_embd, n_kv_head * self.head_dim, bias=False)
         self.v_proj = nn.Linear(n_embd, n_kv_head * self.head_dim, bias=False)
@@ -606,8 +671,11 @@ class SynapticCausalSelfAttention(nn.Module):
         H = self.n_head if x.size(-1) == self.n_head * self.head_dim else self.n_kv_head
         D = self.head_dim
         x = x.view(x.size(0), x.size(1), H, D)
-        cos = self.cos[:, T0 : T0 + x.size(1), : D // 2].to(x.device).unsqueeze(2)
-        sin = self.sin[:, T0 : T0 + x.size(1), : D // 2].to(x.device).unsqueeze(2)
+        # IMPORTANT: Ensure RoPE tables match the activation dtype.
+        # Mixing bf16 RoPE buffers with fp16 activations will promote to fp32 and break
+        # downstream scatter_add dtypes in the synaptic presyn path.
+        cos = self.cos[:, T0 : T0 + x.size(1), : D // 2].to(device=x.device, dtype=x.dtype).unsqueeze(2)
+        sin = self.sin[:, T0 : T0 + x.size(1), : D // 2].to(device=x.device, dtype=x.dtype).unsqueeze(2)
         x1, x2 = x.split(D // 2, dim=-1)
         xr = torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
         return xr
@@ -620,70 +688,138 @@ class SynapticCausalSelfAttention(nn.Module):
         return x.unsqueeze(2).expand(b, t, nh, nrep, d).reshape(b, t, self.n_head, d)
 
     def forward(self, x: Tensor, kv_cache=None, presyn_state=None, train_mode=True):
-        B, T, C = x.shape
+        B, Tq, C = x.shape
         H = self.n_head
         D = self.head_dim
         device = x.device
         dtype = x.dtype
-        
+
         q = self.q_proj(x)
         k = self.k_proj(x)
-        v = self.v_proj(x).view(B, T, self.n_kv_head, D)
-        
+        v = self.v_proj(x).view(B, Tq, self.n_kv_head, D)
+
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
         q = self._apply_rope(q, T0)
         k = self._apply_rope(k, T0)
-        q = _rmsnorm(q)
-        k = _rmsnorm(k)
-        k = self._repeat_kv(k)
-        v = self._repeat_kv(v)
-        
-        q = q.transpose(1, 2) # (B, H, T, D)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
+        q = _rms(q)
+        k = _rms(k)
+
+        # (B, T, H, D) -> (B, H, T, D)
+        q = q.transpose(1, 2)  # (B, Hq, Tq, D)
+        k = k.transpose(1, 2)  # (B, Hkv, Tq, D)
+        v = v.transpose(1, 2)  # (B, Hkv, Tq, D)
+
+        if kv_cache is not None:
+            k, v = kv_cache.insert_kv(self.layer_idx, k, v)  # (B, Hkv, Tk, D)
+        Tk = k.size(2)
+
+        # Ensure presyn_state is sized to keys (Tk), not just the current query chunk (Tq).
+        if presyn_state is None:
+            presyn_state = build_presyn_state(B, Tk, H, device, dtype, self.cfg)
+        elif presyn_state["c"].size(2) != Tk:
+            old_Tk = presyn_state["c"].size(2)
+            if old_Tk > Tk:
+                raise ValueError(f"presyn_state has more keys than k/v: {old_Tk} > {Tk}")
+            new_state = build_presyn_state(B, Tk, H, device, presyn_state["c"].dtype, self.cfg)
+            for key in ("rrp", "res", "c", "sn", "cl", "amp", "en"):
+                new_state[key][:, :, :old_Tk].copy_(presyn_state[key])
+            for di in range(min(len(new_state["delay"]), len(presyn_state["delay"]))):
+                new_state["delay"][di][:, :, :old_Tk].copy_(presyn_state["delay"][di])
+            presyn_state = new_state
+
+        # Expand KV heads for manual attention / state updates (GQA).
+        k_full, v_full = repeat_kv_heads(k, v, n_head=H)
 
         # Standard attention logits
-        dots = (q @ k.transpose(-1, -2)) / math.sqrt(D)
-        mask = _tri(T, device, dtype)
-        dots = dots + torch.log(mask + 1e-9) # Mask future
-
-        if presyn_state is None:
-            presyn_state = build_presyn_state(B, T, H, device, dtype, self.cfg)
+        dots = (q @ k_full.transpose(-1, -2)) / math.sqrt(D)  # (B, H, Tq, Tk)
+        mask = causal_attn_mask(Tq, Tk, device=q.device).view(1, 1, Tq, Tk)
+        dots = dots.masked_fill(~mask, float("-inf"))
 
         # Top-k selection for synaptic physics (efficiency)
-        topk = min(self.cfg.attn_topk, T)
+        topk = min(self.cfg.attn_topk, Tk)
         # We select topk keys for each query
-        # dots is (B, H, T, T)
+        # dots is (B, H, Tq, Tk)
         vals, idx = torch.topk(dots, topk, dim=-1)
         
         # Drive for presyn is the attention logits (pre-softmax)
         drive = vals
+
+        # --- FlexAttention Path ---
+        if self.flex is not None:
+            if create_block_mask is None:
+                raise RuntimeError("FlexAttention requested but create_block_mask is unavailable.")
+            prefix_len = Tk - Tq
+
+            def causal_mask(b, h, q_idx, kv_idx):
+                return kv_idx <= (prefix_len + q_idx)
+
+            block_mask = create_block_mask(causal_mask, B, H, Tq, Tk, device=device)
+            enable_gqa = self.n_head != self.n_kv_head
+
+            q_f = q
+            k_f = k
+            v_f = v
+            if q_f.dtype != v_f.dtype:
+                q_f = q_f.to(v_f.dtype)
+            if k_f.dtype != v_f.dtype:
+                k_f = k_f.to(v_f.dtype)
+
+            y = self.flex(
+                q_f,
+                k_f,
+                v_f,
+                presyn_state,
+                ema=self.pre.ema_e.detach().clone(),
+                block_mask=block_mask,
+                enable_gqa=enable_gqa,
+                prefix_len=prefix_len,
+            )
+
+            # Update presynaptic state after producing outputs so outputs are causal within a chunk.
+            _ = self.pre.release(presyn_state, drive, idx, train_mode)
+
+            y = y.transpose(1, 2).contiguous().view(B, Tq, H * D)
+            y = self.resid_drop(self.o_proj(y))
+            return y, presyn_state
         
-        # Run presynaptic physics
-        e = self.pre.release(presyn_state, drive, idx, train_mode)
-        
-        # Augment logits
-        # We need to scatter 'e' back into the full logit matrix
-        # e is (B, H, T, K)
-        # We add log(e) to the selected positions
-        
-        aug = torch.zeros_like(dots)
-        # scatter_add_ expects src to be same size as index? No, index size.
-        aug.scatter_add_(-1, idx, self.cfg.lambda_loge * torch.log(1e-6 + e))
-        
+        # Manual attention path.
+        #
+        # Important: keep output computation causal within the current chunk by:
+        #   1) computing the logit augmentation from the *current* state (no within-chunk mutation),
+        #   2) updating presynaptic state only after producing outputs (mirrors FlexAttention path).
+        c = presyn_state["c"]  # (B, H, Tk)
+        rrp = presyn_state["rrp"]
+        cl = presyn_state["cl"]
+        sn = presyn_state["sn"]
+        amp = presyn_state["amp"]
+
+        p1 = torch.sigmoid(self.cfg.syt1_slope * (c - 0.55))
+        p7 = torch.sigmoid(self.cfg.syt7_slope * (c - 0.25))
+        p = p1 * 0.8 + p7 * 0.2 + self.cfg.doc2_gain * torch.sigmoid(4 * (c - 0.12))
+        cpx_gate = torch.sigmoid(8.0 * (c - self.cfg.cpx_thresh) - 2.0 * (cl + self.cfg.complexin_bias))
+        mix_prob = torch.clamp(p * cpx_gate * sn, 0.0, 0.999)
+
+        key_factor = mix_prob * rrp  # (B, H, Tk)
+        denom = self.pre.ema_e.detach().clone().to(dtype=key_factor.dtype, device=key_factor.device) + self.cfg.epsilon
+
+        # Logit augmentation (dense): matches SynapticFlexAttention.score_mod
+        e_norm = (key_factor[:, :, None, :] * torch.sigmoid(dots) * amp[:, :, None, :]) / denom
+        aug = self.cfg.lambda_loge * torch.log(e_norm + self.cfg.epsilon)
+
         # Distance barrier
-        steps = torch.arange(T, device=device, dtype=dtype)
-        dist = (steps.view(1, 1, 1, T) - steps.view(1, 1, T, 1)).abs() / float(max(1, T))
-        aug = aug - self.cfg.barrier_strength * dist
-        
-        logits = dots + aug
+        prefix_len = Tk - Tq
+        q_steps = torch.arange(Tq, device=device, dtype=torch.float32) + float(prefix_len)
+        k_steps = torch.arange(Tk, device=device, dtype=torch.float32)
+        dist = (q_steps.view(1, 1, Tq, 1) - k_steps.view(1, 1, 1, Tk)).abs() / float(max(1, Tk))
+        logits = dots + aug - self.cfg.barrier_strength * dist.to(dots.dtype)
         
         P = F.softmax(logits, dim=-1)
         P = self.attn_drop(P)
 
-        ctx = torch.matmul(P.to(v.dtype), v)
-        y = ctx.transpose(1, 2).contiguous().view(B, T, H * D)
+        ctx = torch.matmul(P.to(v_full.dtype), v_full)
+        y = ctx.transpose(1, 2).contiguous().view(B, Tq, H * D)
         y = self.resid_drop(self.o_proj(y))
+        _ = self.pre.release(presyn_state, drive, idx, train_mode)
         return y, presyn_state
 
 

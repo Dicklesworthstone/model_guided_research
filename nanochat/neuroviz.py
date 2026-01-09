@@ -50,7 +50,10 @@ _HAS_SKLEARN = PCA is not None
 go = _maybe_import("plotly.graph_objects")
 _HAS_PLOTLY = go is not None
 
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ModuleNotFoundError:
+    SummaryWriter = None  # type: ignore[assignment]
 
 # lazy import to avoid circulars
 from .synaptic import SynapticMoE, SynapticExpert
@@ -187,7 +190,7 @@ class LineageBook:
 
     def _persist(self, layer_name: str):
         path = os.path.join(self.save_dir, f"{layer_name}_lineage.json")
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.events.get(layer_name, []), f)
 
     def render_timeline_png(self, layer_name: str, step: int):
@@ -301,7 +304,15 @@ class NeuroVizManager:
     def __init__(self, cfg: NeuroVizConfig):
         self.cfg = cfg
         _ensure_dir(cfg.log_dir)
-        self.tb = SummaryWriter(cfg.log_dir) if cfg.write_tensorboard else None
+        if cfg.write_tensorboard:
+            if SummaryWriter is None:
+                raise ImportError(
+                    "TensorBoard is not installed but `write_tensorboard=True`. "
+                    "Install the optional dependencies (e.g. `uv sync --extra viz`) and retry."
+                )
+            self.tb = SummaryWriter(cfg.log_dir)
+        else:
+            self.tb = None
         self.layers: List[Tuple[str, SynapticMoE]] = []  # (name, module)
         self.lineage = LineageBook(os.path.join(cfg.log_dir, "lineage"))
         self._last_tb = -(10**12)

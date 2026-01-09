@@ -7,13 +7,10 @@ Two implementations are available:
 """
 
 import base64
+import copy
 import json
 import os
-import copy
-from functools import lru_cache
-from typing import Any, Iterable, Sequence, cast
-
-from nanochat.torch_imports import torch
+from typing import Any, cast
 
 SPECIAL_TOKENS = [
     # every document begins with the Beginning of Sequence (BOS) token that delimits documents
@@ -125,11 +122,17 @@ class HuggingFaceTokenizer:
 
     def encode_special(self, text):
         # encode a single special token via exact match
-        return self.tokenizer.token_to_id(text)
+        token_id = self.tokenizer.token_to_id(text)
+        if token_id is None:
+            raise ValueError(f"Special token not found in tokenizer: {text!r}")
+        return token_id
 
     def get_bos_token_id(self):
-        bos = self.encode_special("<|bos|>")
-        return bos
+        # Prefer project-standard "<|bos|>", but fall back to GPT-2-style "<|endoftext|>".
+        try:
+            return self.encode_special("<|bos|>")
+        except ValueError:
+            return self.encode_special("<|endoftext|>")
 
     def encode(self, text, *args, **kwargs):
         kwargs.pop('num_threads', None) # Support num_threads arg but ignore it
@@ -195,10 +198,16 @@ class RustBPETokenizer:
 
     def __init__(self, enc, bos_token):
         self.enc = enc
+        self._special_token_cache: dict[str, int] = {}
         self.bos_token_id = self.encode_special(bos_token)
 
     @classmethod
     def train_from_iterator(cls, text_iterator, vocab_size):
+        if rustbpe is None:
+            raise ImportError(
+                "rustbpe is required to train this tokenizer. "
+                "Install it into your uv environment, then re-run."
+            )
         # 1) train using rustbpe
         tokenizer = rustbpe.Tokenizer()
         # the special tokens are inserted later in __init__, we don't train them here
@@ -252,9 +261,13 @@ class RustBPETokenizer:
     def id_to_token(self, id):
         return self.enc.decode([id])
 
-    @lru_cache(maxsize=32)
     def encode_special(self, text):
-        return self.enc.encode_single_token(text)
+        cached = self._special_token_cache.get(text)
+        if cached is not None:
+            return cached
+        token_id = self.enc.encode_single_token(text)
+        self._special_token_cache[text] = token_id
+        return token_id
 
     def get_bos_token_id(self):
         return self.bos_token_id
@@ -393,7 +406,7 @@ class RustBPETokenizer:
         RESET = '\033[0m'
         GRAY = '\033[90m'
         tokens = []
-        for i, (token_id, mask_val) in enumerate(zip(ids, mask)):
+        for token_id, mask_val in zip(ids, mask, strict=True):
             token_str = self.decode([token_id])
             color = GREEN if mask_val == 1 else RED
             tokens.append(f"{color}{token_str}{RESET}")

@@ -186,6 +186,26 @@ class GPT(nn.Module):
     config: GPTConfig
 
     def setup(self):
+        if self.config.sequence_len <= 0:
+            raise ValueError("sequence_len must be positive")
+        if self.config.vocab_size <= 0:
+            raise ValueError("vocab_size must be positive")
+        if self.config.n_layer <= 0:
+            raise ValueError("n_layer must be positive")
+        if self.config.n_head <= 0:
+            raise ValueError("n_head must be positive")
+        if self.config.n_kv_head <= 0:
+            raise ValueError("n_kv_head must be positive")
+        if self.config.n_embd <= 0:
+            raise ValueError("n_embd must be positive")
+        if self.config.n_embd % self.config.n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
+        if not (self.config.n_kv_head <= self.config.n_head and self.config.n_head % self.config.n_kv_head == 0):
+            raise ValueError("n_kv_head must divide n_head and be <= n_head")
+        head_dim = self.config.n_embd // self.config.n_head
+        if head_dim % 2 != 0:
+            raise ValueError("head_dim (= n_embd // n_head) must be even for RoPE")
+
         self.wte = nn.Embed(
             self.config.vocab_size, self.config.n_embd, embedding_init=nn.initializers.normal(stddev=0.02),
             dtype=jnp.bfloat16 # Use bfloat16 for embeddings
@@ -211,9 +231,6 @@ class GPT(nn.Module):
         start_pos = 0
         if self.has_variable("cache", "cache_index"):
             start_pos = self.variable("cache", "cache_index").value
-            # Using config.init_cache to check
-            if self.config.init_cache:
-                start_pos = 0
 
         head_dim = self.config.n_embd // self.config.n_head
         cos, sin = self.precompute_rotary_embeddings(T, head_dim, start_pos=start_pos)

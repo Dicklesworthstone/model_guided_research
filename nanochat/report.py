@@ -35,7 +35,8 @@ def run_command(cmd):
 def get_git_info():
     """Get current git commit, branch, and dirty status."""
     info = {}
-    info['commit'] = run_command("git rev-parse --short HEAD") or "unknown"
+    info["commit"] = run_command("git rev-parse --short HEAD") or "unknown"
+    info["commit_full"] = run_command("git rev-parse HEAD") or "unknown"
     info['branch'] = run_command("git rev-parse --abbrev-ref HEAD") or "unknown"
 
     # Check if repo is dirty (has uncommitted changes)
@@ -90,7 +91,10 @@ def get_system_info():
 
     # User and environment
     info['user'] = os.environ.get('USER', 'unknown')
-    info['nanochat_base_dir'] = os.environ.get('NANOCHAT_BASE_DIR', 'out')
+    from nanochat.common import get_base_dir
+
+    info["nanochat_base_dir"] = get_base_dir()
+    info["nanochat_base_dir_env"] = os.environ.get("NANOCHAT_BASE_DIR")
     info['working_dir'] = os.getcwd()
 
     return info
@@ -173,10 +177,10 @@ Generated: {timestamp}
 """
 
     # bloat metrics: package all of the source code and assess its weight
-    packaged = run_command('files-to-prompt . -e py -e md -e rs -e html -e toml -e sh --ignore "*target*" --cxml')
+    packaged = run_command('files-to-prompt . -e py -e md -e rs -e html -e toml -e sh --ignore "*target*" --cxml') or ""
     num_chars = len(packaged)
-    num_lines = len(packaged.split('\n'))
-    num_files = len([x for x in packaged.split('\n') if x.startswith('<source>')])
+    num_lines = len(packaged.split("\n")) if packaged else 0
+    num_files = len([x for x in packaged.split("\n") if x.startswith("<source>")]) if packaged else 0
     num_tokens = num_chars // 4 # assume approximately 4 chars per token
 
     # count dependencies via uv.lock

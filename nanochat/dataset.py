@@ -10,6 +10,9 @@ For details of how the dataset was prepared, see `repackage_data_reference.py`.
 import os
 import argparse
 import time
+from typing import Any
+
+from filelock import FileLock
 import requests
 import pyarrow.parquet as pq
 from multiprocessing import Pool
@@ -59,6 +62,50 @@ def parquets_iter_batched(split, start=0, step=1):
             yield texts
 
 # -----------------------------------------------------------------------------
+def ensure_min_parquet_files(
+    *,
+    min_count: int = 2,
+    start_index: int = 0,
+    lock_timeout_seconds: float = 60.0,
+) -> dict[str, Any]:
+    """
+    Ensure at least `min_count` dataset shard parquet files exist locally.
+
+    Nanochat's dataloader convention treats the *last* parquet file as the validation shard,
+    so `min_count=2` is the smallest usable dataset (1 train shard + 1 val shard).
+    """
+    if min_count < 1:
+        raise ValueError("min_count must be >= 1")
+    if start_index < 0:
+        raise ValueError("start_index must be >= 0")
+
+    existing = list_parquet_files()
+    if len(existing) >= min_count:
+        return {"ok": True, "already_present": len(existing), "downloaded": [], "paths": existing}
+
+    existing_names = {os.path.basename(p) for p in existing}
+    downloaded: list[str] = []
+    idx = start_index
+    while len(existing_names) < min_count:
+        if idx > MAX_SHARD:
+            break
+        filename = index_to_filename(idx)
+        if filename in existing_names:
+            idx += 1
+            continue
+        filepath = os.path.join(DATA_DIR, filename)
+        lock_path = filepath + ".lock"
+        with FileLock(lock_path, timeout=lock_timeout_seconds):
+            download_single_file(idx)
+        if os.path.exists(filepath):
+            downloaded.append(filename)
+            existing_names.add(filename)
+        idx += 1
+
+    paths = list_parquet_files()
+    return {"ok": len(paths) >= min_count, "already_present": len(existing), "downloaded": downloaded, "paths": paths}
+
+
 def download_single_file(index):
     """ Downloads a single file index, with some backoff """
 
@@ -92,13 +139,7 @@ def download_single_file(index):
 
         except (requests.RequestException, IOError) as e:
             print(f"Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
-            # Clean up any partial files
-            for path in [filepath + ".tmp", filepath]:
-                if os.path.exists(path):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
+            # Keep any partial files for inspection; subsequent retries will overwrite the temp file.
             # Try a few times with exponential backoff: 2^attempt seconds
             if attempt < max_attempts:
                 wait_time = 2 ** attempt

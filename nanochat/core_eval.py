@@ -151,6 +151,9 @@ def forward_model(model, input_ids):
     """
     batch_size, seq_len = input_ids.size()
     outputs = model(input_ids)
+    if isinstance(outputs, tuple):
+        # GPTSynaptic returns (logits, None); keep logits only.
+        outputs = outputs[0]
     # Roll the tensor to the left by one position to get the (autoregressive) target ids
     target_ids = torch.roll(input_ids, shifts=-1, dims=1)
     # Calculate cross entropy at all positions

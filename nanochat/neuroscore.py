@@ -9,6 +9,7 @@
 #   4. Resilience: Stability of contribution over time.
 # -----------------------------------------------------------------------------
 
+import os
 from nanochat.torch_imports import torch, nn, F, Tensor
 from typing import Dict, Any
 from dataclasses import dataclass
@@ -62,13 +63,7 @@ class NeuroScore:
         # Contribution ~ RoutingWeight * ExpertEnergy (Heuristic: "Active & High Energy" ~ doing work)
         # A better "v2" would be RoutingWeight * |Grad_Expert_Output|
 
-        from decouple import Config as DecoupleConfig, RepositoryEnv, AutoConfig
-        try:
-            decouple_config = DecoupleConfig(RepositoryEnv(".env"))
-        except Exception:
-            decouple_config = AutoConfig()
-            
-        fused_metrics = decouple_config("BIO_FUSED_METRICS", default=False, cast=bool)
+        fused_metrics = os.environ.get("BIO_FUSED_METRICS", "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
         for name, module in model.named_modules():
             if isinstance(module, SynapticMoE):
@@ -230,5 +225,4 @@ class NeuroScore:
             md += f"| {rank+1} | {i} | {val:.3f} | {st['specialization'][i]:.3f} | {st['loss_contrib'][i]:.3f} |\n"
             
         tb.add_text(f"{layer_name}/leaderboard", md, step)
-
 

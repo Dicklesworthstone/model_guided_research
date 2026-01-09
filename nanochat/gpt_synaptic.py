@@ -64,6 +64,7 @@ class CausalSelfAttention(nn.Module):
         rope_cos: Tensor,
         rope_sin: Tensor,
         syn_cfg: SynapticConfig,
+        layer_idx: int,
         attn_drop=0.0,
         resid_drop=0.0,
     ):
@@ -75,8 +76,9 @@ class CausalSelfAttention(nn.Module):
             rope_cos,
             rope_sin,
             syn_cfg,
-            attn_drop,
-            resid_drop,
+            layer_idx=layer_idx,
+            attn_drop=attn_drop,
+            resid_drop=resid_drop,
         )
 
     def forward(self, x, kv_cache=None, presyn_state=None, train_mode=True):
@@ -93,6 +95,7 @@ class Block(nn.Module):
         rope_cos: Tensor,
         rope_sin: Tensor,
         syn_cfg: SynapticConfig,
+        layer_idx: int,
         dropout: float = 0.0,
         use_moe: bool = False,
         num_experts: int = 8,
@@ -109,6 +112,7 @@ class Block(nn.Module):
             rope_cos,
             rope_sin,
             syn_cfg,
+            layer_idx=layer_idx,
             attn_drop=dropout,
             resid_drop=dropout,
         )
@@ -161,7 +165,7 @@ class GPTSynaptic(nn.Module):
         self.register_buffer("cos", torch.cos(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False)
         self.sin: Tensor
         self.register_buffer("sin", torch.sin(freqs).unsqueeze(0).to(torch.bfloat16), persistent=False)
-        for _ in range(c.n_layer):
+        for layer_idx in range(c.n_layer):
             self.h.append(
                 Block(
                     c.n_embd,
@@ -170,6 +174,7 @@ class GPTSynaptic(nn.Module):
                     self.cos,
                     self.sin,
                     c.syn_cfg,
+                    layer_idx=layer_idx,
                     dropout=c.dropout,
                     use_moe=c.use_moe,
                     num_experts=c.num_experts,
@@ -190,20 +195,39 @@ class GPTSynaptic(nn.Module):
         idx: Tensor,
         targets: Optional[Tensor] = None,
         kv_cache=None,
-        train_mode=True,
+        train_mode: Optional[bool] = None,
     ):
+        if train_mode is None:
+            train_mode = self.training
         B, T = idx.size()
         if T > self.config.sequence_len:
             raise ValueError("Sequence length exceeds configured maximum")
         tok = self.wte(idx)
-        x = self.drop(tok.to(dtype=torch.bfloat16))
-        presyn_state = None
+        x = self.drop(tok)
+
+        # Persist synaptic state across KV-cache inference by attaching it to the cache object.
+        presyn_states: list[dict[str, object] | None] = [None for _ in range(self.config.n_layer)]
+        if kv_cache is not None and hasattr(kv_cache, "presyn_state"):
+            cached = getattr(kv_cache, "presyn_state")
+            if cached is not None:
+                if not isinstance(cached, list):
+                    raise TypeError("kv_cache.presyn_state must be a list[dict|None] for GPTSynaptic KV-cache mode")
+                if len(cached) != self.config.n_layer:
+                    raise ValueError(
+                        f"kv_cache.presyn_state length ({len(cached)}) != n_layer ({self.config.n_layer})"
+                    )
+                presyn_states = cached
+
         for li, block in enumerate(self.h):
-            x, presyn_state = block(x, kv_cache, presyn_state, train_mode)
+            x, st = block(x, kv_cache, presyn_states[li], train_mode)
+            presyn_states[li] = st
             if self.config.structural_every and targets is not None:
                 if (li + 1) % self.config.structural_every == 0 and hasattr(block.mlp, "experts"):
                     # Hook point for split/merge (kept as a callable point on purpose)
                     pass
+
+        if kv_cache is not None:
+            kv_cache.presyn_state = presyn_states
         logits = self.lm_head(x.to(dtype=self.lm_head.weight.dtype))
         if targets is None:
             return logits, None
@@ -249,7 +273,7 @@ class GPTSynaptic(nn.Module):
             from nanochat.common import get_dist_info
             from nanochat.muon import Muon, DistMuon
             from nanochat.adamw import DistAdamW
-            from functools import partial
+            import inspect
 
             model_dim = self.config.n_embd
             ddp, rank, local_rank, world_size = get_dist_info()
@@ -281,7 +305,10 @@ class GPTSynaptic(nn.Module):
                 ),  # Use embedding LR scale for other params? Or maybe just matrix_lr? Usually AdamW params get higher LR.
             ]
             adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
-            AdamWFactory = DistAdamW if ddp else partial(torch.optim.AdamW, fused=True)
+            AdamWFactory = DistAdamW if ddp else torch.optim.AdamW
+            adam_params = embedding_params + lm_head_params + other_params
+            if (not ddp) and any(p.is_cuda for p in adam_params) and ("fused" in inspect.signature(torch.optim.AdamW).parameters):
+                adamw_kwargs["fused"] = True
             adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
 
             muon_kwargs = dict(lr=matrix_lr, momentum=0.95)
