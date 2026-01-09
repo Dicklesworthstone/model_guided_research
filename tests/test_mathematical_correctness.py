@@ -7,6 +7,7 @@ properties claimed in its documentation, not just that it imports successfully.
 """
 
 import sys
+import math
 from pathlib import Path
 
 # Add parent directory to path
@@ -258,7 +259,7 @@ class TestMatrixExponentialGauge:
         term = jnp.eye(n)
         for k in range(1, K):
             term = term @ Q
-            result = result + (t * lam) ** k / np.math.factorial(k) * term
+            result = result + (t * lam) ** k / float(math.factorial(k)) * term
         result = result * jnp.exp(-t * lam)
 
         # Compare with direct computation

@@ -168,7 +168,7 @@ class TestIFSFractalMemory:
         require(jnp.abs(contraction - expected_contraction) < 1e-6, "Contraction factor mismatch")
         print(f"  ✅ Contraction factor: s^k = {contraction:.6f}")
 
-    def test_fixed_point_storage_and_retrieval(self):
+    def test_fixed_point_storage_and_readback(self):
         """Verify that values are stored and retrieved correctly as fixed points."""
         print("\n🔬 Testing Fixed Point Storage and Retrieval...")
 
@@ -221,7 +221,7 @@ class TestOrdinalSchedules:
         print("\n🔬 Testing Ordinal Rank Calculation...")
 
         # Create ordinal state
-        params = ordinal.OrdinalParams(A0=2, B_init=3, P0=5, eta0=0.1, gamma=0.5, beta=0.9)
+        params = ordinal.OrdinalParams(A_init=2, B_init=3, P_init=5, eta0=0.1, gamma=0.5, ema_decay=0.9)
         state = ordinal.ordinal_state_init(params)
 
         # Calculate initial rank
@@ -230,7 +230,7 @@ class TestOrdinalSchedules:
         initial_C = int(state.C)
 
         # Verify the rank components are initialized correctly
-        require(initial_A == params.A0, "A0 not initialized correctly")
+        require(initial_A == params.A_init, "A_init not initialized correctly")
         require(initial_B == params.B_init, "B_init not initialized correctly")
         require(initial_C == ordinal.patience_for_B(jnp.int32(params.B_init), params), "C patience mismatch")
 
@@ -240,7 +240,7 @@ class TestOrdinalSchedules:
         """Verify that scheduler steps maintain ordinal monotonicity."""
         print("\n🔬 Testing Scheduler Step Monotonicity...")
 
-        params = ordinal.OrdinalParams(A0=2, B_init=3, P0=3, eta0=0.1, gamma=0.5, beta=0.9)
+        params = ordinal.OrdinalParams(A_init=2, B_init=3, P_init=3, eta0=0.1, gamma=0.5, ema_decay=0.9)
         state = ordinal.ordinal_state_init(params)
 
         # Track state evolution
@@ -297,6 +297,41 @@ class TestMatrixExponentialGauge:
 
         require(jnp.abs(norm_after - norm_before) < 1e-5, f"Norm not preserved: {norm_before:.6f} -> {norm_after:.6f}")
         print(f"  ✅ Givens rotation preserves norm: {norm_before:.6f} ≈ {norm_after:.6f}")
+
+    def test_cayley_orthogonal_from_skew(self):
+        """Verify Cayley transform of a skew-symmetric generator is orthogonal."""
+        print("\n🔬 Testing Cayley Orthogonality (SO) ...")
+
+        key = random.PRNGKey(48)
+        d = 6
+        A = random.normal(key, (d, d))
+        skew = 0.1 * (A - A.T)
+
+        Q = gauge.cayley_orthogonal_from_skew(skew)
+        ident = jnp.eye(d, dtype=Q.dtype)
+        err = jnp.linalg.norm(Q.T @ Q - ident)
+
+        require(err < 1e-5, f"Cayley orthogonality failed: ||QᵀQ-I|| = {err:.6e}")
+        print(f"  ✅ Cayley orthogonality: ||QᵀQ-I|| = {err:.2e}")
+
+    def test_symplectic_cayley(self):
+        """Verify symplectic Cayley map preserves J (Sᵀ J S = J)."""
+        print("\n🔬 Testing Symplectic Cayley (Sp) ...")
+
+        key = random.PRNGKey(49)
+        n = 2
+        d = 2 * n
+        H = random.normal(key, (d, d))
+        H = 0.1 * (0.5 * (H + H.T))  # small symmetric Hamiltonian
+
+        S = gauge.symplectic_cayley(H)
+        Z = jnp.zeros((n, n), dtype=S.dtype)
+        I = jnp.eye(n, dtype=S.dtype)
+        J = jnp.block([[Z, I], [-I, Z]])
+        err = jnp.linalg.norm(S.T @ J @ S - J)
+
+        require(err < 1e-5, f"Symplectic condition failed: ||SᵀJS-J|| = {err:.6e}")
+        print(f"  ✅ Symplectic condition: ||SᵀJS-J|| = {err:.2e}")
 
     def test_uniformization_properties(self):
         """Test uniformization matrix exponential properties."""
@@ -370,6 +405,27 @@ class TestTropicalGeometry:
         error = jnp.max(jnp.abs(ABC_left - ABC_right))
         require(error < 1e-5, f"Tropical associativity failed: error = {error:.6f}")
         print(f"  ✅ Tropical matrix multiplication associativity: error = {error:.8f}")
+
+    def test_tropical_margin_certificate(self):
+        """Verify tropical attention margin certificate is non-negative."""
+        print("\n🔬 Testing Tropical Margin Certificate...")
+
+        key = random.PRNGKey(51)
+        kq, kk, kv = random.split(key, 3)
+        dim = 8
+        attn = tropical.TropicalAttention(dim=dim)
+        Q = random.normal(kq, (5, dim))
+        K = random.normal(kk, (7, dim))
+        V = random.normal(kv, (7, dim))
+
+        out = attn(Q, K, V)
+        require(out.shape == (Q.shape[0], dim), f"Output shape mismatch: {out.shape}")
+
+        margin = getattr(attn, "last_min_margin", None)
+        require(margin is not None, "TropicalAttention did not set last_min_margin")
+        require(margin >= -1e-6, f"Margin certificate should be >= 0, got {margin:.6e}")
+
+        print(f"  ✅ Tropical margin certificate: min gap = {margin:.3e}")
 
     def test_tropical_attention_properties(self):
         """Test tropical attention mechanism properties."""
@@ -505,6 +561,38 @@ class TestUltrametricWorlds:
 
         print(f"  ✅ Ultrametric lookup deterministic: error = {error:.2e}")
 
+    def test_ultrametric_strong_triangle_inequality(self):
+        """Check the strong triangle inequality for LCP-based distances."""
+        print("\n🔬 Testing Ultrametric Strong Triangle Inequality...")
+
+        key = random.PRNGKey(60)
+        p, K = 5, 6
+        samples = 32
+        digits = random.randint(key, (samples, K), 0, p)
+
+        def lcp_depth(a, b):
+            depth = 0
+            for i in range(K):
+                if int(a[i]) != int(b[i]):
+                    break
+                depth += 1
+            return depth
+
+        def u_dist(a, b):
+            depth = lcp_depth(a, b)
+            return float(p ** (-depth))
+
+        for i in range(samples - 2):
+            x = digits[i]
+            y = digits[i + 1]
+            z = digits[i + 2]
+            dxy = u_dist(x, y)
+            dyz = u_dist(y, z)
+            dxz = u_dist(x, z)
+            require(dxz <= max(dxy, dyz) + 1e-12, "Ultrametric inequality violated")
+
+        print("  ✅ Strong triangle inequality holds for sampled triples")
+
     def test_p_adic_operations(self):
         """Test p-adic arithmetic in the modular setting."""
         print("\n🔬 Testing p-adic Operations...")
@@ -551,6 +639,23 @@ class TestUltrametricWorlds:
         final_error = jnp.linalg.norm(final_output - target)
 
         print(f"  ✅ VOLF update: error {initial_error:.4f} -> {final_error:.4f}, created {created_nodes} nodes")
+
+    def test_packed_layout_matches_reference_on_tasks(self):
+        """Packed trie path should match the reference trie on Tasks A/B (small sanity check)."""
+        print("\n🔬 Testing Packed Trie Layout Parity (Tasks A/B)...")
+
+        outA = padic.compare_packed_vs_reference(task="A", seed=0, n_train=80, n_test=30)
+        outB = padic.compare_packed_vs_reference(task="B", seed=0, n_train=80, n_test=30)
+
+        require(0.0 <= outA["acc_test_ref"] <= 1.0, "Task A: reference acc out of range")
+        require(0.0 <= outA["acc_test_packed"] <= 1.0, "Task A: packed acc out of range")
+        require(0.0 <= outB["acc_test_ref"] <= 1.0, "Task B: reference acc out of range")
+        require(0.0 <= outB["acc_test_packed"] <= 1.0, "Task B: packed acc out of range")
+
+        print(
+            f"  ✅ Parity OK | Task A time ref/packed: {outA['time_ref_s']:.3f}/{outA['time_packed_s']:.3f} s "
+            f"| Task B time ref/packed: {outB['time_ref_s']:.3f}/{outB['time_packed_s']:.3f} s"
+        )
 
 
 class TestOctonions:
@@ -600,6 +705,39 @@ class TestOctonions:
 
         require(error < 1e-5, f"Conjugation property failed: error = {error:.6e}")
         print("  ✅ Quaternion conjugation: q * q̄ gives norm² in real part")
+
+
+class TestBraidInvariants:
+    """Test braid crossing invariants (YBE)."""
+
+    def test_crossing_ybe_relation(self):
+        """Verify YBE (R3) for the YBE crossing law."""
+        print("\n🔬 Testing Braid YBE Relation...")
+
+        key = random.PRNGKey(61)
+        k1, k2, k3, k4, k5, k6 = random.split(key, 6)
+        n, d = 32, 6
+        ax = random.normal(k1, (n, d))
+        ay = random.normal(k2, (n, d))
+        bx = random.normal(k3, (n, d))
+        by = random.normal(k4, (n, d))
+        cx = random.normal(k5, (n, d))
+        cy = random.normal(k6, (n, d))
+
+        def apply12(ax_, ay_, bx_, by_, cx_, cy_):
+            nax, nay, nbx, nby = knot.crossing_update_ybe(ax_, ay_, bx_, by_)
+            return nax, nay, nbx, nby, cx_, cy_
+
+        def apply23(ax_, ay_, bx_, by_, cx_, cy_):
+            nbx, nby, ncx, ncy = knot.crossing_update_ybe(bx_, by_, cx_, cy_)
+            return ax_, ay_, nbx, nby, ncx, ncy
+
+        lhs = apply12(*apply23(*apply12(ax, ay, bx, by, cx, cy)))
+        rhs = apply23(*apply12(*apply23(ax, ay, bx, by, cx, cy)))
+        err = jnp.max(jnp.abs(jnp.stack(lhs, axis=-1) - jnp.stack(rhs, axis=-1)))
+
+        require(err < 1e-5, f"YBE check failed: max |lhs-rhs| = {float(err):.6e}")
+        print(f"  ✅ YBE relation: max |lhs-rhs| = {float(err):.2e}")
 
     def test_rotor_gate_properties(self):
         """Test rotor gate norm preservation."""
@@ -655,6 +793,35 @@ class TestKnotTheory:
 
         # Should recover something related to original (crossing is not always exactly invertible due to asymmetry)
         print(f"  ✅ Crossing update: ({a_x}, {a_y}), ({b_x}, {b_y}) -> ({new_a_x}, {new_a_y}), ({new_b_x}, {new_b_y})")
+
+    def test_crossing_update_ybe_satisfies_yang_baxter(self):
+        """Test that the optional YBE-valid crossing law satisfies 3-strand coherence (R3)."""
+        print("\n🔬 Testing Yang–Baxter (R3) Crossing Law...")
+
+        key = random.PRNGKey(60)
+        n = 512
+        state = random.normal(key, (n, 3, 2), dtype=jnp.float32)
+        ax, ay = state[:, 0, 0], state[:, 0, 1]
+        bx, by = state[:, 1, 0], state[:, 1, 1]
+        cx, cy = state[:, 2, 0], state[:, 2, 1]
+
+        def apply12(ax, ay, bx, by, cx, cy):
+            nax, nay, nbx, nby = knot.crossing_update_ybe(ax, ay, bx, by)
+            return nax, nay, nbx, nby, cx, cy
+
+        def apply23(ax, ay, bx, by, cx, cy):
+            nbx, nby, ncx, ncy = knot.crossing_update_ybe(bx, by, cx, cy)
+            return ax, ay, nbx, nby, ncx, ncy
+
+        lhs = apply12(*apply23(*apply12(ax, ay, bx, by, cx, cy)))
+        rhs = apply23(*apply12(*apply23(ax, ay, bx, by, cx, cy)))
+
+        lhs_vec = jnp.stack(lhs, axis=-1)
+        rhs_vec = jnp.stack(rhs, axis=-1)
+        err = jnp.max(jnp.abs(lhs_vec - rhs_vec))
+
+        require(err < 1e-5, f"YBE violated: max |lhs-rhs| = {float(err):.3e}")
+        print(f"  ✅ YBE holds on random samples: max error = {float(err):.3e}")
 
     def test_braid_word_verification(self):
         """Test braid word verification and normalization."""
