@@ -14,6 +14,8 @@ stability) and a small MLP. The code is JAX/JIT-friendly and uses only matvecs a
 to GPUs/TPUs.
 """
 
+# Docs: markdown_documentation/nonstandard_analysis_and_hyperreal_training.md
+
 import functools
 import math
 import time

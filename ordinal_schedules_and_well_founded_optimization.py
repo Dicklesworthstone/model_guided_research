@@ -22,6 +22,8 @@ This file implements the scheduler and a streaming, noisy piecewise‑linear reg
 (heavy‑tailed noise + distribution shifts), plus cosine/linear baselines and a crisp pass/fail
 evaluation using final‑window MSE with median and dominance thresholds.
 """
+# Docs: markdown_documentation/ordinal_schedules_and_well_founded_optimization.md
+
 # Ordinal-Scheduler Training (JAX): A complete, runnable implementation
 # - Transfinite-style scheduler with ranking ρ = ω^2 A + ω B + C
 # - Successor steps: non-increasing rank; limit steps: strict decrease
@@ -93,46 +95,22 @@ class OrdinalState(NamedTuple):
 
 
 class OrdinalParams(NamedTuple):
-    # Match tests that pass A_init, B_init, P_init etc.; accept both names via defaults
-    A0: int
+    A_init: int
     B_init: int
-    P0: int
+    P_init: int
     eta0: float
     gamma: float
-    beta: float
-
-    # Alternative constructor for compatibility with tests
-    @staticmethod
-    def from_test_kwargs(**kwargs):
-        A0 = kwargs.get("A_init", kwargs.get("A0", 0))
-        B_init = kwargs.get("B_init", 0)
-        P0 = kwargs.get("P_init", kwargs.get("P0", 0))
-        eta0 = kwargs.get("eta0", 0.0)
-        gamma = kwargs.get("gamma", 1.0)
-        beta = kwargs.get("ema_decay", kwargs.get("beta", 0.9))
-        return OrdinalParams(A0=A0, B_init=B_init, P0=P0, eta0=eta0, gamma=gamma, beta=beta)
-
-
-# Allow direct construction with test kwargs by monkey-patching __new__
-_OrdinalParams_new = OrdinalParams.__new__
-
-def _OrdinalParams_new_compat(cls, *args, **kwargs):
-    if kwargs and ("A_init" in kwargs or "P_init" in kwargs or "ema_decay" in kwargs):
-        params = OrdinalParams.from_test_kwargs(**kwargs)
-        return _OrdinalParams_new(cls, params.A0, params.B_init, params.P0, params.eta0, params.gamma, params.beta)
-    return _OrdinalParams_new(cls, *args, **kwargs)
-
-OrdinalParams.__new__ = staticmethod(_OrdinalParams_new_compat)  # type: ignore[method-assign,assignment]
+    ema_decay: float
 
 
 def patience_for_B(B: jnp.int32, params: OrdinalParams) -> jnp.int32:
     k = jnp.int32(params.B_init) - B
     mult = lax.shift_left(jnp.int32(1), k)  # 2^k
-    return jnp.int32(params.P0) * mult
+    return jnp.int32(params.P_init) * mult
 
 
 def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: OrdinalParams):
-    L_ema_new = jnp.float32(params.beta) * st.L_ema + jnp.float32(1.0 - params.beta) * val_loss
+    L_ema_new = jnp.float32(params.ema_decay) * st.L_ema + jnp.float32(1.0 - params.ema_decay) * val_loss
     improved = L_ema_new < st.L_best
 
     def on_improved(_):
@@ -171,7 +149,7 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
 
 def ordinal_state_init(params: OrdinalParams):
     return OrdinalState(
-        A=jnp.int32(params.A0),
+        A=jnp.int32(params.A_init),
         B=jnp.int32(params.B_init),
         C=patience_for_B(jnp.int32(params.B_init), params),
         eta=jnp.float32(params.eta0),
@@ -180,14 +158,6 @@ def ordinal_state_init(params: OrdinalParams):
         anneals=jnp.int32(0),
         restarts=jnp.int32(0),
     )
-
-
-# Test convenience wrapper accepting test-style kwargs
-def OrdinalParams_test(**kwargs) -> OrdinalParams:
-    result = OrdinalParams.from_test_kwargs(**kwargs)
-    if not isinstance(result, OrdinalParams):
-        raise TypeError("OrdinalParams_test expected OrdinalParams result")
-    return result
 
 
 def ordinal_rank(st: OrdinalState) -> int:
@@ -229,7 +199,7 @@ class OrdinalSchedule:
     """
 
     def __init__(self, **kwargs):
-        params = OrdinalParams.from_test_kwargs(**kwargs)
+        params = OrdinalParams(**kwargs)
         self.params = params
         self.state = ordinal_state_init(params)
 

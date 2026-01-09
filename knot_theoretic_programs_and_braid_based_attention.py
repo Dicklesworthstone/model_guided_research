@@ -6,11 +6,15 @@ Program model:
 - We restrict w to the single generator σ₁ (aggregator↔token), so every decode
   is σ₁^k. This yields local‑rewrite verifiability: R2/R3/far‑commutation are
   vacuous/canonical within this restricted family.
+  - Optional: enable a Yang–Baxter (YBE)‑satisfying crossing law for full 3‑strand
+    coherence. This makes R3 sound and is a prerequisite for general braid words.
 
 State and crossing:
 - Each strand carries (x, y). Elementary crossing:
     (x_a,y_a),(x_b,y_b) ↦ (x_a + y_b, y_a), (x_b + y_a, y_b)
   This map is invertible and preserves the multiset of payloads {y} (the invariant).
+  - Optional YBE law swaps the outputs (post‑crossing order), turning the update
+    into a set‑theoretic Yang–Baxter map.
 
 Planning and decoding:
 - Score each non‑aggregator token j with p_j = sigmoid(w·[tag_j, value_j/10] + b).
@@ -34,8 +38,15 @@ Implementation:
   cleanly to GPU/TPU with no dynamic Python control flow on the hot path.
 """
 
+# Docs: markdown_documentation/knot_theoretic_programs_and_braid_based_attention.md
+# Note:
+# - Default crossing_update is invertible but does not satisfy full 3-strand braid coherence (YBE);
+#   this demo intentionally restricts the allowed word family (only σ₁^k), so R3 never fires.
+# - Set BRAID_CROSSING_LAW=ybe to use crossing_update_ybe, which *does* satisfy YBE.
+
 # braid_attention_jax.py
 import math
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -47,6 +58,21 @@ from jax import grad, jit, lax, random, tree_util
 # ---------- algebra ----------
 def crossing_update(a_x, a_y, b_x, b_y):
     return a_x + b_y, a_y, b_x + a_y, b_y
+
+
+def crossing_update_ybe(a_x, a_y, b_x, b_y):
+    """Yang–Baxter (set-theoretic) valid crossing law.
+
+    This is the 'swap-output' variant of crossing_update. Viewed as a map on an
+    ordered adjacent pair (left,right), it swaps the strand order:
+
+        (a_x,a_y),(b_x,b_y) ↦ (b_x+a_y,b_y), (a_x+b_y,a_y)
+
+    It preserves the payload multiset {y} and satisfies the braid relation
+    (R3 / YBE) on triples when applied to adjacent pairs.
+    """
+
+    return b_x + a_y, b_y, a_x + b_y, a_y
 
 
 # ---------- program word (restricted) ----------
@@ -197,6 +223,45 @@ def decode_crossings(vals, perm, chosen_part, k):
     return xk, diff, vals_perm, prefix_mask
 
 
+def decode_crossings_ybe(vals, perm, chosen_part, k):
+    """Decode using a YBE-valid adjacent crossing law.
+
+    For this demo's canonical word (cross aggregator with the first k tokens under π),
+    the braid can be realized as σ₁σ₂…σ_k: the aggregator strand braids through the
+    selected prefix, swapping order at each crossing.
+    """
+
+    B, L = vals.shape
+    tok_order_part = perm[:, 1:]
+    vals_perm = jnp.take_along_axis(vals, tok_order_part, axis=-1)
+    prefix_mask = jnp.arange(L - 1)[None, :] < k[:, None]
+
+    x_sum = jnp.sum(vals_perm * chosen_part.astype(jnp.float32), axis=-1)
+
+    # Strand states in permuted order: position 0 is aggregator, then tokens.
+    xs = jnp.zeros((B, L), dtype=jnp.float32)
+    ys = jnp.concatenate([jnp.zeros((B, 1), dtype=jnp.float32), vals_perm], axis=-1)
+
+    def step(carry, t):
+        xs, ys = carry
+        take = (t < k).astype(jnp.float32)  # (B,)
+
+        ax, ay = xs[:, t], ys[:, t]
+        bx, by = xs[:, t + 1], ys[:, t + 1]
+        nax, nay, nbx, nby = crossing_update_ybe(ax, ay, bx, by)
+
+        xs = xs.at[:, t].set(take * nax + (1.0 - take) * ax)
+        ys = ys.at[:, t].set(take * nay + (1.0 - take) * ay)
+        xs = xs.at[:, t + 1].set(take * nbx + (1.0 - take) * bx)
+        ys = ys.at[:, t + 1].set(take * nby + (1.0 - take) * by)
+        return (xs, ys), None
+
+    (xs, ys), _ = lax.scan(step, (xs, ys), jnp.arange(L - 1))
+    xk = jnp.take_along_axis(xs, k[:, None], axis=1)[:, 0]
+    diff = jnp.max(jnp.abs(xk - x_sum))
+    return xk, diff, vals_perm, prefix_mask
+
+
 # ---------- losses ----------
 def ground_truth_sum(tags, vals, mask, aidx):
     pos = jnp.arange(tags.shape[1])[None, :]
@@ -288,6 +353,14 @@ def decode_batch(params: Params, tags, vals, mask, aidx):
     return xk, gt, diff, perm, chosen_part, k
 
 
+@jit
+def decode_batch_ybe(params: Params, tags, vals, mask, aidx):
+    perm, chosen_part, k, probs = plan_permutation(params, tags, vals, mask, aidx)
+    xk, diff, vals_perm, prefix_mask = decode_crossings_ybe(vals, perm, chosen_part, k)
+    gt = ground_truth_sum(tags, vals, mask, aidx)
+    return xk, gt, diff, perm, chosen_part, k
+
+
 def conv_reduce_sum_batch(tags, vals, mask, aidx, Ldepth):
     z = (
         vals
@@ -327,7 +400,12 @@ def run_experiment(
     lam_mse=0.5,
     lam_len=0.01,
     tau=0.5,
+    crossing_law="restricted",
 ):
+    crossing_law = str(crossing_law).strip().lower()
+    if crossing_law not in {"restricted", "ybe"}:
+        raise ValueError(f"Unknown crossing_law={crossing_law!r}; expected 'restricted' or 'ybe'.")
+
     key = random.PRNGKey(seed)
     tags_tr, vals_tr, aidx_tr, mask_tr, Lmax_tr = make_dataset(key, n_train, n_low, n_high, p_tag)
     key = random.split(key, 2)[1]
@@ -349,8 +427,9 @@ def run_experiment(
         params, opt_state, L = train_step(params, batch, opt_state, lr, lam_bce, lam_mse, lam_len)
         losses.append(float(L))
     train_time = time.time() - t0
-    pred_tr, gt_tr, diff_tr, perm_tr, chosen_tr, k_tr = decode_batch(params, tags_tr, vals_tr, mask_tr, aidx_tr)
-    pred_te, gt_te, diff_te, perm_te, chosen_te, k_te = decode_batch(params, tags_te, vals_te, mask_te, aidx_te)
+    decode_fn = decode_batch if crossing_law == "restricted" else decode_batch_ybe
+    pred_tr, gt_tr, diff_tr, perm_tr, chosen_tr, k_tr = decode_fn(params, tags_tr, vals_tr, mask_tr, aidx_tr)
+    pred_te, gt_te, diff_te, perm_te, chosen_te, k_te = decode_fn(params, tags_te, vals_te, mask_te, aidx_te)
     acc_tr = float(accuracy_exact(pred_tr, gt_tr))
     acc_te = float(accuracy_exact(pred_te, gt_te))
     Ldepth = math.ceil(math.log2(n_high))
@@ -369,6 +448,7 @@ def run_experiment(
         "baseline_depth": Ldepth,
         "baseline_train_acc": accb_tr,
         "baseline_test_acc": accb_te,
+        "crossing_law": crossing_law,
         "artifacts": {
             "train": (tags_tr, vals_tr, aidx_tr, mask_tr, perm_tr, chosen_tr, k_tr, pred_tr, gt_tr),
             "test": (tags_te, vals_te, aidx_te, mask_te, perm_te, chosen_te, k_te, pred_te, gt_te),
@@ -422,8 +502,12 @@ def plot_braid(sample, perm, k):
 def main():
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     steps = int(sys.argv[2]) if len(sys.argv) > 2 else 250
-    res = run_experiment(seed=seed, steps=steps)
+    crossing_law = os.environ.get("BRAID_CROSSING_LAW", "restricted")
+    if len(sys.argv) > 3:
+        crossing_law = sys.argv[3]
+    res = run_experiment(seed=seed, steps=steps, crossing_law=crossing_law)
     p = res["params"]
+    print("crossing_law:", res.get("crossing_law"))
     print("params:", {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in p.__dict__.items()})
     print("train_time_s:", round(res["train_time_s"], 3))
     print("train_acc:", res["train_acc"], "test_acc:", res["test_acc"])

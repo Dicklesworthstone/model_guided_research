@@ -26,6 +26,9 @@
 #     depth K, and simple curvature proxies (angle variation magnitudes).
 #
 # This file is self-contained and runnable. A small smoke test is provided in __main__.
+#
+# Docs: markdown_documentation/matrix_exponential_gauge_learning.md (broader roadmap includes extras like BCH/Magnus;
+# this demo focuses on the Gauge-Transformer block + expmv sequence mixing + diagnostics).
 
 from __future__ import annotations
 
@@ -37,41 +40,11 @@ from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.linalg as jsp_linalg
 import numpy as np
 import optax
 from flax import linen as nn
 from jax import Array, lax
-
-# Compatibility alias for tests that refer to np.math.factorial
-try:
-    import math as _math
-
-    import numpy as _np  # type: ignore
-    # Create a namespace that tests might expect
-    class _NPMath:
-        @staticmethod
-        def factorial(k):
-            return float(_math.factorial(int(k)))
-
-    if not hasattr(_np, "math"):
-        _np.math = _NPMath()  # type: ignore[attr-defined]
-except Exception:
-    pass
-
-# Patch JAX bernoulli for backward-compat test calls that pass dtype; modern JAX doesn't accept dtype.
-try:
-    import jax as _jax
-    _orig_bern = _jax.random.bernoulli
-    def _bern_patched(key, p=0.5, shape=(), dtype=None):  # type: ignore[override]
-        # Return boolean mask to match JAX; tests perform arithmetic expecting float.
-        out = _orig_bern(key, p, shape)
-        if dtype is not None:
-            import jax.numpy as _jnp
-            return out.astype(_jnp.float32)
-        return out
-    _jax.random.bernoulli = _bern_patched  # type: ignore[assignment]
-except Exception:
-    pass
 
 # ---------------------------
 # Utilities: pairs & rotations
@@ -235,6 +208,38 @@ def symplectic_cayley(H: jnp.ndarray) -> Array:
     eye_d2 = jnp.eye(d2, dtype=H.dtype)
     M = J @ H
     return cast(Array, jnp.linalg.solve(eye_d2 - M, eye_d2 + M))
+
+
+# --- BCH/Magnus fusion helpers ---
+
+def _skew_symmetric_from_rng(key: jax.Array, dim: int, *, scale: float = 1.0) -> Array:
+    """Create a random skew-symmetric matrix with controlled scale."""
+    a = jax.random.normal(key, (dim, dim))
+    skew = a - a.T
+    return cast(Array, skew * (scale / max(1.0, float(dim))))
+
+
+def _bch_fuse_sequence(mats: Sequence[jnp.ndarray], *, order: int = 2) -> Array:
+    """Sequential BCH fusion up to second order."""
+    if not mats:
+        raise ValueError("mats must be non-empty")
+    if order <= 1:
+        total = mats[0]
+        for m in mats[1:]:
+            total = total + m
+        return cast(Array, total)
+
+    fused = mats[0]
+    for m in mats[1:]:
+        comm = fused @ m - m @ fused
+        fused = fused + m + 0.5 * comm
+    return cast(Array, fused)
+
+
+def _relative_frob(a: jnp.ndarray, b: jnp.ndarray) -> float:
+    num = float(jnp.linalg.norm(a - b))
+    den = float(jnp.linalg.norm(b)) if float(jnp.linalg.norm(b)) > 0.0 else 1.0
+    return num / den
 
 
 def uniformization_expmv_banded(
@@ -1005,6 +1010,69 @@ def demo():
         print("||[skew, A]||:", f"{comm_norm(skew, A):.2e}")
         print("||[sym, A]||:", f"{comm_norm(sym, A):.2e}")
 
+    # --- BCH/Magnus fusion mini-experiment ---
+    if os.environ.get("GAUGE_BCH_FUSION", "1") != "0":
+        key, subkey = jax.random.split(key)
+        dim_fuse = 6
+        n_steps = 4
+        base_keys = jax.random.split(subkey, n_steps)
+        base_mats = [_skew_symmetric_from_rng(k, dim_fuse, scale=1.0) for k in base_keys]
+        eps_list = [0.02, 0.05, 0.1, 0.2]
+        rows = []
+
+        for eps in eps_list:
+            mats = [eps * m for m in base_mats]
+            prod = jnp.eye(dim_fuse)
+            for m in mats:
+                prod = prod @ jsp_linalg.expm(m)
+            fused_1 = _bch_fuse_sequence(mats, order=1)
+            fused_2 = _bch_fuse_sequence(mats, order=2)
+            exp_1 = jsp_linalg.expm(fused_1)
+            exp_2 = jsp_linalg.expm(fused_2)
+            err_1 = _relative_frob(exp_1, prod)
+            err_2 = _relative_frob(exp_2, prod)
+
+            comms = []
+            for i in range(len(mats)):
+                for j in range(i + 1, len(mats)):
+                    comms.append(jnp.linalg.norm(mats[i] @ mats[j] - mats[j] @ mats[i]))
+            if comms:
+                comm_stack = jnp.stack(comms)
+                comm_sum = float(jnp.sum(comm_stack))
+                comm_max = float(jnp.max(comm_stack))
+            else:
+                comm_sum = 0.0
+                comm_max = 0.0
+
+            safe = (comm_max < 1e-2 and err_2 < 1e-3)
+            rows.append((eps, comm_sum, comm_max, err_1, err_2, safe))
+
+        try:
+            from rich.console import Console as _Console
+            from rich.table import Table as _Table
+
+            tbl = _Table(title="BCH Fusion Mini-Experiment", show_header=True, header_style="bold magenta")
+            tbl.add_column("eps", justify="right")
+            tbl.add_column("comm_sum", justify="right")
+            tbl.add_column("comm_max", justify="right")
+            tbl.add_column("err_1st", justify="right")
+            tbl.add_column("err_2nd", justify="right")
+            tbl.add_column("safe?", justify="center")
+
+            for eps, comm_sum, comm_max, err_1, err_2, safe in rows:
+                tbl.add_row(
+                    f"{eps:.2f}",
+                    f"{comm_sum:.2e}",
+                    f"{comm_max:.2e}",
+                    f"{err_1:.2e}",
+                    f"{err_2:.2e}",
+                    "yes" if safe else "no",
+                )
+            _Console().print(tbl)
+            _Console().print("[dim]Heuristic: safe if comm_max < 1e-2 and err_2nd < 1e-3[/dim]")
+        except Exception:
+            pass
+
     # --- BCH-aware stacking demo: enforce commuting blocks on even layers ---
     from flax.core import freeze, unfreeze
     vars_comm = unfreeze(variables)
@@ -1145,6 +1213,19 @@ def demo():
                 "even_commuting": _comm_sums(dbg_comm),
                 "odd_unstructured": _comm_sums(dbg_alt),
             }
+        bch_fusion = None
+        if 'rows' in locals():
+            bch_fusion = [
+                {
+                    "eps": float(eps),
+                    "comm_sum": float(comm_sum),
+                    "comm_max": float(comm_max),
+                    "err_1st": float(err_1),
+                    "err_2nd": float(err_2),
+                    "safe": bool(safe),
+                }
+                for (eps, comm_sum, comm_max, err_1, err_2, safe) in rows
+            ]
 
         last_diagnostics = {
             "K_mean_per_block": [float(k) for k in Ks],
@@ -1170,6 +1251,7 @@ def demo():
                 } for bi, b in enumerate(dbg)
             ],
             "comm_compare": comm_compare,
+            "bch_fusion": bch_fusion,
             "bch_summary": {
                 "curvature": {"min": min(curv_list), "mean": float(sum(curv_list)/len(curv_list)), "max": max(curv_list)},
                 "so_spd": {"min": min(so_spd_list), "mean": float(sum(so_spd_list)/len(so_spd_list)), "max": max(so_spd_list)},

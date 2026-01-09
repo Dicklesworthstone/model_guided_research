@@ -30,6 +30,9 @@ sequence demo to show end-to-end usage. The implementation is designed to be bot
 mathematically transparent and GPU/TPU efficient.
 """
 
+# Docs: markdown_documentation/octonionic_quaternionic_signal_flow.md (quaternion rotor-gates are the core; this file
+# also includes minimal octonion ops used for tests/illustrations of non-associativity).
+
 import jax
 import jax.numpy as jnp
 import numpy as np

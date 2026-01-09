@@ -27,6 +27,8 @@ This mirrors the math: identify the dominant monomial by order (largest damage r
 scale along its axis; when ratios tie, you are on the balanced frontier of equal leading order.
 """
 
+# Docs: markdown_documentation/surreal_numbers_transseries_and_scaling.md
+
 import math
 from functools import partial
 

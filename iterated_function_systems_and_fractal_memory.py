@@ -10,6 +10,8 @@ k maps, so access is O(log_m N). Diagnostics report utilization, collision_rate,
 forgetting vs a last‑batch baseline due to strictly local writes.
 """
 
+# Docs: markdown_documentation/iterated_function_systems_and_fractal_memory.md
+
 # A complete, working JAX implementation of a "fractal KV‑store":
 #   - Keys are contraction parameters (branch choices) in a depth‑k IFS.
 #   - Values are fixed points x*_w of the composed contraction F_w.
@@ -138,15 +140,10 @@ class FractalKVConfig:
 
 @dataclass
 class FractalKVState:
-    payload_u: Array  # [capacity, d_val] payload translations u_w
+    u_leaf: Array  # [capacity, d_val] payload translations u_w (leaf-local)
     written_mask: Array  # [capacity] bool
     total_writes: Array  # scalar int32
     total_collisions: Array  # scalar int32
-
-    # Backward-compatible alias expected by tests
-    @property
-    def u_leaf(self) -> Array:
-        return self.payload_u
 
 
 class FractalKV:
@@ -165,7 +162,7 @@ class FractalKV:
         self.m_pow = _m_powers(cfg.m, cfg.k)  # [k] base-m positional multipliers
         self.level_scales = jnp.array([cfg.s ** (cfg.k - 1 - j) for j in range(cfg.k)], dtype=cfg.dtype)  # [k]
         self._state = FractalKVState(
-            payload_u=jnp.zeros((cfg.capacity, cfg.d_val), dtype=cfg.dtype),
+            u_leaf=jnp.zeros((cfg.capacity, cfg.d_val), dtype=cfg.dtype),
             written_mask=jnp.zeros((cfg.capacity,), dtype=jnp.bool_),
             total_writes=jnp.array(0, dtype=jnp.int32),
             total_collisions=jnp.array(0, dtype=jnp.int32),
@@ -175,7 +172,7 @@ class FractalKV:
         try:
             _tree.register_pytree_node(
                 FractalKVState,
-                lambda s: ((s.payload_u, s.written_mask, s.total_writes, s.total_collisions), None),
+                lambda s: ((s.u_leaf, s.written_mask, s.total_writes, s.total_collisions), None),
                 lambda _, c: FractalKVState(*c),
             )
         except Exception as err:
@@ -229,11 +226,11 @@ class FractalKV:
         new_collisions = jnp.sum(mask_gather.astype(jnp.int32))  # scalar
 
         # Scatter updates
-        new_payload = state.payload_u.at[idx].set(u_w)
+        new_payload = state.u_leaf.at[idx].set(u_w)
         new_mask = state.written_mask.at[idx].set(True)
 
         return FractalKVState(
-            payload_u=new_payload,
+            u_leaf=new_payload,
             written_mask=new_mask,
             total_writes=state.total_writes + jnp.array(B, dtype=jnp.int32),
             total_collisions=state.total_collisions + new_collisions,
@@ -256,7 +253,7 @@ class FractalKV:
         cfg = self.cfg
         idx = self.paths_to_indices(paths)  # [B]
         c_w = self._jit_compute_c(paths)  # [B, d]
-        u = state.payload_u[idx]  # [B, d]
+        u = state.u_leaf[idx]  # [B, d]
         present = state.written_mask[idx]  # [B]
         v_hat = (c_w + u) * cfg.inv_I_minus_Ak_scalar  # [B, d]
         return v_hat, present

@@ -33,6 +33,8 @@ Core ideas
   explicit bijection (coupling), explicit coder/sampler (valve), and explicit bit ledger.
 """
 
+# Docs: markdown_documentation/reversible_computation_and_measure_preserving_learning.md
+
 import math
 import os
 from dataclasses import dataclass

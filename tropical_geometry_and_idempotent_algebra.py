@@ -31,6 +31,8 @@ tmm (tropical GEMM), T2 block, tropical pooling/classifier, hinge loss, route ex
 length‑generalization dataset (“pivot amid crowd”) where max–plus attention is trivially length‑invariant.
 """
 
+# Docs: markdown_documentation/tropical_geometry_and_idempotent_algebra.md
+
 import os
 from dataclasses import dataclass
 from functools import partial

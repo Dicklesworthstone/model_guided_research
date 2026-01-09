@@ -9,6 +9,8 @@ L\_bdry = Σ\_k || D\_k h\_k − h\_{k−1} ||² + Σ\_k || D\_{k+1}^T h\_k − 
 • Complexity is O(#incidences · d) using sparse SpMV; code includes a synthetic task where labels depend on D\_2 x\_2 (pairwise models have no signal) and a sanity suite that checks mass conservation and homological consistency at every sub‑update.
 """
 
+# Docs: markdown_documentation/simplicial_complexes_and_higher_order_attention.md
+
 from functools import partial
 
 import jax

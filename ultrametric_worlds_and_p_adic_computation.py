@@ -19,6 +19,9 @@ arrays; the reference trie is explicit for clarity, while a production variant c
 contiguous per‑depth arrays and bitsets for cache‑optimal rank/test/lookup.
 """
 
+# Docs: markdown_documentation/ultrametric_worlds_and_p_adic_computation.md (this file is the reference trie; the doc
+# also sketches a cache-opt production layout with per-depth bitsets + rank/select).
+
 import os
 import random
 import time
@@ -52,6 +55,33 @@ def mod_balance(x, p):
 
 def sign_int(x):
     return jnp.where(x > 0, 1, jnp.where(x < 0, -1, 0)).astype(jnp.int8)
+
+
+def _np_sign_int(x: np.ndarray) -> np.ndarray:
+    """Elementwise sign for integer arrays: returns -1, 0, 1 as int8."""
+    return np.where(x > 0, 1, np.where(x < 0, -1, 0)).astype(np.int8)
+
+
+def _np_mod_balance(x: np.ndarray, p: int) -> np.ndarray:
+    """Map residues mod p into a roughly symmetric representative set around 0."""
+    t = np.asarray(x, dtype=np.int32) % int(p)
+    half = int(p) // 2
+    return np.where(t > half, t - int(p), t).astype(np.int32)
+
+
+def _make_unit_upper_mats(p: int, K: int, m: int, *, U_seed: int | None, superdiag: bool) -> list[np.ndarray]:
+    """Match HeadTrie U init, but return NumPy arrays (for packed mode)."""
+    key = jax.random.PRNGKey(0 if U_seed is None else int(U_seed))
+    mats: list[np.ndarray] = []
+    for _d in range(int(K)):
+        M = np.eye(int(m), dtype=np.int32)
+        if superdiag and m > 1:
+            subkey = jax.random.split(key, 1)[0]
+            idxs = np.asarray(jax.random.randint(subkey, (m - 1,), 0, 2), dtype=np.int32)
+            M[np.arange(m - 1), np.arange(1, m)] += idxs
+            key = jax.random.split(key, 1)[0]
+        mats.append(M % int(p))
+    return mats
 
 
 @dataclass
@@ -167,12 +197,171 @@ class HeadTrie:
         return created
 
 
+class PackedHeadTrie:
+    """Packed, cache-friendlier p-ary trie (no Python dicts).
+
+    Practical stand-in for the doc's "bitset + rank/select" layout:
+    - Per-depth contiguous arrays for S and R.
+    - Per-node p-bit occupancy mask + dense child table (uint32 + int32).
+    - Lookup/update touch O(K) contiguous rows without dict/list pointer chasing.
+    """
+
+    def __init__(self, p: int, K: int, m: int, r: int, U_seed: int | None = None, superdiag: bool = False):
+        self.p, self.K, self.m, self.r = int(p), int(K), int(m), int(r)
+        self.U = _make_unit_upper_mats(self.p, self.K, self.m, U_seed=U_seed, superdiag=superdiag)
+
+        self._root = np.full((self.p,), -1, dtype=np.int32)
+        self._root_mask = np.uint32(0)
+
+        self._size = [0 for _ in range(self.K)]
+        self._cap = [max(4, self.p) for _ in range(self.K)]
+        self._S = [np.zeros((cap, self.m), dtype=np.int32) for cap in self._cap]
+        self._R = [np.zeros((cap, self.m), dtype=np.int8) for cap in self._cap]
+        self._child = [np.full((cap, self.p), -1, dtype=np.int32) for cap in self._cap[:-1]]
+        self._child_mask = [np.zeros((cap,), dtype=np.uint32) for cap in self._cap[:-1]]
+
+    def _grow_depth(self, d: int) -> None:
+        new_cap = int(self._cap[d]) * 2
+        size = int(self._size[d])
+
+        S_new = np.zeros((new_cap, self.m), dtype=np.int32)
+        R_new = np.zeros((new_cap, self.m), dtype=np.int8)
+        if size:
+            S_new[:size] = self._S[d][:size]
+            R_new[:size] = self._R[d][:size]
+        self._S[d] = S_new
+        self._R[d] = R_new
+        self._cap[d] = new_cap
+
+        if d < self.K - 1:
+            child_new = np.full((new_cap, self.p), -1, dtype=np.int32)
+            mask_new = np.zeros((new_cap,), dtype=np.uint32)
+            if size:
+                child_new[:size] = self._child[d][:size]
+                mask_new[:size] = self._child_mask[d][:size]
+            self._child[d] = child_new
+            self._child_mask[d] = mask_new
+
+    def _alloc_node(self, d: int) -> int:
+        if self._size[d] >= self._cap[d]:
+            self._grow_depth(d)
+        idx = int(self._size[d])
+        self._size[d] += 1
+        return idx
+
+    def _ensure_root_child(self, digit0: int) -> int:
+        digit0 = int(digit0)
+        idx = int(self._root[digit0])
+        if idx >= 0:
+            return idx
+        idx = self._alloc_node(0)
+        self._root[digit0] = np.int32(idx)
+        self._root_mask |= np.uint32(1 << digit0)
+        return idx
+
+    def _ensure_child(self, d: int, parent_idx: int, digit: int) -> int:
+        digit = int(digit)
+        parent_idx = int(parent_idx)
+        nxt = int(self._child[d][parent_idx, digit])
+        if nxt >= 0:
+            return nxt
+        nxt = self._alloc_node(d + 1)
+        self._child[d][parent_idx, digit] = np.int32(nxt)
+        self._child_mask[d][parent_idx] |= np.uint32(1 << digit)
+        return nxt
+
+    def _path_existing(self, digits: np.ndarray) -> list[tuple[int, int]]:
+        if self.K <= 0:
+            return []
+        digits = np.asarray(digits, dtype=np.int32)
+        if digits.shape[0] < self.K:
+            raise ValueError(f"Expected K={self.K} digits, got shape {digits.shape}")
+
+        digit0 = int(digits[0])
+        idx0 = int(self._root[digit0])
+        if idx0 < 0:
+            return []
+
+        path: list[tuple[int, int]] = [(0, idx0)]
+        idx = idx0
+        for d in range(0, self.K - 1):
+            nxt = int(self._child[d][idx, int(digits[d + 1])])
+            if nxt < 0:
+                break
+            path.append((d + 1, nxt))
+            idx = nxt
+        return path
+
+    def deepest_occupied(self, digits: np.ndarray) -> tuple[int, int]:
+        path = self._path_existing(digits)
+        return (-1, -1) if not path else path[-1]
+
+    def read_contrib(self, digits: np.ndarray) -> jnp.ndarray:
+        d, idx = self.deepest_occupied(digits)
+        if d < 0:
+            return jnp.zeros((self.m,), jnp.int32)
+        s = self._S[d][idx]
+        y = (self.U[d] @ s) % self.p
+        return jnp.asarray(y, dtype=jnp.int32)
+
+    def compatible(self, R_vec: np.ndarray, e_sign: np.ndarray, maj_thresh: int) -> bool:
+        R_vec = np.asarray(R_vec, dtype=np.int8)
+        e_sign = np.asarray(e_sign, dtype=np.int8)
+        opp = (R_vec != 0) & (np.sign(R_vec).astype(np.int8) == (-e_sign).astype(np.int8))
+        bad = opp & (np.abs(R_vec).astype(np.int32) >= int(maj_thresh))
+        return not bool(np.any(bad))
+
+    def volf_update(self, digits: np.ndarray, y_star: jnp.ndarray) -> int:
+        digits_np = np.asarray(digits, dtype=np.int32)
+        y_star_np = np.asarray(y_star, dtype=np.int32)
+
+        path = self._path_existing(digits_np)
+        if path:
+            d_star, idx_star = path[-1]
+            s = self._S[d_star][idx_star]
+            y = (self.U[d_star] @ s) % self.p
+        else:
+            d_star, idx_star = -1, -1
+            y = np.zeros((self.m,), dtype=np.int32)
+
+        e = (y_star_np - y) % self.p
+        if bool(np.all(e == 0)):
+            return 0
+        e_sign = _np_sign_int(_np_mod_balance(e, self.p))
+
+        chosen: tuple[int, int] | None = None
+        for d, idx in path:
+            if self.compatible(self._R[d][idx], e_sign, self.r):
+                chosen = (d, idx)
+                break
+
+        created = 0
+        if chosen is None:
+            if d_star < 0:
+                idx0 = self._ensure_root_child(int(digits_np[0]))
+                chosen = (0, idx0)
+                created = 1
+            elif d_star + 1 < self.K:
+                nxt = self._ensure_child(d_star, idx_star, int(digits_np[d_star + 1]))
+                chosen = (d_star + 1, nxt)
+                created = 1
+            else:
+                chosen = (d_star, idx_star)
+
+        d, idx = chosen
+        self._S[d][idx] = (self._S[d][idx] + e) % self.p
+        self._R[d][idx] = np.clip(self._R[d][idx].astype(np.int16) + e_sign.astype(np.int16), -self.r, self.r).astype(
+            np.int8
+        )
+        return created
+
+
 class LCPTreeAttention:
-    def __init__(self, p=16, K=8, H=2, m=8, r=3, superdiag=False, seeds=None):
+    def __init__(self, p=16, K=8, H=2, m=8, r=3, superdiag=False, seeds=None, packed: bool = False):
         self.p, self.K, self.H, self.m = p, K, H, m
-        self.heads = [
-            HeadTrie(p, K, m, r, U_seed=(None if seeds is None else seeds[h]), superdiag=superdiag) for h in range(H)
-        ]
+        self.packed = bool(packed)
+        head_cls = PackedHeadTrie if self.packed else HeadTrie
+        self.heads = [head_cls(p, K, m, r, U_seed=(None if seeds is None else seeds[h]), superdiag=superdiag) for h in range(H)]
 
     def lookup(self, digits_batch):
         Y = jnp.zeros((len(digits_batch), self.m), jnp.int32)
@@ -208,7 +397,8 @@ class LCPTreeAttention:
 
     def eval_acc(self, qs, ys):
         y = self.lookup(qs)
-        eq = (y == ys).all(axis=1)
+        ys_arr = ys if isinstance(ys, jnp.ndarray) else jnp.stack(list(ys), axis=0)
+        eq = (y == ys_arr).all(axis=1)
         return float(jnp.mean(eq.astype(jnp.float32)))
 
 
@@ -525,11 +715,17 @@ def taskB_dataset(N_train, N_test, p, K, m, epsilon=0.01, seed=0):
     qs, ys, qst, yst = [], [], [], []
     for i in range(N_train):
         k = keys[i]
-        D = rng.integers(0, K - 1)
-        r = lcp_residue(k, D, pow_p)
-        y = Ynode[(D, r)]
-        if r in leaf_overrides and D == K - 1:
-            y = (y + 1) % p
+        # Include leaves so exceptions are actually exercised.
+        D = int(rng.integers(0, K))
+        if D < K - 1:
+            r = lcp_residue(k, D, pow_p)
+            y = Ynode[(D, r)]
+        else:
+            r_leaf = lcp_residue(k, K - 1, pow_p)
+            r_parent = lcp_residue(k, K - 2, pow_p)
+            y = Ynode[(K - 2, r_parent)]
+            if r_leaf in leaf_overrides:
+                y = (y + 1) % p
         q = k.copy()
         if D + 1 < K:
             q[D + 1 :] = rng.integers(0, p, size=(K - (D + 1),), dtype=np.int32)
@@ -537,11 +733,16 @@ def taskB_dataset(N_train, N_test, p, K, m, epsilon=0.01, seed=0):
         ys.append(y)
     for i in range(N_test):
         k = keys[N_train + i]
-        D = rng.integers(0, K - 1)
-        r = lcp_residue(k, D, pow_p)
-        y = Ynode[(D, r)]
-        if r in leaf_overrides and D == K - 1:
-            y = (y + 1) % p
+        D = int(rng.integers(0, K))
+        if D < K - 1:
+            r = lcp_residue(k, D, pow_p)
+            y = Ynode[(D, r)]
+        else:
+            r_leaf = lcp_residue(k, K - 1, pow_p)
+            r_parent = lcp_residue(k, K - 2, pow_p)
+            y = Ynode[(K - 2, r_parent)]
+            if r_leaf in leaf_overrides:
+                y = (y + 1) % p
         q = k.copy()
         if D + 1 < K:
             q[D + 1 :] = rng.integers(0, p, size=(K - (D + 1),), dtype=np.int32)
@@ -550,10 +751,10 @@ def taskB_dataset(N_train, N_test, p, K, m, epsilon=0.01, seed=0):
     return qs, ys, qst, yst
 
 
-def run_task_A():
-    p, K, H, m = 16, 8, 2, 8
+def run_task_A(*, packed: bool = False):
+    p, K, H, m = 16, 8, 1, 8
     qs, ys, qst, yst = taskA_dataset(20000, 4000, p, K, m, seed=1)
-    model = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=True, seeds=list(range(H)))
+    model = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=False, seeds=list(range(H)), packed=packed)
     t0 = time.time()
     acc0 = model.eval_acc(qs, ys)
     t1 = time.time()
@@ -567,10 +768,10 @@ def run_task_A():
     print(f"Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}")
 
 
-def run_task_B():
-    p, K, H, m = 16, 8, 2, 8
+def run_task_B(*, packed: bool = False):
+    p, K, H, m = 16, 8, 1, 8
     qs, ys, qst, yst = taskB_dataset(20000, 4000, p, K, m, epsilon=0.02, seed=3)
-    model = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=True, seeds=[7, 11])
+    model = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=False, seeds=[7], packed=packed)
     t0 = time.time()
     acc0 = model.eval_acc(qs, ys)
     t1 = time.time()
@@ -578,11 +779,57 @@ def run_task_B():
     t2 = time.time()
     acc_test = model.eval_acc(qst, yst)
     t3 = time.time()
-    node_count = sum(len(h.levels[d].residues) for h in model.heads for d in range(K))
+    if packed:
+        node_count = sum(int(h._size[d]) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
+    else:
+        node_count = sum(len(h.levels[d].residues) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
     print(
         f"Task B: train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} test_acc={acc_test:.4f} created_nodes={created} total_nodes={node_count}"
     )
     print(f"Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}")
+
+
+def compare_packed_vs_reference(
+    *, task: str = "A", seed: int = 0, n_train: int = 3000, n_test: int = 800
+) -> dict[str, float]:
+    """Small parity + timing sanity check (packed vs reference) for Tasks A/B."""
+    p, K, H, m = 16, 8, 1, 8
+    if task.upper() == "A":
+        qs, ys, qst, yst = taskA_dataset(n_train, n_test, p, K, m, seed=1 + seed)
+    elif task.upper() == "B":
+        qs, ys, qst, yst = taskB_dataset(n_train, n_test, p, K, m, epsilon=0.02, seed=3 + seed)
+    else:
+        raise ValueError("task must be 'A' or 'B'")
+
+    # Keep U seeds identical across modes.
+    head_seeds = [7]
+    ref = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=False, seeds=head_seeds, packed=False)
+    packed_model = LCPTreeAttention(p=p, K=K, H=H, m=m, r=5, superdiag=False, seeds=head_seeds, packed=True)
+
+    def _run(model: LCPTreeAttention) -> tuple[float, float, float]:
+        t0 = time.perf_counter()
+        acc0 = model.eval_acc(qs, ys)
+        _acc_train, _ = model.train_epoch(qs, ys, shuffle=False)
+        acc_test = model.eval_acc(qst, yst)
+        t1 = time.perf_counter()
+        return float(acc0), float(acc_test), float(t1 - t0)
+
+    acc0_ref, acc_test_ref, t_ref = _run(ref)
+    acc0_p, acc_test_p, t_packed = _run(packed_model)
+
+    y_ref = ref.lookup(qst)
+    y_packed = packed_model.lookup(qst)
+    if not bool(jnp.all(y_ref == y_packed)):
+        raise AssertionError("Packed/reference lookup mismatch on test split")
+
+    return {
+        "acc0_ref": acc0_ref,
+        "acc_test_ref": acc_test_ref,
+        "time_ref_s": t_ref,
+        "acc0_packed": acc0_p,
+        "acc_test_packed": acc_test_p,
+        "time_packed_s": t_packed,
+    }
 
 
 def smoke_demo_small():
@@ -599,9 +846,39 @@ def demo():
     """Run all ultrametric demonstrations."""
     random.seed(0)
     np.random.seed(0)
+    use_packed = bool(int(os.environ.get("ULTRA_PACKED", "0")))
     smoke_demo_small()
-    run_task_A()
-    run_task_B()
+    run_task_A(packed=use_packed)
+    run_task_B(packed=use_packed)
+    try:
+        outA = compare_packed_vs_reference(task="A", seed=0)
+        outB = compare_packed_vs_reference(task="B", seed=0)
+        try:
+            from rich.console import Console as _Console
+            from rich.table import Table as _Table
+
+            tab = _Table(title="Packed vs Reference (Tasks A/B, small)", show_header=True, header_style="bold magenta")
+            tab.add_column("Task")
+            tab.add_column("acc0 ref/packed", justify="right")
+            tab.add_column("acc_test ref/packed", justify="right")
+            tab.add_column("time(s) ref/packed", justify="right")
+            tab.add_row(
+                "A",
+                f"{outA['acc0_ref']:.3f}/{outA['acc0_packed']:.3f}",
+                f"{outA['acc_test_ref']:.3f}/{outA['acc_test_packed']:.3f}",
+                f"{outA['time_ref_s']:.3f}/{outA['time_packed_s']:.3f}",
+            )
+            tab.add_row(
+                "B",
+                f"{outB['acc0_ref']:.3f}/{outB['acc0_packed']:.3f}",
+                f"{outB['acc_test_ref']:.3f}/{outB['acc_test_packed']:.3f}",
+                f"{outB['time_ref_s']:.3f}/{outB['time_packed_s']:.3f}",
+            )
+            _Console().print(tab)
+        except Exception as err:
+            print(f"[ultrametric] Packed/reference table skipped: {err}")
+    except Exception as err:
+        print(f"[ultrametric] Packed/reference sanity check failed: {err}")
     # Optional packed timing benchmark to n=4096
     try:
         import time as _time
