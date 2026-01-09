@@ -1,26 +1,27 @@
 """
 Training script for JAX/Flax port of nanochat.
 """
-import os
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
+import os
+import sys
 import time
+
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+
 import jax
 import jax.numpy as jnp
-import optax
-from flax import linen as nn
-from flax.training import train_state
 import numpy as np
+import optax
+from flax.training import train_state
 
 # Import local modules
 from nanochat.common_jax import GPTConfig
-from nanochat.gpt_jax import GPT
-from nanochat.muon_jax import muon
 from nanochat.dataloader import tokenizing_distributed_data_loader
-from nanochat.hoss_opt import hoss # Import HOSS optimizer
+from nanochat.gpt_jax import GPT
+from nanochat.hoss_opt import hoss  # Import HOSS optimizer
+from nanochat.muon_jax import muon
 
-# Ensure we can import from nanochat
-import sys
+# Ensure we can import from nanochat when executed as a script from repo root.
 sys.path.append(os.getcwd())
 
 def get_params_partition(params):
@@ -31,14 +32,14 @@ def get_params_partition(params):
     """
     def _map_fn(path, param):
         # path is a tuple of keys, e.g. ('blocks', '0', 'attn', 'c_q', 'kernel')
-        
+
         # Check if it's a kernel in the blocks
         if 'blocks' in path and 'kernel' in path:
             # It's a weight matrix in the transformer
-            # Check if it is 2D (Muon only works on >=2D, usually 2D)
+            # Muon supports only 2D kernels (param.ndim == 2).
             if param.ndim == 2:
                 return 'muon'
-        
+
         # Default to AdamW
         return 'adamw'
 
@@ -51,24 +52,24 @@ class TrainState(train_state.TrainState):
 def create_train_state(rng, config, learning_rate):
     model = GPT(config)
     dummy_input = jnp.ones((1, config.sequence_len), dtype=jnp.int32)
-    
+
     # Initialize parameters
     params = model.init(rng, dummy_input, train=False)['params']
-    
+
     # Define optimizer based on config
     if config.optimizer_type == "hoss":
         print("Using HOSS optimizer.")
         # HOSS needs a loss_fn. It will be passed in train_step.
         # We pass a dummy learning_rate for now, as HOSS does not tune it directly.
-        tx = hoss(learning_rate=learning_rate) 
+        tx = hoss(learning_rate=learning_rate)
     else:
         print("Using AdamW + Muon optimizer.")
         # AdamW for embeddings/head
         adamw_optimizer = optax.adamw(learning_rate=learning_rate, weight_decay=0.0)
-        
+
         # Muon for internal matrices
         muon_optimizer = muon(learning_rate=0.02, momentum=0.95, ns_steps=5)
-        
+
         # Combine
         tx = optax.multi_transform(
             {
@@ -77,7 +78,7 @@ def create_train_state(rng, config, learning_rate):
             },
             get_params_partition(params)
         )
-    
+
     return TrainState.create(
         apply_fn=model.apply,
         params=params,
@@ -90,23 +91,23 @@ def train_step(state, batch, targets):
         logits = state.apply_fn({'params': params}, batch, targets=targets, train=True)
         # logits: [B, T, V]
         # targets: [B, T]
-        
+
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, targets)
         return jnp.mean(loss)
-        
+
     grad_fn = jax.value_and_grad(loss_fn)
     loss, grads = grad_fn(state.params)
     grad_norm = optax.global_norm(grads)
-    
+
     # Pass loss_fn as an extra_args to the optimizer update if HOSS is used
     # Optax's apply_gradients will pass extra_args to the tx.update function
     updates, new_opt_state = state.tx.update(grads, state.opt_state, state.params, loss_fn=loss_fn)
-    
+
     # We cannot use state.apply_gradients here because we already called tx.update
     # and we need to manually apply the updates to params.
     new_params = optax.apply_updates(state.params, updates)
     state = state.replace(step=state.step + 1, params=new_params, opt_state=new_opt_state)
-    
+
     return state, loss, grad_norm
 def main():
     import argparse
@@ -115,6 +116,7 @@ def main():
     parser.add_argument("--attention-type", type=str, default="standard", choices=["standard", "tropical", "ultrametric"], help="Attention mechanism type")
     parser.add_argument("--learning-rate", type=float, default=6e-4, help="Learning rate (delta for HOSS)")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     args = parser.parse_args()
 
     # Config
@@ -129,16 +131,17 @@ def main():
     # Set config from CLI args
     config.optimizer_type = args.optimizer_type
     config.attention_type = args.attention_type
-    
+
     batch_size = args.batch_size
     learning_rate = args.learning_rate
-    
+
     print(f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}, LR={learning_rate}, BS={batch_size}")
-    
+
     # RNG
-    rng = jax.random.PRNGKey(42)
+    np.random.seed(args.seed)
+    rng = jax.random.PRNGKey(args.seed)
     rng, init_rng = jax.random.split(rng)
-    
+
     # Initialize
     print("Initializing model...")
     # Check backend
@@ -169,35 +172,35 @@ def main():
             split="train",
             device="cpu" # Get CPU tensors
         )
-        
+
         print("Starting training loop...")
         step = 0
         t0 = time.time()
-        
+
         # For stalled loss detection
         last_loss = None
         stagnation_count = 0
-        
+
         for inputs, targets in loader:
             # Convert to numpy/jax
             inputs = jnp.array(inputs.numpy())
             targets = jnp.array(targets.numpy())
-            
+
             state, loss, grad_norm = train_step(state, inputs, targets)
-            
+
             # Check for NaN
             if jnp.isnan(loss):
                 raise ValueError(f"NaN loss detected at step {step}!")
 
             loss_float = float(loss)
-            
+
             # Check for stagnation
             if last_loss is not None:
                 if abs(loss_float - last_loss) < 1e-6:
                     stagnation_count += 1
                 else:
                     stagnation_count = 0
-            
+
             last_loss = loss_float
 
             if step % 1 == 0:
@@ -205,20 +208,20 @@ def main():
                 dt = t1 - t0
                 t0 = t1
                 print(f"Step {step}: loss {loss_float:.4f}, grad_norm {float(grad_norm):.4f}, time {float(dt*1000):.2f}ms/step")
-            
+
             if stagnation_count >= 2:
                 raise RuntimeError(f"Loss stagnated at {loss_float:.4f} for {stagnation_count+1} steps. Aborting to save time.")
 
             step += 1
             if step >= 20: # Short run for debug
                 break
-                
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"Failed to run training loop: {e}")
-        print("Note: This is expected if no parquet data is found in ~/.cache/bio_inspired_nanochat")
-        print("Please ensure data is available or modify dataloader to use synthetic data.")
+        print("Note: This is expected if no parquet data is found in ~/.cache/nanochat/base_data")
+        print("If you set NANOCHAT_BASE_DIR, check that location instead.")
 
 if __name__ == "__main__":
     main()
