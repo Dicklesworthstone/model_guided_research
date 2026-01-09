@@ -21,6 +21,10 @@ from torch.optim.lr_scheduler import _LRScheduler
 class OrdinalLRScheduler:
     def __init__(self, optimizer, A_init=2, B_init=3, P_init=100, eta_init=1e-3, gamma=0.3, min_lr=1e-6):
         self.optimizer = optimizer
+        if A_init < 0 or B_init < 0 or P_init < 1:
+            raise ValueError("A_init and B_init must be >= 0 and P_init must be >= 1")
+        if eta_init <= 0 or gamma <= 0 or min_lr <= 0:
+            raise ValueError("eta_init, gamma, and min_lr must be positive")
         self.A = A_init
         self.B_init = B_init
         self.B = B_init
@@ -39,6 +43,8 @@ class OrdinalLRScheduler:
             param_group['lr'] = self.eta_init
             
     def step(self, loss):
+        if torch.is_tensor(loss):
+            loss = float(loss.detach().item())
         # Update EMA loss
         if self.ema_loss is None:
             self.ema_loss = loss

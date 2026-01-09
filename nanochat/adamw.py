@@ -28,6 +28,13 @@ class DistAdamW(torch.optim.Optimizer):
             params: list[Tensor] = group["params"]
             for base_i in range(len(params)):
                 grad = params[base_i].grad
+                if grad is None:
+                    raise RuntimeError("DistAdamW expects all parameters to have gradients")
+                if grad.shape[0] % world_size != 0:
+                    raise ValueError(
+                        "DistAdamW requires param/grad first dimension to be divisible by world_size, "
+                        f"got shape={tuple(grad.shape)}, world_size={world_size}"
+                    )
                 rank_size = grad.shape[0] // world_size
                 grad_slice = torch.empty_like(grad[:rank_size])
                 reduce_scatter_futures.append(dist.reduce_scatter_tensor(grad_slice, grad, op=dist.ReduceOp.AVG, async_op=True).get_future())

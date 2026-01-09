@@ -122,6 +122,12 @@ class HOSS(Optimizer):
             if not params_list:
                 continue
 
+            if any(not g.requires_grad for g in grads_list):
+                raise RuntimeError(
+                    "HOSS requires gradients with create_graph=True. "
+                    "Call loss.backward(create_graph=True) before HOSS.step()."
+                )
+
             # Flatten params and grads
             params_flat = torch.cat([p.view(-1) for p in params_list])
             grads_flat = torch.cat([g.view(-1) for g in grads_list])
@@ -153,14 +159,6 @@ class HOSS(Optimizer):
                     v_list.append(v[offset:offset+numel].view_as(p))
                     offset += numel
                 
-                # Check if grads have graph
-                if not grads_list[0].requires_grad:
-                     # This happens if backward() was called without create_graph=True
-                     # We can't compute HVP efficiently without it.
-                     # Fallback: raise error or warn?
-                     # raise RuntimeError("HOSS requires create_graph=True in backward pass")
-                     pass
-
                 # Compute HVP: grad( dot(grads, v) )
                 hvp_list = torch.autograd.grad(
                     outputs=grads_list,
