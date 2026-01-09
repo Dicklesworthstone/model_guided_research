@@ -2,6 +2,7 @@
 Shared utilities for model-guided research implementations.
 """
 
+import random
 import time
 from collections.abc import Callable
 from functools import wraps
@@ -9,12 +10,24 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from rich import box
 from rich.console import Console
 from rich.table import Table
 from nanochat.torch_imports import torch
 
 console = Console()
+
+def seed_everything(seed: int):
+    """Seed Python, NumPy, and PyTorch RNGs; return a JAX PRNGKey for convenience."""
+    if seed < 0:
+        raise ValueError("seed must be non-negative")
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    return jax.random.PRNGKey(seed)
 
 
 def timer(func: Callable) -> Callable:
@@ -44,18 +57,82 @@ def print_metrics(metrics: dict[str, Any], title: str = "Metrics") -> None:
     console.print(table)
 
 
-def check_nan_inf(x: jnp.ndarray, name: str = "tensor") -> None:
-    """Check for NaN or Inf values in tensor."""
-    has_nan = jnp.any(jnp.isnan(x))
-    has_inf = jnp.any(jnp.isinf(x))
+def check_nan_inf(
+    x: Any,
+    name: str = "tensor",
+    *,
+    enabled: bool | None = None,
+    raise_on_error: bool = False,
+) -> bool:
+    """Optional NaN/Inf watchpoint with rich diagnostics.
 
-    if has_nan or has_inf:
-        issues = []
-        if has_nan:
-            issues.append('NaN')
-        if has_inf:
-            issues.append('Inf')
-        console.print(f"[bold red]Warning:[/bold red] {name} contains {' and '.join(issues)} values")
+    By default this is controlled by `ProjectConfig.check_numerics` (via `config.get_config()`).
+    Returns True when finite, False when NaN/Inf is detected.
+    """
+    if enabled is None:
+        from config import get_config
+
+        enabled = bool(get_config().check_numerics)
+    if not enabled:
+        return True
+
+    backend = "unknown"
+    shape = "?"
+    dtype = "?"
+    nan_count = 0
+    inf_count = 0
+
+    if isinstance(x, torch.Tensor):
+        backend = "torch"
+        shape = tuple(x.shape)
+        dtype = str(x.dtype)
+        if torch.is_floating_point(x) or torch.is_complex(x):
+            nan_count = int(torch.isnan(x).sum().item())
+            inf_count = int(torch.isinf(x).sum().item())
+    elif isinstance(x, np.ndarray):
+        backend = "numpy"
+        shape = x.shape
+        dtype = str(x.dtype)
+        if np.issubdtype(x.dtype, np.floating) or np.issubdtype(x.dtype, np.complexfloating):
+            nan_count = int(np.isnan(x).sum())
+            inf_count = int(np.isinf(x).sum())
+    else:
+        try:
+            arr = jnp.asarray(x)
+        except Exception:
+            arr = None
+        if arr is not None:
+            backend = "jax"
+            shape = tuple(arr.shape)
+            dtype = str(arr.dtype)
+            if jnp.issubdtype(arr.dtype, jnp.floating) or jnp.issubdtype(arr.dtype, jnp.complexfloating):
+                nan_count = int(jnp.isnan(arr).sum())
+                inf_count = int(jnp.isinf(arr).sum())
+
+    if nan_count == 0 and inf_count == 0:
+        return True
+
+    issues: list[str] = []
+    if nan_count:
+        issues.append("NaN")
+    if inf_count:
+        issues.append("Inf")
+    issues_str = " and ".join(issues)
+    console.print(f"[bold red]Numerics:[/bold red] {name} contains {issues_str}")
+
+    table = Table(title=f"Numerics diagnostics: {name}", box=box.ROUNDED)
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+    table.add_row("backend", backend)
+    table.add_row("shape", str(shape))
+    table.add_row("dtype", dtype)
+    table.add_row("nan_count", str(nan_count))
+    table.add_row("inf_count", str(inf_count))
+    console.print(table)
+
+    if raise_on_error:
+        raise ValueError(f"{name} contains {issues_str} (nan_count={nan_count}, inf_count={inf_count})")
+    return False
 
 
 def get_device_info() -> dict[str, Any]:
