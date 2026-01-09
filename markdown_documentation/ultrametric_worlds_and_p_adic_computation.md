@@ -261,6 +261,7 @@ For a supervised pair $(q, y^\*)$ and its current prediction $\hat{y}(q)$:
 
 * For each depth $d$, store nodes contiguously in an array $A_d$. Maintain a succinct **occupancy bitset** $B_d$ over the universe of active residues at depth $d$, plus a rank/select structure for O(1) index mapping from a residue $r_d$ to its position in $A_d$.
 * Store all $U_d$ contiguously per depth.
+* **Implementation note (this repo):** `ultrametric_worlds_and_p_adic_computation.py` includes an opt‑in *packed* trie that avoids allocating universe‑sized $B_d$ for large $p^K$. Instead, it stores a per‑node $p$‑bit child‑occupancy mask (bitset) plus a dense child‑index table; lookup/update still touch $O(K)$ contiguous rows with no Python dict lookups. Enable via `ULTRA_PACKED=1` (or `mgr run ultrametric --ultra-packed`).
 
 **Lookup(q)**
 

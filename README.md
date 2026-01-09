@@ -130,8 +130,9 @@ cd model_guided_research
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install all dependencies
-uv pip install -e .
+# Install dependencies (and this project) into the venv
+# - Use `--extra dev` if you want pytest/ruff/etc.
+uv sync --extra dev
 
 # Verify installation
 mgr --help
@@ -576,6 +577,15 @@ python -m nanochat.train \
     --attention-type quaternion \
     --scheduler-type ordinal
 
+# Optional: CA-based initializer experiment (default init is unchanged unless enabled)
+python -m nanochat.train \
+    --attention-type standard \
+    --ca-init-rule rule30 \
+    --ca-init-alpha 1.0 \
+    --ca-init-seed 123
+# (Equivalent env vars: NANOCHAT_CA_INIT_RULE, NANOCHAT_CA_INIT_ALPHA, NANOCHAT_CA_INIT_SEED)
+# Currently applies to nn.Linear/nn.Embedding weights; mixed-precision mixes are computed in fp32 then cast.
+
 # Distributed training
 torchrun --nproc_per_node=4 -m nanochat.train \
     --batch-size 8 \
@@ -710,6 +720,46 @@ python -m nanochat.train \
 torchrun --nproc_per_node=4 -m nanochat.train \
     --batch-size 8 \
     --attention-type ultrametric
+
+# FlexAttention (torch>=2.5) for standard attention
+python -m nanochat.train --attention-type standard --use-flex-attention
+
+# FlexAttention verification + microbench (skips cleanly if unavailable)
+uv run python scripts/verify_flex_correctness.py
+uv run python scripts/benchmark_flex.py --device cuda --compile
+
+# Braid attention: discrete decoder + schedule verification (debug; KV-cache decode)
+python -m nanochat.train \
+    --attention-type braid \
+    --braid-mode discrete \
+    --braid-tau 0.0 \
+    --braid-crossing-law ybe \
+    --braid-record-schedule \
+    --braid-verify
+```
+
+### Benchmarks (fixed budgets)
+
+```bash
+# Fixed-FLOPs single training run (writes summary.json + run.md)
+python -m nanochat.train \
+    --attention-type standard \
+    --target-flops 2e9 \
+    --artifacts-kind bench \
+    --artifacts-topic fixed_flops/nanochat \
+    --run-id flops_single_cpu \
+    --device cpu
+
+# Fixed-FLOPs A/B suite across attention types (aggregated report + optional demo certificates)
+mgr bench-fixed-flops \
+    --run-id flops_suite_cpu \
+    --device cpu \
+    --target-flops 2e9 \
+    -a standard -a tropical -a reversible \
+    --include-demo-certs
+
+# Practical utility suite (writes artifacts if --artifacts-dir set)
+mgr eval --artifacts-dir artifacts --run-id util_suite
 ```
 
 ### Testing & Validation
@@ -861,34 +911,6 @@ Each implementation includes detailed mathematical documentation in `markdown_do
 - Piecewise-linear combinatorial geometry
 - Degenerations of classical algebraic geometry
 
-## 🤝 Contributing
-
-This project welcomes contributions that:
-
-### Code Contributions
-- Implement additional mathematical structures
-- Improve computational efficiency
-- Extend to new frameworks (TensorFlow, etc.)
-- Add visualization tools
-
-### Scientific Contributions
-- Empirical validations on real tasks
-- Theoretical analysis and proofs
-- New mathematical frameworks
-- Hybrid architecture designs
-
-### Documentation
-- Tutorial notebooks
-- Video explanations
-- Mathematical exposition
-- Use case examples
-
-### Testing
-- Property-based tests
-- Benchmark suites
-- Edge case coverage
-- Performance profiling
-
 ## 🏆 The AI Self-Evaluation Framework
 
 GPT-5 Pro evaluated each mathematical approach using a comprehensive scoring rubric:
@@ -991,14 +1013,14 @@ python tests/test_practical_utility.py > results.txt 2>&1
 ```bash
 # Module not found
 source .venv/bin/activate
-uv pip install -e .
+uv sync --extra dev
 
 # JAX/CUDA problems
 export JAX_PLATFORM_NAME=cpu  # Force CPU mode
 mgr run <demo>
 
 # PyTorch CUDA issues
-pip install torch --index-url https://download.pytorch.org/whl/cu118
+uv sync --upgrade-package torch --index https://download.pytorch.org/whl/cu118
 ```
 
 ### Runtime Issues

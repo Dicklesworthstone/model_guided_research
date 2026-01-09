@@ -233,6 +233,14 @@ $$
 
 This preserves the multiset of all $y$’s globally, and is pointwise invertible via $(x_a',y_a',x_b',y_b')\mapsto(x_a'-y_b',y_a',x_b'-y_a',y_b')$.
 
+**YBE-valid crossing (optional).** If we treat a crossing as swapping adjacent strand order (as in the braid group), the *swap-output* variant
+
+$$
+(x_a,y_a),(x_b,y_b)\mapsto (x_b+y_a,y_b),(x_a+y_b,y_a)
+$$
+
+is a set-theoretic Yang–Baxter map: it satisfies **R3** ($\sigma_i\sigma_{i+1}\sigma_i=\sigma_{i+1}\sigma_i\sigma_{i+1}$) pointwise on triples and still conserves the payload multiset $\{y\}$. In code this is exposed as `crossing_update_ybe` (enable via `BRAID_CROSSING_LAW=ybe`).
+
 **Program equivalence (local rewrites only).** A program is a pair $(\pi, w)$ with endpoint permutation $\pi\in S_n$ and braid word $w$ over generators $\sigma_i$ (adjacent crossings). Two programs with the **same** $\pi$ are equivalent iff their words are related by **R2** ($\sigma_i\sigma_i^{-1}\!\leftrightarrow\!\epsilon$), **R3** ($\sigma_i\sigma_{i+1}\sigma_i\!\leftrightarrow\!\sigma_{i+1}\sigma_i\sigma_{i+1}$), and **far‑commutation** ($|i-j|\ge2$). We **reject** any move not derivable from these local rules.
 
 ---
@@ -411,13 +419,15 @@ As a *mechanism*, it overlaps strongly with binary masking/gating and permutatio
 
 ### Probability of being theoretically correct — **68**
 
-For the **restricted decoder** (only $\sigma_1$, no inverses, explicit $\pi$), the semantics and invariants hold and the local‑rewrite verification is sound (trivially: no R2/R3 events can arise). However, the **crossing map used in code**,
+For the **restricted decoder** (only $\sigma_1$, no inverses, explicit $\pi$), the semantics and invariants hold and the local‑rewrite verification is sound (trivially: no R2/R3 events can arise). However, the **default crossing map used in restricted mode**,
 
 $$
 (x_a,y_a),(x_b,y_b)\mapsto (x_a+y_b,y_a),(x_b+y_a,y_b),
 $$
 
-does **not** satisfy the three‑strand braid coherence (the set‑theoretic Yang–Baxter equation). A concrete counterexample: with $(x_i,y_i)=(-2,-2)$ for $i=1,2,3$, the two sides of R3 yield different triples. That’s acceptable for our constrained word family (R3 never fires) but limits any generalization claims; hence the score is mid‑high for the mechanism as stated, and lower if extrapolated beyond it.
+does **not** satisfy the three‑strand braid coherence (the set‑theoretic Yang–Baxter equation). A concrete counterexample: with $(x_i,y_i)=(-2,-2)$ for $i=1,2,3$, the two sides of R3 yield different triples. That’s acceptable for our constrained word family (R3 never fires) but limits any generalization claims.
+
+To support the full braid formalism, the implementation also includes an optional YBE-valid crossing law (`crossing_update_ybe`, enable with `BRAID_CROSSING_LAW=ybe`) which *does* satisfy R3/YBE (covered by unit tests) and is suitable for broader braid words and rewrite-based scheduling.
 
 ### Probability of being practically useful — **55**
 

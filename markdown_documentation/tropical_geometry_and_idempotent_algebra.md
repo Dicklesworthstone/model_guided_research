@@ -86,6 +86,21 @@ Because $y(x+c\mathbf{1})=y(x)+c$, we can **center** without changing decisions:
 
 All such normalizations preserve the induced order and the argmax structure; they simply pick a convenient gauge and cap dynamic range.
 
+### Nanochat implementation notes (PyTorch)
+
+The production nanochat implementation exposes these ideas directly in
+`nanochat/tropical_attention_torch.py`:
+
+- **Gauge fixing** (`GPTConfig.tropical_gauge_fix`, default **True**): centers Q/K/V (and the attention output) by subtracting the per-vector max so each vector has `max = 0`.
+- **Score centering** (`GPTConfig.tropical_score_center`, default **True**): subtracts the per-query max over keys from the tropical score matrix (a pure gauge shift that preserves argmax structure).
+- **Margins / certificates** (`GPTConfig.tropical_record_margins`, default **False**): computes the runner-up margin `γ` at the value-aggregation max node and stores per-layer per-head stats on the attention module (`tropical_gamma_*` buffers). The reported `γ` is the per-token/per-head min over value dimensions of `(top1 - top2)` across keys.
+
+To log these during training:
+
+```bash
+uv run python -m nanochat.train --attention-type tropical --tropical-log-margins
+```
+
 ---
 
 ## 5) Compositionality and residuals

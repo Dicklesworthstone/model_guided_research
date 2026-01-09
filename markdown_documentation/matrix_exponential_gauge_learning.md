@@ -198,6 +198,22 @@ Below is a first‑principles, speculative roadmap for why the matrix exponentia
 
 ---
 
+### BCH/Magnus fusion micro‑demo (implemented)
+
+The demo now includes a **BCH/Magnus fusion micro‑experiment** inside `matrix_exponential_gauge_learning.py`. It:
+
+- Draws a short sequence of small skew‑symmetric generators.
+- Compares the product of exponentials $\prod_i \exp(A_i)$ to a fused approximation
+  $\exp(\Omega)$ with $\Omega$ built by first‑order (sum) and second‑order BCH.
+- Reports **relative Frobenius error** vs. **commutator norms** in a concise Rich table.
+
+**Heuristic guidance:** fusion is typically safe when commutators are small. In the demo we flag
+`safe` when `comm_max < 1e-2` and second‑order error `err_2nd < 1e-3` (adjust as needed).
+
+**Toggle:** set `GAUGE_BCH_FUSION=0` to skip this micro‑demo during `mgr run matrix-gauge`.
+
+---
+
 ### Closing take
 
 The matrix exponential is a principled “compiler” from simple, linear, infinitesimal generators to rich, global, structure‑preserving transformations. Transformers already behave like products of small steps; replacing ad‑hoc normalizations and unconstrained matrices with exponentials of tailored algebras turns that implicit physics into explicit geometry. The likely endgame is a family of **Lie‑aware Transformers** that are (i) easier to train, (ii) faster at inference via fusion and structure, (iii) better behaved at long horizons, and (iv) much more interpretable—because their mechanisms live in generators and commutators we can actually read and control.
