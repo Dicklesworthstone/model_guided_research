@@ -59,3 +59,7 @@ docs/_build/
 # Environment
 .env
 .env.local
+
+# Local scratch scripts (not part of repo)
+check_optax_kwargs.py
+diagnose_jax.py

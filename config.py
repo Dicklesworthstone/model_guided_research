@@ -17,6 +17,7 @@ class ProjectConfig:
     jax_precision: str = "float32"  # or "float64"
     random_seed: int = 42
     jax_debug_nans: bool = False  # Enable NaN checking in JAX
+    jax_debug_infs: bool = False  # Enable Inf checking in JAX
     jax_disable_jit: bool = False  # Disable JIT for debugging
 
     # Output settings
@@ -95,8 +96,17 @@ class ProjectConfig:
         if self.jax_debug_nans:
             jax.config.update("jax_debug_nans", True)
 
+        if self.jax_debug_infs:
+            jax.config.update("jax_debug_infs", True)
+
         if self.jax_disable_jit:
             jax.config.update("jax_disable_jit", True)
+
+        if self.check_numerics:
+            # `check_numerics` is a higher-level "turn on the alarms" switch.
+            # Enable both NaN and Inf checks in JAX regardless of the lower-level flags.
+            jax.config.update("jax_debug_nans", True)
+            jax.config.update("jax_debug_infs", True)
 
         # Create output directories if needed
         if self.save_outputs:

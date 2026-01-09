@@ -24,12 +24,13 @@ classifiers = [
 
 dependencies = [
     # Core ML libraries
-    "jax[cuda12]>=0.4.0",
-    "jaxlib>=0.4.0",
+    "jax>=0.4.0",
     "numpy>=1.26.0",
     # Neural network libraries
     "flax>=0.8.0",
     "optax>=0.2.0",
+    "requests>=2.31.0",
+    "jinja2>=3.1.0",
     # Visualization (optional, only used in one demo)
     "matplotlib>=3.8.0",
     # CLI and console output
@@ -42,9 +43,28 @@ dependencies = [
     "tiktoken>=0.5.0",
     "filelock>=3.13.0",
     "tokenizers>=0.15.0",
+    "cmaes>=0.12.0",
 ]
 
 [project.optional-dependencies]
+# Optional accelerator installs (CPU is the default)
+cuda12 = [
+    "jax[cuda12]>=0.4.0",
+]
+
+# Optional services / visualization
+server = [
+    "fastapi>=0.115.0",
+    "pydantic>=2.9.0",
+    "uvicorn>=0.30.0",
+]
+viz = [
+    "tensorboard>=2.18.0",
+    "umap-learn>=0.5.6",
+    "scikit-learn>=1.5.0",
+    "plotly>=5.22.0",
+]
+
 # Development dependencies
 dev = [
     "pytest>=8.3.0",

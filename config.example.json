@@ -3,6 +3,7 @@
   "jax_precision": "float32",
   "random_seed": 42,
   "jax_debug_nans": false,
+  "jax_debug_infs": false,
   "jax_disable_jit": false,
   
   "verbose": true,
