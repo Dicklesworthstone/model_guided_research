@@ -1,0 +1,101 @@
+{
+  "baseline": {
+    "attention_type": "standard",
+    "command": "uv run python -m nanochat.train --device cuda --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 64 --max-steps 3 --warmup-steps 1 --log-interval 1 --run-id x8u_smoke_compile_standard --compile --compile-mode default",
+    "commit": "95ab717",
+    "compile": true,
+    "device": null,
+    "dirty": true,
+    "kind": null,
+    "run_id": "x8u_smoke_compile_standard",
+    "use_flex_attention": false
+  },
+  "candidate": {
+    "attention_type": "standard",
+    "command": "uv run python -m nanochat.train --device cuda --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 64 --max-steps 3 --warmup-steps 1 --log-interval 1 --run-id x8u_smoke_compile_flex --use-flex-attention --compile --compile-mode default",
+    "commit": "95ab717",
+    "compile": true,
+    "device": null,
+    "dirty": true,
+    "kind": null,
+    "run_id": "x8u_smoke_compile_flex",
+    "use_flex_attention": true
+  },
+  "comparisons": [
+    {
+      "baseline": 10.811393737792969,
+      "candidate": 10.811397552490234,
+      "delta": 3.814697265625e-06,
+      "delta_rel": 3.5284047164891527e-07,
+      "direction": "lower",
+      "label": "Final loss",
+      "metric": "final_loss",
+      "status": "ok"
+    },
+    {
+      "baseline": 6529.443607503731,
+      "candidate": 4546.9280165252685,
+      "delta": -1982.5155909784626,
+      "delta_rel": -0.3036270331977639,
+      "direction": "higher",
+      "label": "Tokens/s",
+      "metric": "tokens_per_second",
+      "status": "regression"
+    },
+    {
+      "baseline": 0.13062063136378152,
+      "candidate": 0.09096067658837775,
+      "delta": -0.039659954775403766,
+      "delta_rel": -0.30362703319776385,
+      "direction": "higher",
+      "label": "TFLOP/s (est)",
+      "metric": "tflops_per_second_est",
+      "status": "regression"
+    },
+    {
+      "baseline": 0.14698028564453125,
+      "candidate": 0.1613459587097168,
+      "delta": 0.014365673065185547,
+      "delta_rel": 0.09773877498053465,
+      "direction": "lower",
+      "label": "Peak mem (GB)",
+      "metric": "peak_memory_allocated_gb",
+      "status": "regression"
+    }
+  ],
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/.venv/bin/mgr",
+      "regressions",
+      "-b",
+      "baseline/nanochat/x8u_smoke_compile_standard",
+      "-c",
+      "baseline/nanochat/x8u_smoke_compile_flex",
+      "--run-id",
+      "sample_compile_flex_vs_standard",
+      "--artifacts-dir",
+      "artifacts",
+      "--write-artifacts",
+      "--html"
+    ],
+    "baseline_path": "artifacts/baseline/nanochat/x8u_smoke_compile_standard/summary.json",
+    "baseline_variant": null,
+    "candidate_path": "artifacts/baseline/nanochat/x8u_smoke_compile_flex/summary.json",
+    "candidate_variant": null,
+    "generated_at": "2025-12-18 05:39:47 EST",
+    "git": {
+      "branch": "main",
+      "commit": "95ab717",
+      "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+      "dirty": true
+    },
+    "run_id": "sample_compile_flex_vs_standard"
+  },
+  "thresholds": {
+    "loss_abs": 0.01,
+    "loss_rel": 0.01,
+    "memory_rel": 0.05,
+    "tflops_rel": 0.05,
+    "throughput_rel": 0.05
+  }
+}

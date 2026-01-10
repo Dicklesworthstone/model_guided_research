@@ -1,0 +1,341 @@
+{
+  "bead": "model_guided_research-0jk",
+  "generated_at": "2025-12-17 23:17:25 EST",
+  "git": {
+    "branch": "main",
+    "commit": "95ab717",
+    "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+    "dirty": true,
+    "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+  },
+  "hardware": {
+    "cpu_count_logical": 64,
+    "cuda_version": "12.8",
+    "driver_version": "580.95.05",
+    "gpu_count": 2,
+    "gpu_names": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ],
+    "host": "threadripperje",
+    "memory_gb": 499.2872734069824,
+    "platform": "Linux",
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128"
+  },
+  "runs": {
+    "correctness": {
+      "standard": {
+        "checks": [
+          {
+            "max_abs": 7.152557373046875e-07,
+            "max_rel": 1.0,
+            "mean_abs": 6.879584191210597e-08,
+            "name": "mqa/full_forward",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 3.5762786865234375e-07,
+            "max_rel": 0.0002323420048924163,
+            "mean_abs": 6.813669983785076e-08,
+            "name": "mqa/kv_decode_last",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.0004868887481279671,
+            "mean_abs": 7.072961949461387e-08,
+            "name": "mqa/kv_chunk_decode",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.02127651497721672,
+            "mean_abs": 6.870679669646051e-08,
+            "name": "gqa/full_forward",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.006091006100177765,
+            "mean_abs": 6.614619962874713e-08,
+            "name": "gqa/kv_decode_last",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.0006385335582308471,
+            "mean_abs": 6.849821687637814e-08,
+            "name": "gqa/kv_chunk_decode",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 5.960464477539062e-07,
+            "max_rel": 0.020270373672246933,
+            "mean_abs": 7.86188536494592e-08,
+            "name": "mha/full_forward",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.00010301313159288839,
+            "mean_abs": 7.560905146419827e-08,
+            "name": "mha/kv_decode_last",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 5.960464477539062e-07,
+            "max_rel": 0.0013986867852509022,
+            "mean_abs": 7.940271729012238e-08,
+            "name": "mha/kv_chunk_decode",
+            "note": "",
+            "passed": true
+          }
+        ],
+        "command": "uv run python scripts/verify_flex_correctness.py --model standard --device cuda --dtype float32 --run-id 0jk_standard_correctness_postfix2 --suite",
+        "ok": true,
+        "path": "artifacts/certs/flex_attention/0jk_standard_correctness_postfix2",
+        "run_id": "0jk_standard_correctness_postfix2"
+      },
+      "standard_compile": {
+        "checks": [
+          {
+            "max_abs": 5.960464477539062e-07,
+            "max_rel": 0.01111111044883728,
+            "mean_abs": 7.51975761659196e-08,
+            "name": "single/full_forward",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 4.76837158203125e-07,
+            "max_rel": 0.00021420921257231385,
+            "mean_abs": 6.370888172568812e-08,
+            "name": "single/kv_decode_last",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 5.960464477539062e-07,
+            "max_rel": 0.002016556914895773,
+            "mean_abs": 7.10038179363437e-08,
+            "name": "single/kv_chunk_decode",
+            "note": "",
+            "passed": true
+          }
+        ],
+        "command": "uv run python scripts/verify_flex_correctness.py --model standard --device cuda --dtype float32 --compile --run-id 0jk_standard_correctness_compile_postfix",
+        "ok": true,
+        "path": "artifacts/certs/flex_attention/0jk_standard_correctness_compile_postfix",
+        "run_id": "0jk_standard_correctness_compile_postfix"
+      },
+      "synaptic": {
+        "checks": [
+          {
+            "max_abs": 0.0,
+            "max_rel": 0.0,
+            "mean_abs": 0.0,
+            "name": "synaptic/full_forward",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 1.1920928955078125e-07,
+            "max_rel": 0.0002536879328545183,
+            "mean_abs": 2.3338088794844225e-08,
+            "name": "synaptic/kv_decode_last",
+            "note": "",
+            "passed": true
+          },
+          {
+            "max_abs": 2.384185791015625e-07,
+            "max_rel": 0.001329959137365222,
+            "mean_abs": 2.4085542449370223e-08,
+            "name": "synaptic/kv_chunk_decode",
+            "note": "",
+            "passed": true
+          }
+        ],
+        "command": "uv run python scripts/verify_flex_correctness.py --model synaptic --device cuda --dtype float32 --run-id 0jk_synaptic_correctness_postfix3",
+        "compile_status": "torch.compile currently fails in KV-cache path (InductorError / sym_max SymInt issue) on torch 2.9.1+cu128",
+        "ok": true,
+        "path": "artifacts/certs/synaptic_flex_attention/0jk_synaptic_correctness_postfix3",
+        "run_id": "0jk_synaptic_correctness_postfix3"
+      }
+    },
+    "microbench_forward": {
+      "command": "uv run python scripts/benchmark_flex.py --device cuda --dtype bfloat16 --run-id 0jk_bench_flex",
+      "compile": true,
+      "device": "cuda",
+      "dtype": "bfloat16",
+      "path": "artifacts/perf/flex_attention/0jk_bench_flex",
+      "results": {
+        "ms_per_iter": {
+          "flex": 10.485921630859375,
+          "sdpa": 4.409385070800782
+        },
+        "peak_mem_mb": {
+          "flex": 1817.53125,
+          "sdpa": 1044.40625
+        },
+        "speedup_sdpa_over_flex": 0.4205052475143675,
+        "tokens_per_s": {
+          "flex": 390618.9788740879,
+          "sdpa": 928927.7153687399
+        }
+      },
+      "run_id": "0jk_bench_flex"
+    },
+    "training_fixed_flops": {
+      "flex": {
+        "budget": {
+          "flops_per_step_est": 92006252544,
+          "flops_per_token_est": 44924928,
+          "max_steps": 22,
+          "planned_total_flops_est": 2024137555968,
+          "target_flops": 2000000000000.0,
+          "tokens_per_step_global": 2048,
+          "warmup_steps": 5
+        },
+        "command": "uv run python -m nanochat.train --device cuda --auto-download-data --target-flops 2e12 --log-interval 10 --warmup-steps 5 --use-flex-attention --run-id 0jk_baseline_flex",
+        "note": "nanochat.train does not torch.compile the model; FlexAttention warns that unfused path is used unless flex_attention is compiled",
+        "path": "artifacts/baseline/nanochat/0jk_baseline_flex",
+        "results": {
+          "losses": [
+            10.825838088989258,
+            10.806350708007812,
+            10.789953231811523,
+            10.773990631103516,
+            10.769632339477539,
+            10.756925582885742,
+            10.743977546691895,
+            10.691095352172852,
+            10.716022491455078,
+            10.710006713867188,
+            10.68144416809082,
+            10.633811950683594,
+            10.684429168701172,
+            10.654640197753906,
+            10.59218978881836,
+            10.535146713256836,
+            10.542198181152344,
+            10.532289505004883,
+            10.503652572631836,
+            10.49365234375,
+            10.429519653320312,
+            10.382643699645996
+          ],
+          "measured_steps": 17,
+          "measured_time_s": 1.6769905470428057,
+          "measured_tokens": 34816,
+          "peak_memory_allocated_gb": 1.542665958404541,
+          "step_times_s": [
+            1.147244966996368,
+            0.10955988097703084,
+            0.11176292900927365,
+            0.10816847201203927,
+            0.10692809702595696,
+            0.1006441960344091,
+            0.12085604801541194,
+            0.1150062849628739,
+            0.12364816502667964,
+            0.11857418197905645,
+            0.11444610002217814,
+            0.11061381601030007,
+            0.11263751599472016,
+            0.07983066199813038,
+            0.08349042199552059,
+            0.07856007997179404,
+            0.0877758510177955,
+            0.08400103397434577,
+            0.08303012500982732,
+            0.08358326699817553,
+            0.08307587099261582,
+            0.08083193702623248
+          ],
+          "tflops_per_second_est": 0.9326864101924337,
+          "tokens_per_second": 20760.99955446637
+        },
+        "run_id": "0jk_baseline_flex"
+      },
+      "sdpa": {
+        "budget": {
+          "flops_per_step_est": 92006252544,
+          "flops_per_token_est": 44924928,
+          "max_steps": 22,
+          "planned_total_flops_est": 2024137555968,
+          "target_flops": 2000000000000.0,
+          "tokens_per_step_global": 2048,
+          "warmup_steps": 5
+        },
+        "command": "uv run python -m nanochat.train --device cuda --auto-download-data --target-flops 2e12 --log-interval 10 --warmup-steps 5 --run-id 0jk_baseline_sdpa",
+        "path": "artifacts/baseline/nanochat/0jk_baseline_sdpa",
+        "results": {
+          "losses": [
+            10.825838088989258,
+            10.806350708007812,
+            10.789953231811523,
+            10.773991584777832,
+            10.769628524780273,
+            10.75692081451416,
+            10.743966102600098,
+            10.691085815429688,
+            10.716033935546875,
+            10.710009574890137,
+            10.681448936462402,
+            10.63382625579834,
+            10.684438705444336,
+            10.654664039611816,
+            10.59220027923584,
+            10.535160064697266,
+            10.542200088500977,
+            10.53228759765625,
+            10.50363826751709,
+            10.493640899658203,
+            10.429512977600098,
+            10.382624626159668
+          ],
+          "measured_steps": 17,
+          "measured_time_s": 0.6335886979941279,
+          "measured_tokens": 34816,
+          "peak_memory_allocated_gb": 1.5425324440002441,
+          "step_times_s": [
+            0.42800149199320003,
+            0.03474122501211241,
+            0.040839455963578075,
+            0.03356581198750064,
+            0.039378374989610165,
+            0.03454044699901715,
+            0.03689897700678557,
+            0.03844052000204101,
+            0.03504323400557041,
+            0.03880887303967029,
+            0.03307971800677478,
+            0.03687668504426256,
+            0.034079378994647413,
+            0.03732093202415854,
+            0.03355055401334539,
+            0.04055168404011056,
+            0.03363942098803818,
+            0.03954368701670319,
+            0.03476943797431886,
+            0.035927788994740695,
+            0.038571646029595286,
+            0.03379414201481268
+          ],
+          "tflops_per_second_est": 2.46864613936421,
+          "tokens_per_second": 54950.47514298097
+        },
+        "run_id": "0jk_baseline_sdpa"
+      }
+    }
+  }
+}

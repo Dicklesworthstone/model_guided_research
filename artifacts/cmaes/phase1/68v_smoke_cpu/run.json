@@ -1,0 +1,96 @@
+{
+  "cmaes": {
+    "library": "cmaes",
+    "population_size": 2,
+    "search_seed": 0,
+    "sigma": 0.3
+  },
+  "command": "uv run python scripts/cmaes_phase1.py --run-id 68v_smoke_cpu --device cpu --generations 1 --population-size 2 --target-flops 2e9 --warmup-steps 0 --search-seed 0 --eval-seed 123 --timeout-s 900",
+  "generated_at": "2025-12-18T06:31:51Z",
+  "objective": {
+    "device": "cpu",
+    "eval_seed": 123,
+    "model_type": "synaptic",
+    "score_tail": 3,
+    "target_flops": 2000000000.0,
+    "train_args": {
+      "batch_size": 8,
+      "learning_rate": 0.0006,
+      "log_interval": 1,
+      "n_embd": 128,
+      "n_head": 4,
+      "n_kv_head": 4,
+      "n_layer": 4,
+      "sequence_len": 256,
+      "vocab_size": 50304,
+      "warmup_steps": 0
+    }
+  },
+  "param_space": {
+    "dim": 10,
+    "specs": [
+      {
+        "high": 0.99,
+        "kind": "linear",
+        "low": 0.7,
+        "name": "tau_c"
+      },
+      {
+        "high": 1.0,
+        "kind": "linear",
+        "low": 0.1,
+        "name": "alpha_c"
+      },
+      {
+        "high": 18.0,
+        "kind": "linear",
+        "low": 1.0,
+        "name": "init_rrp"
+      },
+      {
+        "high": 0.2,
+        "kind": "linear",
+        "low": 0.01,
+        "name": "prime_rate"
+      },
+      {
+        "high": 0.2,
+        "kind": "linear",
+        "low": 0.01,
+        "name": "rec_rate"
+      },
+      {
+        "high": 4.0,
+        "kind": "linear",
+        "low": 0.0,
+        "name": "lambda_loge"
+      },
+      {
+        "high": 0.5,
+        "kind": "linear",
+        "low": 0.0,
+        "name": "barrier_strength"
+      },
+      {
+        "high": 0.4,
+        "kind": "linear",
+        "low": 0.0,
+        "name": "stochastic_train_frac"
+      },
+      {
+        "high": -2.0,
+        "kind": "log10",
+        "low": -4.5,
+        "name": "post_fast_lr"
+      },
+      {
+        "high": -3.0,
+        "kind": "log10",
+        "low": -5.5,
+        "name": "post_slow_lr"
+      }
+    ]
+  },
+  "run_id": "68v_smoke_cpu",
+  "schema_version": "mgr.cmaes.phase1.v1"
+}

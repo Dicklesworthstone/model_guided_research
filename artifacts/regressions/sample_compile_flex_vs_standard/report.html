@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset='utf-8'/>
+<title>Regression Report</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:24px;}
+table{border-collapse:collapse;width:100%;}
+th,td{border:1px solid #ddd;padding:8px;}
+th{background:#f6f6f6;text-align:left;}
+tr.ok td{background:#e9f7ef;}
+tr.regression td{background:#fdecea;}
+tr.missing td{color:#666;}
+</style>
+<h1>Regression Report</h1>
+<p><b>Baseline</b>: <code>artifacts/baseline/nanochat/x8u_smoke_compile_standard/summary.json</code></p>
+<p><b>Candidate</b>: <code>artifacts/baseline/nanochat/x8u_smoke_compile_flex/summary.json</code></p>
+<table><thead><tr><th>metric</th><th>baseline</th><th>candidate</th><th>delta</th><th>delta%</th><th>status</th></tr></thead><tbody>
+<tr class='ok'><td>Final loss</td><td>10.8114</td><td>10.8114</td><td>+3.8147e-06</td><td>+0.00%</td><td>ok</td></tr>
+<tr class='regression'><td>Tokens/s</td><td>6529.44</td><td>4546.93</td><td>-1982.52</td><td>-30.36%</td><td>regression</td></tr>
+<tr class='regression'><td>TFLOP/s (est)</td><td>0.130621</td><td>0.0909607</td><td>-0.03966</td><td>-30.36%</td><td>regression</td></tr>
+<tr class='regression'><td>Peak mem (GB)</td><td>0.14698</td><td>0.161346</td><td>+0.0143657</td><td>+9.77%</td><td>regression</td></tr>
+</tbody></table>

@@ -1,0 +1,5 @@
+gen,cand,eval_seed,status,score,duration_s,train_summary_path
+0,0,123,ok,10.854065895080566,7.057182645017747,cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0000/seed_123/summary.json
+0,1,123,ok,10.8540678024292,7.815985931025352,cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0001/seed_123/summary.json
+0,2,123,ok,10.8540678024292,6.788029261981137,cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0002/seed_123/summary.json
+0,3,123,ok,10.854063034057617,7.249907780031208,cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0003/seed_123/summary.json

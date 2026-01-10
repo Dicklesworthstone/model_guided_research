@@ -1,0 +1,3 @@
+gen,cand,eval_seed,status,score,duration_s,train_summary_path
+0,0,123,ok,10.854065895080566,7.330510263040196,cmaes/phase1/68v_smoke_cpu/eval/gen_0000/cand_0000/seed_123/summary.json
+0,1,123,ok,10.8540678024292,8.116169881017413,cmaes/phase1/68v_smoke_cpu/eval/gen_0000/cand_0001/seed_123/summary.json

@@ -1,0 +1,143 @@
+{
+  "baseline_attention_type": "standard",
+  "demo_certs": [
+    {
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m cli run tropical --max-iterations 50 --seed 0 --artifacts-dir artifacts --run-id 6j9_smoke_certs_tropical --tropical-cert",
+      "demo": "tropical",
+      "returncode": 1,
+      "status": "error",
+      "summary_path": null
+    },
+    {
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m cli run reversible --max-iterations 50 --seed 0 --artifacts-dir artifacts --run-id 6j9_smoke_certs_reversible --rev-cayley --rev-symplectic",
+      "demo": "reversible",
+      "returncode": 1,
+      "status": "error",
+      "summary_path": null
+    },
+    {
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m cli run matrix-gauge --max-iterations 50 --seed 0 --artifacts-dir artifacts --run-id 6j9_smoke_certs_matrix-gauge --gauge-structured",
+      "demo": "matrix-gauge",
+      "returncode": 1,
+      "status": "error",
+      "summary_path": null
+    },
+    {
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m cli run simplicial --max-iterations 50 --seed 0 --artifacts-dir artifacts --run-id 6j9_smoke_certs_simplicial --simplicial-hodge",
+      "demo": "simplicial",
+      "returncode": 1,
+      "status": "error",
+      "summary_path": null
+    },
+    {
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m cli run ultrametric --max-iterations 50 --seed 0 --artifacts-dir artifacts --run-id 6j9_smoke_certs_ultrametric --ultra-packed",
+      "demo": "ultrametric",
+      "returncode": 1,
+      "status": "error",
+      "summary_path": null
+    }
+  ],
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/.venv/bin/mgr",
+      "bench-fixed-flops",
+      "-a",
+      "standard",
+      "-a",
+      "reversible",
+      "--run-id",
+      "6j9_smoke_certs",
+      "--device",
+      "cpu",
+      "--target-flops",
+      "2e9",
+      "--warmup-steps",
+      "0",
+      "--batch-size",
+      "2",
+      "--sequence-len",
+      "64",
+      "--n-layer",
+      "2",
+      "--n-head",
+      "4",
+      "--n-kv-head",
+      "4",
+      "--n-embd",
+      "128",
+      "--include-demo-certs",
+      "--timeout-s",
+      "900"
+    ],
+    "attention_types": [
+      "standard",
+      "reversible"
+    ],
+    "device": "cpu",
+    "generated_at": "2025-12-18 01:54:05 EST",
+    "git": {
+      "branch": "main",
+      "commit": "95ab717",
+      "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+      "dirty": true
+    },
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+      "version": "3.13.0"
+    },
+    "run_id": "6j9_smoke_certs",
+    "score_tail": 3,
+    "seed": 0,
+    "suite": "bench_fixed_flops",
+    "target_flops": 2000000000.0,
+    "train_config": {
+      "batch_size": 2,
+      "check_numerics": false,
+      "compile": false,
+      "learning_rate": 0.0006,
+      "log_interval": 1,
+      "n_embd": 128,
+      "n_head": 4,
+      "n_kv_head": 4,
+      "n_layer": 2,
+      "optimizer_type": "adamw",
+      "sequence_len": 64,
+      "warmup_steps": 0
+    }
+  },
+  "runs": [
+    {
+      "attention_type": "standard",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 0 --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 128 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 2000000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/6j9_smoke_certs/standard --run-id seed_0 --auto-download-data --min-parquet-files 2",
+      "duration_s": 5.3766953269951046,
+      "final_loss": 10.825837135314941,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/logs/nanochat_standard.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/logs/nanochat_standard.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/standard/seed_0/summary.json",
+      "tflops_per_second_est": 0.005031037293377459,
+      "tokens_per_second": 122.14405222787202
+    },
+    {
+      "attention_type": "reversible",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 0 --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 128 --learning-rate 0.0006 --optimizer-type adamw --attention-type reversible --target-flops 2000000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/6j9_smoke_certs/reversible --run-id seed_0 --auto-download-data --min-parquet-files 2",
+      "duration_s": 4.838991680007894,
+      "final_loss": 10.825837135314941,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/logs/nanochat_reversible.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/logs/nanochat_reversible.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/6j9_smoke_certs/reversible/seed_0/summary.json",
+      "tflops_per_second_est": 0.007295130590847977,
+      "tokens_per_second": 185.06210950813013
+    }
+  ],
+  "schema_version": "mgr.bench.fixed_flops.v1"
+}

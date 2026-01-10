@@ -1,0 +1,138 @@
+{
+  "argv": [
+    "/data/projects/model_guided_research/nanochat/train.py",
+    "--device",
+    "cuda",
+    "--auto-download-data",
+    "--target-flops",
+    "2e12",
+    "--log-interval",
+    "10",
+    "--warmup-steps",
+    "5"
+  ],
+  "budget": {
+    "flops_per_step_est": 92006252544,
+    "flops_per_token_est": 44924928,
+    "max_steps": 22,
+    "planned_total_flops_est": 2024137555968,
+    "target_flops": 2000000000000.0,
+    "tokens_per_step_global": 2048,
+    "warmup_steps": 5
+  },
+  "command": "/data/projects/model_guided_research/nanochat/train.py --device cuda --auto-download-data --target-flops 2e12 --log-interval 10 --warmup-steps 5",
+  "config": {
+    "attention_type": "standard",
+    "n_embd": 128,
+    "n_head": 4,
+    "n_kv_head": 4,
+    "n_layer": 4,
+    "optimizer_type": "adamw",
+    "sequence_len": 256,
+    "use_flex_attention": false,
+    "vocab_size": 50304
+  },
+  "dataset": {
+    "parquet_files": [
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00000.parquet",
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00001.parquet"
+    ],
+    "parquet_files_count": 2
+  },
+  "ddp": {
+    "enabled": false,
+    "local_rank": 0,
+    "rank": 0,
+    "world_size": 1
+  },
+  "env": {},
+  "git": {
+    "branch": "main",
+    "commit": "95ab717",
+    "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+    "dirty": true,
+    "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+  },
+  "gpu": {
+    "available": true,
+    "count": 2,
+    "cuda_version": "12.8",
+    "memory_gb": [
+      23.5164794921875,
+      23.5135498046875
+    ],
+    "names": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ]
+  },
+  "results": {
+    "losses": [
+      10.825838088989258,
+      10.806350708007812,
+      10.789953231811523,
+      10.773991584777832,
+      10.769628524780273,
+      10.75692081451416,
+      10.743966102600098,
+      10.691085815429688,
+      10.716033935546875,
+      10.710009574890137,
+      10.681448936462402,
+      10.63382625579834,
+      10.684438705444336,
+      10.654664039611816,
+      10.59220027923584,
+      10.535160064697266,
+      10.542200088500977,
+      10.53228759765625,
+      10.50363826751709,
+      10.493640899658203,
+      10.429512977600098,
+      10.382624626159668
+    ],
+    "measured_steps": 17,
+    "measured_time_s": 0.3176696499576792,
+    "measured_tokens": 34816,
+    "peak_memory_allocated_gb": 1.5425324440002441,
+    "step_times_s": [
+      0.28786568803479895,
+      0.019740555027965456,
+      0.018553320958744735,
+      0.01897624699631706,
+      0.019500533991958946,
+      0.019558141997549683,
+      0.018212229013442993,
+      0.01868173200637102,
+      0.017577123013325036,
+      0.017502011032775044,
+      0.017479027970694005,
+      0.01838009397033602,
+      0.018324179982300848,
+      0.018881958967540413,
+      0.01812951295869425,
+      0.01803619699785486,
+      0.017686037987004966,
+      0.01828574703540653,
+      0.01827047800179571,
+      0.018636837019585073,
+      0.018635515996720642,
+      0.018347051984164864
+    ],
+    "tflops_per_second_est": 4.9236881567262545,
+    "tokens_per_second": 109598.13128083933
+  },
+  "system": {
+    "cpu_count": 32,
+    "cpu_count_logical": 64,
+    "hostname": "threadripperje",
+    "memory_gb": 499.2872734069824,
+    "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+    "nanochat_base_dir_env": null,
+    "platform": "Linux",
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128",
+    "user": "ubuntu",
+    "working_dir": "/data/projects/model_guided_research"
+  }
+}

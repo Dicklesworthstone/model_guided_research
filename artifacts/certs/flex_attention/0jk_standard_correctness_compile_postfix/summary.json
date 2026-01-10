@@ -1,0 +1,129 @@
+{
+  "args": {
+    "artifacts_dir": "artifacts",
+    "atol": 0.01,
+    "batch_size": 2,
+    "compile": true,
+    "device": "cuda",
+    "dtype": "float32",
+    "kv_chunk_len": 7,
+    "kv_prefix_len": 13,
+    "model": "standard",
+    "n_embd": 128,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "rtol": 0.001,
+    "run_id": "0jk_standard_correctness_compile_postfix",
+    "seed": 0,
+    "sequence_len": 64,
+    "suite": false,
+    "vocab_size": 1024,
+    "write_artifacts": true
+  },
+  "argv": [
+    "scripts/verify_flex_correctness.py",
+    "--model",
+    "standard",
+    "--device",
+    "cuda",
+    "--dtype",
+    "float32",
+    "--compile",
+    "--run-id",
+    "0jk_standard_correctness_compile_postfix"
+  ],
+  "command": "uv run python scripts/verify_flex_correctness.py --model standard --device cuda --dtype float32 --compile --run-id 0jk_standard_correctness_compile_postfix",
+  "config": {
+    "flex": {
+      "attention_type": "standard",
+      "n_embd": 128,
+      "n_head": 4,
+      "n_kv_head": 2,
+      "n_layer": 2,
+      "optimizer_type": "adamw",
+      "sequence_len": 64,
+      "use_flex_attention": true,
+      "vocab_size": 1024
+    },
+    "ref": {
+      "attention_type": "standard",
+      "n_embd": 128,
+      "n_head": 4,
+      "n_kv_head": 2,
+      "n_layer": 2,
+      "optimizer_type": "adamw",
+      "sequence_len": 64,
+      "use_flex_attention": false,
+      "vocab_size": 1024
+    }
+  },
+  "device": "cuda",
+  "dtype": "float32",
+  "git": {
+    "branch": "main",
+    "commit": "95ab717",
+    "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+    "dirty": true,
+    "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+  },
+  "gpu": {
+    "available": true,
+    "count": 2,
+    "cuda_version": "12.8",
+    "memory_gb": [
+      23.5164794921875,
+      23.5135498046875
+    ],
+    "names": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ]
+  },
+  "python": {
+    "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+    "version": "3.13.0 (main, Oct 16 2024, 03:23:02) [Clang 18.1.8 ]"
+  },
+  "results": {
+    "checks": [
+      {
+        "max_abs": 5.960464477539062e-07,
+        "max_rel": 0.01111111044883728,
+        "mean_abs": 7.51975761659196e-08,
+        "name": "single/full_forward",
+        "note": "",
+        "passed": true
+      },
+      {
+        "max_abs": 4.76837158203125e-07,
+        "max_rel": 0.00021420921257231385,
+        "mean_abs": 6.370888172568812e-08,
+        "name": "single/kv_decode_last",
+        "note": "",
+        "passed": true
+      },
+      {
+        "max_abs": 5.960464477539062e-07,
+        "max_rel": 0.002016556914895773,
+        "mean_abs": 7.10038179363437e-08,
+        "name": "single/kv_chunk_decode",
+        "note": "",
+        "passed": true
+      }
+    ],
+    "ok": true
+  },
+  "system": {
+    "cpu_count": 32,
+    "cpu_count_logical": 64,
+    "hostname": "threadripperje",
+    "memory_gb": 499.2872734069824,
+    "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+    "nanochat_base_dir_env": null,
+    "platform": "Linux",
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128",
+    "user": "ubuntu",
+    "working_dir": "/data/projects/model_guided_research"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "baseline_attention_type": "standard",
+  "demo_certs": [],
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/.venv/bin/mgr",
+      "bench-fixed-flops",
+      "-a",
+      "standard",
+      "-a",
+      "tropical",
+      "--run-id",
+      "6j9_smoke_cpu",
+      "--device",
+      "cpu",
+      "--target-flops",
+      "2e9",
+      "--warmup-steps",
+      "0",
+      "--batch-size",
+      "2",
+      "--sequence-len",
+      "64",
+      "--n-layer",
+      "2",
+      "--n-head",
+      "2",
+      "--n-kv-head",
+      "2",
+      "--n-embd",
+      "64",
+      "--timeout-s",
+      "900"
+    ],
+    "attention_types": [
+      "standard",
+      "tropical"
+    ],
+    "device": "cpu",
+    "generated_at": "2025-12-18 01:53:23 EST",
+    "git": {
+      "branch": "main",
+      "commit": "95ab717",
+      "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+      "dirty": true
+    },
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+      "version": "3.13.0"
+    },
+    "run_id": "6j9_smoke_cpu",
+    "score_tail": 3,
+    "seed": 0,
+    "suite": "bench_fixed_flops",
+    "target_flops": 2000000000.0,
+    "train_config": {
+      "batch_size": 2,
+      "check_numerics": false,
+      "compile": false,
+      "learning_rate": 0.0006,
+      "log_interval": 1,
+      "n_embd": 64,
+      "n_head": 2,
+      "n_kv_head": 2,
+      "n_layer": 2,
+      "optimizer_type": "adamw",
+      "sequence_len": 64,
+      "warmup_steps": 0
+    }
+  },
+  "runs": [
+    {
+      "attention_type": "standard",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 0 --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 2 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 2000000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/6j9_smoke_cpu/standard --run-id seed_0 --auto-download-data --min-parquet-files 2",
+      "duration_s": 4.583291128044948,
+      "final_loss": 10.825837135314941,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/logs/nanochat_standard.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/logs/nanochat_standard.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/standard/seed_0/summary.json",
+      "tflops_per_second_est": 0.004909187197510397,
+      "tokens_per_second": 245.39967867366641
+    },
+    {
+      "attention_type": "tropical",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 0 --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 2 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 2000000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/6j9_smoke_cpu/tropical --run-id seed_0 --auto-download-data --min-parquet-files 2",
+      "duration_s": 4.430824069015216,
+      "final_loss": 10.825837135314941,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/logs/nanochat_tropical.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/logs/nanochat_tropical.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/6j9_smoke_cpu/tropical/seed_0/summary.json",
+      "tflops_per_second_est": 0.004772642240852657,
+      "tokens_per_second": 238.57409082374454
+    }
+  ],
+  "schema_version": "mgr.bench.fixed_flops.v1"
+}

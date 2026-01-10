@@ -1,0 +1,480 @@
+{
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/cli.py",
+      "per-head-metrics",
+      "--device",
+      "cuda",
+      "--seed",
+      "0",
+      "--seed",
+      "1",
+      "--seed",
+      "2",
+      "--target-flops",
+      "2e8",
+      "--batch-size",
+      "4",
+      "--sequence-len",
+      "64",
+      "--n-layer",
+      "2",
+      "--n-head",
+      "4",
+      "--n-kv-head",
+      "2",
+      "--n-embd",
+      "64",
+      "--run-id",
+      "pv0_smoke_cuda",
+      "--timeout-s",
+      "600"
+    ],
+    "device": "cuda",
+    "generated_at": "2025-12-18 06:44:43 EST",
+    "git": {
+      "branch": "main",
+      "commit": "95ab717",
+      "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+      "dirty": true
+    },
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+      "version": "3.13.0"
+    },
+    "run_id": "pv0_smoke_cuda",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "suite": "per_head_metrics",
+    "train_config": {
+      "batch_size": 4,
+      "learning_rate": 0.0006,
+      "log_interval": 1,
+      "n_embd": 64,
+      "n_head": 4,
+      "n_kv_head": 2,
+      "n_layer": 2,
+      "optimizer_type": "adamw",
+      "sequence_len": 64,
+      "target_flops": 200000000.0,
+      "warmup_steps": 0
+    }
+  },
+  "schema_version": "mgr.bench.per_head_metrics.v1",
+  "variants": [
+    {
+      "attention_type": "standard",
+      "expected_use_flex_attention": false,
+      "final_loss": {
+        "ci95": 0.0,
+        "mean": 10.82583999633789,
+        "n": 3,
+        "std": 0.0
+      },
+      "label": "standard (SDPA)",
+      "metrics": {
+        "attention_entropy": {
+          "ci95": [
+            0.015532515286022524,
+            0.005529035104406939,
+            0.03705781832735434,
+            0.008338967592792448
+          ],
+          "mean": [
+            2.814068635304769,
+            2.8033323287963867,
+            2.8034454981486,
+            2.8096206982930503
+          ],
+          "n": [
+            3,
+            3,
+            3,
+            3
+          ],
+          "n_head": 4,
+          "samples": {
+            "0": [
+              2.8154654502868652,
+              2.802562952041626,
+              2.786345958709717,
+              2.8121752738952637
+            ],
+            "1": [
+              2.8195042610168457,
+              2.805840492248535,
+              2.810204029083252,
+              2.805819034576416
+            ],
+            "2": [
+              2.8072361946105957,
+              2.801593542098999,
+              2.813786506652832,
+              2.8108677864074707
+            ]
+          },
+          "seeds": [
+            0,
+            1,
+            2
+          ],
+          "std": [
+            0.006252174214439052,
+            0.002225556522813086,
+            0.014916575449833797,
+            0.0033566152808242747
+          ]
+        }
+      },
+      "runs": [
+        {
+          "attention_entropy_head_mean": [
+            2.8154654502868652,
+            2.802562952041626,
+            2.786345958709717,
+            2.8121752738952637
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 0 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard --run-id seed_0 --standard-record-attn-entropy --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.1883102650172077,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20453834533691406,
+          "returncode": 0,
+          "seed": 0,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_0.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_0.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard/seed_0/summary.json",
+          "tflops_per_second_est": 0.015344756385366297,
+          "tokens_per_second": 768.9405612471405,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": false,
+          "variant": "standard"
+        },
+        {
+          "attention_entropy_head_mean": [
+            2.8195042610168457,
+            2.805840492248535,
+            2.810204029083252,
+            2.805819034576416
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard --run-id seed_1 --standard-record-attn-entropy --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.2175044380128384,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20453834533691406,
+          "returncode": 0,
+          "seed": 1,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_1.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_1.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard/seed_1/summary.json",
+          "tflops_per_second_est": 0.015213151040974966,
+          "tokens_per_second": 762.3456903454493,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": false,
+          "variant": "standard"
+        },
+        {
+          "attention_entropy_head_mean": [
+            2.8072361946105957,
+            2.801593542098999,
+            2.813786506652832,
+            2.8108677864074707
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 2 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard --run-id seed_2 --standard-record-attn-entropy --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.1864012549631298,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20453834533691406,
+          "returncode": 0,
+          "seed": 2,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_2.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_seed_2.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard/seed_2/summary.json",
+          "tflops_per_second_est": 0.016313206318859463,
+          "tokens_per_second": 817.4705226683701,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": false,
+          "variant": "standard"
+        }
+      ],
+      "variant": "standard"
+    },
+    {
+      "attention_type": "standard",
+      "expected_use_flex_attention": true,
+      "final_loss": {
+        "ci95": 0.0,
+        "mean": 10.82583999633789,
+        "n": 3,
+        "std": 0.0
+      },
+      "label": "standard (FlexAttention)",
+      "metrics": {
+        "attention_entropy": {
+          "ci95": [
+            0.015532515286022524,
+            0.005529035104406939,
+            0.03705781832735434,
+            0.008338967592792448
+          ],
+          "mean": [
+            2.814068635304769,
+            2.8033323287963867,
+            2.8034454981486,
+            2.8096206982930503
+          ],
+          "n": [
+            3,
+            3,
+            3,
+            3
+          ],
+          "n_head": 4,
+          "samples": {
+            "0": [
+              2.8154654502868652,
+              2.802562952041626,
+              2.786345958709717,
+              2.8121752738952637
+            ],
+            "1": [
+              2.8195042610168457,
+              2.805840492248535,
+              2.810204029083252,
+              2.805819034576416
+            ],
+            "2": [
+              2.8072361946105957,
+              2.801593542098999,
+              2.813786506652832,
+              2.8108677864074707
+            ]
+          },
+          "seeds": [
+            0,
+            1,
+            2
+          ],
+          "std": [
+            0.006252174214439052,
+            0.002225556522813086,
+            0.014916575449833797,
+            0.0033566152808242747
+          ]
+        }
+      },
+      "runs": [
+        {
+          "attention_entropy_head_mean": [
+            2.8154654502868652,
+            2.802562952041626,
+            2.786345958709717,
+            2.8121752738952637
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 0 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex --run-id seed_0 --standard-record-attn-entropy --use-flex-attention --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.5852930920082144,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20455169677734375,
+          "returncode": 0,
+          "seed": 0,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_0.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_0.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex/seed_0/summary.json",
+          "tflops_per_second_est": 0.007560573382632731,
+          "tokens_per_second": 378.86763361952364,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": true,
+          "variant": "standard_flex"
+        },
+        {
+          "attention_entropy_head_mean": [
+            2.8195042610168457,
+            2.805840492248535,
+            2.810204029083252,
+            2.805819034576416
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex --run-id seed_1 --standard-record-attn-entropy --use-flex-attention --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.6339424659963697,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20455169677734375,
+          "returncode": 0,
+          "seed": 1,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_1.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_1.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex/seed_1/summary.json",
+          "tflops_per_second_est": 0.00745082659425807,
+          "tokens_per_second": 373.368116069127,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": true,
+          "variant": "standard_flex"
+        },
+        {
+          "attention_entropy_head_mean": [
+            2.8072361946105957,
+            2.801593542098999,
+            2.813786506652832,
+            2.8108677864074707
+          ],
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 2 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type standard --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex --run-id seed_2 --standard-record-attn-entropy --use-flex-attention --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.591877576953266,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.20455169677734375,
+          "returncode": 0,
+          "seed": 2,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_2.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_standard_flex_seed_2.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/standard_flex/seed_2/summary.json",
+          "tflops_per_second_est": 0.007489405327081474,
+          "tokens_per_second": 375.3013336272579,
+          "tropical_gamma_head_mean": null,
+          "use_flex_attention": true,
+          "variant": "standard_flex"
+        }
+      ],
+      "variant": "standard_flex"
+    },
+    {
+      "attention_type": "tropical",
+      "expected_use_flex_attention": false,
+      "final_loss": {
+        "ci95": 0.0,
+        "mean": 10.82583999633789,
+        "n": 3,
+        "std": 0.0
+      },
+      "label": "tropical (margins)",
+      "metrics": {
+        "tropical_margin_gamma": {
+          "ci95": [
+            0.0013863599229212464,
+            0.002835786008372275,
+            0.011422754356529079,
+            0.011766868386965633
+          ],
+          "mean": [
+            0.019874855255087216,
+            0.0222077543536822,
+            0.021820229788621266,
+            0.0203192171951135
+          ],
+          "n": [
+            3,
+            3,
+            3,
+            3
+          ],
+          "n_head": 4,
+          "samples": {
+            "0": [
+              0.01987227238714695,
+              0.0211821049451828,
+              0.0203256756067276,
+              0.0181245356798172
+            ],
+            "1": [
+              0.0193181112408638,
+              0.0220036581158638,
+              0.018155537545681,
+              0.0170782171189785
+            ],
+            "2": [
+              0.0204341821372509,
+              0.0234375,
+              0.0269794762134552,
+              0.0257548987865448
+            ]
+          },
+          "seeds": [
+            0,
+            1,
+            2
+          ],
+          "std": [
+            0.0005580399312286478,
+            0.0011414653604215016,
+            0.004597906323004207,
+            0.004736419682128868
+          ]
+        }
+      },
+      "runs": [
+        {
+          "attention_entropy_head_mean": null,
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 0 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_0 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.2594636689755134,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.2065114974975586,
+          "returncode": 0,
+          "seed": 0,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_0.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_0.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical/seed_0/summary.json",
+          "tflops_per_second_est": 0.01499831391240256,
+          "tokens_per_second": 751.579994359638,
+          "tropical_gamma_head_mean": [
+            0.01987227238714695,
+            0.0211821049451828,
+            0.0203256756067276,
+            0.0181245356798172
+          ],
+          "use_flex_attention": false,
+          "variant": "tropical"
+        },
+        {
+          "attention_entropy_head_mean": null,
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_1 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.3059780769981444,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.2065114974975586,
+          "returncode": 0,
+          "seed": 1,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_1.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_1.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical/seed_1/summary.json",
+          "tflops_per_second_est": 0.014980338339122119,
+          "tokens_per_second": 750.6792210231396,
+          "tropical_gamma_head_mean": [
+            0.0193181112408638,
+            0.0220036581158638,
+            0.018155537545681,
+            0.0170782171189785
+          ],
+          "use_flex_attention": false,
+          "variant": "tropical"
+        },
+        {
+          "attention_entropy_head_mean": null,
+          "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cuda --seed 2 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_2 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+          "duration_s": 3.183124157018028,
+          "final_loss": 10.82583999633789,
+          "peak_memory_allocated_gb": 0.2065114974975586,
+          "returncode": 0,
+          "seed": 2,
+          "status": "ok",
+          "stderr_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_2.stderr.txt",
+          "stdout_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/logs/nanochat_tropical_seed_2.stdout.txt",
+          "summary_path": "bench/feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical/seed_2/summary.json",
+          "tflops_per_second_est": 0.01499042705031036,
+          "tokens_per_second": 751.1847760836777,
+          "tropical_gamma_head_mean": [
+            0.0204341821372509,
+            0.0234375,
+            0.0269794762134552,
+            0.0257548987865448
+          ],
+          "use_flex_attention": false,
+          "variant": "tropical"
+        }
+      ],
+      "variant": "tropical"
+    }
+  ]
+}

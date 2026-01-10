@@ -1,0 +1,23 @@
+dataset parquet_files=2 downloaded=0 min_required=2
+Scaling the LR for the AdamW parameters ∝1/√(128/768) = 2.449490
+Starting training on cpu (world_size=1)
+budget steps=1 warmup=0 tokens/step=2,048 flops/token=1,441,792 
+flops/step=2,952,790,016
+step      0  loss  10.8541  tok/s        504  TFLOP/s(est)    0.00
+                                nanochat summary                                
+╭─────────────────────┬────────────────────────────────────────────────────────╮
+│ Field               │ Value                                                  │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Artifacts           │ cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0001/se… │
+│ Commit              │ 95ab717124a53d816acfdc82d21628e443b811df (dirty)       │
+│ Device              │ cpu                                                    │
+│ Steps               │ 1                                                      │
+│ Warmup Steps        │ 0                                                      │
+│ check_numerics      │ False                                                  │
+│ detect_anomaly      │ False                                                  │
+│ torch.compile model │ disabled                                               │
+│ Tokens/s            │ 562                                                    │
+│ TFLOP/s (est)       │ 0.00                                                   │
+╰─────────────────────┴────────────────────────────────────────────────────────╯
+Wrote artifacts → 
+artifacts/cmaes/phase1/68v_pilot_cpu/eval/gen_0000/cand_0001/seed_123

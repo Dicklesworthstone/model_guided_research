@@ -1,0 +1,206 @@
+{
+  "budget": {
+    "flops_per_step_est": 5108662272,
+    "flops_per_token_est": 19955712,
+    "max_steps": 1,
+    "planned_total_flops_est": 5108662272,
+    "target_flops": 200000000.0,
+    "tokens_per_step_global": 256,
+    "warmup_steps": 0
+  },
+  "compile": {
+    "backend": "inductor",
+    "compile_flex_attention": false,
+    "dynamic": null,
+    "enabled": false,
+    "fullgraph": false,
+    "mode": null
+  },
+  "config": {
+    "attention_type": "tropical",
+    "braid_crossing_law": "restricted",
+    "braid_mode": "soft",
+    "braid_record_schedule": false,
+    "braid_tau": 0.0,
+    "braid_verify": false,
+    "ca_init_alpha": 1.0,
+    "ca_init_rule": null,
+    "ca_init_seed": 1,
+    "compile_backend": "inductor",
+    "compile_dynamic": null,
+    "compile_flex_attention": false,
+    "compile_fullgraph": false,
+    "compile_mode": null,
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "optimizer_type": "adamw",
+    "sequence_len": 64,
+    "standard_record_attn_entropy": false,
+    "tropical_gauge_fix": true,
+    "tropical_record_margins": true,
+    "tropical_score_center": true,
+    "ultrametric_K": 8,
+    "ultrametric_alpha": 2.0,
+    "ultrametric_hard_digits": false,
+    "ultrametric_lcp_beta": 32.0,
+    "ultrametric_mode": "kernel",
+    "ultrametric_p": 2,
+    "use_flex_attention": false,
+    "vocab_size": 50304
+  },
+  "dataset": {
+    "parquet_files": [
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00000.parquet",
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00001.parquet"
+    ],
+    "parquet_files_count": 2
+  },
+  "hparams": {
+    "embedding_lr": 0.0006,
+    "grad_clip_norm": null,
+    "learning_rate": 0.0006,
+    "matrix_lr": 0.0006,
+    "model_type": "gpt",
+    "synaptic_config": null,
+    "unembedding_lr": 0.0006,
+    "weight_decay": 0.0
+  },
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/nanochat/train.py",
+      "--device",
+      "cuda",
+      "--seed",
+      "1",
+      "--batch-size",
+      "4",
+      "--sequence-len",
+      "64",
+      "--n-layer",
+      "2",
+      "--n-head",
+      "4",
+      "--n-kv-head",
+      "2",
+      "--n-embd",
+      "64",
+      "--learning-rate",
+      "0.0006",
+      "--optimizer-type",
+      "adamw",
+      "--attention-type",
+      "tropical",
+      "--target-flops",
+      "200000000.0",
+      "--warmup-steps",
+      "0",
+      "--log-interval",
+      "1",
+      "--artifacts-dir",
+      "artifacts",
+      "--artifacts-kind",
+      "bench",
+      "--artifacts-topic",
+      "feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical",
+      "--run-id",
+      "seed_1",
+      "--tropical-record-margins",
+      "--auto-download-data",
+      "--min-parquet-files",
+      "2"
+    ],
+    "command": "uv run python -m nanochat.train --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_1 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+    "command_argv": "/data/projects/model_guided_research/nanochat/train.py --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_1 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+    "command_module": "python -m nanochat.train --device cuda --seed 1 --batch-size 4 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 2 --n-embd 64 --learning-rate 0.0006 --optimizer-type adamw --attention-type tropical --target-flops 200000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical --run-id seed_1 --tropical-record-margins --auto-download-data --min-parquet-files 2",
+    "ddp": {
+      "enabled": false,
+      "local_rank": 0,
+      "rank": 0,
+      "world_size": 1
+    },
+    "device": "cuda",
+    "env": {},
+    "generated_at": "2025-12-18T11:45:10Z",
+    "git": {
+      "branch": "main",
+      "commit": "95ab717",
+      "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+      "dirty": true,
+      "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+    },
+    "gpu": {
+      "available": true,
+      "count": 2,
+      "cuda_version": "12.8",
+      "memory_gb": [
+        23.5164794921875,
+        23.5135498046875
+      ],
+      "names": [
+        "NVIDIA GeForce RTX 4090",
+        "NVIDIA GeForce RTX 4090"
+      ]
+    },
+    "kind": "bench",
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+      "version": "3.13.0 (main, Oct 16 2024, 03:23:02) [Clang 18.1.8 ]"
+    },
+    "run_id": "seed_1",
+    "system": {
+      "cpu_count": 32,
+      "cpu_count_logical": 64,
+      "hostname": "threadripperje",
+      "memory_gb": 499.2872734069824,
+      "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+      "nanochat_base_dir_env": null,
+      "platform": "Linux",
+      "python_version": "3.13.0",
+      "torch_version": "2.9.1+cu128",
+      "user": "ubuntu",
+      "working_dir": "/data/projects/model_guided_research"
+    },
+    "topic": "feature_ablate/per_head_metrics/pv0_smoke_cuda/tropical"
+  },
+  "numerics": {
+    "check_numerics": false,
+    "detect_anomaly": false
+  },
+  "results": {
+    "losses": [
+      10.82583999633789
+    ],
+    "measured_steps": 1,
+    "measured_time_s": 0.34102449199417606,
+    "measured_tokens": 256,
+    "peak_memory_allocated_gb": 0.2065114974975586,
+    "step_times_s": [
+      0.33997464302228764
+    ],
+    "tflops_per_second_est": 0.014980338339122119,
+    "tokens_per_second": 750.6792210231396,
+    "tropical_margins": {
+      "gamma_mean": 0.0,
+      "gamma_min": 0.0,
+      "head_mean": [
+        0.0193181112408638,
+        0.0220036581158638,
+        0.018155537545681,
+        0.0170782171189785
+      ],
+      "head_min": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "layer_min": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "schema_version": "mgr.telemetry.v1"
+}

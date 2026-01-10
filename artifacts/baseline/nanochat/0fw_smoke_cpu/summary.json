@@ -1,0 +1,136 @@
+{
+  "argv": [
+    "/data/projects/model_guided_research/nanochat/train.py",
+    "--device",
+    "cpu",
+    "--batch-size",
+    "2",
+    "--sequence-len",
+    "64",
+    "--n-layer",
+    "2",
+    "--n-head",
+    "4",
+    "--n-kv-head",
+    "4",
+    "--n-embd",
+    "64",
+    "--max-steps",
+    "2",
+    "--warmup-steps",
+    "0",
+    "--log-interval",
+    "1",
+    "--check-numerics",
+    "--run-id",
+    "0fw_smoke_cpu"
+  ],
+  "budget": {
+    "flops_per_step_est": 2560622592,
+    "flops_per_token_est": 20004864,
+    "max_steps": 2,
+    "planned_total_flops_est": 5121245184,
+    "target_flops": null,
+    "tokens_per_step_global": 128,
+    "warmup_steps": 0
+  },
+  "command": "uv run python -m nanochat.train --device cpu --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 64 --max-steps 2 --warmup-steps 0 --log-interval 1 --check-numerics --run-id 0fw_smoke_cpu",
+  "command_argv": "/data/projects/model_guided_research/nanochat/train.py --device cpu --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 64 --max-steps 2 --warmup-steps 0 --log-interval 1 --check-numerics --run-id 0fw_smoke_cpu",
+  "command_module": "python -m nanochat.train --device cpu --batch-size 2 --sequence-len 64 --n-layer 2 --n-head 4 --n-kv-head 4 --n-embd 64 --max-steps 2 --warmup-steps 0 --log-interval 1 --check-numerics --run-id 0fw_smoke_cpu",
+  "compile": {
+    "backend": "inductor",
+    "compile_flex_attention": false,
+    "dynamic": null,
+    "enabled": false,
+    "fullgraph": false,
+    "mode": null
+  },
+  "config": {
+    "attention_type": "standard",
+    "compile_backend": "inductor",
+    "compile_dynamic": null,
+    "compile_flex_attention": false,
+    "compile_fullgraph": false,
+    "compile_mode": null,
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 4,
+    "n_layer": 2,
+    "optimizer_type": "adamw",
+    "sequence_len": 64,
+    "use_flex_attention": false,
+    "vocab_size": 50304
+  },
+  "dataset": {
+    "parquet_files": [
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00000.parquet",
+      "/home/ubuntu/.cache/nanochat/base_data/shard_00001.parquet"
+    ],
+    "parquet_files_count": 2
+  },
+  "ddp": {
+    "enabled": false,
+    "local_rank": 0,
+    "rank": 0,
+    "world_size": 1
+  },
+  "env": {},
+  "git": {
+    "branch": "main",
+    "commit": "95ab717",
+    "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+    "dirty": true,
+    "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+  },
+  "gpu": {
+    "available": true,
+    "count": 2,
+    "cuda_version": "12.8",
+    "memory_gb": [
+      23.5164794921875,
+      23.5135498046875
+    ],
+    "names": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ]
+  },
+  "numerics": {
+    "check_numerics": true,
+    "detect_anomaly": false
+  },
+  "python": {
+    "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+    "version": "3.13.0 (main, Oct 16 2024, 03:23:02) [Clang 18.1.8 ]"
+  },
+  "results": {
+    "losses": [
+      10.825837135314941,
+      10.822944641113281
+    ],
+    "measured_steps": 2,
+    "measured_time_s": 0.6684377079945989,
+    "measured_tokens": 256,
+    "peak_memory_allocated_gb": null,
+    "step_times_s": [
+      0.4706055840360932,
+      0.19549610296962783
+    ],
+    "tflops_per_second_est": 0.007661514487811302,
+    "tokens_per_second": 382.9825830263731
+  },
+  "run_id": "0fw_smoke_cpu",
+  "system": {
+    "cpu_count": 32,
+    "cpu_count_logical": 64,
+    "hostname": "threadripperje",
+    "memory_gb": 499.2872734069824,
+    "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+    "nanochat_base_dir_env": null,
+    "platform": "Linux",
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128",
+    "user": "ubuntu",
+    "working_dir": "/data/projects/model_guided_research"
+  }
+}

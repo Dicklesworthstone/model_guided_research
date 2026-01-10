@@ -1,0 +1,2 @@
+2025-12-18 01:33:10,325 - nanochat.common - [32m[1mINFO[0m - Seeded RNGs with seed=123
+2025-12-18 01:33:10,325 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1

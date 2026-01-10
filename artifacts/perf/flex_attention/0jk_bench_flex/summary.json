@@ -1,0 +1,108 @@
+{
+  "args": {
+    "artifacts_dir": "artifacts",
+    "batch_size": 8,
+    "compile": true,
+    "device": "cuda",
+    "dtype": "bfloat16",
+    "iters": 50,
+    "n_embd": 512,
+    "n_head": 8,
+    "n_kv_head": 4,
+    "n_layer": 8,
+    "run_id": "0jk_bench_flex",
+    "seed": 0,
+    "sequence_len": 512,
+    "vocab_size": 50304,
+    "warmup": 10,
+    "write_artifacts": true
+  },
+  "argv": [
+    "scripts/benchmark_flex.py",
+    "--device",
+    "cuda",
+    "--dtype",
+    "bfloat16",
+    "--run-id",
+    "0jk_bench_flex"
+  ],
+  "command": "uv run python scripts/benchmark_flex.py --device cuda --dtype bfloat16 --run-id 0jk_bench_flex",
+  "config": {
+    "flex": {
+      "attention_type": "standard",
+      "n_embd": 512,
+      "n_head": 8,
+      "n_kv_head": 4,
+      "n_layer": 8,
+      "optimizer_type": "adamw",
+      "sequence_len": 512,
+      "use_flex_attention": true,
+      "vocab_size": 50304
+    },
+    "sdpa": {
+      "attention_type": "standard",
+      "n_embd": 512,
+      "n_head": 8,
+      "n_kv_head": 4,
+      "n_layer": 8,
+      "optimizer_type": "adamw",
+      "sequence_len": 512,
+      "use_flex_attention": false,
+      "vocab_size": 50304
+    }
+  },
+  "device": "cuda",
+  "dtype": "bfloat16",
+  "git": {
+    "branch": "main",
+    "commit": "95ab717",
+    "commit_full": "95ab717124a53d816acfdc82d21628e443b811df",
+    "dirty": true,
+    "message": "Comprehensively revise README.md to reflect dual-implementation architecture"
+  },
+  "gpu": {
+    "available": true,
+    "count": 2,
+    "cuda_version": "12.8",
+    "memory_gb": [
+      23.5164794921875,
+      23.5135498046875
+    ],
+    "names": [
+      "NVIDIA GeForce RTX 4090",
+      "NVIDIA GeForce RTX 4090"
+    ]
+  },
+  "python": {
+    "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+    "version": "3.13.0 (main, Oct 16 2024, 03:23:02) [Clang 18.1.8 ]"
+  },
+  "results": {
+    "ms_per_iter": {
+      "flex": 10.485921630859375,
+      "sdpa": 4.409385070800782
+    },
+    "peak_mem_mb": {
+      "flex": 1817.53125,
+      "sdpa": 1044.40625
+    },
+    "speedup_sdpa_over_flex": 0.4205052475143675,
+    "tokens_per_s": {
+      "flex": 390618.9788740879,
+      "sdpa": 928927.7153687399
+    }
+  },
+  "system": {
+    "cpu_count": 32,
+    "cpu_count_logical": 64,
+    "hostname": "threadripperje",
+    "memory_gb": 499.2872734069824,
+    "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+    "nanochat_base_dir_env": null,
+    "platform": "Linux",
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128",
+    "user": "ubuntu",
+    "working_dir": "/data/projects/model_guided_research"
+  }
+}
