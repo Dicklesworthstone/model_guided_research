@@ -64,3 +64,6 @@ docs/_build/
 check_optax_kwargs.py
 diagnose_jax.py
 artifacts/
+
+# bv (beads viewer) local config and caches
+.bv/
