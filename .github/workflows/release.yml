@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -33,7 +33,7 @@ jobs:
         run: uv build
 
       - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
@@ -48,7 +48,7 @@ jobs:
       url: https://pypi.org/p/model-guided-research
     steps:
       - name: Download distribution artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
@@ -62,10 +62,10 @@ jobs:
     needs: build
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download distribution artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
