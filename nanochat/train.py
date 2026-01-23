@@ -564,6 +564,28 @@ def train(args) -> None:
             return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         return nullcontext()
 
+    @torch.no_grad()
+    def evaluate_validation(val_loader_iter, num_batches: int) -> float:
+        """Evaluate cross-entropy loss on validation data."""
+        model.eval()
+        total_loss = 0.0
+        count = 0
+        for _ in range(num_batches):
+            try:
+                val_inputs, val_targets = next(val_loader_iter)
+            except StopIteration:
+                break
+            with autocast_ctx():
+                output = model(val_inputs, val_targets)
+                loss = _extract_loss(output)
+            if ddp:
+                dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                loss = loss / ddp_world_size
+            total_loss += loss.item()
+            count += 1
+        model.train()
+        return total_loss / count if count > 0 else float("nan")
+
     if ddp_rank == 0:
         console.print(f"[bold green]Starting training[/bold green] on [bold]{device}[/bold] (world_size={ddp_world_size})")
         compile_flex_attention = bool(getattr(config, "compile_flex_attention", False))
@@ -603,8 +625,23 @@ def train(args) -> None:
     is_hoss = (args.optimizer_type == "hoss")
 
     losses: list[float] = []
+    val_losses: list[tuple[int, float]] = []  # (step, val_loss) pairs
     step_times_s: list[float] = []
     last_log_step = -1
+
+    # Validation setup
+    val_interval = int(getattr(args, "val_interval", 0))
+    val_batches = int(getattr(args, "val_batches", 10))
+    val_loader = None
+    if val_interval > 0:
+        val_loader = tokenizing_distributed_data_loader(
+            B=args.batch_size,
+            T=config.sequence_len,
+            split="val",
+            device=device.type,
+        )
+        if ddp_rank == 0:
+            console.print(f"[bold cyan]validation[/bold cyan] interval={val_interval} batches={val_batches}")
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize(device)
@@ -774,6 +811,17 @@ def train(args) -> None:
                 )
                 last_log_time = step_t1
                 last_log_step = step
+
+            # Periodic validation evaluation
+            if val_loader is not None and val_interval > 0 and (step + 1) % val_interval == 0:
+                val_loss = evaluate_validation(val_loader, val_batches)
+                val_losses.append((step, val_loss))
+                if ddp_rank == 0:
+                    console.print(
+                        f"[bold magenta]val[/bold magenta] step={step}  "
+                        f"[dim]val_ce[/dim] {val_loss:.4f}  "
+                        f"[dim]train_ce[/dim] {loss_item:.4f}"
+                    )
     finally:
         compute_cleanup()
 
@@ -844,8 +892,15 @@ def train(args) -> None:
         "flops_per_step_est": flops_per_step,
         "planned_total_flops_est": max_steps * flops_per_step,
     }
+    # Compute final train/val CE statistics
+    final_train_ce = losses[-1] if losses else float("nan")
+    final_val_ce = val_losses[-1][1] if val_losses else None
+
     results: dict[str, Any] = {
         "losses": losses,
+        "train_ce_final": final_train_ce,
+        "val_losses": val_losses,
+        "val_ce_final": final_val_ce,
         "step_times_s": step_times_s,
         "measured_steps": measured_steps,
         "measured_tokens": measured_tokens,
@@ -873,6 +928,8 @@ def train(args) -> None:
             "grad_clip_norm": (float(grad_clip_norm) if grad_clip_norm is not None else None),
             "model_type": model_type,
             "synaptic_config": (asdict(config.syn_cfg) if model_type == "synaptic" else None),
+            "val_interval": val_interval,
+            "val_batches": val_batches if val_interval > 0 else None,
         },
         "compile": {
             "enabled": compiled_model,
@@ -927,6 +984,12 @@ def train(args) -> None:
     report_table.add_row("TFLOP/s (est)", f"{est_tflops:.2f}")
     if peak_mem_gb is not None:
         report_table.add_row("Peak Mem (GB)", f"{peak_mem_gb:.2f}")
+    report_table.add_row("Final Train CE", f"{final_train_ce:.4f}")
+    if val_interval > 0:
+        report_table.add_row("Val Interval", str(val_interval))
+        report_table.add_row("Val Batches", str(val_batches))
+        if final_val_ce is not None:
+            report_table.add_row("Final Val CE", f"{final_val_ce:.4f}")
     console.print(report_table)
 
     report_md = f"""# nanochat run (fixed FLOPs)
@@ -973,6 +1036,10 @@ def train(args) -> None:
 - tokens/s: {tokens_per_second:,.0f}
 - TFLOP/s (est): {est_tflops:.2f}
 - peak_memory_allocated_gb: {peak_mem_gb if peak_mem_gb is not None else 'n/a'}
+- final_train_ce: {final_train_ce:.4f}
+- val_interval: {val_interval}
+- val_batches: {val_batches if val_interval > 0 else 'n/a'}
+- final_val_ce: {final_val_ce if final_val_ce is not None else 'n/a'}
 
 See `summary.json` for full details.
 """
@@ -1138,6 +1205,18 @@ if __name__ == "__main__":
         help="Path to JSON file with SynapticConfig overrides (only used for --model-type synaptic).",
     )
     parser.add_argument("--max-steps", type=int, default=20, help="Max training steps (ignored if --target-flops is set).")
+    parser.add_argument(
+        "--val-interval",
+        type=int,
+        default=0,
+        help="Run validation every N steps (0 = disabled).",
+    )
+    parser.add_argument(
+        "--val-batches",
+        type=int,
+        default=10,
+        help="Number of batches to evaluate during validation (default: 10).",
+    )
     parser.add_argument(
         "--target-flops",
         type=float,
