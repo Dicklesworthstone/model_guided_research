@@ -1,10 +1,10 @@
 import os
 import time
+
 import jax
 import jax.numpy as jnp
-import numpy as np
-from flax import linen as nn
-from matrix_exponential_gauge_learning import GaugeTransformerConfig, GaugeAttentionBlock
+
+from matrix_exponential_gauge_learning import GaugeAttentionBlock, GaugeTransformerConfig
 
 # Force CPU for debugging
 os.environ["JAX_PLATFORM_NAME"] = "cpu"

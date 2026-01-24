@@ -3,17 +3,18 @@ NeuroViz for JAX
 Adapts the visualization logic from nanochat/neuroviz.py to work with JAX arrays.
 """
 
-import os
 import json
-import time
-import numpy as np
+import os
+
 import jax
-import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any
+
+import matplotlib.pyplot as plt
 
 # Optional imports
 try:
@@ -29,8 +30,8 @@ except ImportError:
     _HAS_SKLEARN = False
 
 try:
-    import plotly.graph_objects as go
-    _HAS_PLOTLY = True
+    import importlib.util
+    _HAS_PLOTLY = importlib.util.find_spec("plotly") is not None
 except ImportError:
     _HAS_PLOTLY = False
 
@@ -50,7 +51,7 @@ def _fit_2d(emb):
         return emb
     if emb.shape[0] < 4:
         return emb[:, :2]
-        
+
     if _HAS_UMAP:
         try:
             red = umap.UMAP(n_neighbors=min(15, emb.shape[0]-1), min_dist=0.3, metric="cosine", random_state=42)
@@ -58,10 +59,10 @@ def _fit_2d(emb):
         except Exception as err:
             # UMAP can fail on degenerate embeddings; fall back gracefully while surfacing the reason
             print(f"[NeuroViz] UMAP reduction failed: {err}")
-            
+
     if _HAS_SKLEARN:
         return PCA(n_components=2).fit_transform(emb)
-        
+
     # Fallback
     W = np.random.normal(0, 1, (emb.shape[1], 2))
     Y = emb @ W
@@ -78,8 +79,8 @@ class NeuroVizManager:
         self.cfg = cfg
         _ensure_dir(cfg.log_dir)
         self._last_img = -1e9
-        
-    def step(self, step: int, metrics: Dict[str, Any]):
+
+    def step(self, step: int, metrics: dict[str, Any]):
         """
         metrics: Dictionary of layer_name -> {metric_name: value}
         """
@@ -88,19 +89,19 @@ class NeuroVizManager:
                 self._write_images(layer_name, layer_metrics, step)
             self._last_img = step
 
-    def _write_images(self, name: str, m: Dict[str, Any], step: int):
+    def _write_images(self, name: str, m: dict[str, Any], step: int):
         outdir = os.path.join(self.cfg.log_dir, "images", name)
         _ensure_dir(outdir)
-        
+
         # If we have embeddings, plot map
         if "embedding" in m:
             emb2d = _fit_2d(m["embedding"])
             fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-            
+
             # Color by some metric if available
             c = m.get("util", np.zeros(emb2d.shape[0]))
             s = 30 + 200 * c
-            
+
             sc = ax.scatter(emb2d[:, 0], emb2d[:, 1], s=s, c=c, cmap="viridis", edgecolors="k", linewidths=0.3, alpha=0.9)
             ax.set_title(f"{name} map — step {step:,}")
             ax.axis("off")
@@ -108,7 +109,7 @@ class NeuroVizManager:
             fig.tight_layout()
             fig.savefig(os.path.join(outdir, f"{name}_map_{step:09d}.png"), dpi=140)
             plt.close(fig)
-            
+
         # Histograms
         keys = [k for k in m.keys() if k != "embedding" and isinstance(m[k], (np.ndarray, jax.Array)) and m[k].ndim == 1]
         if keys:
@@ -117,17 +118,17 @@ class NeuroVizManager:
             rows = (n_plots + cols - 1) // cols
             fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3*rows))
             axes = np.array(axes).reshape(-1)
-            
+
             for i, key in enumerate(keys):
                 ax = axes[i]
                 val = _to_np(m[key])
                 ax.hist(val, bins=20, color="#4472C4", alpha=0.85)
                 ax.set_title(key)
                 ax.grid(True, alpha=0.2)
-                
+
             for i in range(n_plots, len(axes)):
                 axes[i].axis("off")
-                
+
             fig.suptitle(f"{name} distributions @ {step:,}")
             fig.tight_layout(rect=(0, 0, 1, 0.95))
             fig.savefig(os.path.join(outdir, f"{name}_hists_{step:09d}.png"), dpi=140)

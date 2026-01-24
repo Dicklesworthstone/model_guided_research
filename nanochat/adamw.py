@@ -2,9 +2,10 @@
 Borrowed from modded-nanogpt. By Keller, @vagrawal, et al.
 Not a general optimizer! But works for our specific use.
 """
-from nanochat.torch_imports import torch
 import torch.distributed as dist
 from torch import Tensor
+
+from nanochat.torch_imports import torch
 
 
 class DistAdamW(torch.optim.Optimizer):

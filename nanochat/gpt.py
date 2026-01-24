@@ -21,21 +21,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nanochat.common import get_dist_info
-from nanochat.muon import Muon, DistMuon
 from nanochat.adamw import DistAdamW
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask
-from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
-from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
-from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
-from nanochat.quaternion_attention_torch import QuaternionCausalSelfAttention
 from nanochat.braid_attention_torch import BraidCausalSelfAttention
+from nanochat.common import get_dist_info
 from nanochat.fractal_attention_torch import FractalCausalSelfAttention
-from nanochat.octonion_attention_torch import OctonionCausalSelfAttention
-from nanochat.surreal_torch import SurrealCausalSelfAttention
-from nanochat.reversible_block_torch import ReversibleBlock
 from nanochat.gauge_block_torch import GaugeBlock
 from nanochat.hoss_opt_torch import HOSS
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm
+from nanochat.muon import DistMuon, Muon
+from nanochat.octonion_attention_torch import OctonionCausalSelfAttention
+from nanochat.quaternion_attention_torch import QuaternionCausalSelfAttention
+from nanochat.reversible_block_torch import ReversibleBlock
+from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
+from nanochat.surreal_torch import SurrealCausalSelfAttention
+from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
+from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
 
 try:
     from torch.nn.attention.flex_attention import create_block_mask, flex_attention
@@ -335,7 +335,7 @@ class Block(nn.Module):
                 MLP(sub_config),
             )
             return
-            
+
         if config.attention_type == "tropical":
             self.attn = TropicalCausalSelfAttention(config, layer_idx)
         elif config.attention_type == "ultrametric":
@@ -361,7 +361,7 @@ class Block(nn.Module):
             return self.special_block(x, cos_sin, kv_cache)
         if self.config.attention_type == "reversible":
             return self.special_block(x, cos_sin, kv_cache)
-            
+
         x = x + self.attn(norm(x), cos_sin, kv_cache)
         x = x + self.mlp(norm(x))
         return x

@@ -5,11 +5,10 @@ Implements attention using Max-Plus algebra for similarity.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
+
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm, repeat_kv_heads
 
 
 def _tropical_center(x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
@@ -25,7 +24,7 @@ def tropical_max_plus_attention(
     gauge_fix: bool,
     score_center: bool,
     return_margins: bool,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
     Pure max-plus (tropical) attention with optional gauge-fixing and margin certificates.
 
@@ -65,7 +64,7 @@ def tropical_max_plus_attention(
 
     # Value aggregation: y_d = max_k (score(q,k) + v_{k,d})  (tropical matmul)
     logits = attn_scores.unsqueeze(-1) + v.unsqueeze(2)  # (B, H, Tq, Tk, D)
-    gamma: Optional[torch.Tensor]
+    gamma: torch.Tensor | None
     if return_margins:
         if Tk >= 2:
             top2 = torch.topk(logits, k=2, dim=3).values  # (B, H, Tq, 2, D)

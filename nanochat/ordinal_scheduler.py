@@ -16,7 +16,7 @@ Transitions (mirroring JAX ordinal logic):
 """
 
 import torch
-from torch.optim.lr_scheduler import _LRScheduler
+
 
 class OrdinalLRScheduler:
     def __init__(self, optimizer, A_init=2, B_init=3, P_init=100, eta_init=1e-3, gamma=0.3, min_lr=1e-6):
@@ -33,15 +33,15 @@ class OrdinalLRScheduler:
         self.eta_init = eta_init
         self.gamma = gamma
         self.min_lr = min_lr
-        
+
         self.best_loss = float('inf')
         self.ema_loss = None
         self.alpha = 0.1 # EMA smoothing factor
-        
+
         # Set initial LR
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.eta_init
-            
+
     def step(self, loss):
         if torch.is_tensor(loss):
             loss = float(loss.detach().item())
@@ -50,18 +50,18 @@ class OrdinalLRScheduler:
             self.ema_loss = loss
         else:
             self.ema_loss = (1 - self.alpha) * self.ema_loss + self.alpha * loss
-            
+
         # Check for improvement
         if self.ema_loss < self.best_loss:
             self.best_loss = self.ema_loss
             # JAX logic: "If improved: keep (A,B,C)".
-            # This means we DON'T decrement C. 
+            # This means we DON'T decrement C.
             # It effectively extends patience indefinitely as long as we improve.
             pass
         else:
             # No improvement
             self.C -= 1
-            
+
         # Check Limit Conditions
         if self.C <= 0:
             # Limit reached
@@ -70,13 +70,12 @@ class OrdinalLRScheduler:
                 self.B -= 1
                 self.C = self.P_init # Reset patience
                 # Decay LR
-                new_lr = 0.0
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = max(self.min_lr, param_group['lr'] * self.gamma)
-                    new_lr = param_group['lr']
+                    param_group['lr']
                 # Reset best loss to allow new exploration (JAX: "reset best metric")
-                self.best_loss = float('inf') 
-                
+                self.best_loss = float('inf')
+
             elif self.A > 0:
                 # Restart (omega^2-term drop)
                 self.A -= 1
@@ -87,9 +86,9 @@ class OrdinalLRScheduler:
                     param_group['lr'] = self.eta_init
                 # Reset optimizer state
                 self.optimizer.state.clear()
-                
+
                 self.best_loss = float('inf')
-            
+
             else:
                 # Terminate or plateau
                 pass

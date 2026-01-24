@@ -6,7 +6,9 @@ Implements Higher-Order Attention via multi-hop diffusion, mimicking random walk
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
+
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm, repeat_kv_heads
+
 
 class SimplicialCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -16,12 +18,12 @@ class SimplicialCausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        
+
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        
+
         # Mixing weights for 1-hop (Edge) and 2-hop (Triangle/Path) attention
         self.mix_1 = nn.Parameter(torch.tensor(1.0))
         self.mix_2 = nn.Parameter(torch.tensor(0.5))
@@ -45,22 +47,22 @@ class SimplicialCausalSelfAttention(nn.Module):
 
         if self.n_kv_head != self.n_head:
             k, v = repeat_kv_heads(k, v, n_head=self.n_head)
-        
+
         # Standard Attention Weights
         att = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
-        
+
         # Masking
         Tq = q.size(2)
         Tk = k.size(2)
         if kv_cache is None or Tq > 1:
             mask = causal_attn_mask(Tq, Tk, device=q.device)
             att.masked_fill_(~mask, float("-inf"))
-             
+
         att = F.softmax(att, dim=-1) # (B, H, Tq, Tk)
-        
+
         # 1-hop Aggregation (Edges)
         y1 = att @ v
-        
+
         # 2-hop Aggregation (Simplicial/Paths)
         #
         # Cache-backed 2-hop: y2 = A @ y1_all, where y1_all stores the 1-hop outputs
@@ -78,9 +80,9 @@ class SimplicialCausalSelfAttention(nn.Module):
             )
             y1_all = kv_cache.insert_simplicial_y1(self.layer_idx, t0, y1)  # (B, H, Tk, D)
             y2 = att @ y1_all
-            
+
         y = self.mix_1 * y1 + self.mix_2 * y2
-        
+
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y

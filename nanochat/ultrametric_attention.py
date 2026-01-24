@@ -9,11 +9,12 @@ Implements an LCP-kernel ultrametric attention mechanism:
 """
 
 import math
+from dataclasses import dataclass, field
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from jax import lax
-from dataclasses import dataclass, field
 
 from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
 
@@ -60,7 +61,7 @@ class UltrametricCausalSelfAttention(nn.Module):
         self.n_kv_head = self.config.n_kv_head
         self.n_embd = self.config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        
+
         # Projections for Q, K, V
         self.c_q = nn.Dense(self.n_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
         self.c_k = nn.Dense(self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
@@ -74,7 +75,7 @@ class UltrametricCausalSelfAttention(nn.Module):
 
     def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape
-        
+
         # Project to Q, K, V
         q = self.c_q(x).reshape(B, T, self.n_head, self.head_dim)
         k = self.c_k(x).reshape(B, T, self.n_kv_head, self.head_dim)
@@ -179,7 +180,7 @@ class UltrametricCausalSelfAttention(nn.Module):
         attn = weights / denom
 
         y = jnp.einsum("bhqk,bhkd->bhqd", attn.astype(v.dtype), v)
-        
+
         # Re-assemble
         y = jnp.transpose(y, (0, 2, 1, 3)).reshape(B, T, C)
         y = self.c_proj(y)

@@ -1,8 +1,9 @@
 from typing import Any, cast
 
-from nanochat.torch_imports import torch
 import triton
 import triton.language as tl
+
+from nanochat.torch_imports import torch
 
 
 @triton.jit

@@ -27,8 +27,9 @@ Discrete mode (opt-in):
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
+
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm, repeat_kv_heads
+
 
 class BraidCausalSelfAttention(nn.Module):
     _ybe_checked: bool = False
@@ -40,12 +41,12 @@ class BraidCausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        
+
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        
+
         # Braid Scoring Network
         # JAX: "sigmoid(w*[tag, value] + b)"
         # Here we learn a scalar score from the head dimension.
@@ -115,7 +116,7 @@ class BraidCausalSelfAttention(nn.Module):
         cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
-        
+
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
 
         if kv_cache is not None:
@@ -123,17 +124,17 @@ class BraidCausalSelfAttention(nn.Module):
 
         if self.n_kv_head != self.n_head:
             k, v = repeat_kv_heads(k, v, n_head=self.n_head)
-            
+
         # Braid Attention Logic
         # 1. Compute priority scores for Q (Aggregator) and K (Tokens).
         # In Braid model, aggregator is just a designated strand.
         # Here, every query i acts as a potential aggregator for its past.
-        
+
         # Score(q): (B, H, Tq, 1)
         s_q = self.braid_score(q)
         # Score(k): (B, H, Tk, 1)
         s_k = self.braid_score(k)
-        
+
         # Crossing Condition: Aggregator i interacts with Token j if i "sorts" past j?
         # Or if they are "compatible".
         # JAX: "Allowed set A = { j : p_j > tau }".
@@ -142,16 +143,16 @@ class BraidCausalSelfAttention(nn.Module):
         # Let's interpret: Q sets the threshold/context?
         # "Score = s_q + s_k" (additive interaction) or "s_q * s_k" (multiplicative).
         # The previous "s_q + s_k.T" gave a pairwise matrix.
-        
+
         scores = s_q + s_k.transpose(-2, -1) # (B, H, Tq, Tk)
-        
+
         # Masking (Causal)
         Tq = q.size(2)
         Tk = k.size(2)
         if kv_cache is None or Tq > 1:
             mask = causal_attn_mask(Tq, Tk, device=q.device)
             scores.masked_fill_(~mask, float("-inf"))
-        
+
         # Interaction Strength
         # Soft mode: sigmoid(scores) in [0,1].
         # Discrete mode: (scores > tau) in {0,1}.
@@ -206,7 +207,7 @@ class BraidCausalSelfAttention(nn.Module):
 
         y = attn_weights @ v # [B, H, Tq, D]
         y = y / (Tk ** 0.5 + 1e-6)
-        
+
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y

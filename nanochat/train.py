@@ -18,20 +18,19 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 from rich import box
 from rich.console import Console
 from rich.table import Table
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-from nanochat.common import autodetect_device_type, compute_init, compute_cleanup, print0
+from nanochat.common import autodetect_device_type, compute_cleanup, compute_init, print0
+from nanochat.dataloader import tokenizing_distributed_data_loader
 from nanochat.dataset import ensure_min_parquet_files, list_parquet_files
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
-from nanochat.synaptic import SynapticConfig
-from nanochat.dataloader import tokenizing_distributed_data_loader
-
 from nanochat.ordinal_scheduler import OrdinalLRScheduler
 from nanochat.report import get_git_info, get_gpu_info, get_system_info
+from nanochat.synaptic import SynapticConfig
 
 console = Console()
 

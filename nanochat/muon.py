@@ -4,8 +4,9 @@ Also a lot of borrowing of ideas from modded-nanogpt.
 """
 from typing import Any, cast
 
-from nanochat.torch_imports import torch, Tensor
 import torch.distributed as torch_dist
+
+from nanochat.torch_imports import Tensor, torch
 
 dist = cast(Any, torch_dist)
 

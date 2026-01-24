@@ -2,17 +2,18 @@
 Utilities for generating training report cards. More messy code than usual, will fix.
 """
 
-import os
-import re
-import shutil
-import subprocess  # nosec B404
-import shlex
-import socket
 import datetime
+import os
 import platform
-from typing import Any, Dict, List
+import re
+import shlex
+import shutil
+import socket
+import subprocess  # nosec B404
+from typing import Any
 
 import psutil
+
 from nanochat.torch_imports import torch
 
 ALLOWED_CMDS = {"git", "files-to-prompt"}
@@ -49,14 +50,14 @@ def get_git_info():
 
     return info
 
-def get_gpu_info() -> Dict[str, Any]:
+def get_gpu_info() -> dict[str, Any]:
     """Get GPU information."""
     if not torch.cuda.is_available():
         return {"available": False}
 
     num_devices = torch.cuda.device_count()
-    names: List[str] = []
-    memory_gb: List[float] = []
+    names: list[str] = []
+    memory_gb: list[float] = []
     info = {
         "available": True,
         "count": num_devices,
@@ -186,7 +187,7 @@ Generated: {timestamp}
     # count dependencies via uv.lock
     uv_lock_lines = 0
     if os.path.exists('uv.lock'):
-        with open('uv.lock', 'r', encoding='utf-8') as f:
+        with open('uv.lock', encoding='utf-8') as f:
             uv_lock_lines = len(f.readlines())
 
     header += f"""
@@ -292,7 +293,7 @@ class Report:
             # write the header first
             header_file = os.path.join(report_dir, "header.md")
             if os.path.exists(header_file):
-                with open(header_file, "r", encoding="utf-8") as f:
+                with open(header_file, encoding="utf-8") as f:
                     header_content = f.read()
                     out_file.write(header_content)
                     start_time = extract_timestamp(header_content, "Run started:")
@@ -309,7 +310,7 @@ class Report:
                 if not os.path.exists(section_file):
                     print(f"Warning: {section_file} does not exist, skipping")
                     continue
-                with open(section_file, "r", encoding="utf-8") as in_file:
+                with open(section_file, encoding="utf-8") as in_file:
                     section = in_file.read()
                 # Extract timestamp from this section (the last section's timestamp will "stick" as end_time)
                 if "rl" not in file_name:

@@ -10,31 +10,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm
+
 
 class SurrealProbe:
     def __init__(self, model, enabled=False):
         self.model = model
         self.enabled = enabled
-        
+
     def step(self, loss, inputs, targets):
         """
         Compute dominance metrics:
         T_D: Data scaling benefit (simulated via split?)
         T_H: Depth scaling benefit (simulated via skipping layers)
         T_W: Width scaling benefit (simulated via masking channels)
-        
+
         Returns: extra_loss, metrics
         """
         if not self.enabled:
             return 0.0, {}
-            
+
         # Placeholder for dominance check
         # In a full implementation, this would run the forward pass with:
         # 1. Half depth (skip layers)
         # 2. Half width (mask channels)
         # 3. Log the ratios E_half / E_full
-        
+
         return 0.0, {"surreal_balance": 1.0}
 
 class SurrealLayer(nn.Module):
@@ -43,24 +44,24 @@ class SurrealLayer(nn.Module):
     Weights are represented as `w = s * v` where s is a learnable scale (exponent)
     and v is the direction.
     This mimics "transseries" where we separate magnitude (scale) from direction.
-    
+
     w = exp(s) * normalize(v)
     """
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        
+
         # Direction v
         self.weight_v = nn.Parameter(torch.randn(out_features, in_features))
         # Scale s (log-magnitude)
-        self.weight_s = nn.Parameter(torch.zeros(out_features, 1)) 
-        
+        self.weight_s = nn.Parameter(torch.zeros(out_features, 1))
+
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_features))
         else:
             self.register_parameter('bias', None)
-            
+
     def forward(self, input):
         # w = exp(s) * normalize(v)
         w = torch.exp(self.weight_s) * F.normalize(self.weight_v, dim=1)
@@ -74,7 +75,7 @@ class SurrealCausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        
+
         # Use Surreal Linear Layers for projections
         self.c_q = SurrealLayer(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = SurrealLayer(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
@@ -96,7 +97,7 @@ class SurrealCausalSelfAttention(nn.Module):
 
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
-            
+
         Tq = q.size(2)
         Tk = k.size(2)
         enable_gqa = self.n_head != self.n_kv_head

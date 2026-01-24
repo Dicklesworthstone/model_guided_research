@@ -5,9 +5,9 @@ GPT model (JAX/Flax port of nanochat) - Optimized
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from jax import random, lax
+from jax import lax, random
 
-from nanochat.common_jax import GPTConfig, rms_norm, apply_rotary_emb
+from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
 
 
 class CausalSelfAttention(nn.Module):
@@ -146,7 +146,8 @@ class MLP(nn.Module):
 
 
 from nanochat.tropical_attention import TropicalCausalSelfAttention
-from nanochat.ultrametric_attention import UltrametricCausalSelfAttention # Import Ultrametric attention
+from nanochat.ultrametric_attention import UltrametricCausalSelfAttention  # Import Ultrametric attention
+
 
 class Block(nn.Module):
     config: GPTConfig
@@ -173,12 +174,12 @@ RematBlock = nn.remat(Block)
 
 class ScanBlock(nn.Module):
     config: GPTConfig
-    
+
     @nn.compact
     def __call__(self, x, ctx):
         cos, sin, mask, layer_idx = ctx
         # Use RematBlock
-        block = RematBlock(self.config, layer_idx=0) 
+        block = RematBlock(self.config, layer_idx=0)
         x = block(x, cos, sin, mask)
         return x, None
 
@@ -210,7 +211,7 @@ class GPT(nn.Module):
             self.config.vocab_size, self.config.n_embd, embedding_init=nn.initializers.normal(stddev=0.02),
             dtype=jnp.bfloat16 # Use bfloat16 for embeddings
         )
-        
+
         # Use nn.scan for layers
         # We scan over the 'params' and 'cache' collections.
         # We broadcast the context (cos, sin, mask).
@@ -221,7 +222,7 @@ class GPT(nn.Module):
             in_axes=nn.broadcast, # Broadcast the second argument (ctx)
             length=self.config.n_layer
         )(self.config)
-        
+
         self.lm_head = nn.Dense(self.config.vocab_size, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02), dtype=jnp.bfloat16)
 
     def __call__(self, idx, targets=None, train=True):

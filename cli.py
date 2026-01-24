@@ -7,8 +7,8 @@ import importlib
 import json
 import math
 import platform
-import statistics
 import shlex
+import statistics
 import subprocess  # nosec B404
 import sys
 import time

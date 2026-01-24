@@ -14,6 +14,7 @@ import numpy as np
 from rich import box
 from rich.console import Console
 from rich.table import Table
+
 from nanochat.torch_imports import torch
 
 console = Console()

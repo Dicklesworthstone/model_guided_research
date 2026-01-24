@@ -1,8 +1,10 @@
 from typing import Any, cast
 
-from nanochat.torch_imports import torch
 import triton
 import triton.language as tl
+
+from nanochat.torch_imports import torch
+
 
 @triton.jit
 def mix_rows_kernel(
@@ -18,25 +20,25 @@ def mix_rows_kernel(
     pid = tl.program_id(0)
     cols = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = cols < n_cols
-    
+
     # Pointers to the two rows
     ptr1 = Mat_ptr + idx1 * stride_r + cols * stride_c
     ptr2 = Mat_ptr + idx2 * stride_r + cols * stride_c
-    
+
     val1 = tl.load(ptr1, mask=mask, other=0.0)
     val2 = tl.load(ptr2, mask=mask, other=0.0)
-    
+
     # Merge: val1 = alpha * val1 + (1-alpha) * val2
     merged = alpha * val1 + (1.0 - alpha) * val2
-    
+
     # Clone: val2 = merged + noise
     # Simple uniform noise approximation
     rng_offset = idx2 * n_cols + cols
     r = tl.rand(seed, rng_offset)
     noise = (r - 0.5) * 2.0 * noise_scale
-    
+
     cloned = merged + noise
-    
+
     tl.store(ptr1, merged, mask=mask)
     tl.store(ptr2, cloned, mask=mask)
 
@@ -58,7 +60,7 @@ def mix_and_shift_rows(mat, idx1, idx2, alpha, noise_scale):
     BLOCK_SIZE = 1024
     grid = (triton.cdiv(n_cols, BLOCK_SIZE),)
     seed = torch.randint(0, 2**31, (1,)).item()
-    
+
     mix_rows_kernel[grid](
         mat,
         mat.stride(0), mat.stride(1),
@@ -82,20 +84,20 @@ def mix_tensors_kernel(
     pid = tl.program_id(0)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
-    
+
     ptr1 = T1_ptr + offsets
     ptr2 = T2_ptr + offsets
-    
+
     val1 = tl.load(ptr1, mask=mask, other=0.0)
     val2 = tl.load(ptr2, mask=mask, other=0.0)
-    
+
     merged = alpha * val1 + (1.0 - alpha) * val2
-    
+
     r = tl.rand(seed, offsets)
     noise = (r - 0.5) * 2.0 * noise_scale
-    
+
     cloned = merged + noise
-    
+
     tl.store(ptr1, merged, mask=mask)
     tl.store(ptr2, cloned, mask=mask)
 
@@ -115,10 +117,10 @@ def mix_and_shift_tensors(t1, t2, alpha, noise_scale):
     BLOCK_SIZE = 1024
     grid = (triton.cdiv(n_elements, BLOCK_SIZE),)
     seed = torch.randint(0, 2**31, (1,)).item()
-    
+
     # Ensure contiguous for simple pointer arithmetic
     # (In-place modification requires we don't change data_ptr, so we assume they are contiguous or handle strides)
-    # For simplicity, we assume contiguous or flatten. 
+    # For simplicity, we assume contiguous or flatten.
     # If not contiguous, we can't easily use single pointer.
     # But model params are usually contiguous.
     if not t1.is_contiguous() or not t2.is_contiguous():

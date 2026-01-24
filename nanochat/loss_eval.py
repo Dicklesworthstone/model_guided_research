@@ -4,8 +4,9 @@ A number of functions that help with evaluating a base model.
 import math
 from typing import Any, cast
 
-from nanochat.torch_imports import torch
 import torch.distributed as torch_dist
+
+from nanochat.torch_imports import torch
 
 dist = cast(Any, torch_dist)
 

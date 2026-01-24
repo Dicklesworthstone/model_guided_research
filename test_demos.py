@@ -4,6 +4,7 @@
 import importlib
 import os
 
+
 def main() -> None:
     # Set JAX to CPU mode
     os.environ["JAX_PLATFORMS"] = "cpu"

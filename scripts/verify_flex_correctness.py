@@ -6,8 +6,7 @@ import shlex
 import sys
 import time
 from contextlib import nullcontext
-from dataclasses import dataclass
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 

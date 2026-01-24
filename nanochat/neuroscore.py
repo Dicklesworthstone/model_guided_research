@@ -10,12 +10,14 @@
 # -----------------------------------------------------------------------------
 
 import os
-from nanochat.torch_imports import torch, nn, F, Tensor
-from typing import Dict, Any
 from dataclasses import dataclass
-from .synaptic import SynapticMoE
+from typing import Any
 
-Tensor = torch.Tensor
+from torch import Tensor
+
+from nanochat.torch_imports import F, nn, torch
+
+from .synaptic import SynapticMoE
 
 
 @dataclass
@@ -35,7 +37,7 @@ class NeuroScore:
     def __init__(self, cfg: NeuroScoreConfig, neuroviz=None):
         self.cfg = cfg
         self.neuroviz = neuroviz
-        self.stats: Dict[str, Dict[str, Any]] = {}  # layer_name -> metrics
+        self.stats: dict[str, dict[str, Any]] = {}  # layer_name -> metrics
         self._last_loss = None
 
     def register_layer(self, name: str, num_experts: int):
@@ -117,19 +119,19 @@ class NeuroScore:
                 # If loss is flat, high routing weight = Neutral.
                 # We simplify: Contribution = Sum(Gates)
                 # This seems trivial, but combined with Energy it gives Efficiency.
-                
+
                 # Flatten batch/time
                 gates_flat = gates.view(-1)
                 indices_flat = indices.view(-1)
-                
+
                 # Scatter add
                 contrib_update = torch.zeros_like(st["loss_contrib"])
                 contrib_update.index_add_(0, indices_flat.cpu(), gates_flat.float().cpu())
-                
+
                 # Normalize by batch size
                 batch_size = gates.shape[0] * gates.shape[1]
                 contrib_update /= batch_size
-                
+
                 # EMA update
                 st["loss_contrib"].mul_(self.cfg.decay).add_(contrib_update * (1 - self.cfg.decay))
 
@@ -157,10 +159,10 @@ class NeuroScore:
         # x: (B,T,C)
         # indices: (B,T,k)
         B, T, C = x.shape
-        
+
         # Compute global mean of inputs
         global_mean = x.mean(dim=(0, 1)).float()  # (C,)
-        
+
         # We want mean input per expert.
         # Gather inputs for each expert? Too much memory.
         # Streaming approx:
@@ -172,29 +174,29 @@ class NeuroScore:
 
         x_sub = x[mask].float() # (N, C)
         ind_sub = indices[mask] # (N, k)
-        
+
         # For each expert, compute centroid of assigned inputs
         expert_sums = torch.zeros(num_experts, C, device=x.device, dtype=torch.float32)
         expert_counts = torch.zeros(num_experts, device=x.device, dtype=torch.float32)
-        
-        # Naive loop is slow, but x_sub is small. 
+
+        # Naive loop is slow, but x_sub is small.
         # Vectorized scatter_add is better.
-        # Expand x_sub for k assignments? 
+        # Expand x_sub for k assignments?
         # (N, k, C)
         # This might OOM if k is large, but k=2 usually.
-        
+
         for k_i in range(ind_sub.shape[1]):
             # idx: (N,)
             idx = ind_sub[:, k_i]
             expert_sums.index_add_(0, idx, x_sub)
             expert_counts.index_add_(0, idx, torch.ones_like(idx, dtype=torch.float32))
-            
+
         expert_means = expert_sums / (expert_counts.unsqueeze(1) + 1e-6)
-        
+
         # Cosine distance from global mean
         # (E, C) vs (C,)
         sim = F.cosine_similarity(expert_means, global_mean.unsqueeze(0), dim=1)
-        
+
         # Specialization = 1 - similarity (0 = generic, 1 = unique)
         spec = 1.0 - sim
         st["specialization"].copy_(spec.detach().cpu())
@@ -204,25 +206,25 @@ class NeuroScore:
         if not self.neuroviz or not getattr(self.neuroviz, "tb", None):
             return
         tb = self.neuroviz.tb
-        
+
         # Scalars (Means)
         tb.add_scalar(f"{layer_name}/score/mean_efficiency", st["efficiency"].mean(), step)
         tb.add_scalar(f"{layer_name}/score/mean_specialization", st["specialization"].mean(), step)
         tb.add_scalar(f"{layer_name}/score/mean_resilience", st["resilience"].mean(), step)
-        
+
         # Histograms
         tb.add_histogram(f"{layer_name}/score/hist_efficiency", st["efficiency"], step)
         tb.add_histogram(f"{layer_name}/score/hist_specialization", st["specialization"], step)
-        
+
         # Leaderboard (Top 5 Experts by Efficiency)
         top_k = 5
         vals, idxs = torch.topk(st["efficiency"], k=min(top_k, len(st["efficiency"])))
-        
+
         # Create Markdown Table
         md = "| Rank | ID | Efficiency | Spec | Contrib |\n|---|---|---|---|---|\n"
         for rank, (val, idx) in enumerate(zip(vals, idxs)):
             i = idx.item()
             md += f"| {rank+1} | {i} | {val:.3f} | {st['specialization'][i]:.3f} | {st['loss_contrib'][i]:.3f} |\n"
-            
+
         tb.add_text(f"{layer_name}/leaderboard", md, step)
 

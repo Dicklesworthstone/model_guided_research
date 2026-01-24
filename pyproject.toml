@@ -109,8 +109,13 @@ select = [
     "UP",     # pyupgrade
 ]
 ignore = [
-    "E501",  # Line too long
-    "E402",  # Module level import not at top of file
+    "E501",   # Line too long
+    "E402",   # Module level import not at top of file
+    "B905",   # zip() without strict= (deliberate - we check lengths)
+    "B007",   # Unused loop control variable (deliberate - unpacking)
+    "B023",   # Function definition does not bind loop variable (benchmark code)
+    "E741",   # Ambiguous variable name (l, O, I) - acceptable in math code
+    "UP022",  # Prefer capture_output (backward compat for scripts)
 ]
 
 [tool.ruff.format]

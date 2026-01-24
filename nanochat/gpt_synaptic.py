@@ -1,19 +1,18 @@
 # nanochat/gpt_synaptic.py
 # pylint: disable=too-many-instance-attributes
 from __future__ import annotations
-# GPT with Synaptic Attention/MLP and optional Synaptic MoE + structural hooks
 
-from nanochat.torch_imports import torch, nn, F, Tensor
 from dataclasses import dataclass, field
-from typing import Optional
+
+# GPT with Synaptic Attention/MLP and optional Synaptic MoE + structural hooks
+from nanochat.torch_imports import F, Tensor, nn, torch
 
 from .synaptic import (
     SynapticCausalSelfAttention,
-    SynapticMLP,
     SynapticConfig,
+    SynapticMLP,
     SynapticMoE,
 )
-
 
 # -----------------------------------------------------------------------------
 # Config
@@ -193,9 +192,9 @@ class GPTSynaptic(nn.Module):
     def forward(
         self,
         idx: Tensor,
-        targets: Optional[Tensor] = None,
+        targets: Tensor | None = None,
         kv_cache=None,
-        train_mode: Optional[bool] = None,
+        train_mode: bool | None = None,
     ):
         if train_mode is None:
             train_mode = self.training
@@ -208,7 +207,7 @@ class GPTSynaptic(nn.Module):
         # Persist synaptic state across KV-cache inference by attaching it to the cache object.
         presyn_states: list[dict[str, object] | None] = [None for _ in range(self.config.n_layer)]
         if kv_cache is not None and hasattr(kv_cache, "presyn_state"):
-            cached = getattr(kv_cache, "presyn_state")
+            cached = kv_cache.presyn_state
             if cached is not None:
                 if not isinstance(cached, list):
                     raise TypeError("kv_cache.presyn_state must be a list[dict|None] for GPTSynaptic KV-cache mode")
@@ -231,7 +230,7 @@ class GPTSynaptic(nn.Module):
         logits = self.lm_head(x.to(dtype=self.lm_head.weight.dtype))
         if targets is None:
             return logits, None
-        aux = sum((getattr(b, "last_aux_loss", torch.tensor(0.0, device=logits.device)) for b in self.h))
+        aux = sum(getattr(b, "last_aux_loss", torch.tensor(0.0, device=logits.device)) for b in self.h)
         ce = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), reduction="mean")
         loss = ce + aux
         return logits, loss
@@ -270,10 +269,11 @@ class GPTSynaptic(nn.Module):
             return [opt]  # Return as list for compatibility
         else:
             # GPT-style signature (for compatibility with existing training scripts)
-            from nanochat.common import get_dist_info
-            from nanochat.muon import Muon, DistMuon
-            from nanochat.adamw import DistAdamW
             import inspect
+
+            from nanochat.adamw import DistAdamW
+            from nanochat.common import get_dist_info
+            from nanochat.muon import DistMuon, Muon
 
             model_dim = self.config.n_embd
             ddp, rank, local_rank, world_size = get_dist_info()

@@ -127,7 +127,7 @@ def main():
     config.n_kv_head = 4
     config.n_embd = 128
     config.sequence_len = 256
-    
+
     # Set config from CLI args
     config.optimizer_type = args.optimizer_type
     config.attention_type = args.attention_type
@@ -160,15 +160,15 @@ def main():
     # We use the tokenizing dataloader from nanochat
     # It yields torch tensors. We convert to numpy.
     print("Starting dataloader...")
-    # Ensure we have some data or it will fail. 
+    # Ensure we have some data or it will fail.
     # The dataloader looks for parquet files.
     # If no data, we can't run.
     # We should probably mock data if none exists, but let's try to run and see.
-    
+
     try:
         loader = tokenizing_distributed_data_loader(
-            B=batch_size, 
-            T=config.sequence_len, 
+            B=batch_size,
+            T=config.sequence_len,
             split="train",
             device="cpu" # Get CPU tensors
         )

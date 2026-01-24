@@ -697,7 +697,7 @@ class GaugeAttentionBlock(nn.Module):
         # If I have a bug in `so_out` shape...
         #
         # Let's debug print the shapes of parts inside `_apply_structured_blocks`.
-        
+
         z = z.reshape(B, N, H * dh)
         z = self.o_proj(z)
         if self.cfg.dropout_rate > 0.0:

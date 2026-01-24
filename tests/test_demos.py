@@ -519,8 +519,8 @@ def test_execution_execute_code_allows_disabling_memory_limit():
 
 def test_nanochat_synaptic_modules_import():
     # These modules are optional/experimental, but should import cleanly.
-    import nanochat.synaptic  # noqa: F401
     import nanochat.gpt_synaptic  # noqa: F401
+    import nanochat.synaptic  # noqa: F401
 
 
 def test_postsynaptic_hebb_fast_uses_mean_over_presyn_dim():

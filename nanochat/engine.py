@@ -17,10 +17,10 @@ import signal
 from collections import deque
 from contextlib import contextmanager, nullcontext
 
-from nanochat.torch_imports import torch, F
-
-from nanochat.common import compute_init, autodetect_device_type
 from nanochat.checkpoint_manager import load_model
+from nanochat.common import autodetect_device_type, compute_init
+from nanochat.torch_imports import F, torch
+
 
 # -----------------------------------------------------------------------------
 # Calculator tool helpers
@@ -165,7 +165,7 @@ class KVCache:
         self.pos = other.pos
         # 5) Copy any extra per-cache state (e.g., synaptic presyn state)
         if hasattr(other, "presyn_state"):
-            other_state = getattr(other, "presyn_state")
+            other_state = other.presyn_state
             if other_state is None:
                 self.presyn_state = None
             else:
@@ -223,7 +223,7 @@ class KVCache:
                 ]
 
         if hasattr(other, "simplicial_y1_cache"):
-            other_cache = getattr(other, "simplicial_y1_cache")
+            other_cache = other.simplicial_y1_cache
             if other_cache is None:
                 self.simplicial_y1_cache = None
             elif not isinstance(other_cache, torch.Tensor):

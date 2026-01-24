@@ -14,9 +14,10 @@ comes up with a better simple Python solution I am all ears.
 """
 
 import os
+import runpy
 import sys
 from ast import literal_eval
-import runpy
+
 
 def print0(s="",**kwargs):
     ddp_rank = int(os.environ.get('RANK', 0))

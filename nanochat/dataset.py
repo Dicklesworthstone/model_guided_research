@@ -7,15 +7,15 @@ This file contains utilities for:
 For details of how the dataset was prepared, see `repackage_data_reference.py`.
 """
 
-import os
 import argparse
+import os
 import time
+from multiprocessing import Pool
 from typing import Any
 
-from filelock import FileLock
-import requests
 import pyarrow.parquet as pq
-from multiprocessing import Pool
+import requests
+from filelock import FileLock
 
 from nanochat.common import get_base_dir
 
@@ -137,7 +137,7 @@ def download_single_file(index):
             print(f"Successfully downloaded {filename}")
             return True
 
-        except (requests.RequestException, IOError) as e:
+        except (OSError, requests.RequestException) as e:
             print(f"Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
             # Keep any partial files for inspection; subsequent retries will overwrite the temp file.
             # Try a few times with exponential backoff: 2^attempt seconds

@@ -6,8 +6,8 @@ These tests verify that each implementation actually satisfies the mathematical
 properties claimed in its documentation, not just that it imports successfully.
 """
 
-import sys
 import math
+import sys
 from pathlib import Path
 
 # Add parent directory to path

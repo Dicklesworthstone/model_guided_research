@@ -22,20 +22,22 @@
 
 import importlib
 import importlib.util
-import os
 import json
+import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
-from nanochat.torch_imports import torch, nn, Tensor
 import matplotlib
+import numpy as np
+
+from nanochat.torch_imports import Tensor, nn, torch
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-def _maybe_import(module: str, attr: Optional[str] = None) -> Any:
+
+def _maybe_import(module: str, attr: str | None = None) -> Any:
     spec = importlib.util.find_spec(module)
     if spec is None:
         return None
@@ -56,7 +58,7 @@ except ModuleNotFoundError:
     SummaryWriter = None  # type: ignore[assignment]
 
 # lazy import to avoid circulars
-from .synaptic import SynapticMoE, SynapticExpert
+from .synaptic import SynapticExpert, SynapticMoE
 
 if TYPE_CHECKING:
     from .neuroscore import NeuroScore, NeuroScoreConfig
@@ -136,7 +138,7 @@ def _fit_2d(emb: np.ndarray) -> np.ndarray:
     if emb.shape[0] < 4:
         # Just project to first 2 dims or random
         return emb[:, :2]
-        
+
     if _HAS_UMAP:
         try:
             red = UMAP(
@@ -148,7 +150,7 @@ def _fit_2d(emb: np.ndarray) -> np.ndarray:
             return red.fit_transform(emb)
         except Exception as err:
             print(f"[neuroviz] UMAP failed, falling back to PCA/random: {err}")
-            
+
     if _HAS_SKLEARN:
         return PCA(n_components=2).fit_transform(emb)
     # fallback: random projection
@@ -172,7 +174,7 @@ class LineageBook:
         self.save_dir = save_dir
         _ensure_dir(save_dir)
         # layer_id -> list of events [(step, "merge", w,l,child), (step, "split", parent, child)]
-        self.events: Dict[str, List[Tuple[int, str, List[int]]]] = {}
+        self.events: dict[str, list[tuple[int, str, list[int]]]] = {}
 
     def log_merge(
         self, layer_name: str, step: int, parent_i: int, parent_j: int, child_idx: int
@@ -313,12 +315,12 @@ class NeuroVizManager:
             self.tb = SummaryWriter(cfg.log_dir)
         else:
             self.tb = None
-        self.layers: List[Tuple[str, SynapticMoE]] = []  # (name, module)
+        self.layers: list[tuple[str, SynapticMoE]] = []  # (name, module)
         self.lineage = LineageBook(os.path.join(cfg.log_dir, "lineage"))
         self._last_tb = -(10**12)
         self._last_img = -(10**12)
         self._last_html = -(10**12)
-        
+
         # NeuroScore hook
         self.score = None
         if NeuroScore is not None:
@@ -345,7 +347,7 @@ class NeuroVizManager:
         parent_i: int,
         parent_j: int,
         child_idx: int,
-        step: Optional[int] = None,
+        step: int | None = None,
     ):
         name = self._name_of(moe)
         if name:
@@ -359,14 +361,14 @@ class NeuroVizManager:
         moe: SynapticMoE,
         parent_idx: int,
         child_idx: int,
-        step: Optional[int] = None,
+        step: int | None = None,
     ):
         name = self._name_of(moe)
         if name:
             step = step if step is not None else int(time.time())
             self.lineage.log_split(name, step, parent_idx, child_idx)
 
-    def _name_of(self, moe: SynapticMoE) -> Optional[str]:
+    def _name_of(self, moe: SynapticMoE) -> str | None:
         for nm, m in self.layers:
             if m is moe:
                 return nm
@@ -377,7 +379,7 @@ class NeuroVizManager:
             self.tb.close()
 
     @torch.no_grad()
-    def _layer_metrics(self, moe: SynapticMoE) -> Dict[str, np.ndarray]:
+    def _layer_metrics(self, moe: SynapticMoE) -> dict[str, np.ndarray]:
         emb = _to_np(cast(torch.Tensor, moe.router_embeddings))  # (E, D)
         fatigue = _to_np(cast(torch.Tensor, moe.fatigue))  # (E,)
         energy = _to_np(cast(torch.Tensor, moe.energy))  # (E,)
@@ -417,7 +419,7 @@ class NeuroVizManager:
 
     # ------------------------- per-step logging ---------------------
 
-    def step(self, model: nn.Module, step: int, loss: Optional[torch.Tensor] = None):
+    def step(self, model: nn.Module, step: int, loss: torch.Tensor | None = None):
         # ensure we have layers registered
         if not self.layers:
             self.register_model(model)
@@ -532,39 +534,39 @@ class NeuroVizManager:
 
         # histograms
         self._hists(name, m, step, outdir)
-        
+
         # contribution plot (Bio vs Static)
         self._contribution_plot(name, moe, step, outdir)
-        
+
         # educational plots (Presyn, Hebbian, Raster)
         self._plot_presynaptic_dynamics(name, moe, step, outdir)
         self._plot_hebbian_memory(name, moe, step, outdir)
         self._plot_expert_raster(name, moe, step, outdir)
-        
+
         # genetics and metabolism
         self._plot_genetics(name, moe, step, outdir)
         self._plot_metabolism(name, moe, step, outdir)
-        
+
         # router decision breakdown
         self._plot_router_decision(name, moe, step, outdir)
 
     def _plot_router_decision(self, name: str, moe: SynapticMoE, step: int, outdir: str):
         if not hasattr(moe, "last_ctx") or "decision_data" not in moe.last_ctx:
             return
-            
+
         d = moe.last_ctx["decision_data"]
         # Convert to numpy
         data = {k: _to_np(v) for k, v in d.items()}
-        
+
         self._save_json(data, os.path.join(outdir, f"{name}_decision_{step:09d}.json"))
 
     def _plot_genetics(self, name: str, moe: SynapticMoE, step: int, outdir: str):
         if not hasattr(moe, "Xi") or not hasattr(moe, "_get_phenotype"):
             return
-            
+
         pheno = moe._get_phenotype(moe.Xi) # (E, 4)
         pheno_np = _to_np(pheno)
-        
+
         # [0] fatigue rate, [1] energy refill, [2] camkii, [3] pp1
         data = {
             "fatigue_rate": pheno_np[:, 0],
@@ -578,10 +580,10 @@ class NeuroVizManager:
     def _plot_metabolism(self, name: str, moe: SynapticMoE, step: int, outdir: str):
         energy = _to_np(cast(Tensor, moe.energy))
         fatigue = _to_np(cast(Tensor, moe.fatigue))
-        
+
         # Sort by energy to show inequality
         sorted_idx = np.argsort(energy)
-        
+
         data = {
             "energy": energy[sorted_idx],
             "fatigue": fatigue[sorted_idx],
@@ -589,7 +591,7 @@ class NeuroVizManager:
         }
         self._save_json(data, os.path.join(outdir, f"{name}_metabolism_{step:09d}.json"))
 
-    def _save_json(self, data: Dict[str, Any], path: str):
+    def _save_json(self, data: dict[str, Any], path: str):
         def default(obj):
             if isinstance(obj, (np.ndarray, np.generic)):
                 return obj.tolist()
@@ -604,40 +606,40 @@ class NeuroVizManager:
         # We need a SynapticPresyn instance. We can't easily grab one from MoE (it's in Attention).
         # But we can instantiate a dummy one with the same config.
         from .synaptic import SynapticPresyn, build_presyn_state
-        
+
         cfg = moe.cfg
         head_dim = 64 # Assumption, but doesn't matter for this simulation as we fake logits
         pre = SynapticPresyn(head_dim, cfg).to("cpu")
-        
+
         T = 50
         # Scenario: Attend to token 0 for 20 steps, then token 1 for 20 steps
         logits = torch.zeros(1, 1, T, T)
         # Causal mask
         mask = torch.tril(torch.ones(T, T)).bool()
-        
+
         # Set high logits for target
         # Steps 0-20: target 0
         logits[:, :, :25, 0] = 20.0
         # Steps 20-40: target 1
         logits[:, :, 25:, 1] = 20.0
-        
+
         # Dummy q, k (needed for docking, but we can set them to be compatible)
         q = torch.randn(1, 1, T, head_dim)
         k = torch.randn(1, 1, T, head_dim)
-        
+
         state = build_presyn_state(1, T, 1, "cpu", torch.float32, cfg)
-        
+
         # Run forward
         # SynapticPresyn.forward returns (syn_logit, new_state)
         # But it updates state in-place or returns new tensors? It returns new tensors.
         # And it processes the whole sequence at once (parallel).
-        
+
         with torch.no_grad():
             syn_logit, final_state = pre(q, k, logits, state, mask, train_mode=False)
-            
+
         # We want to see the time-evolution of RRP, C, Release for the *target* tokens.
         # RRP is (B,H,T). It represents the pool available *at step t*.
-        # Actually RRP is per-key (T_k). 
+        # Actually RRP is per-key (T_k).
         # Wait, in SynapticPresyn:
         # RRP is (B,H,T) -> This is the RRP of the *key* token?
         # Yes: "RRP_refill = (rho_r * RRP + ...)"
@@ -646,17 +648,17 @@ class NeuroVizManager:
         # raw_release: (B,H,T_q, T_k)
         # used_rrp = release_frac.sum(dim=2) -> Sum over queries attending to this key.
         # So RRP[t] is the vesicle pool of token t (acting as a Key).
-        
+
         # So we want to plot RRP of Token 0 and Token 1.
         rrp = final_state["RRP"][0, 0].numpy() # (T,)
         c_val = final_state["C"][0, 0].numpy()
-        
-        # Release probability? 
+
+        # Release probability?
         # We can infer it from syn_logit or just re-calculate.
         # syn_logit is (B,H,T,T).
         # Let's look at syn_logit[:,:,t,0] (attention to token 0 at step t)
         syn_adjust = syn_logit[0, 0, :, 0].numpy() # (T,)
-        
+
         # Save data for interactive dashboard
         data = {
             "rrp": rrp,
@@ -665,32 +667,32 @@ class NeuroVizManager:
             "steps": list(range(T))
         }
         self._save_json(data, os.path.join(outdir, f"{name}_presyn_{step:09d}.json"))
-        
+
         fig, ax = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
-        
+
         # Plot RRP of Token 0
         ax[0].plot(rrp, label="RRP (Vesicles)", color="green", lw=2)
         ax[0].set_title("Presynaptic State (Token 0)")
         ax[0].set_ylabel("Pool Size")
         ax[0].legend()
         ax[0].grid(True, alpha=0.3)
-        
+
         # Plot Calcium of Token 0
         ax[1].plot(c_val, label="Calcium (Excitement)", color="orange", lw=2)
         ax[1].set_ylabel("Concentration")
         ax[1].legend()
         ax[1].grid(True, alpha=0.3)
-        
+
         # Plot Synaptic Adjustment to Token 0
         ax[2].plot(syn_adjust, label="Logit Adjustment", color="red", lw=2)
         ax[2].set_ylabel("Logit Delta")
         ax[2].set_xlabel("Time Step")
         ax[2].legend()
         ax[2].grid(True, alpha=0.3)
-        
+
         ax[2].text(5, -2, "Attending to Token 0...", fontsize=9, color="gray")
         ax[2].text(30, -2, "Switched to Token 1", fontsize=9, color="gray")
-        
+
         fig.suptitle(f"The 'Boredom' Mechanism (Simulated) @ {step}")
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, f"{name}_presyn_{step:09d}.png"), dpi=120)
@@ -701,30 +703,30 @@ class NeuroVizManager:
         # Find most active expert from last_ctx
         if not hasattr(moe, "last_ctx") or not moe.last_ctx:
             return
-            
+
         # We can also just pick expert 0 for consistency
         e_idx = 0
         expert = cast(SynapticExpert, moe.experts[e_idx])
-        
+
         # H_fast is (d_in, d_out). It might be large.
         # We'll take a slice.
         if not hasattr(expert.fc1.post, "H_fast"):
             return
-            
+
         H = cast(torch.Tensor, expert.fc1.post.H_fast).detach().float().cpu().numpy()
         # Slice 50x50
         H_sub = H[:50, :50]
-        
+
         # Save data
         self._save_json({"heatmap": H_sub}, os.path.join(outdir, f"{name}_hebbian_{step:09d}.json"))
-        
+
         fig, ax = plt.subplots(figsize=(6, 5))
         im = ax.imshow(H_sub, cmap="RdBu_r", vmin=-0.01, vmax=0.01)
         ax.set_title(f"Hebbian Trace (Expert {e_idx}) - Short Term Memory")
         ax.set_xlabel("Output Dim")
         ax.set_ylabel("Input Dim")
         fig.colorbar(im, ax=ax)
-        
+
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, f"{name}_hebbian_{step:09d}.png"), dpi=120)
         plt.close(fig)
@@ -732,33 +734,33 @@ class NeuroVizManager:
     def _plot_expert_raster(self, name: str, moe: SynapticMoE, step: int, outdir: str):
         if not hasattr(moe, "last_ctx") or not moe.last_ctx:
             return
-            
+
         # gates: (B, T, k)
         gates = _to_np(moe.last_ctx["gates"])
         indices = _to_np(moe.last_ctx["indices"])
-        
+
         # Flatten B*T
         B, T, k = gates.shape
         flat_gates = gates.reshape(-1, k)
         flat_indices = indices.reshape(-1, k)
-        
+
         # Take first 100 tokens
         L = min(100, B*T)
-        
+
         # Create a matrix (Experts, Time)
         E = moe.num_experts
         raster = np.zeros((E, L))
-        
+
         for t in range(L):
             for i in range(k):
                 idx = int(flat_indices[t, i])
                 val = flat_gates[t, i]
                 if idx < E:
                     raster[idx, t] = val
-        
+
         # Save data
         self._save_json({"raster": raster}, os.path.join(outdir, f"{name}_raster_{step:09d}.json"))
-                    
+
         fig, ax = plt.subplots(figsize=(10, 6))
         # Use a dark background for "brain scan" look
         im = ax.imshow(raster, aspect="auto", cmap="magma", interpolation="nearest")
@@ -766,7 +768,7 @@ class NeuroVizManager:
         ax.set_xlabel("Token Time")
         ax.set_ylabel("Expert ID")
         fig.colorbar(im, ax=ax, label="Gate Probability")
-        
+
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, f"{name}_raster_{step:09d}.png"), dpi=120)
         plt.close(fig)
@@ -775,11 +777,11 @@ class NeuroVizManager:
         # Visualize the magnitude of fast weights vs slow weights
         # We'll sample a few experts
         experts = moe.experts[:min(5, len(moe.experts))]
-        
+
         slow_norms = []
         fast_norms = []
         ids = []
-        
+
         for i, e in enumerate(experts):
             e = cast(SynapticExpert, e)
             # L2 norm of weights
@@ -790,31 +792,31 @@ class NeuroVizManager:
                 f += cast(torch.Tensor, e.fc1.post.H_fast).norm().item()
             if hasattr(e.fc2.post, "H_fast"):
                 f += cast(torch.Tensor, e.fc2.post.H_fast).norm().item()
-                
+
             slow_norms.append(s)
             fast_norms.append(f)
             ids.append(f"Exp {i}")
-            
+
         # Save data
         self._save_json({
             "ids": ids,
             "slow_norms": slow_norms,
             "fast_norms": fast_norms
         }, os.path.join(outdir, f"{name}_contrib_{step:09d}.json"))
-            
+
         fig, ax = plt.subplots(figsize=(8, 5))
         x = np.arange(len(ids))
         width = 0.35
-        
+
         ax.bar(x - width/2, slow_norms, width, label='Slow (Static)', color='#4472C4')
         ax.bar(x + width/2, fast_norms, width, label='Fast (Bio)', color='#ED7D31')
-        
+
         ax.set_ylabel('Weight Norm (L2)')
         ax.set_title(f'{name} - Static vs Bio Weight Magnitude')
         ax.set_xticks(x)
         ax.set_xticklabels(ids)
         ax.legend()
-        
+
         fig.tight_layout()
         fig.savefig(os.path.join(outdir, f"{name}_contrib_{step:09d}.png"), dpi=120)
         plt.close(fig)
@@ -822,7 +824,7 @@ class NeuroVizManager:
     def _radar(
         self,
         name: str,
-        m: Dict[str, np.ndarray],
+        m: dict[str, np.ndarray],
         step: int,
         outdir: str,
         top_n: int = 6,
@@ -832,12 +834,12 @@ class NeuroVizManager:
         labels = ["util", "energy", "camkii", "mgate", "elig", "qprox"]
         K = len(labels)
         th = np.linspace(0, 2 * np.pi, K, endpoint=False)
-        
+
         # Compute global max per metric for fair comparison
         max_vals = np.array([
             np.max(m[key]) + 1e-6 for key in labels
         ], dtype=np.float32)
-        
+
         fig = plt.figure(figsize=(7, 7))
         ax = plt.subplot(111, polar=True)
         for idx in order:
@@ -864,7 +866,7 @@ class NeuroVizManager:
         fig.savefig(os.path.join(outdir, f"{name}_radar_{step:09d}.png"), dpi=140)
         plt.close(fig)
 
-    def _hists(self, name: str, m: Dict[str, np.ndarray], step: int, outdir: str):
+    def _hists(self, name: str, m: dict[str, np.ndarray], step: int, outdir: str):
         fig, axes = plt.subplots(2, 3, figsize=(12, 7))
         keys = ["util", "energy", "health", "camkii", "mgate", "qprox"]
         for ax, key in zip(axes.ravel(), keys):

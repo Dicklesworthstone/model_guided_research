@@ -3,12 +3,12 @@ Tropical Attention Module (JAX/Flax)
 Implements attention using Max-Plus algebra for similarity.
 """
 
-import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from jax import lax
 
 from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
+
 
 def tropical_dot_product(q, k):
     """
@@ -22,7 +22,7 @@ def tropical_dot_product(q, k):
     # k: [B, H, 1, S, D]
     # sum: [B, H, T, S, D]
     # max: [B, H, T, S]
-    
+
     # To save memory, we might want to chunk this if T is large.
     # But for now, let's trust JAX's compiler or run on small seq len.
     return jnp.max(q[..., :, None, :] + k[..., None, :, :], axis=-1)
@@ -36,7 +36,7 @@ class TropicalCausalSelfAttention(nn.Module):
         self.n_kv_head = self.config.n_kv_head
         self.n_embd = self.config.n_embd
         self.head_dim = self.n_embd // self.n_head
-        
+
         # No bias in linear layers
         self.c_q = nn.Dense(self.n_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
         self.c_k = nn.Dense(self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
@@ -45,7 +45,7 @@ class TropicalCausalSelfAttention(nn.Module):
 
     def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape
-        
+
         q = self.c_q(x).reshape(B, T, self.n_head, self.head_dim)
         k = self.c_k(x).reshape(B, T, self.n_kv_head, self.head_dim)
         v = self.c_v(x).reshape(B, T, self.n_kv_head, self.head_dim)
@@ -66,27 +66,27 @@ class TropicalCausalSelfAttention(nn.Module):
             cached_key = self.variable('cache', 'cached_key', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), k.dtype)
             cached_val = self.variable('cache', 'cached_val', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), v.dtype)
             cache_index = self.variable('cache', 'cache_index', lambda: jnp.array(0, dtype=jnp.int32))
-            
+
             idx = cache_index.value
             # Update cache
             k_cache = cached_key.value
             v_cache = cached_val.value
-            
+
             k_cache = lax.dynamic_update_slice(k_cache, k, (0, idx, 0, 0))
             v_cache = lax.dynamic_update_slice(v_cache, v, (0, idx, 0, 0))
-            
+
             cached_key.value = k_cache
             cached_val.value = v_cache
             cache_index.value = idx + T
-            
+
             k = k_cache
             v = v_cache
-            
+
             if mask is None:
                 total_len = self.config.sequence_len
                 query_idx = jnp.arange(T) + idx
                 key_idx = jnp.arange(total_len)
-                
+
                 # [1, 1, T, MaxLen]
                 mask = key_idx[None, None, None, :] <= query_idx[None, None, :, None]
                 mask = jnp.where(mask, 0, -jnp.inf)
@@ -95,18 +95,18 @@ class TropicalCausalSelfAttention(nn.Module):
             self.variable('cache', 'cached_key', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), k.dtype)
             self.variable('cache', 'cached_val', jnp.zeros, (B, self.config.sequence_len, self.n_kv_head, self.head_dim), v.dtype)
             self.variable('cache', 'cache_index', lambda: jnp.array(0, dtype=jnp.int32))
-            
+
             if T > 0:
                  cached_key = self.variable('cache', 'cached_key')
                  cached_val = self.variable('cache', 'cached_val')
                  cache_index = self.variable('cache', 'cache_index')
-                 
+
                  k_cache = cached_key.value
                  v_cache = cached_val.value
-                 
+
                  k_cache = lax.dynamic_update_slice(k_cache, k, (0, 0, 0, 0))
                  v_cache = lax.dynamic_update_slice(v_cache, v, (0, 0, 0, 0))
-                 
+
                  cached_key.value = k_cache
                  cached_val.value = v_cache
                  cache_index.value = T
@@ -126,7 +126,7 @@ class TropicalCausalSelfAttention(nn.Module):
         # Instead of dot product (sum of products), we use tropical dot product (max of sums)
         # This measures "similarity" in the max-plus semiring.
         attn_scores = tropical_dot_product(q, k)
-        
+
         if mask is not None:
             # `mask` may be boolean (Flax causal masks) or additive (0 / -inf) from KV-cache mode.
             if mask.dtype == jnp.bool_:

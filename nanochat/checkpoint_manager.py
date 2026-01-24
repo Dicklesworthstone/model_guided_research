@@ -1,17 +1,16 @@
 """
 Utilities for saving and loading model/optim/state checkpoints.
 """
-import os
-import re
 import glob
 import json
 import logging
-from nanochat.torch_imports import torch
+import os
+import re
 
-from nanochat.common import get_base_dir
+from nanochat.common import get_base_dir, setup_default_logging
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.tokenizer import get_tokenizer
-from nanochat.common import setup_default_logging
+from nanochat.torch_imports import torch
 
 # Try to import GPTSynaptic for synaptic model support
 try:
@@ -65,7 +64,7 @@ def load_checkpoint(checkpoint_dir, step, device, load_optimizer=False, rank=0):
         optimizer_data = torch.load(optimizer_path, map_location=device, weights_only=True)
     # Load the metadata
     meta_path = os.path.join(checkpoint_dir, f"meta_{step:06d}.json")
-    with open(meta_path, "r", encoding="utf-8") as f:
+    with open(meta_path, encoding="utf-8") as f:
         meta_data = json.load(f)
     return model_data, optimizer_data, meta_data
 
@@ -91,7 +90,7 @@ def build_model(checkpoint_dir, step, device, phase):
     model_data = {k.removeprefix("_orig_mod."): v for k, v in model_data.items()}
     model_config_kwargs = meta_data["model_config"]
     log0(f"Building model with config: {model_config_kwargs}")
-    
+
     # Check if this is a synaptic model
     if meta_data.get("synapses", False):
         if GPTSynaptic is None:
@@ -113,7 +112,7 @@ def build_model(checkpoint_dir, step, device, phase):
         model_config = GPTConfig(**model_config_kwargs)
         with torch.device("meta"):
             model = GPT(model_config)
-    
+
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init

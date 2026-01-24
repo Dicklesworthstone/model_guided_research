@@ -1,8 +1,9 @@
 from typing import Any, cast
 
-from nanochat.torch_imports import torch
 import triton
 import triton.language as tl
+
+from nanochat.torch_imports import torch
 
 
 @triton.jit
@@ -62,7 +63,7 @@ def update_metrics_fused(indices, gates, energy, state, cfg):
 
     device = gates.device
     B, T, K = gates.shape
-    E = energy.shape[0]
+    energy.shape[0]
     total_tokens = B * T
 
     loss_contrib = _ensure_gpu_stat(state, "loss_contrib", device)

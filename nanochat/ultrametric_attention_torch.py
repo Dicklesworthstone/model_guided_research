@@ -13,7 +13,8 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-from nanochat.model_utils import norm, apply_rotary_emb, causal_attn_mask, repeat_kv_heads
+
+from nanochat.model_utils import apply_rotary_emb, causal_attn_mask, norm, repeat_kv_heads
 
 
 @dataclass
@@ -297,7 +298,7 @@ class UltrametricCausalSelfAttention(nn.Module):
         attn = (weights / denom).to(dtype=v.dtype)
 
         y = attn @ v
-        
+
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y

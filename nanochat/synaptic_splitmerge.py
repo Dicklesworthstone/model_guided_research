@@ -17,14 +17,17 @@
 #   ctrl = SplitMergeController(model, SplitMergeConfig(...))
 #   ctrl.step(global_step, optimizer=opt)    # call periodically (e.g. every 50k steps)
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Iterable, Any, cast
-from nanochat.torch_imports import torch, nn, Tensor
+from typing import Any, cast
+
 import torch.distributed as torch_dist
+
+from nanochat.torch_imports import Tensor, nn, torch
 
 dist = cast(Any, torch_dist)
 
-from .synaptic import SynapticMoE, SynapticExpert, SynapticLinear
+from .synaptic import SynapticExpert, SynapticLinear, SynapticMoE
 
 # ---------------------------------------------------------------------------
 # Config
@@ -108,7 +111,7 @@ def _add_noise_(t: Tensor, scale: float):
 
 @torch.no_grad()
 def _zero_optim_moments_for(
-    optimizer: Optional[torch.optim.Optimizer], params: Iterable[nn.Parameter]
+    optimizer: torch.optim.Optimizer | None, params: Iterable[nn.Parameter]
 ):
     if optimizer is None:
         return
@@ -163,7 +166,7 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             mix_and_shift_tensors(winner.w_fast, loser.w_fast, alpha, cfg.clone_noise_linear)
             if (winner.bias is not None) and (loser.bias is not None):
                 mix_and_shift_tensors(cast(Tensor, winner.bias), cast(Tensor, loser.bias), alpha, cfg.clone_noise_linear)
-            
+
             # Postsynaptic state
             # For state, we might want less noise or different logic?
             # Original logic:
@@ -173,14 +176,14 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             # dst.post.H_fast.zero_()
             # dst.post.U.mul_(0.5)
             # So simple mix_and_shift is NOT correct for state if we want to reset/dampen loser.
-            
+
             # Let's stick to manual for state to preserve logic, or adapt kernel.
             # The kernel does: t2 = t1 + noise.
             # We want t2 = 0 or t2 = t1 * 0.5.
-            
+
             # So we only use fused kernel for weights/biases which are the big tensors.
             # State tensors are small (rank R).
-            
+
             # Manual state update (same as before)
             cast(Tensor, winner.post.U).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.U))
             cast(Tensor, winner.post.V).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.V))
@@ -188,7 +191,7 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             cast(Tensor, winner.post.m_gate).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.m_gate))
             cast(Tensor, winner.post.camkii).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.camkii))
             cast(Tensor, winner.post.pp1).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.pp1))
-            
+
             # Clone state to loser (with reset logic)
             cast(Tensor, loser.post.U).copy_(cast(Tensor, winner.post.U)).mul_(0.5)
             cast(Tensor, loser.post.V).copy_(cast(Tensor, winner.post.V)).mul_(0.5)
@@ -196,7 +199,7 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             cast(Tensor, loser.post.m_gate).copy_(cast(Tensor, winner.post.m_gate))
             cast(Tensor, loser.post.camkii).copy_(cast(Tensor, winner.post.camkii))
             cast(Tensor, loser.post.pp1).copy_(cast(Tensor, winner.post.pp1))
-            
+
             return
         except ImportError:
             pass
@@ -214,7 +217,7 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
     cast(Tensor, winner.post.m_gate).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.m_gate))
     cast(Tensor, winner.post.camkii).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.camkii))
     cast(Tensor, winner.post.pp1).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.pp1))
-    
+
     # Clone back into loser (to keep count constant)
     _clone_linear_from_(loser, winner, cfg.clone_noise_linear)
 
@@ -292,16 +295,16 @@ def _merge_expert_into_and_clone_(
 
 class SplitMergeController:
     def __init__(
-        self, model: nn.Module, cfg: SplitMergeConfig, logger: Optional[Any] = None
+        self, model: nn.Module, cfg: SplitMergeConfig, logger: Any | None = None
     ):
         self.model = model
         self.cfg = cfg
         self._last_step = -(10**12)  # ensure first call can run if warmup permits
-        self._moe_layers: List[SynapticMoE] = self._find_moe_layers(model)
+        self._moe_layers: list[SynapticMoE] = self._find_moe_layers(model)
         self.logger = logger
 
-    def _find_moe_layers(self, module: nn.Module) -> List[SynapticMoE]:
-        moes: List[SynapticMoE] = []
+    def _find_moe_layers(self, module: nn.Module) -> list[SynapticMoE]:
+        moes: list[SynapticMoE] = []
         for m in module.modules():
             if isinstance(m, SynapticMoE):
                 moes.append(m)
@@ -327,7 +330,7 @@ class SplitMergeController:
         return float((u_i / s).item())
 
     @torch.no_grad()
-    def _pick_merge_pairs(self, layer: SynapticMoE) -> List[Tuple[int, int]]:
+    def _pick_merge_pairs(self, layer: SynapticMoE) -> list[tuple[int, int]]:
         E = layer.num_experts
         emb = layer.router_embeddings  # (E, D)
         sim = _cosine(emb, emb)  # (E,E)
@@ -341,7 +344,7 @@ class SplitMergeController:
         cand[idx, idx] = False
         # score by similarity (higher first)
         scores = sim.masked_fill(~cand, -1.0)  # -1 for invalid
-        pairs: List[Tuple[int, int]] = []
+        pairs: list[tuple[int, int]] = []
         used = set()
         for _ in range(self.cfg.merges_per_call):
             # find max entry
@@ -367,7 +370,7 @@ class SplitMergeController:
         return pairs
 
     @torch.no_grad()
-    def _pick_split_sources(self, layer: SynapticMoE) -> List[int]:
+    def _pick_split_sources(self, layer: SynapticMoE) -> list[int]:
         health = self._health(layer)
         strong = (
             (health >= self.cfg.split_health_min)
@@ -382,7 +385,7 @@ class SplitMergeController:
         return strong_sorted[: self.cfg.splits_per_call]
 
     @torch.no_grad()
-    def _weakest_slots(self, layer: SynapticMoE, k: int) -> List[int]:
+    def _weakest_slots(self, layer: SynapticMoE, k: int) -> list[int]:
         health = self._health(layer)
         idx = torch.argsort(health)  # ascending
         return idx[:k].tolist()
@@ -391,9 +394,9 @@ class SplitMergeController:
     def _split_into_slots(
         self,
         layer: SynapticMoE,
-        sources: List[int],
-        slots: List[int],
-        optimizer: Optional[torch.optim.Optimizer],
+        sources: list[int],
+        slots: list[int],
+        optimizer: torch.optim.Optimizer | None,
         step: int,
     ):
         for src, dst in zip(sources, slots):
@@ -448,14 +451,14 @@ class SplitMergeController:
                     changed.append(layer.experts[dst].fc1.bias)
                 if layer.experts[dst].fc2.bias is not None:
                     changed.append(layer.experts[dst].fc2.bias)
-                changed_params: List[nn.Parameter] = [
+                changed_params: list[nn.Parameter] = [
                     param for param in changed if isinstance(param, nn.Parameter)
                 ]
                 _zero_optim_moments_for(optimizer, changed_params)
 
     @torch.no_grad()
     def _do_merges(
-        self, layer: SynapticMoE, optimizer: Optional[torch.optim.Optimizer], step: int
+        self, layer: SynapticMoE, optimizer: torch.optim.Optimizer | None, step: int
     ):
         pairs = self._pick_merge_pairs(layer)
         if self.cfg.verbose and len(pairs) > 0:
@@ -509,7 +512,7 @@ class SplitMergeController:
                 _zero_optim_moments_for(optimizer, changed_params)
 
     @torch.no_grad()
-    def step(self, global_step: int, optimizer: Optional[torch.optim.Optimizer] = None):
+    def step(self, global_step: int, optimizer: torch.optim.Optimizer | None = None):
         if not self.cfg.enabled:
             return
         if global_step < self.cfg.warmup_steps:
