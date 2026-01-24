@@ -87,9 +87,11 @@ def apply_givens_nd(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) -> 
     # Ensure thetas has a trailing axis of length R
     if thetas.ndim == 1:
         theta_seq = thetas
+
         def get_theta(k):
             return theta_seq[k]
     else:
+
         def get_theta(k):
             return thetas[..., k]
 
@@ -126,11 +128,7 @@ def shift_along_axis(x: jnp.ndarray, delta: int, axis: int) -> jnp.ndarray:
     mask_1d = lax.cond(
         delta == 0,
         lambda: jnp.ones(n, dtype=bool),
-        lambda: lax.cond(
-            delta > 0,
-            lambda: indices >= delta,
-            lambda: indices < (n + delta)
-        )
+        lambda: lax.cond(delta > 0, lambda: indices >= delta, lambda: indices < (n + delta)),
     )
 
     # Reshape mask to broadcast correctly with x
@@ -174,6 +172,7 @@ class ExponentialGaugeNet:
 
 # --- Experimental helpers: exact/algebraic maps for structured generators ---
 
+
 def cayley_orthogonal_from_skew(A: jnp.ndarray) -> Array:
     """Return an orthogonal matrix via the Cayley transform for a skew-symmetric A.
 
@@ -211,6 +210,7 @@ def symplectic_cayley(H: jnp.ndarray) -> Array:
 
 
 # --- BCH/Magnus fusion helpers ---
+
 
 def _skew_symmetric_from_rng(key: jax.Array, dim: int, *, scale: float = 1.0) -> Array:
     """Create a random skew-symmetric matrix with controlled scale."""
@@ -285,9 +285,11 @@ def uniformization_expmv_banded(
         # Sample K ~ Poisson(m) and apply K transitions: with prob neg_diag/lam move, else stay
         # For determinism in demo, seed from BH index
         rng_keys = jax.random.split(jax.random.PRNGKey(0), BH)
+
         def one_chain(i, Ui):
             key = rng_keys[i]
             ki = jax.random.poisson(key, m[i])
+
             def step_fun(t, acc):
                 key_t = jax.random.fold_in(key, int(t))
                 # Sample per-position offset indices according to bands/lam
@@ -304,8 +306,10 @@ def uniformization_expmv_banded(
                 vals, _ = jnp.unique(idx, return_counts=True)
                 delta = lax.cond(vals.size > 0, lambda v: v[0], lambda v: jnp.array(0, dtype=jnp.int32), vals)
                 return (t + 1, shift_along_axis(V, delta.item(), axis=0))
+
             _, outU = lax.fori_loop(0, jnp.int32(ki), step_fun, (jnp.int32(0), Ui))
             return outU
+
         Z = jax.vmap(one_chain, in_axes=(0, 0))(jnp.arange(BH, dtype=jnp.int32), U)
         Z = Z
         return Z, K
@@ -575,6 +579,7 @@ class GaugeAttentionBlock(nn.Module):
 
         # Simple commutator diagnostics on raw generators
         comm = {}
+
         # Ensure shapes match for commutator checks (broadcast if needed)
         def safe_comm(X, Y):
             # X, Y are (H, d, d)
@@ -932,7 +937,9 @@ def demo():
         for _ in range(2):
             state, loss_sam = train_step(state, Xtr)
         eval_sam = float(eval_step(state, Xtr))
-        print(f"Train schedule MSE: det={float(loss_det):.4e} sam={float(loss_sam):.4e} | eval det={eval_det:.4e} sam={eval_sam:.4e}")
+        print(
+            f"Train schedule MSE: det={float(loss_det):.4e} sam={float(loss_sam):.4e} | eval det={eval_det:.4e} sam={eval_sam:.4e}"
+        )
 
     # ASCII heatmap of commutators per block (so_spd, so_sp, spd_sp)
     if cfg.use_structured_blocks:
@@ -945,6 +952,7 @@ def demo():
                 rows[c].append(float(cm.get(c, 0.0)))
         # Normalize to 0..1 for heatmap glyphs
         glyphs = " .:-=+*#%@"
+
         def row_to_ascii(vals):
             if not vals:
                 return ""
@@ -953,6 +961,7 @@ def demo():
                 return glyphs[0] * len(vals)
             idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(glyphs) - 1)) for v in vals]
             return "".join(glyphs[i] for i in idxs)
+
         print("\n[Comm Heatmap per block]")
         for c in combos:
             print(f"{c:7s}:", row_to_ascii(rows[c]))
@@ -1003,9 +1012,11 @@ def demo():
         cayley_orthogonal_from_skew(skew)
         spd_from_symmetric(sym)
         symplectic_cayley(A)
+
         # BCH proxy: measure commutator norms
         def comm_norm(X, Y):
             return float(jnp.linalg.norm(X @ Y - Y @ X))
+
         print("||[skew, sym]||:", f"{comm_norm(skew, sym):.2e}")
         print("||[skew, A]||:", f"{comm_norm(skew, A):.2e}")
         print("||[sym, A]||:", f"{comm_norm(sym, A):.2e}")
@@ -1044,7 +1055,7 @@ def demo():
                 comm_sum = 0.0
                 comm_max = 0.0
 
-            safe = (comm_max < 1e-2 and err_2 < 1e-3)
+            safe = comm_max < 1e-2 and err_2 < 1e-3
             rows.append((eps, comm_sum, comm_max, err_1, err_2, safe))
 
         try:
@@ -1075,6 +1086,7 @@ def demo():
 
     # --- BCH-aware stacking demo: enforce commuting blocks on even layers ---
     from flax.core import freeze, unfreeze
+
     vars_comm = unfreeze(variables)
     for bi in range(len(model.blocks)):
         if bi % 2 == 0:
@@ -1102,6 +1114,7 @@ def demo():
     try:
         from rich.console import Console as _Console
         from rich.table import Table as _Table
+
         sumtbl = _Table(title="Per-block Curvature/Comm Summary", show_header=True, header_style="bold magenta")
         sumtbl.add_column("Block")
         sumtbl.add_column("curv_mean", justify="right")
@@ -1111,7 +1124,13 @@ def demo():
         for bi, b in enumerate(dbg):
             curv_b = float(jnp.mean(b["curvature_proxy"]))
             cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
-            sumtbl.add_row(str(bi), f"{curv_b:.3e}", f"{float(cm.get('so_spd',0.0)):.3e}", f"{float(cm.get('so_sp',0.0)):.3e}", f"{float(cm.get('spd_sp',0.0)):.3e}")
+            sumtbl.add_row(
+                str(bi),
+                f"{curv_b:.3e}",
+                f"{float(cm.get('so_spd', 0.0)):.3e}",
+                f"{float(cm.get('so_sp', 0.0)):.3e}",
+                f"{float(cm.get('spd_sp', 0.0)):.3e}",
+            )
         _Console().print(sumtbl)
     except Exception:
         pass
@@ -1120,6 +1139,7 @@ def demo():
     if os.environ.get("GAUGE_ALT_STRUCT", "0") == "1":
         from flax.core import freeze as _freeze
         from flax.core import unfreeze as _unfreeze
+
         vars_alt = _unfreeze(variables)
         for bi in range(len(model.blocks)):
             if bi % 2 == 1:
@@ -1137,6 +1157,7 @@ def demo():
         try:
             from rich.console import Console as _Console
             from rich.table import Table as _Table
+
             ct = _Table(title="Curvature Means Compare", show_header=True, header_style="bold magenta")
             ct.add_column("mode")
             ct.add_column("mean")
@@ -1144,6 +1165,7 @@ def demo():
             ct.add_row("even commuting", f"{curv_mean_comm:.4f}")
             ct.add_row("odd unstructured", f"{curv_alt:.4f}")
             _Console().print(ct)
+
             # Commutator norms compare (sum across blocks)
             def comm_sums(dbgl):
                 s = {"so_spd": 0.0, "so_sp": 0.0, "spd_sp": 0.0}
@@ -1152,6 +1174,7 @@ def demo():
                     for k in s.keys():
                         s[k] += float(cm.get(k, 0.0))
                 return s
+
             sums_def = comm_sums(dbg)
             sums_comm = comm_sums(dbg_comm)
             sums_alt = comm_sums(dbg_alt)
@@ -1160,12 +1183,23 @@ def demo():
             ct2.add_column("so_spd")
             ct2.add_column("so_sp")
             ct2.add_column("spd_sp")
-            ct2.add_row("baseline", f"{sums_def['so_spd']:.2e}", f"{sums_def['so_sp']:.2e}", f"{sums_def['spd_sp']:.2e}")
-            ct2.add_row("even commuting", f"{sums_comm['so_spd']:.2e}", f"{sums_comm['so_sp']:.2e}", f"{sums_comm['spd_sp']:.2e}")
-            ct2.add_row("odd unstructured", f"{sums_alt['so_spd']:.2e}", f"{sums_alt['so_sp']:.2e}", f"{sums_alt['spd_sp']:.2e}")
+            ct2.add_row(
+                "baseline", f"{sums_def['so_spd']:.2e}", f"{sums_def['so_sp']:.2e}", f"{sums_def['spd_sp']:.2e}"
+            )
+            ct2.add_row(
+                "even commuting",
+                f"{sums_comm['so_spd']:.2e}",
+                f"{sums_comm['so_sp']:.2e}",
+                f"{sums_comm['spd_sp']:.2e}",
+            )
+            ct2.add_row(
+                "odd unstructured", f"{sums_alt['so_spd']:.2e}", f"{sums_alt['so_sp']:.2e}", f"{sums_alt['spd_sp']:.2e}"
+            )
             _Console().print(ct2)
             # Delta table (baseline → commuting, baseline → alt)
-            ct3 = _Table(title="Curvature/Commutator Deltas (vs baseline)", show_header=True, header_style="bold magenta")
+            ct3 = _Table(
+                title="Curvature/Commutator Deltas (vs baseline)", show_header=True, header_style="bold magenta"
+            )
             ct3.add_column("metric")
             ct3.add_column("Δ(commuting-baseline)")
             ct3.add_column("Δ(alt-baseline)")
@@ -1187,7 +1221,10 @@ def demo():
         os.environ["GAUGE_UNIF_CAP_K"] = val
         K_uncap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg_uncap]
         K_cap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg]
-        print("Uniformization K mean (uncapped vs capped):", list(zip([round(v,2) for v in K_uncap], [round(v,2) for v in K_cap], strict=False)))
+        print(
+            "Uniformization K mean (uncapped vs capped):",
+            list(zip([round(v, 2) for v in K_uncap], [round(v, 2) for v in K_cap], strict=False)),
+        )
 
     # Exportable diagnostics for CLI (module-level)
     try:
@@ -1206,15 +1243,16 @@ def demo():
                 for k in s.keys():
                     s[k] += float(cm.get(k, 0.0))
             return s
+
         comm_compare = None
-        if 'dbg_alt' in locals():
+        if "dbg_alt" in locals():
             comm_compare = {
                 "baseline": _comm_sums(dbg),
                 "even_commuting": _comm_sums(dbg_comm),
                 "odd_unstructured": _comm_sums(dbg_alt),
             }
         bch_fusion = None
-        if 'rows' in locals():
+        if "rows" in locals():
             bch_fusion = [
                 {
                     "eps": float(eps),
@@ -1232,40 +1270,59 @@ def demo():
             "K_max_per_block": [int(k) for k in Kmaxs],
             "K_head_stats_block0": [
                 (float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])
-            ] if 'K_bh' in locals() and K_bh.ndim == 2 else [],
+            ]
+            if "K_bh" in locals() and K_bh.ndim == 2
+            else [],
             "curvature_mean_default": float(curv_mean_def),
             "curvature_mean_commuting": float(curv_mean_comm),
-            "curvature_mean_alt_struct": float(curv_alt) if 'curv_alt' in locals() else None,
+            "curvature_mean_alt_struct": float(curv_alt) if "curv_alt" in locals() else None,
             "curvature_deltas": {
                 "default_to_commuting": float(curv_mean_comm - curv_mean_def),
-                "default_to_alt": float(curv_alt - curv_mean_def) if 'curv_alt' in locals() else None,
+                "default_to_alt": float(curv_alt - curv_mean_def) if "curv_alt" in locals() else None,
             },
-            "sampling_smoothness_var_mean": float(var_mean) if ('var_mean' in locals()) else None,
+            "sampling_smoothness_var_mean": float(var_mean) if ("var_mean" in locals()) else None,
             "per_block_curv_comm": [
                 {
                     "block": int(bi),
-                    "curv_mean": float(jnp.mean(b["curvature_proxy"])) ,
+                    "curv_mean": float(jnp.mean(b["curvature_proxy"])),
                     "so_spd": float(b.get("comm_norms", {}).get("so_spd", 0.0)) if isinstance(b, dict) else 0.0,
                     "so_sp": float(b.get("comm_norms", {}).get("so_sp", 0.0)) if isinstance(b, dict) else 0.0,
                     "spd_sp": float(b.get("comm_norms", {}).get("spd_sp", 0.0)) if isinstance(b, dict) else 0.0,
-                } for bi, b in enumerate(dbg)
+                }
+                for bi, b in enumerate(dbg)
             ],
             "comm_compare": comm_compare,
             "bch_fusion": bch_fusion,
             "bch_summary": {
-                "curvature": {"min": min(curv_list), "mean": float(sum(curv_list)/len(curv_list)), "max": max(curv_list)},
-                "so_spd": {"min": min(so_spd_list), "mean": float(sum(so_spd_list)/len(so_spd_list)), "max": max(so_spd_list)},
-                "so_sp": {"min": min(so_sp_list), "mean": float(sum(so_sp_list)/len(so_sp_list)), "max": max(so_sp_list)},
-                "spd_sp": {"min": min(spd_sp_list), "mean": float(sum(spd_sp_list)/len(spd_sp_list)), "max": max(spd_sp_list)},
+                "curvature": {
+                    "min": min(curv_list),
+                    "mean": float(sum(curv_list) / len(curv_list)),
+                    "max": max(curv_list),
+                },
+                "so_spd": {
+                    "min": min(so_spd_list),
+                    "mean": float(sum(so_spd_list) / len(so_spd_list)),
+                    "max": max(so_spd_list),
+                },
+                "so_sp": {
+                    "min": min(so_sp_list),
+                    "mean": float(sum(so_sp_list) / len(so_sp_list)),
+                    "max": max(so_sp_list),
+                },
+                "spd_sp": {
+                    "min": min(spd_sp_list),
+                    "mean": float(sum(spd_sp_list) / len(spd_sp_list)),
+                    "max": max(spd_sp_list),
+                },
                 "sample_schedule": {
-                    "mean_var": float(var_mean) if ('var_mean' in locals()) else None,
-                    "diff_mean_to_det": float(diff) if ('diff' in locals()) else None,
+                    "mean_var": float(var_mean) if ("var_mean" in locals()) else None,
+                    "diff_mean_to_det": float(diff) if ("diff" in locals()) else None,
                 },
                 "train_schedule": {
-                    "mse_det": float(loss_det) if ('loss_det' in locals()) else None,
-                    "mse_sam": float(loss_sam) if ('loss_sam' in locals()) else None,
-                    "eval_det": float(eval_det) if ('eval_det' in locals()) else None,
-                    "eval_sam": float(eval_sam) if ('eval_sam' in locals()) else None,
+                    "mse_det": float(loss_det) if ("loss_det" in locals()) else None,
+                    "mse_sam": float(loss_sam) if ("loss_sam" in locals()) else None,
+                    "eval_det": float(eval_det) if ("eval_det" in locals()) else None,
+                    "eval_sam": float(eval_sam) if ("eval_sam" in locals()) else None,
                 },
             },
         }

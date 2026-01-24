@@ -38,6 +38,7 @@ class SurrealProbe:
 
         return 0.0, {"surreal_balance": 1.0}
 
+
 class SurrealLayer(nn.Module):
     """
     A Linear layer with "Surreal" weight parameterization.
@@ -47,6 +48,7 @@ class SurrealLayer(nn.Module):
 
     w = exp(s) * normalize(v)
     """
+
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
         self.in_features = in_features
@@ -60,12 +62,13 @@ class SurrealLayer(nn.Module):
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_features))
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
 
     def forward(self, input):
         # w = exp(s) * normalize(v)
         w = torch.exp(self.weight_s) * F.normalize(self.weight_v, dim=1)
         return F.linear(input, w, self.bias)
+
 
 class SurrealCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):

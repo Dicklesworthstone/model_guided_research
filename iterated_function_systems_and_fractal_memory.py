@@ -58,6 +58,7 @@ def _index_to_path(idx: Array, m: int, k: int) -> Array:
     # converts [B] indices to base-m digits [B, k]
     # Implement via a fixed-iteration fori_loop writing into a preallocated buffer of shape [B, k]
     B = idx.shape[0]
+
     def step(t, carry):
         rem, out = carry
         digit = rem % m
@@ -355,7 +356,7 @@ def _hashed_paths_for_vectors(V: Array, m: int, k: int, seed: int = 123) -> Arra
         code = 0
         for i, b in enumerate(row.tolist()):
             if b:
-                code += (1 << i)
+                code += 1 << i
         idx_list.append(code % mod_val)
     idxs = jnp.array(idx_list, dtype=jnp.int32)
     digs_list: list[list[int]] = []
@@ -390,13 +391,14 @@ class IFSMemory:
     def _hash_to_path(self, vec: jnp.ndarray) -> jnp.ndarray:
         # Compute 32-bit signature → integer (use Python ints to avoid int32 overflow)
         import numpy as _np
+
         v_np = _np.asarray(vec, dtype=_np.float32)
         proj = _np.asarray(self._proj, dtype=_np.float32)
         sig = (v_np @ proj) > 0.0  # bool[32]
         idx_val: int = 0
         for i, bit in enumerate(sig.tolist()):
             if bit:
-                idx_val += (1 << i)
+                idx_val += 1 << i
         idx = idx_val % int(self.cfg.capacity)
         # Convert idx to base-m digits of length k
         x = idx
@@ -445,9 +447,9 @@ try:
     )
     _tree.register_pytree_node(
         RouterOptState,
-    lambda s: ((s.t, s.mW, s.vW, s.mb, s.vb), None),
-    lambda _, xs: RouterOptState(t=xs[0], mW=xs[1], vW=xs[2], mb=xs[3], vb=xs[4]),
-)
+        lambda s: ((s.t, s.mW, s.vW, s.mb, s.vb), None),
+        lambda _, xs: RouterOptState(t=xs[0], mW=xs[1], vW=xs[2], mb=xs[3], vb=xs[4]),
+    )
 except Exception as err:
     print(f"[fractal-kv] Router PyTree registration skipped: {err}")
 
@@ -711,6 +713,7 @@ def catastrophic_forgetting_benchmark(
 
     # --- Optional: Router distillation from hashed routes ---
     import os as _os
+
     if _os.environ.get("IFS_DISTILL", "0") == "1":
         print("\n=== Router distillation from hashed routes ===")
         hashed = _hashed_paths_for_vectors(Q, m, k)
@@ -734,6 +737,7 @@ def catastrophic_forgetting_benchmark(
         mse_r = float(mse(vhat_r, V))
 
         from rich.table import Table as _Table
+
         t = _Table(title="Distillation: Hashed vs Learned Router", show_header=True, header_style="bold magenta")
         t.add_column("Metric")
         t.add_column("Hashed", justify="right")
@@ -774,6 +778,7 @@ def _sanity_small():
 # Main
 # ------------------------------
 
+
 def demo():
     """Run the iterated function systems and fractal memory demonstration."""
     # Sanity test (verifies closed-form correctness)
@@ -799,6 +804,7 @@ if __name__ == "__main__":
 
 
 # --- Test-facing helpers/aliases ---
+
 
 def FractalKVStore(key, d: int, m: int, k: int, s: float = 0.4) -> FractalKV:
     """Adapter matching tests: construct a fractal store with given params."""

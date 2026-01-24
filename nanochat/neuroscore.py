@@ -85,7 +85,7 @@ class NeuroScore:
                 gates = ctx["gates"]  # (B,T,k)
                 indices = ctx["indices"]  # (B,T,k)
                 x_in = ctx["x"]  # (B,T,C)
-                energy = module.energy # (E,)
+                energy = module.energy  # (E,)
 
                 # Fused Kernel Path
                 if fused_metrics and gates.is_cuda:
@@ -172,8 +172,8 @@ class NeuroScore:
         if not mask.any():
             return
 
-        x_sub = x[mask].float() # (N, C)
-        ind_sub = indices[mask] # (N, k)
+        x_sub = x[mask].float()  # (N, C)
+        ind_sub = indices[mask]  # (N, k)
 
         # For each expert, compute centroid of assigned inputs
         expert_sums = torch.zeros(num_experts, C, device=x.device, dtype=torch.float32)
@@ -224,7 +224,6 @@ class NeuroScore:
         md = "| Rank | ID | Efficiency | Spec | Contrib |\n|---|---|---|---|---|\n"
         for rank, (val, idx) in enumerate(zip(vals, idxs)):
             i = idx.item()
-            md += f"| {rank+1} | {i} | {val:.3f} | {st['specialization'][i]:.3f} | {st['loss_contrib'][i]:.3f} |\n"
+            md += f"| {rank + 1} | {i} | {val:.3f} | {st['specialization'][i]:.3f} | {st['loss_contrib'][i]:.3f} |\n"
 
         tb.add_text(f"{layer_name}/leaderboard", md, step)
-

@@ -63,9 +63,9 @@ class ProjectConfig:
 
             # Handle direct Path, Optional[Path], Union[Path, ...], etc.
             is_path_type = (
-                field_type == Path or
-                (origin is not None and Path in args) or
-                (isinstance(field_type, type) and issubclass(field_type, Path))
+                field_type == Path
+                or (origin is not None and Path in args)
+                or (isinstance(field_type, type) and issubclass(field_type, Path))
             )
 
             if is_path_type and field.name in data and isinstance(data[field.name], str):
@@ -80,7 +80,7 @@ class ProjectConfig:
                 data[key] = str(value)
             else:
                 data[key] = value
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(data, f, indent=2)
 
     def setup_jax(self) -> None:

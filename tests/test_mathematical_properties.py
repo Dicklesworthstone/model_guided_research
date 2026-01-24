@@ -164,7 +164,7 @@ class TestIFSFractalMemory:
 
         # Test contraction factor
         contraction = cfg.a_pow_k_scalar
-        expected_contraction = cfg.s ** cfg.k
+        expected_contraction = cfg.s**cfg.k
         require(jnp.abs(contraction - expected_contraction) < 1e-6, "Contraction factor mismatch")
         print(f"  ✅ Contraction factor: s^k = {contraction:.6f}")
 
@@ -178,7 +178,7 @@ class TestIFSFractalMemory:
             store = ifs.FractalKV(cfg)
 
             # Write some values (limit to capacity)
-            n_items = min(5, cfg.m ** cfg.k)
+            n_items = min(5, cfg.m**cfg.k)
             paths = ifs._index_to_path(jnp.arange(n_items), cfg.m, cfg.k)
             values = random.normal(key, (n_items, cfg.d_val))
 
@@ -204,8 +204,15 @@ class TestIFSFractalMemory:
         # Run a small version of the benchmark with appropriate capacity
         try:
             ifs.catastrophic_forgetting_benchmark(
-                N=64, d_key=16, d_val=8, m=4, k=3, s=0.4,  # m^k = 64, so N=64 fits
-                batches=2, router_epochs=5, seed=42
+                N=64,
+                d_key=16,
+                d_val=8,
+                m=4,
+                k=3,
+                s=0.4,  # m^k = 64, so N=64 fits
+                batches=2,
+                router_epochs=5,
+                seed=42,
             )
             print("  ✅ Catastrophic forgetting benchmark completed successfully")
         except Exception as e:
@@ -447,7 +454,9 @@ class TestTropicalGeometry:
         require(y.shape == (cfg.C,), f"Output shape mismatch: {y.shape} vs {(cfg.C,)}")
         require(jnp.all(jnp.isfinite(y)), "Output contains non-finite values")
 
-        print(f"  ✅ Tropical attention forward pass successful, output range: [{float(jnp.min(y)):.3f}, {float(jnp.max(y)):.3f}]")
+        print(
+            f"  ✅ Tropical attention forward pass successful, output range: [{float(jnp.min(y)):.3f}, {float(jnp.max(y)):.3f}]"
+        )
 
     def test_gauge_time_property(self):
         """Test gauge time normalization property."""
@@ -487,7 +496,9 @@ class TestSimplicialComplexes:
         print(f"  ✅ Boundary operator nilpotency: ∂² = 0 (max error = {max_error:.2e})")
 
         # Print complex structure info
-        print(f"     Complex: {complex_data['dims'][0]} vertices, {complex_data['dims'][1]} edges, {complex_data['dims'][2]} triangles")
+        print(
+            f"     Complex: {complex_data['dims'][0]} vertices, {complex_data['dims'][1]} edges, {complex_data['dims'][2]} triangles"
+        )
 
     def test_simplicial_network_forward_pass(self):
         """Test that simplicial network forward pass preserves mass."""
@@ -847,8 +858,7 @@ class TestKnotTheory:
         # Run a minimal version of the experiment
         try:
             result = knot.run_experiment(
-                n_train=64, n_test=32, n_low=3, n_high=5,
-                n_low_test=3, n_high_test=5, steps=10, lr=0.1
+                n_train=64, n_test=32, n_low=3, n_high=5, n_low_test=3, n_high_test=5, steps=10, lr=0.1
             )
 
             train_acc = result["train_acc"]
@@ -910,9 +920,18 @@ class TestSurrealNumbers:
 
             # Compute T ratios
             TD, TH, TW, Ltr, Lva = surreal.compute_T(
-                params, H, Xtr, Ytr, Xva, Yva,
-                width_mask_ones, depth_mask_full, 1.0,
-                width_mask_half, inv2, depth_mask_half
+                params,
+                H,
+                Xtr,
+                Ytr,
+                Xva,
+                Yva,
+                width_mask_ones,
+                depth_mask_full,
+                1.0,
+                width_mask_half,
+                inv2,
+                depth_mask_half,
             )
 
             # Basic sanity checks
@@ -1000,9 +1019,9 @@ class TestNonstandardAnalysis:
 
 def run_all_tests():
     """Run all substantive mathematical tests."""
-    print("\n" + "="*80)
-    print(" "*20 + "🧮 MATHEMATICAL PROPERTY TESTS 🧮")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print(" " * 20 + "🧮 MATHEMATICAL PROPERTY TESTS 🧮")
+    print("=" * 80)
 
     test_classes = [
         TestReversibleComputation(),
@@ -1015,20 +1034,20 @@ def run_all_tests():
         TestOctonions(),
         TestKnotTheory(),
         TestSurrealNumbers(),
-        TestNonstandardAnalysis()
+        TestNonstandardAnalysis(),
     ]
 
     failed_tests = []
 
     for test_class in test_classes:
         class_name = test_class.__class__.__name__
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Testing: {class_name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Run all test methods
         for method_name in dir(test_class):
-            if method_name.startswith('test_'):
+            if method_name.startswith("test_"):
                 try:
                     method = getattr(test_class, method_name)
                     method()
@@ -1037,9 +1056,9 @@ def run_all_tests():
                     print(f"  ❌ {method_name} FAILED: {e}")
 
     # Summary
-    print("\n" + "="*80)
-    print(" "*25 + "📊 TEST SUMMARY 📊")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print(" " * 25 + "📊 TEST SUMMARY 📊")
+    print("=" * 80)
 
     if not failed_tests:
         print("\n🎉 ALL TESTS PASSED! 🎉")
@@ -1060,7 +1079,7 @@ def run_all_tests():
         for class_name, method_name, error in failed_tests:
             print(f"  ❌ {class_name}.{method_name}: {error}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     return len(failed_tests) == 0
 
 

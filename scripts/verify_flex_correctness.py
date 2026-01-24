@@ -568,12 +568,16 @@ def main() -> int:
             },
         }
 
-        report_title = "FlexAttention correctness (SDPA vs Flex)" if args.model == "standard" else "Synaptic FlexAttention correctness (non-flex vs flex)"
+        report_title = (
+            "FlexAttention correctness (SDPA vs Flex)"
+            if args.model == "standard"
+            else "Synaptic FlexAttention correctness (non-flex vs flex)"
+        )
         report_md = f"""# {report_title}
 
 - Run ID: `{run_id}`
-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}
-- Overall: {'PASS' if ok else 'FAIL'}
+- Generated: {time.strftime("%Y-%m-%d %H:%M:%S %Z")}
+- Overall: {"PASS" if ok else "FAIL"}
 
 ## Command
 

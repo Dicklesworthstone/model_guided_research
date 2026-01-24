@@ -12,6 +12,7 @@ import optax
 class MuonState(NamedTuple):
     momentum: optax.Updates
 
+
 def newton_schulz5(G, steps=5):
     """
     Newton-Schulz iteration to compute the zeroth power / orthogonalization of G.
@@ -19,7 +20,7 @@ def newton_schulz5(G, steps=5):
     # G shape: [rows, cols]
     # We work in bfloat16 or float32. JAX handles types automatically mostly.
 
-    a, b, c = (3.4445, -4.7750,  2.0315)
+    a, b, c = (3.4445, -4.7750, 2.0315)
     X = G
 
     # Ensure spectral norm is at most 1
@@ -47,6 +48,7 @@ def newton_schulz5(G, steps=5):
 
     return X
 
+
 def muon(learning_rate: float, momentum: float = 0.95, nesterov: bool = True, ns_steps: int = 5):
     """
     Muon optimizer transformation.
@@ -59,20 +61,18 @@ def muon(learning_rate: float, momentum: float = 0.95, nesterov: bool = True, ns
         # updates are gradients (g)
 
         # Update momentum
-        mu = jax.tree_util.tree_map(
-            lambda m, g: m * momentum + g * (1 - momentum),
-            state.momentum, updates
-        )
+        mu = jax.tree_util.tree_map(lambda m, g: m * momentum + g * (1 - momentum), state.momentum, updates)
 
         # Nesterov
         if nesterov:
             v = jax.tree_util.tree_map(
-                lambda m, g: g * momentum + m * (1 - momentum), # Wait, this is not standard Nesterov?
+                lambda m, g: g * momentum + m * (1 - momentum),  # Wait, this is not standard Nesterov?
                 # PyTorch code:
                 # buf.lerp_(g, 1 - momentum)  => buf = buf*momentum + g*(1-momentum)
                 # g = g.lerp_(buf, momentum)  => g = g*(1-momentum) + buf*momentum
                 # Yes, that matches.
-                mu, updates
+                mu,
+                updates,
             )
         else:
             v = mu
@@ -80,7 +80,7 @@ def muon(learning_rate: float, momentum: float = 0.95, nesterov: bool = True, ns
         # Orthogonalization via Newton-Schulz
         def orthogonalize(g, p):
             if g.ndim != 2:
-                return g # Should not happen if we filter correctly
+                return g  # Should not happen if we filter correctly
 
             # NS5
             g_orth = newton_schulz5(g, steps=ns_steps)
@@ -105,4 +105,3 @@ def muon(learning_rate: float, momentum: float = 0.95, nesterov: bool = True, ns
         return updates, MuonState(momentum=mu)
 
     return optax.GradientTransformation(init_fn, update_fn)
-

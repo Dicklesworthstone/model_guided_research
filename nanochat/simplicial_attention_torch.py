@@ -49,7 +49,7 @@ class SimplicialCausalSelfAttention(nn.Module):
             k, v = repeat_kv_heads(k, v, n_head=self.n_head)
 
         # Standard Attention Weights
-        att = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
+        att = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim**0.5))
 
         # Masking
         Tq = q.size(2)
@@ -58,7 +58,7 @@ class SimplicialCausalSelfAttention(nn.Module):
             mask = causal_attn_mask(Tq, Tk, device=q.device)
             att.masked_fill_(~mask, float("-inf"))
 
-        att = F.softmax(att, dim=-1) # (B, H, Tq, Tk)
+        att = F.softmax(att, dim=-1)  # (B, H, Tq, Tk)
 
         # 1-hop Aggregation (Edges)
         y1 = att @ v

@@ -30,6 +30,7 @@ from jax.flatten_util import ravel_pytree
 def _is_close_zero(val: float, eps: float = 1e-12) -> bool:
     return math.fabs(val) < eps
 
+
 ############################
 # Linear-algebraic primitives matching the math
 ############################
@@ -344,20 +345,20 @@ def run_stiff_quadratic_demo():
             "Learning Rate": eta_sgd,
             "Final Norm": float(jnp.linalg.norm(w_sgd)),
             "Final Loss": float(loss_sgd[-1]),
-            "Time (s)": t_sgd
+            "Time (s)": t_sgd,
         }
         hoss_metrics = {
             "Delta": delta,
             "Rank": r,
             "Final Norm": float(jnp.linalg.norm(w_hoss)),
             "Final Loss": float(loss_hoss[-1]),
-            "Time (s)": t_hoss
+            "Time (s)": t_hoss,
         }
         shadow_metrics = {
             "Delta": delta,
             "Final Norm": float(jnp.linalg.norm(w_shadow)),
             "Final Loss": float(loss_shadow[-1]),
-            "Time (s)": t_shadow
+            "Time (s)": t_shadow,
         }
 
         conditional_print("[bold cyan]=== Stiff Quadratic Demo ===[/bold cyan]", level=1)
@@ -371,7 +372,9 @@ def run_stiff_quadratic_demo():
         conditional_print(f"  Shadow: {jnp.array2string(loss_shadow[:5], precision=2)}", level=2)
     else:
         print("=== Stiff Quadratic Demo ===")
-        print(f"SGD eta={eta_sgd}: final ||w||={jnp.linalg.norm(w_sgd):.3e}, loss={loss_sgd[-1]:.3e}, time={t_sgd:.3f}s")
+        print(
+            f"SGD eta={eta_sgd}: final ||w||={jnp.linalg.norm(w_sgd):.3e}, loss={loss_sgd[-1]:.3e}, time={t_sgd:.3f}s"
+        )
         print(
             f"HOSS delta={delta}, r={r}: final ||w||={jnp.linalg.norm(w_hoss):.3e}, loss={loss_hoss[-1]:.3e}, time={t_hoss:.3f}s"
         )
@@ -424,17 +427,13 @@ def run_small_mlp_demo():
     hoss_loss = float(loss(unravel(w)))
 
     w2 = flat
-    eta = config.default_learning_rate if hasattr(config, 'default_learning_rate') else 1e-3
+    eta = config.default_learning_rate if hasattr(config, "default_learning_rate") else 1e-3
     for _t in range(300):
         w2, key = sgd_step(key, sgd_grad, w2, eta, None)
     sgd_loss = float(loss(unravel(w2)))
 
     if config.use_rich_output:
-        mlp_results = {
-            "HOSS Loss (30 steps)": hoss_loss,
-            "SGD Loss (300 steps)": sgd_loss,
-            "Learning Rate": eta
-        }
+        mlp_results = {"HOSS Loss (30 steps)": hoss_loss, "SGD Loss (300 steps)": sgd_loss, "Learning Rate": eta}
         print_metrics(mlp_results, "MLP Demo Results")
     else:
         print("MLP demo: HOSS loss =", hoss_loss)
@@ -444,6 +443,7 @@ def run_small_mlp_demo():
 ############################
 # Entry
 ############################
+
 
 def demo():
     """Run the nonstandard analysis and hyperreal training demonstration."""
@@ -488,8 +488,10 @@ class HOSS:
 
 # --- Minimal hyperreal API for tests ---
 
+
 class Hyperreal:
     """Simple hyperreal with real + infinitesimal*ε and an order for ε. Arithmetic keeps leading terms."""
+
     def __init__(self, real: float, inf: float, eps_order: int = 0):
         self.real = float(real)
         self.inf = float(inf)

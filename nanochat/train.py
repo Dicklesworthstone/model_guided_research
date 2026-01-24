@@ -271,7 +271,9 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
 
     n_kv_head = int(getattr(args, "n_kv_head", 0))
     if n_head > 0 and n_kv_head > 0 and not (n_kv_head <= n_head and n_head % n_kv_head == 0):
-        errors.append(f"--n-kv-head must divide --n-head and be <= --n-head (got n_kv_head={n_kv_head}, n_head={n_head})")
+        errors.append(
+            f"--n-kv-head must divide --n-head and be <= --n-head (got n_kv_head={n_kv_head}, n_head={n_head})"
+        )
 
     optimizer_type = str(getattr(args, "optimizer_type", "adamw"))
     if optimizer_type not in _SUPPORTED_OPTIMIZER_TYPES:
@@ -286,10 +288,7 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
         errors.append(f"--attention-type must be one of: {', '.join(_SUPPORTED_ATTENTION_TYPES)}")
 
     if bool(getattr(args, "use_flex_attention", False)) and not hasattr(torch.nn.attention, "flex_attention"):
-        errors.append(
-            "--use-flex-attention requires torch>=2.5 "
-            "(missing torch.nn.attention.flex_attention)."
-        )
+        errors.append("--use-flex-attention requires torch>=2.5 (missing torch.nn.attention.flex_attention).")
 
     syn_cfg_path = getattr(args, "synaptic_config", None)
     if model_type == "synaptic" and syn_cfg_path is not None:
@@ -401,7 +400,9 @@ def train(args) -> None:
 
         if config.use_flex_attention:
             compile_flex_flag = getattr(args, "compile_flex_attention", None)
-            config.compile_flex_attention = bool(compile_requested) if compile_flex_flag is None else bool(compile_flex_flag)
+            config.compile_flex_attention = (
+                bool(compile_requested) if compile_flex_flag is None else bool(compile_flex_flag)
+            )
         else:
             config.compile_flex_attention = False
 
@@ -437,7 +438,11 @@ def train(args) -> None:
         tropical_record_margins = getattr(args, "tropical_record_margins", None)
         tropical_log_margins = bool(getattr(args, "tropical_log_margins", False))
         if config.attention_type != "tropical":
-            if (tropical_gauge_fix is not None or tropical_score_center is not None or tropical_record_margins is not None) and ddp_rank == 0:
+            if (
+                tropical_gauge_fix is not None
+                or tropical_score_center is not None
+                or tropical_record_margins is not None
+            ) and ddp_rank == 0:
                 print0("[tropical] Ignoring tropical flags because --attention-type is not tropical.")
             if tropical_log_margins and ddp_rank == 0:
                 print0("[tropical] Ignoring --tropical-log-margins because --attention-type is not tropical.")
@@ -525,8 +530,12 @@ def train(args) -> None:
         model = DDP(model, device_ids=[ddp_local_rank])
 
     # Optimizer
-    unembedding_lr = float(args.unembedding_lr) if getattr(args, "unembedding_lr", None) is not None else float(args.learning_rate)
-    embedding_lr = float(args.embedding_lr) if getattr(args, "embedding_lr", None) is not None else float(args.learning_rate)
+    unembedding_lr = (
+        float(args.unembedding_lr) if getattr(args, "unembedding_lr", None) is not None else float(args.learning_rate)
+    )
+    embedding_lr = (
+        float(args.embedding_lr) if getattr(args, "embedding_lr", None) is not None else float(args.learning_rate)
+    )
     matrix_lr = float(args.matrix_lr) if getattr(args, "matrix_lr", None) is not None else float(args.learning_rate)
     weight_decay = float(getattr(args, "weight_decay", 0.0))
     grad_clip_norm = getattr(args, "grad_clip_norm", None)
@@ -586,7 +595,9 @@ def train(args) -> None:
         return total_loss / count if count > 0 else float("nan")
 
     if ddp_rank == 0:
-        console.print(f"[bold green]Starting training[/bold green] on [bold]{device}[/bold] (world_size={ddp_world_size})")
+        console.print(
+            f"[bold green]Starting training[/bold green] on [bold]{device}[/bold] (world_size={ddp_world_size})"
+        )
         compile_flex_attention = bool(getattr(config, "compile_flex_attention", False))
         if compiled_model or compile_flex_attention:
             status_bits = [f"model={'enabled' if compiled_model else 'disabled'}"]
@@ -594,8 +605,7 @@ def train(args) -> None:
                 status_bits.append(f"flex_attention={'enabled' if compile_flex_attention else 'disabled'}")
             console.print(
                 f"[dim]compile[/dim] backend={compile_backend!r} mode={compile_mode!r} "
-                f"fullgraph={compile_fullgraph} dynamic={compile_dynamic} "
-                + " ".join(status_bits)
+                f"fullgraph={compile_fullgraph} dynamic={compile_dynamic} " + " ".join(status_bits)
             )
         if check_numerics:
             console.print("[bold yellow]numerics checks enabled[/bold yellow] (NaN/Inf watchpoints)")
@@ -621,7 +631,7 @@ def train(args) -> None:
             f"flops/step={flops_per_step:,}"
         )
 
-    is_hoss = (args.optimizer_type == "hoss")
+    is_hoss = args.optimizer_type == "hoss"
 
     losses: list[float] = []
     val_losses: list[tuple[int, float]] = []  # (step, val_loss) pairs
@@ -801,13 +811,13 @@ def train(args) -> None:
                         head_mean = tropical.get("head_mean")
                         if isinstance(head_mean, list) and head_mean:
                             head_snip = head_mean[: min(8, len(head_mean))]
-                            msg += "  [dim]γ_head_mean[/dim] [" + ", ".join(fmt(float(x)) for x in head_snip) + (
-                                ", …]" if len(head_mean) > len(head_snip) else "]"
+                            msg += (
+                                "  [dim]γ_head_mean[/dim] ["
+                                + ", ".join(fmt(float(x)) for x in head_snip)
+                                + (", …]" if len(head_mean) > len(head_snip) else "]")
                             )
 
-                console.print(
-                    msg
-                )
+                console.print(msg)
                 last_log_time = step_t1
                 last_log_step = step
 
@@ -1034,11 +1044,11 @@ def train(args) -> None:
 - measured_time_s: {measured_time_s:.3f}
 - tokens/s: {tokens_per_second:,.0f}
 - TFLOP/s (est): {est_tflops:.2f}
-- peak_memory_allocated_gb: {peak_mem_gb if peak_mem_gb is not None else 'n/a'}
+- peak_memory_allocated_gb: {peak_mem_gb if peak_mem_gb is not None else "n/a"}
 - final_train_ce: {final_train_ce:.4f}
 - val_interval: {val_interval}
-- val_batches: {val_batches if val_interval > 0 else 'n/a'}
-- final_val_ce: {final_val_ce if final_val_ce is not None else 'n/a'}
+- val_batches: {val_batches if val_interval > 0 else "n/a"}
+- final_val_ce: {final_val_ce if final_val_ce is not None else "n/a"}
 
 See `summary.json` for full details.
 """
@@ -1203,7 +1213,9 @@ if __name__ == "__main__":
         default=None,
         help="Path to JSON file with SynapticConfig overrides (only used for --model-type synaptic).",
     )
-    parser.add_argument("--max-steps", type=int, default=20, help="Max training steps (ignored if --target-flops is set).")
+    parser.add_argument(
+        "--max-steps", type=int, default=20, help="Max training steps (ignored if --target-flops is set)."
+    )
     parser.add_argument(
         "--val-interval",
         type=int,
@@ -1222,7 +1234,9 @@ if __name__ == "__main__":
         default=None,
         help="Target total FLOPs budget (est). If set, compute steps from model.estimate_flops().",
     )
-    parser.add_argument("--warmup-steps", type=int, default=2, help="Warmup steps excluded from throughput measurement.")
+    parser.add_argument(
+        "--warmup-steps", type=int, default=2, help="Warmup steps excluded from throughput measurement."
+    )
     parser.add_argument("--log-interval", type=int, default=1, help="Log every N steps.")
     parser.add_argument(
         "--artifacts-dir",

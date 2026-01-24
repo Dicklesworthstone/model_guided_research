@@ -181,6 +181,7 @@ class GPTConfig:
     braid_record_schedule: bool = False
     braid_verify: bool = False
 
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -233,18 +234,24 @@ class CausalSelfAttention(nn.Module):
 
         # Apply Rotary Embeddings to queries and keys to get relative positional encoding
         cos, sin = cos_sin
-        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # QK rotary embedding
-        q, k = norm(q), norm(k) # QK norm
-        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2) # make head be batch dim, i.e. (B, T, H, D) -> (B, H, T, D)
+        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)  # QK rotary embedding
+        q, k = norm(q), norm(k)  # QK norm
+        q, k, v = (
+            q.transpose(1, 2),
+            k.transpose(1, 2),
+            v.transpose(1, 2),
+        )  # make head be batch dim, i.e. (B, T, H, D) -> (B, H, T, D)
 
         # Apply KV cache: insert current k,v into cache, get the full view so far
         if kv_cache is not None:
             k, v = kv_cache.insert_kv(self.layer_idx, k, v)
-        Tq = q.size(2) # number of queries in this forward pass
-        Tk = k.size(2) # number of keys/values in total (in the cache + current forward pass)
+        Tq = q.size(2)  # number of queries in this forward pass
+        Tk = k.size(2)  # number of keys/values in total (in the cache + current forward pass)
 
         # Attention: queries attend to keys/values autoregressively. A few cases to handle:
-        enable_gqa = self.n_head != self.n_kv_head # Group Query Attention (GQA): duplicate key/value heads to match query heads if desired
+        enable_gqa = (
+            self.n_head != self.n_kv_head
+        )  # Group Query Attention (GQA): duplicate key/value heads to match query heads if desired
         if self.record_attn_entropy:
             with torch.no_grad():
                 k_entropy = k
@@ -284,9 +291,9 @@ class CausalSelfAttention(nn.Module):
             else:
                 # During inference AND we have a chunk of queries in this forward pass:
                 # First, each query attends to all the cached keys/values (i.e. full prefix)
-                attn_mask = torch.zeros((Tq, Tk), dtype=torch.bool, device=q.device) # True = keep, False = mask
+                attn_mask = torch.zeros((Tq, Tk), dtype=torch.bool, device=q.device)  # True = keep, False = mask
                 prefix_len = Tk - Tq
-                if prefix_len > 0: # can't be negative but could be zero
+                if prefix_len > 0:  # can't be negative but could be zero
                     attn_mask[:, :prefix_len] = True
                 # Then, causal attention within this chunk
                 attn_mask[:, prefix_len:] = torch.tril(torch.ones((Tq, Tq), dtype=torch.bool, device=q.device))
@@ -372,19 +379,21 @@ class GPT(nn.Module):
         super().__init__()
         self.config = config
         self._validate_config()
-        self.transformer = nn.ModuleDict({
-            "wte": nn.Embedding(config.vocab_size, config.n_embd),
-            "h": nn.ModuleList([Block(config, layer_idx) for layer_idx in range(config.n_layer)]),
-        })
+        self.transformer = nn.ModuleDict(
+            {
+                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "h": nn.ModuleList([Block(config, layer_idx) for layer_idx in range(config.n_layer)]),
+            }
+        )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # To support meta device initialization, we init the rotary embeddings here, but it's fake
         # As for rotary_seq_len, these rotary embeddings are pretty small/cheap in memory,
         # so let's just over-compute them, but assert fail if we ever reach that amount.
         # In the future we can dynamically grow the cache, for now it's fine.
-        self.rotary_seq_len = config.sequence_len * 10 # 10X over-compute should be enough, TODO make nicer?
+        self.rotary_seq_len = config.sequence_len * 10  # 10X over-compute should be enough, TODO make nicer?
         head_dim = config.n_embd // config.n_head
         cos, sin = self._precompute_rotary_embeddings(self.rotary_seq_len, head_dim)
-        self.register_buffer("cos", cos, persistent=False) # persistent=False means it's not saved to the checkpoint
+        self.register_buffer("cos", cos, persistent=False)  # persistent=False means it's not saved to the checkpoint
         self.register_buffer("sin", sin, persistent=False)
 
     def _validate_config(self) -> None:
@@ -530,7 +539,9 @@ class GPT(nn.Module):
                             blended = module.weight.detach().float().mul(1.0 - ca_alpha).add_(ca_vals, alpha=ca_alpha)
                             module.weight.copy_(blended.to(dtype=module.weight.dtype))
                         else:
-                            module.weight.mul_(1.0 - ca_alpha).add_(ca_vals.to(dtype=module.weight.dtype), alpha=ca_alpha)
+                            module.weight.mul_(1.0 - ca_alpha).add_(
+                                ca_vals.to(dtype=module.weight.dtype), alpha=ca_alpha
+                            )
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
@@ -570,7 +581,9 @@ class GPT(nn.Module):
                             blended = module.weight.detach().float().mul(1.0 - ca_alpha).add_(ca_vals, alpha=ca_alpha)
                             module.weight.copy_(blended.to(dtype=module.weight.dtype))
                         else:
-                            module.weight.mul_(1.0 - ca_alpha).add_(ca_vals.to(dtype=module.weight.dtype), alpha=ca_alpha)
+                            module.weight.mul_(1.0 - ca_alpha).add_(
+                                ca_vals.to(dtype=module.weight.dtype), alpha=ca_alpha
+                            )
 
     # TODO: bump base theta more, e.g. 100K is more common more recently
     def _precompute_rotary_embeddings(self, seq_len, head_dim, base=10000, device=None):
@@ -587,18 +600,23 @@ class GPT(nn.Module):
         # calculate the rotation frequencies at each (time, channel) pair
         freqs = torch.outer(t, inv_freq)
         cos, sin = freqs.cos(), freqs.sin()
-        cos, sin = cos.bfloat16(), sin.bfloat16() # keep them in bfloat16
-        cos, sin = cos[None, :, None, :], sin[None, :, None, :] # add batch and head dims for later broadcasting
+        cos, sin = cos.bfloat16(), sin.bfloat16()  # keep them in bfloat16
+        cos, sin = cos[None, :, None, :], sin[None, :, None, :]  # add batch and head dims for later broadcasting
         return cos, sin
 
     def get_device(self):
         return self.transformer.wte.weight.device
 
     def estimate_flops(self):
-        """ Return the estimated FLOPs per token for the model. Ref: https://arxiv.org/abs/2204.02311 """
+        """Return the estimated FLOPs per token for the model. Ref: https://arxiv.org/abs/2204.02311"""
         nparams = sum(p.numel() for p in self.parameters())
         nparams_embedding = self.transformer.wte.weight.numel()
-        l, h, q, t = self.config.n_layer, self.config.n_head, self.config.n_embd // self.config.n_head, self.config.sequence_len
+        l, h, q, t = (
+            self.config.n_layer,
+            self.config.n_head,
+            self.config.n_embd // self.config.n_head,
+            self.config.sequence_len,
+        )
         num_flops_per_token = 6 * (nparams - nparams_embedding) + 12 * l * h * q * t
         return num_flops_per_token
 
@@ -627,7 +645,11 @@ class GPT(nn.Module):
         ]
         adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
         AdamWFactory = DistAdamW if ddp else torch.optim.AdamW
-        if (not ddp) and next(self.parameters()).is_cuda and ("fused" in inspect.signature(torch.optim.AdamW).parameters):
+        if (
+            (not ddp)
+            and next(self.parameters()).is_cuda
+            and ("fused" in inspect.signature(torch.optim.AdamW).parameters)
+        ):
             adamw_kwargs["fused"] = True
         adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
         # Create the Muon optimizer for the linear layers
@@ -641,7 +663,7 @@ class GPT(nn.Module):
                 group["initial_lr"] = group["lr"]
         return optimizers
 
-    def forward(self, idx, targets=None, kv_cache=None, loss_reduction='mean'):
+    def forward(self, idx, targets=None, kv_cache=None, loss_reduction="mean"):
         B, T = idx.size()
 
         # Grab the rotary embeddings for the current sequence length (they are of shape (1, seq_len, 1, head_dim/2))
@@ -653,7 +675,7 @@ class GPT(nn.Module):
             raise TypeError("Rotary embeddings must be in bfloat16")
         # if kv cache exists, we need to offset the rotary embeddings to the current position in the cache
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
-        cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T] # truncate cache to current sequence length
+        cos_sin = self.cos[:, T0 : T0 + T], self.sin[:, T0 : T0 + T]  # truncate cache to current sequence length
 
         # Forward the trunk of the Transformer
         x = self.transformer.wte(idx)
@@ -668,14 +690,16 @@ class GPT(nn.Module):
             # training mode: compute and return the loss
             # TODO: experiment with Liger Kernels / chunked cross-entropy etc.
             logits = self.lm_head(x)
-            logits = softcap * torch.tanh(logits / softcap) # logits softcap
-            logits = logits.float() # use tf32/fp32 for logits
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction=loss_reduction)
+            logits = softcap * torch.tanh(logits / softcap)  # logits softcap
+            logits = logits.float()  # use tf32/fp32 for logits
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction=loss_reduction
+            )
             return loss
         else:
             # inference mode: compute and return the logits
             logits = self.lm_head(x)
-            logits = softcap * torch.tanh(logits / softcap) # logits softcap
+            logits = softcap * torch.tanh(logits / softcap)  # logits softcap
             return logits
 
     @torch.inference_mode()
@@ -693,13 +717,13 @@ class GPT(nn.Module):
         if temperature > 0:
             rng = torch.Generator(device=device)
             rng.manual_seed(seed)
-        ids = torch.tensor([tokens], dtype=torch.long, device=device) # add batch dim
+        ids = torch.tensor([tokens], dtype=torch.long, device=device)  # add batch dim
         for _ in range(max_tokens):
-            logits = self.forward(ids) # (B, T, vocab_size)
-            logits = logits[:, -1, :] # (B, vocab_size)
+            logits = self.forward(ids)  # (B, T, vocab_size)
+            logits = logits[:, -1, :]  # (B, vocab_size)
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
+                logits[logits < v[:, [-1]]] = -float("Inf")
             if temperature > 0:
                 logits = logits / temperature
                 probs = F.softmax(logits, dim=-1)

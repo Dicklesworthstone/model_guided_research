@@ -36,8 +36,8 @@ class FractalCausalSelfAttention(nn.Module):
 
         # IFS Router
         # "A learned router (k independent m-way classifiers) maps query q->w"
-        self.m = 4 # Branching factor
-        self.depth = 4 # Depth of IFS
+        self.m = 4  # Branching factor
+        self.depth = 4  # Depth of IFS
         self.router = nn.Linear(self.head_dim, self.depth * self.m, bias=False)
 
     def forward(self, x, cos_sin, kv_cache):
@@ -91,7 +91,7 @@ class FractalCausalSelfAttention(nn.Module):
         k_flat = k_prob.view(B, self.n_head, -1, self.depth * self.m)
 
         # We treat these probability vectors as the keys/queries for attention
-        scores = (q_flat @ k_flat.transpose(-2, -1)) * (1.0 / (self.depth ** 0.5))
+        scores = (q_flat @ k_flat.transpose(-2, -1)) * (1.0 / (self.depth**0.5))
 
         # Masking
         Tq = q.size(2)

@@ -20,6 +20,7 @@ from nanochat.common_jax import GPTConfig, apply_rotary_emb, rms_norm
 
 # --- Ultrametric core config ---
 
+
 @dataclass
 class UltrametricConfig:
     p: int = 2  # base for p-adic numbers (e.g., 2 for binary)
@@ -51,10 +52,11 @@ def _soft_lcp_depth(q_digits: jnp.ndarray, k_digits: jnp.ndarray, *, lcp_beta: f
     prefix_prob = jnp.cumprod(match_prob, axis=-1)
     return jnp.sum(prefix_prob, axis=-1)
 
+
 class UltrametricCausalSelfAttention(nn.Module):
     config: GPTConfig
     layer_idx: int
-    ult_config: UltrametricConfig = field(default_factory=UltrametricConfig) # Default ultrametric settings
+    ult_config: UltrametricConfig = field(default_factory=UltrametricConfig)  # Default ultrametric settings
 
     def setup(self):
         self.n_head = self.config.n_head
@@ -63,15 +65,20 @@ class UltrametricCausalSelfAttention(nn.Module):
         self.head_dim = self.n_embd // self.n_head
 
         # Projections for Q, K, V
-        self.c_q = nn.Dense(self.n_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
-        self.c_k = nn.Dense(self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
-        self.c_v = nn.Dense(self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
+        self.c_q = nn.Dense(
+            self.n_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02)
+        )
+        self.c_k = nn.Dense(
+            self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02)
+        )
+        self.c_v = nn.Dense(
+            self.n_kv_head * self.head_dim, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02)
+        )
         self.c_proj = nn.Dense(self.n_embd, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02))
 
         # Learned projections into K "digits" per head used to compute an ultrametric LCP-kernel.
         self.to_digits_q = nn.Dense(self.ult_config.K, use_bias=False)
         self.to_digits_k = nn.Dense(self.ult_config.K, use_bias=False)
-
 
     def __call__(self, x, cos, sin, mask=None):
         B, T, C = x.shape

@@ -15,6 +15,7 @@ from torch.optim import Optimizer
 def _symmetrize(M):
     return 0.5 * (M + M.T)
 
+
 def _phi_delta_fraction(lam, delta):
     # (1 - exp(-delta * lam)) / lam
     # Handle small lambda for stability via Taylor or mask
@@ -24,8 +25,10 @@ def _phi_delta_fraction(lam, delta):
     res[~mask] = delta
     return res
 
+
 def _exp_delta_fraction(lam, delta):
     return torch.exp(-delta * lam)
+
 
 def _lyapunov_integral_from_eigh(T, S, delta):
     # Computes int_0^delta exp(-sT) S exp(-sT) ds
@@ -46,6 +49,7 @@ def _lyapunov_integral_from_eigh(T, S, delta):
     C_hat = S_hat * frac
     C = V @ C_hat @ V.T
     return _symmetrize(C)
+
 
 def lanczos_sym(hvp_fn, vec_g, r, device):
     # Symmetric Lanczos iteration to approximate Hessian T from HVP
@@ -88,11 +92,26 @@ def lanczos_sym(hvp_fn, vec_g, r, device):
 
     return Q, T, g_norm
 
+
 class HOSS(Optimizer):
-    def __init__(self, params, lr=1e-3, lanczos_rank=10, noise_scale=1.0, isotropic_noise_var=1e-4, min_curvature=1e-6, gradient_norm_clip=1.0):
-        defaults = dict(lr=lr, lanczos_rank=lanczos_rank, noise_scale=noise_scale,
-                        isotropic_noise_var=isotropic_noise_var, min_curvature=min_curvature,
-                        gradient_norm_clip=gradient_norm_clip)
+    def __init__(
+        self,
+        params,
+        lr=1e-3,
+        lanczos_rank=10,
+        noise_scale=1.0,
+        isotropic_noise_var=1e-4,
+        min_curvature=1e-6,
+        gradient_norm_clip=1.0,
+    ):
+        defaults = dict(
+            lr=lr,
+            lanczos_rank=lanczos_rank,
+            noise_scale=noise_scale,
+            isotropic_noise_var=isotropic_noise_var,
+            min_curvature=min_curvature,
+            gradient_norm_clip=gradient_norm_clip,
+        )
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -114,7 +133,7 @@ class HOSS(Optimizer):
             # Flatten params and grads for this group
             params_list = []
             grads_list = []
-            for p in group['params']:
+            for p in group["params"]:
                 if p.grad is not None:
                     params_list.append(p)
                     grads_list.append(p.grad)
@@ -139,10 +158,10 @@ class HOSS(Optimizer):
             grads_flat_f32 = grads_flat.float()
 
             # Gradient clipping
-            if group['gradient_norm_clip'] is not None:
+            if group["gradient_norm_clip"] is not None:
                 g_norm = torch.linalg.norm(grads_flat_f32)
-                if g_norm > group['gradient_norm_clip']:
-                    scale = group['gradient_norm_clip'] / g_norm
+                if g_norm > group["gradient_norm_clip"]:
+                    scale = group["gradient_norm_clip"] / g_norm
                     grads_flat_f32.mul_(scale)
 
             # Define HVP function
@@ -156,16 +175,12 @@ class HOSS(Optimizer):
                 offset = 0
                 for p in params_list:
                     numel = p.numel()
-                    v_list.append(v[offset:offset+numel].view_as(p))
+                    v_list.append(v[offset : offset + numel].view_as(p))
                     offset += numel
 
                 # Compute HVP: grad( dot(grads, v) )
                 hvp_list = torch.autograd.grad(
-                    outputs=grads_list,
-                    inputs=params_list,
-                    grad_outputs=v_list,
-                    retain_graph=True,
-                    allow_unused=True
+                    outputs=grads_list, inputs=params_list, grad_outputs=v_list, retain_graph=True, allow_unused=True
                 )
 
                 # Flatten result
@@ -179,14 +194,14 @@ class HOSS(Optimizer):
                 return torch.cat(hvp_flat).float()
 
             # Run Lanczos to get Krylov subspace Q and tridiagonal T
-            lanczos_rank = group['lanczos_rank']
+            lanczos_rank = group["lanczos_rank"]
             Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat_f32, lanczos_rank, device)
 
             # Eigen decomp of T
             lam_T, V_T = torch.linalg.eigh(T)
-            lam_T = torch.clamp(lam_T, min=group['min_curvature'])
+            lam_T = torch.clamp(lam_T, min=group["min_curvature"])
 
-            delta = group['lr']
+            delta = group["lr"]
 
             # Mean update via phi function
             phi_delta_T = (V_T * _phi_delta_fraction(lam_T, delta)) @ V_T.T
@@ -200,16 +215,16 @@ class HOSS(Optimizer):
             mean_update_flat = Q @ mean_update_projected
 
             # Noise injection (Lyapunov integral)
-            S_hat = group['isotropic_noise_var'] * torch.eye(lanczos_rank, device=device, dtype=torch.float32)
+            S_hat = group["isotropic_noise_var"] * torch.eye(lanczos_rank, device=device, dtype=torch.float32)
             C_delta_T = _lyapunov_integral_from_eigh(T, S_hat, delta)
 
             # Sample noise in Krylov space
             noise_projected = torch.distributions.MultivariateNormal(
                 torch.zeros(lanczos_rank, device=device, dtype=torch.float32),
-                covariance_matrix=C_delta_T + 1e-6 * torch.eye(lanczos_rank, device=device)
+                covariance_matrix=C_delta_T + 1e-6 * torch.eye(lanczos_rank, device=device),
             ).sample()
 
-            noise_flat = group['noise_scale'] * (Q @ noise_projected)
+            noise_flat = group["noise_scale"] * (Q @ noise_projected)
 
             total_update = mean_update_flat + noise_flat
 
@@ -217,7 +232,7 @@ class HOSS(Optimizer):
             offset = 0
             for p in params_list:
                 numel = p.numel()
-                update_p = total_update[offset:offset+numel].view_as(p).to(p.dtype)
+                update_p = total_update[offset : offset + numel].view_as(p).to(p.dtype)
                 p.data.add_(update_p)
                 offset += numel
 

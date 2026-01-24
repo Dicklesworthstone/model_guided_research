@@ -40,6 +40,7 @@ def timeout(duration, formula):
         if prev_remaining:
             signal.alarm(prev_remaining)
 
+
 _SAFE_BIN_OPS = {
     ast.Add: _op.add,
     ast.Sub: _op.sub,
@@ -93,6 +94,7 @@ def _safe_eval_expression(expr: str, max_time: int = 3, *, max_chars: int = 4096
     except Exception:
         return None
 
+
 def use_calculator(expr):
     """
     Evaluate a Python expression safely.
@@ -101,6 +103,7 @@ def use_calculator(expr):
     # Remove commas from numbers
     expr = expr.replace(",", "")
     return _safe_eval_expression(expr)
+
 
 # -----------------------------------------------------------------------------
 class KVCache:
@@ -113,7 +116,7 @@ class KVCache:
         # Each of K/V is of shape (B, H, T, D) and we have one per layer of the Transformer.
         self.kv_shape = (num_layers, 2, batch_size, num_heads, seq_len, head_dim)
         self.kv_cache = None
-        self.pos = 0 # current position in time in the cache
+        self.pos = 0  # current position in time in the cache
         # Optional per-layer cached state for attention variants that need more than K/V.
         # - Simplicial attention caches the 1-hop outputs so 2-hop diffusion stays KV-cache consistent.
         self.simplicial_y1_cache = None
@@ -231,8 +234,7 @@ class KVCache:
             else:
                 if other_cache.ndim != 5:
                     raise ValueError(
-                        "KVCache.prefill expected other.simplicial_y1_cache to have shape "
-                        "(num_layers, B, H, T, D)"
+                        "KVCache.prefill expected other.simplicial_y1_cache to have shape (num_layers, B, H, T, D)"
                     )
                 if other_cache.size(0) != self.kv_shape[0]:
                     raise ValueError(
@@ -251,9 +253,7 @@ class KVCache:
                 elif other_cache.size(1) == 1:
                     expanded = other_cache.expand(other_cache.size(0), target_B, *other_cache.shape[2:]).clone()
                 else:
-                    raise ValueError(
-                        f"Cannot expand simplicial_y1_cache batch dim {other_cache.size(1)} -> {target_B}"
-                    )
+                    raise ValueError(f"Cannot expand simplicial_y1_cache batch dim {other_cache.size(1)} -> {target_B}")
 
                 self.simplicial_y1_cache = torch.zeros(
                     (self.kv_shape[0], target_B, expanded.size(2), target_T, expanded.size(4)),
@@ -312,8 +312,8 @@ class KVCache:
         # Dynamically grow the cache if needed
         if t1 > self.kv_cache.size(4):
             old_t = self.kv_cache.size(4)
-            t_needed = t1 + 1024 # as much as we need plus buffer of 1024
-            t_needed = (t_needed + 1023) & ~1023 # then round up to the nearest multiple of 1024
+            t_needed = t1 + 1024  # as much as we need plus buffer of 1024
+            t_needed = (t_needed + 1023) & ~1023  # then round up to the nearest multiple of 1024
             additional_shape = list(self.kv_cache.shape)
             additional_shape[4] = t_needed - old_t
             additional_cache = torch.empty(additional_shape, dtype=k.dtype, device=k.device)
@@ -360,22 +360,24 @@ def sample_next_token(logits, rng, temperature=1.0, top_k=None):
         probs = F.softmax(logits, dim=-1)
         return torch.multinomial(probs, num_samples=1, generator=rng)
 
+
 # -----------------------------------------------------------------------------
+
 
 class RowState:
     # Per-row state tracking during generation
     def __init__(self, current_tokens=None):
-        self.current_tokens = current_tokens or [] # Current token sequence for this row
-        self.forced_tokens = deque() # Queue of tokens to force inject
-        self.in_python_block = False # Whether we are inside a python block
-        self.python_expr_tokens = [] # Tokens of the current python expression
-        self.completed = False # Whether this row has completed generation
+        self.current_tokens = current_tokens or []  # Current token sequence for this row
+        self.forced_tokens = deque()  # Queue of tokens to force inject
+        self.in_python_block = False  # Whether we are inside a python block
+        self.python_expr_tokens = []  # Tokens of the current python expression
+        self.completed = False  # Whether this row has completed generation
+
 
 class Engine:
-
     def __init__(self, model, tokenizer):
         self.model = model
-        self.tokenizer = tokenizer # needed for tool use
+        self.tokenizer = tokenizer  # needed for tool use
 
     @torch.inference_mode()
     def generate(self, tokens, num_samples=1, max_tokens=None, temperature=1.0, top_k=None, seed=42):
@@ -392,17 +394,18 @@ class Engine:
                 return self.tokenizer.encode_special(s)
             except Exception:
                 return None
+
         python_start = get_special_optional("<|python_start|>")
         python_end = get_special_optional("<|python_end|>")
         output_start = get_special_optional("<|output_start|>")
         output_end = get_special_optional("<|output_end|>")
-        assistant_end = get_special_optional("<|assistant_end|>") # if sampled, ends row
+        assistant_end = get_special_optional("<|assistant_end|>")  # if sampled, ends row
         if any(tok is None for tok in (python_start, python_end, output_start, output_end)):
             python_start = None
             python_end = None
             output_start = None
             output_end = None
-        bos = self.tokenizer.get_bos_token_id() # if sampled, ends row
+        bos = self.tokenizer.get_bos_token_id()  # if sampled, ends row
 
         # 1) Run a batch 1 prefill of the prompt tokens
         m = self.model.config
@@ -437,7 +440,7 @@ class Engine:
             **kv_model_kwargs,
         )
         kv_cache_decode.prefill(kv_cache_prefill)
-        del kv_cache_prefill # no need to keep this memory around
+        del kv_cache_prefill  # no need to keep this memory around
 
         # 3) Initialize states for each sample
         row_states = [RowState(tokens.copy()) for _ in range(num_samples)]
@@ -470,12 +473,12 @@ class Engine:
                 sampled_tokens = next_ids[:, 0].tolist()
 
             # Process each row: choose the next token, update state, optional tool use
-            token_column = [] # contains the next token id along each row
-            token_masks = [] # contains the mask (was it sampled (1) or forced (0)?) along each row
+            token_column = []  # contains the next token id along each row
+            token_masks = []  # contains the mask (was it sampled (1) or forced (0)?) along each row
             for i, state in enumerate(row_states):
                 # Select the next token in this row
-                is_forced = len(state.forced_tokens) > 0 # are there tokens waiting to be forced in deque?
-                token_masks.append(0 if is_forced else 1) # mask is 0 if forced, 1 if sampled
+                is_forced = len(state.forced_tokens) > 0  # are there tokens waiting to be forced in deque?
+                token_masks.append(0 if is_forced else 1)  # mask is 0 if forced, 1 if sampled
                 next_token = state.forced_tokens.popleft() if is_forced else sampled_tokens[i]
                 token_column.append(next_token)
                 # Update the state of this row to include the next token
@@ -541,10 +544,13 @@ if __name__ == "__main__":
     is equivalent to the faster Engine.generate function here.
     """
     import time
+
     # init compute
     device_type = autodetect_device_type()
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init(device_type=device_type)
-    autocast_ctx = torch.autocast(device_type=device_type, dtype=torch.bfloat16) if device_type == "cuda" else nullcontext()
+    autocast_ctx = (
+        torch.autocast(device_type=device_type, dtype=torch.bfloat16) if device_type == "cuda" else nullcontext()
+    )
 
     # load the model and tokenizer
     model, tokenizer, meta = load_model("base", device, phase="eval")
@@ -573,13 +579,13 @@ if __name__ == "__main__":
     # generate tokens with Engine
     generated_tokens = []
     engine = Engine(model, tokenizer)
-    stream = engine.generate(prompt_tokens, num_samples=1, **kwargs) # note: runs in fp32
+    stream = engine.generate(prompt_tokens, num_samples=1, **kwargs)  # note: runs in fp32
     if device_type == "cuda":
         torch.cuda.synchronize()
     t0 = time.time()
     with autocast_ctx:
         for token_column, token_masks in stream:
-            token = token_column[0] # only print out the first row
+            token = token_column[0]  # only print out the first row
             generated_tokens.append(token)
             chunk = tokenizer.decode([token])
             print(chunk, end="", flush=True)

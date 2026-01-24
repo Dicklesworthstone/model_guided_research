@@ -16,6 +16,7 @@ from nanochat.quaternion_attention_torch import qconj, qmul
 # O1 * O2 = (a*c - d_conj*b, d*a + b*c_conj)
 # Note: Order matters! Octonions are non-associative.
 
+
 def omul(o1, o2):
     """
     Multiply octonion tensors o1 and o2.
@@ -39,6 +40,7 @@ def omul(o1, o2):
 
     return torch.cat([first, second], dim=-1)
 
+
 def oconj(o):
     """
     Conjugate of octonion o = (a, b) is (a_conj, -b).
@@ -46,11 +48,14 @@ def oconj(o):
     a, b = torch.split(o, 4, dim=-1)
     return torch.cat([qconj(a), -b], dim=-1)
 
+
 def onorm(o):
     return torch.norm(o, dim=-1, keepdim=True)
 
+
 def onormalize(o):
     return F.normalize(o, p=2, dim=-1)
+
 
 class OctonionCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -66,7 +71,7 @@ class OctonionCausalSelfAttention(nn.Module):
         self.head_dim = self.n_embd // self.n_head
 
         if self.head_dim % 8 != 0:
-             raise ValueError("head_dim must be divisible by 8 for Octonion attention")
+            raise ValueError("head_dim must be divisible by 8 for Octonion attention")
 
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
@@ -105,7 +110,7 @@ class OctonionCausalSelfAttention(nn.Module):
 
         # Attention Score
         # Standard Dot Product (Real part of Octonion product?)
-        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
+        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim**0.5))
 
         # Masking
         Tq = q.size(2)
@@ -114,7 +119,7 @@ class OctonionCausalSelfAttention(nn.Module):
             mask = causal_attn_mask(Tq, Tk, device=q.device)
             scores.masked_fill_(~mask, float("-inf"))
 
-        probs = F.softmax(scores, dim=-1) # (B, H, Tq, Tk)
+        probs = F.softmax(scores, dim=-1)  # (B, H, Tq, Tk)
 
         # Value Aggregation
         # "Octonionic Signal Flow": Y = sum ( Q * K_conj * V )
@@ -153,17 +158,17 @@ class OctonionCausalSelfAttention(nn.Module):
         y_list = []
         for i in range(Tq):
             # q_i: (B, H, 1, N, 8)
-            q_i = q_o[:, :, i:i+1, :, :]
+            q_i = q_o[:, :, i : i + 1, :, :]
 
             # k_all: (B, H, Tk, N, 8)
             # v_all: (B, H, Tk, N, 8)
 
             # R_i = q_i * k_all_conj
             # We need to broadcast q_i to Tk
-            r_i = omul(q_i, k_conj) # (B, H, Tk, N, 8)
+            r_i = omul(q_i, k_conj)  # (B, H, Tk, N, 8)
 
             # term = r_i * v_all
-            term = omul(r_i, v_o) # (B, H, Tk, N, 8)
+            term = omul(r_i, v_o)  # (B, H, Tk, N, 8)
 
             # weighted sum
             # probs_i: (B, H, 1, Tk)
@@ -173,7 +178,7 @@ class OctonionCausalSelfAttention(nn.Module):
             y_i = (term * p_i).sum(dim=2).unsqueeze(2)  # (B, H, 1, N, 8)
             y_list.append(y_i)
 
-        y_o = torch.cat(y_list, dim=2) # (B, H, Tq, N, 8)
+        y_o = torch.cat(y_list, dim=2)  # (B, H, Tq, N, 8)
 
         # Flatten
         y = y_o.view(B, self.n_head, Tq, self.head_dim)

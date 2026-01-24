@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn.functional as F
 
@@ -6,6 +5,7 @@ import torch.nn.functional as F
 def norm(x):
     # Purely functional rmsnorm with no learnable params
     return F.rms_norm(x, (x.size(-1),))
+
 
 def causal_attn_mask(Tq: int, Tk: int, *, device: torch.device) -> torch.Tensor:
     """
@@ -31,6 +31,7 @@ def causal_attn_mask(Tq: int, Tk: int, *, device: torch.device) -> torch.Tensor:
     mask[:, prefix_len:] = torch.tril(torch.ones((Tq, Tq), dtype=torch.bool, device=device))
     return mask
 
+
 def repeat_kv_heads(k: torch.Tensor, v: torch.Tensor, *, n_head: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Repeat KV heads for Group-Query Attention (GQA) to match `n_head` query heads."""
     if k.ndim != 4 or v.ndim != 4:
@@ -47,6 +48,7 @@ def repeat_kv_heads(k: torch.Tensor, v: torch.Tensor, *, n_head: int) -> tuple[t
     repeat = n_head // n_kv_head
     return k.repeat_interleave(repeat, dim=1), v.repeat_interleave(repeat, dim=1)
 
+
 def apply_rotary_emb(x, cos, sin):
     if x.ndim != 4:
         raise ValueError("apply_rotary_emb expects tensor of shape (B, T, H, D)")
@@ -57,9 +59,9 @@ def apply_rotary_emb(x, cos, sin):
         raise ValueError(
             f"apply_rotary_emb expects cos/sin last dim == D/2 ({d}), got cos={cos.shape}, sin={sin.shape}"
         )
-    x1, x2 = x[..., :d], x[..., d:] # split up last time into two halves
-    y1 = x1 * cos + x2 * sin # rotate pairs of dims
+    x1, x2 = x[..., :d], x[..., d:]  # split up last time into two halves
+    y1 = x1 * cos + x2 * sin  # rotate pairs of dims
     y2 = x1 * (-sin) + x2 * cos
-    out = torch.cat([y1, y2], 3) # re-assemble
-    out = out.to(x.dtype) # ensure input/output dtypes match
+    out = torch.cat([y1, y2], 3)  # re-assemble
+    out = out.to(x.dtype)  # ensure input/output dtypes match
     return out

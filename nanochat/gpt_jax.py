@@ -158,7 +158,7 @@ class Block(nn.Module):
             self.attn = TropicalCausalSelfAttention(self.config, self.layer_idx)
         elif self.config.attention_type == "ultrametric":
             self.attn = UltrametricCausalSelfAttention(self.config, self.layer_idx)
-        else: # Default or "standard"
+        else:  # Default or "standard"
             self.attn = CausalSelfAttention(self.config, self.layer_idx)
         self.mlp = MLP(self.config)
 
@@ -167,10 +167,12 @@ class Block(nn.Module):
         x = x + self.attn(x_norm, cos, sin, mask)
         x_norm = rms_norm(x)
         x = x + self.mlp(x_norm)
-        return x.astype(jnp.bfloat16) # Ensure output dtype matches input (bfloat16) for scan carry
+        return x.astype(jnp.bfloat16)  # Ensure output dtype matches input (bfloat16) for scan carry
+
 
 # Define Rematted Block globally
 RematBlock = nn.remat(Block)
+
 
 class ScanBlock(nn.Module):
     config: GPTConfig
@@ -182,6 +184,7 @@ class ScanBlock(nn.Module):
         block = RematBlock(self.config, layer_idx=0)
         x = block(x, cos, sin, mask)
         return x, None
+
 
 class GPT(nn.Module):
     config: GPTConfig
@@ -208,8 +211,10 @@ class GPT(nn.Module):
             raise ValueError("head_dim (= n_embd // n_head) must be even for RoPE")
 
         self.wte = nn.Embed(
-            self.config.vocab_size, self.config.n_embd, embedding_init=nn.initializers.normal(stddev=0.02),
-            dtype=jnp.bfloat16 # Use bfloat16 for embeddings
+            self.config.vocab_size,
+            self.config.n_embd,
+            embedding_init=nn.initializers.normal(stddev=0.02),
+            dtype=jnp.bfloat16,  # Use bfloat16 for embeddings
         )
 
         # Use nn.scan for layers
@@ -217,13 +222,15 @@ class GPT(nn.Module):
         # We broadcast the context (cos, sin, mask).
         self.blocks = nn.scan(
             ScanBlock,
-            variable_axes={'params': 0, 'cache': 0, 'prime': 0},
-            split_rngs={'params': True, 'dropout': True},
-            in_axes=nn.broadcast, # Broadcast the second argument (ctx)
-            length=self.config.n_layer
+            variable_axes={"params": 0, "cache": 0, "prime": 0},
+            split_rngs={"params": True, "dropout": True},
+            in_axes=nn.broadcast,  # Broadcast the second argument (ctx)
+            length=self.config.n_layer,
         )(self.config)
 
-        self.lm_head = nn.Dense(self.config.vocab_size, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02), dtype=jnp.bfloat16)
+        self.lm_head = nn.Dense(
+            self.config.vocab_size, use_bias=False, kernel_init=nn.initializers.normal(stddev=0.02), dtype=jnp.bfloat16
+        )
 
     def __call__(self, idx, targets=None, train=True):
         B, T = idx.shape

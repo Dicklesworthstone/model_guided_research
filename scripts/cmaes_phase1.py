@@ -43,7 +43,7 @@ class ParamSpec:
         if self.kind == "linear":
             return float(x)
         if self.kind == "log10":
-            return float(10.0 ** x)
+            return float(10.0**x)
         raise ValueError(f"Unknown kind: {self.kind}")
 
     def encode(self, value: float) -> float:
@@ -427,9 +427,9 @@ def main() -> int:
         summary_md = f"""# CMA-ES Phase 1 (pilot)
 
 - Run ID: `{run_id}`
-- Best score: `{float(best_obj['score']):.6f}`
-- Best candidate: gen `{best_obj['gen']}`, cand `{best_obj['cand']}`
-- Best train summary: `{best_obj.get('train_summary_path')}`
+- Best score: `{float(best_obj["score"]):.6f}`
+- Best candidate: gen `{best_obj["gen"]}`, cand `{best_obj["cand"]}`
+- Best train summary: `{best_obj.get("train_summary_path")}`
 
 ## Go / No-Go (Phase 2)
 

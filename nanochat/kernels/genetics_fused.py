@@ -111,4 +111,3 @@ def update_metabolism_fused(fatigue, energy, alpha_fatigue, alpha_energy, util):
         N,
         BLOCK_SIZE=cast(Any, BLOCK_SIZE),
     )
-

@@ -90,6 +90,7 @@ class TropicalAttention:
 
     def __call__(self, Q, K, V):  # numpy arrays
         import numpy as _np
+
         Qj = jnp.array(Q, dtype=jnp.float32)
         Kj = jnp.array(K, dtype=jnp.float32)
         Vj = jnp.array(V, dtype=jnp.float32)
@@ -104,6 +105,7 @@ class TropicalAttention:
 
 
 # --- Test‑facing simple semiring ops ---
+
 
 def tropical_add(a, b):
     """Tropical addition (max-plus): a ⊕ b = max(a, b)."""
@@ -146,6 +148,7 @@ def init_params(k, cfg: Config, delta=0.1, eps=1e-3):
 
 
 # --- Experimental: Tropical convolutions and morphological ops ---
+
 
 def tropical_conv1d(x: jnp.ndarray, w: jnp.ndarray, stride: int = 1) -> jnp.ndarray:
     r"""1D tropical convolution: (x \otimes w)[t] = max_k (x[t + k] + w[k])."""
@@ -220,9 +223,27 @@ def route_single(params: Params, X, cfg: Config, cls: int):
         jnp.minimum(jnp.minimum(m_cls, m_pool), jnp.minimum(m_head, m_z)),
         jnp.minimum(jnp.minimum(m_u, m_v), jnp.minimum(m_k, m_q)),
     )
-    return dict(i=i_cls, t=t_cls, h=h_idx, r=r_idx, u=u_idx, iV=iV, iK=iK, iQ=iQ, margin=m,
-                node_margins={"cls": float(m_cls), "pool": float(m_pool), "head": float(m_head), "z": float(m_z),
-                              "u": float(m_u), "v": float(m_v), "k": float(m_k), "q": float(m_q)})
+    return dict(
+        i=i_cls,
+        t=t_cls,
+        h=h_idx,
+        r=r_idx,
+        u=u_idx,
+        iV=iV,
+        iK=iK,
+        iQ=iQ,
+        margin=m,
+        node_margins={
+            "cls": float(m_cls),
+            "pool": float(m_pool),
+            "head": float(m_head),
+            "z": float(m_z),
+            "u": float(m_u),
+            "v": float(m_v),
+            "k": float(m_k),
+            "q": float(m_q),
+        },
+    )
 
 
 def kstar(y, cls):
@@ -333,6 +354,7 @@ def run():
         lams = [float(x) for x in os.environ.get("TROP_SPARSE_LAMBDAS", "0.25,0.5,1.0").split(",")]
         from rich.console import Console as _Console
         from rich.table import Table as _Table
+
         tab = _Table(title="Sparse Tropical Mixtures", show_header=True, header_style="bold magenta")
         tab.add_column("k")
         tab.add_column("lambda")
@@ -345,11 +367,13 @@ def run():
                 idx = jax.random.permutation(jax.random.PRNGKey(42 + c), cfg.d)[:k_sparse]
                 mask = mask.at[c, idx].set(1.0)
             for lam in lams:
+
                 def forward_sparse(p, X, lam=lam, mask=mask):
                     y0 = forward(p, X, cfg_test)
                     p_mix = Params(p.WQ, p.WK, p.WV, p.Wcls + lam * mask)
                     y1 = forward(p_mix, X, cfg_test)
                     return y0, y1
+
                 Y0, Y1 = jax.vmap(lambda x: forward_sparse(params, x))(Xte)
                 acc0 = float(jnp.mean((predict(Y0) == yte).astype(jnp.float32)))
                 acc1 = float(jnp.mean((predict(Y1) == yte).astype(jnp.float32)))
@@ -359,6 +383,7 @@ def run():
     # Route-level certificates: min runner-up margins along predicted routes for a small batch
     from rich.console import Console as _Console
     from rich.table import Table as _Table
+
     tbl = _Table(title="Tropical Route Certificates (first 10)", show_header=True, header_style="bold magenta")
     tbl.add_column("idx")
     tbl.add_column("pred")
@@ -376,16 +401,25 @@ def run():
         tbl.add_row(str(i), str(c), f"{g:.4f}")
         node_min = float(min(r["node_margins"].values()))
         node_min_gaps.append(node_min)
-        rows.append({"idx": int(i), "pred": int(c), "route_min_gap": g, "node_margins": r["node_margins"], "min_node_gap": node_min, "min_node_gap_over_2": node_min / 2.0})
+        rows.append(
+            {
+                "idx": int(i),
+                "pred": int(c),
+                "route_min_gap": g,
+                "node_margins": r["node_margins"],
+                "min_node_gap": node_min,
+                "min_node_gap_over_2": node_min / 2.0,
+            }
+        )
     _Console().print(tbl)
-    print("Min route gap/2 certificate:", f"{(min(gaps)/2.0):.4f}")
+    print("Min route gap/2 certificate:", f"{(min(gaps) / 2.0):.4f}")
     # Optional compact per-node min-gap/2 table
     try:
         t2 = _Table(title="Per-node Min-Gap/2 (first 10)", show_header=True, header_style="bold magenta")
         t2.add_column("idx")
         t2.add_column("min_node_gap/2")
         for i in range(nshow):
-            t2.add_row(str(i), f"{(node_min_gaps[i]/2.0):.4f}")
+            t2.add_row(str(i), f"{(node_min_gaps[i] / 2.0):.4f}")
         _Console().print(t2)
     except Exception as err:
         _Console().print(f"[yellow]Skipping per-node gap table: {err}[/yellow]")
@@ -400,7 +434,9 @@ def run():
             k_list = [int(os.environ.get("TROP_SPARSE_TRAIN_K", "8"))]
         # Evaluate pre accuracy
         # Evaluate pre accuracy on a held-out set
-        acc_pre = float(jnp.mean((predict(jax.vmap(lambda x: forward(params, x, cfg))(Xte)) == yte).astype(jnp.float32)))
+        acc_pre = float(
+            jnp.mean((predict(jax.vmap(lambda x: forward(params, x, cfg))(Xte)) == yte).astype(jnp.float32))
+        )
         grid_rows = []
         for k_keep in k_list:
             P = params
@@ -413,6 +449,7 @@ def run():
                     idx = jnp.where(ytr == c, size=1, fill_value=-1)[0][0]
                     if int(idx) >= 0:
                         W = W.at[c].add(lr * Pcls[int(idx)])
+
                 # Project to top-k per class
                 def proj_topk(row, k_keep=k_keep):
                     k = jnp.minimum(k_keep, row.shape[0])
@@ -420,9 +457,12 @@ def run():
                     mask = jnp.zeros_like(row)
                     mask = mask.at[idx].set(1.0)
                     return row * mask
+
                 W = jax.vmap(proj_topk)(W)
                 P = Params(P.WQ, P.WK, P.WV, W)
-            acc_post = float(jnp.mean((predict(jax.vmap(lambda x, _P=P: forward(_P, x, cfg))(Xte)) == yte).astype(jnp.float32)))
+            acc_post = float(
+                jnp.mean((predict(jax.vmap(lambda x, _P=P: forward(_P, x, cfg))(Xte)) == yte).astype(jnp.float32))
+            )
             nnz_sum = int(jnp.count_nonzero(P.Wcls > 0.0))
             density = float(nnz_sum) / float(cfg.C * cfg.d)
             grid_rows.append({"k": int(k_keep), "acc_post": acc_post, "nnz_sum": nnz_sum, "density": density})
@@ -430,6 +470,7 @@ def run():
         try:
             from rich.console import Console as _Console
             from rich.table import Table as _Table
+
             gtab = _Table(title="Sparse-Train K Grid", show_header=True, header_style="bold magenta")
             gtab.add_column("k")
             gtab.add_column("acc_post")

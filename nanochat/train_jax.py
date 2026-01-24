@@ -24,37 +24,41 @@ from nanochat.muon_jax import muon
 # Ensure we can import from nanochat when executed as a script from repo root.
 sys.path.append(os.getcwd())
 
+
 def get_params_partition(params):
     """
     Partition parameters into 'muon' and 'adamw' groups.
     Muon: 2D kernels in transformer blocks.
     AdamW: Embeddings, Head, and anything else (like norms if they had params).
     """
+
     def _map_fn(path, param):
         # path is a tuple of keys, e.g. ('blocks', '0', 'attn', 'c_q', 'kernel')
 
         # Check if it's a kernel in the blocks
-        if 'blocks' in path and 'kernel' in path:
+        if "blocks" in path and "kernel" in path:
             # It's a weight matrix in the transformer
             # Muon supports only 2D kernels (param.ndim == 2).
             if param.ndim == 2:
-                return 'muon'
+                return "muon"
 
         # Default to AdamW
-        return 'adamw'
+        return "adamw"
 
     return jax.tree_util.tree_map_with_path(_map_fn, params)
+
 
 class TrainState(train_state.TrainState):
     # We can add extra state here if needed
     pass
+
 
 def create_train_state(rng, config, learning_rate):
     model = GPT(config)
     dummy_input = jnp.ones((1, config.sequence_len), dtype=jnp.int32)
 
     # Initialize parameters
-    params = model.init(rng, dummy_input, train=False)['params']
+    params = model.init(rng, dummy_input, train=False)["params"]
 
     # Define optimizer based on config
     if config.optimizer_type == "hoss":
@@ -71,24 +75,15 @@ def create_train_state(rng, config, learning_rate):
         muon_optimizer = muon(learning_rate=0.02, momentum=0.95, ns_steps=5)
 
         # Combine
-        tx = optax.multi_transform(
-            {
-                'adamw': adamw_optimizer,
-                'muon': muon_optimizer
-            },
-            get_params_partition(params)
-        )
+        tx = optax.multi_transform({"adamw": adamw_optimizer, "muon": muon_optimizer}, get_params_partition(params))
 
-    return TrainState.create(
-        apply_fn=model.apply,
-        params=params,
-        tx=tx
-    )
+    return TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+
 
 @jax.jit
 def train_step(state, batch, targets):
     def loss_fn(params):
-        logits = state.apply_fn({'params': params}, batch, targets=targets, train=True)
+        logits = state.apply_fn({"params": params}, batch, targets=targets, train=True)
         # logits: [B, T, V]
         # targets: [B, T]
 
@@ -109,11 +104,20 @@ def train_step(state, batch, targets):
     state = state.replace(step=state.step + 1, params=new_params, opt_state=new_opt_state)
 
     return state, loss, grad_norm
+
+
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Train Nanochat JAX")
     parser.add_argument("--optimizer-type", type=str, default="adamw", choices=["adamw", "hoss"], help="Optimizer type")
-    parser.add_argument("--attention-type", type=str, default="standard", choices=["standard", "tropical", "ultrametric"], help="Attention mechanism type")
+    parser.add_argument(
+        "--attention-type",
+        type=str,
+        default="standard",
+        choices=["standard", "tropical", "ultrametric"],
+        help="Attention mechanism type",
+    )
     parser.add_argument("--learning-rate", type=float, default=6e-4, help="Learning rate (delta for HOSS)")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
@@ -135,7 +139,9 @@ def main():
     batch_size = args.batch_size
     learning_rate = args.learning_rate
 
-    print(f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}, LR={learning_rate}, BS={batch_size}")
+    print(
+        f"Configuration: Optimizer={config.optimizer_type}, Attention={config.attention_type}, LR={learning_rate}, BS={batch_size}"
+    )
 
     # RNG
     np.random.seed(args.seed)
@@ -148,13 +154,13 @@ def main():
     try:
         backend = jax.lib.xla_bridge.get_backend().platform
         print(f"JAX is using backend: {backend.upper()}")
-        if backend == 'cpu':
+        if backend == "cpu":
             print("WARNING: JAX IS RUNNING ON CPU! CUDA/TPU WAS NOT DETECTED OR FAILED TO INITIALIZE.")
     except Exception:
         print("Could not determine JAX backend.")
 
     state = create_train_state(init_rng, config, learning_rate)
-    print(f"Model initialized. Params: {sum(x.size for x in jax.tree_util.tree_leaves(state.params))/1e6:.2f}M")
+    print(f"Model initialized. Params: {sum(x.size for x in jax.tree_util.tree_leaves(state.params)) / 1e6:.2f}M")
 
     # Dataloader
     # We use the tokenizing dataloader from nanochat
@@ -170,7 +176,7 @@ def main():
             B=batch_size,
             T=config.sequence_len,
             split="train",
-            device="cpu" # Get CPU tensors
+            device="cpu",  # Get CPU tensors
         )
 
         print("Starting training loop...")
@@ -207,21 +213,27 @@ def main():
                 t1 = time.time()
                 dt = t1 - t0
                 t0 = t1
-                print(f"Step {step}: loss {loss_float:.4f}, grad_norm {float(grad_norm):.4f}, time {float(dt*1000):.2f}ms/step")
+                print(
+                    f"Step {step}: loss {loss_float:.4f}, grad_norm {float(grad_norm):.4f}, time {float(dt * 1000):.2f}ms/step"
+                )
 
             if stagnation_count >= 2:
-                raise RuntimeError(f"Loss stagnated at {loss_float:.4f} for {stagnation_count+1} steps. Aborting to save time.")
+                raise RuntimeError(
+                    f"Loss stagnated at {loss_float:.4f} for {stagnation_count + 1} steps. Aborting to save time."
+                )
 
             step += 1
-            if step >= 20: # Short run for debug
+            if step >= 20:  # Short run for debug
                 break
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         print(f"Failed to run training loop: {e}")
         print("Note: This is expected if no parquet data is found in ~/.cache/nanochat/base_data")
         print("If you set NANOCHAT_BASE_DIR, check that location instead.")
+
 
 if __name__ == "__main__":
     main()

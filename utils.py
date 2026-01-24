@@ -19,6 +19,7 @@ from nanochat.torch_imports import torch
 
 console = Console()
 
+
 def seed_everything(seed: int):
     """Seed Python, NumPy, and PyTorch RNGs; return a JAX PRNGKey for convenience."""
     if seed < 0:
@@ -33,6 +34,7 @@ def seed_everything(seed: int):
 
 def timer(func: Callable) -> Callable:
     """Decorator to time function execution."""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         start = time.perf_counter()
@@ -40,6 +42,7 @@ def timer(func: Callable) -> Callable:
         end = time.perf_counter()
         console.print(f"[dim]Execution time for {func.__name__}: {end - start:.3f}s[/dim]")
         return result
+
     return wrapper
 
 
@@ -165,6 +168,7 @@ def print_model_summary(params: Any, name: str = "Model") -> None:
 def conditional_print(message: str, level: int = 1) -> None:
     """Print message only if verbose level is high enough."""
     from config import get_config
+
     config = get_config()
     if config.verbose and config.verbose_level >= level:
         if config.use_rich_output:
@@ -176,6 +180,7 @@ def conditional_print(message: str, level: int = 1) -> None:
 def log_metrics_conditionally(step: int, metrics: dict[str, Any]) -> None:
     """Log metrics based on config settings."""
     from config import get_config
+
     config = get_config()
 
     if not config.log_metrics:
@@ -186,8 +191,7 @@ def log_metrics_conditionally(step: int, metrics: dict[str, Any]) -> None:
 
     if config.use_rich_output:
         # Format metrics nicely
-        metric_str = " | ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}"
-                                 for k, v in metrics.items()])
+        metric_str = " | ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in metrics.items()])
         console.print(f"[cyan]Step {step}[/cyan] | {metric_str}")
     else:
         print(f"Step {step} | " + " | ".join([f"{k}: {v}" for k, v in metrics.items()]))
@@ -202,11 +206,7 @@ def save_checkpoint(params: Any, step: int, metrics: dict[str, Any] | None = Non
         return
 
     checkpoint_path = config.checkpoint_dir / f"checkpoint_step_{step}.pkl"
-    checkpoint_data = {
-        "params": params,
-        "step": step,
-        "metrics": metrics or {}
-    }
+    checkpoint_data = {"params": params, "step": step, "metrics": metrics or {}}
 
     torch.save(checkpoint_data, checkpoint_path)
 
@@ -228,15 +228,14 @@ def create_progress_bar(total: int, description: str = "Processing") -> Any:
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        console=console
+        console=console,
     )
     progress.start()
     progress.add_task(description, total=total)
     return progress
 
 
-def safe_divide(numerator: jnp.ndarray, denominator: jnp.ndarray,
-                 epsilon: float = 1e-8) -> jnp.ndarray:
+def safe_divide(numerator: jnp.ndarray, denominator: jnp.ndarray, epsilon: float = 1e-8) -> jnp.ndarray:
     """Safe division avoiding NaN/Inf."""
     return numerator / (denominator + epsilon)
 

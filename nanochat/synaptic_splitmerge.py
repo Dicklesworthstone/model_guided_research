@@ -39,14 +39,10 @@ class SplitMergeConfig:
     enabled: bool = True
     # MERGE criteria
     merge_cosine_threshold: float = 0.85  # router-embedding cosine sim threshold
-    merge_health_max: float = (
-        0.25  # both experts must be below this health to be merge-candidates
-    )
+    merge_health_max: float = 0.25  # both experts must be below this health to be merge-candidates
     merges_per_call: int = 1  # max merges per step
     # SPLIT criteria
-    split_health_min: float = (
-        0.80  # expert must be above this health to be split candidate
-    )
+    split_health_min: float = 0.80  # expert must be above this health to be split candidate
     splits_per_call: int = 1
     # Noise scales for cloned experts
     clone_noise_linear: float = 0.02  # noise scale for linear weights
@@ -58,9 +54,7 @@ class SplitMergeConfig:
     # DDP
     ddp_broadcast: bool = True  # broadcast parameters from rank 0 after changes
     # Expert weighting
-    use_util_weighting: bool = (
-        True  # weight merge by winner/loser utilization (via fatigue proxy)
-    )
+    use_util_weighting: bool = True  # weight merge by winner/loser utilization (via fatigue proxy)
     # Logging
     verbose: bool = False
 
@@ -71,17 +65,11 @@ class SplitMergeConfig:
 
 
 def _is_rank0() -> bool:
-    return (
-        (not dist.is_available()) or (not dist.is_initialized()) or dist.get_rank() == 0
-    )
+    return (not dist.is_available()) or (not dist.is_initialized()) or dist.get_rank() == 0
 
 
 def _world_size() -> int:
-    return (
-        1
-        if (not dist.is_available()) or (not dist.is_initialized())
-        else dist.get_world_size()
-    )
+    return 1 if (not dist.is_available()) or (not dist.is_initialized()) else dist.get_world_size()
 
 
 @torch.no_grad()
@@ -110,9 +98,7 @@ def _add_noise_(t: Tensor, scale: float):
 
 
 @torch.no_grad()
-def _zero_optim_moments_for(
-    optimizer: torch.optim.Optimizer | None, params: Iterable[nn.Parameter]
-):
+def _zero_optim_moments_for(optimizer: torch.optim.Optimizer | None, params: Iterable[nn.Parameter]):
     if optimizer is None:
         return
     pset = set(params)
@@ -158,14 +144,17 @@ def _copy_synaptic_linear_(dst: SynapticLinear, src: SynapticLinear):
 @torch.no_grad()
 def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: float, cfg: SplitMergeConfig):
     """winner = alpha * winner + (1-alpha) * loser; loser = winner + noise"""
-    if cfg.enabled and winner.w_slow.is_cuda: # Check if we can use fused kernel
+    if cfg.enabled and winner.w_slow.is_cuda:  # Check if we can use fused kernel
         try:
             from nanochat.kernels import mix_and_shift_tensors
+
             # Weights
             mix_and_shift_tensors(winner.w_slow, loser.w_slow, alpha, cfg.clone_noise_linear)
             mix_and_shift_tensors(winner.w_fast, loser.w_fast, alpha, cfg.clone_noise_linear)
             if (winner.bias is not None) and (loser.bias is not None):
-                mix_and_shift_tensors(cast(Tensor, winner.bias), cast(Tensor, loser.bias), alpha, cfg.clone_noise_linear)
+                mix_and_shift_tensors(
+                    cast(Tensor, winner.bias), cast(Tensor, loser.bias), alpha, cfg.clone_noise_linear
+                )
 
             # Postsynaptic state
             # For state, we might want less noise or different logic?
@@ -257,10 +246,11 @@ def _merge_expert_into_and_clone_(
     if W.is_cuda:
         try:
             from nanochat.kernels import mix_and_shift_rows
+
             # W is (E, n_embd). We want to mix row[winner] and row[loser].
             mix_and_shift_rows(W, winner_idx, loser_idx, alpha, cfg.clone_noise_router)
         except ImportError:
-             # Fallback
+            # Fallback
             W_w = W[winner_idx]
             W_l = W[loser_idx]
             W_w.mul_(alpha).add_((1.0 - alpha) * W_l)
@@ -294,9 +284,7 @@ def _merge_expert_into_and_clone_(
 
 
 class SplitMergeController:
-    def __init__(
-        self, model: nn.Module, cfg: SplitMergeConfig, logger: Any | None = None
-    ):
+    def __init__(self, model: nn.Module, cfg: SplitMergeConfig, logger: Any | None = None):
         self.model = model
         self.cfg = cfg
         self._last_step = -(10**12)  # ensure first call can run if warmup permits
@@ -372,16 +360,9 @@ class SplitMergeController:
     @torch.no_grad()
     def _pick_split_sources(self, layer: SynapticMoE) -> list[int]:
         health = self._health(layer)
-        strong = (
-            (health >= self.cfg.split_health_min)
-            .nonzero(as_tuple=False)
-            .flatten()
-            .tolist()
-        )
+        strong = (health >= self.cfg.split_health_min).nonzero(as_tuple=False).flatten().tolist()
         # take top k strongest
-        strong_sorted = sorted(
-            strong, key=lambda e: float(health[e].item()), reverse=True
-        )
+        strong_sorted = sorted(strong, key=lambda e: float(health[e].item()), reverse=True)
         return strong_sorted[: self.cfg.splits_per_call]
 
     @torch.no_grad()
@@ -432,9 +413,7 @@ class SplitMergeController:
             # emit lineage event: split parent src -> child dst
             if self.logger is not None and hasattr(self.logger, "on_split"):
                 try:
-                    self.logger.on_split(
-                        layer, parent_idx=int(src), child_idx=int(dst), step=step
-                    )
+                    self.logger.on_split(layer, parent_idx=int(src), child_idx=int(dst), step=step)
                 except Exception as _e:
                     if self.cfg.verbose:
                         print(f"[SplitMerge] logger.on_split failed: {_e}")
@@ -451,15 +430,11 @@ class SplitMergeController:
                     changed.append(layer.experts[dst].fc1.bias)
                 if layer.experts[dst].fc2.bias is not None:
                     changed.append(layer.experts[dst].fc2.bias)
-                changed_params: list[nn.Parameter] = [
-                    param for param in changed if isinstance(param, nn.Parameter)
-                ]
+                changed_params: list[nn.Parameter] = [param for param in changed if isinstance(param, nn.Parameter)]
                 _zero_optim_moments_for(optimizer, changed_params)
 
     @torch.no_grad()
-    def _do_merges(
-        self, layer: SynapticMoE, optimizer: torch.optim.Optimizer | None, step: int
-    ):
+    def _do_merges(self, layer: SynapticMoE, optimizer: torch.optim.Optimizer | None, step: int):
         pairs = self._pick_merge_pairs(layer)
         if self.cfg.verbose and len(pairs) > 0:
             print(f"[SplitMerge] Merging pairs: {pairs}")
@@ -506,9 +481,7 @@ class SplitMergeController:
                     changed.append(layer.experts[loser].fc1.bias)
                 if layer.experts[loser].fc2.bias is not None:
                     changed.append(layer.experts[loser].fc2.bias)
-                changed_params = [
-                    param for param in changed if isinstance(param, nn.Parameter)
-                ]
+                changed_params = [param for param in changed if isinstance(param, nn.Parameter)]
                 _zero_optim_moments_for(optimizer, changed_params)
 
     @torch.no_grad()
@@ -537,9 +510,7 @@ class SplitMergeController:
             # 2) splits
             sources = self._pick_split_sources(layer)
             if len(sources) > 0 and self.cfg.splits_per_call > 0:
-                slots = self._weakest_slots(
-                    layer, min(len(sources), self.cfg.splits_per_call)
-                )
+                slots = self._weakest_slots(layer, min(len(sources), self.cfg.splits_per_call))
                 if self.cfg.verbose:
                     print(f"[SplitMerge] Splitting {list(zip(sources, slots))}")
                 self._split_into_slots(layer, sources, slots, optimizer, global_step)

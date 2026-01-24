@@ -361,7 +361,9 @@ class LCPTreeAttention:
         self.p, self.K, self.H, self.m = p, K, H, m
         self.packed = bool(packed)
         head_cls = PackedHeadTrie if self.packed else HeadTrie
-        self.heads = [head_cls(p, K, m, r, U_seed=(None if seeds is None else seeds[h]), superdiag=superdiag) for h in range(H)]
+        self.heads = [
+            head_cls(p, K, m, r, U_seed=(None if seeds is None else seeds[h]), superdiag=superdiag) for h in range(H)
+        ]
 
     def lookup(self, digits_batch):
         Y = jnp.zeros((len(digits_batch), self.m), jnp.int32)
@@ -428,16 +430,14 @@ class UltrametricAttention:
 
     def __init__(self, dim: int, p: int = 5, max_depth: int = 10, packed: bool = False, heads: int = 1):
         import numpy as _np
+
         self.dim = int(dim)
         self.max_depth = int(max_depth)
         self._packed = bool(packed)
         self._heads = max(1, int(heads))
         # Random hyperplanes define a binary signature per depth
         rng = _np.random.default_rng(0)
-        self._planes = [
-            rng.standard_normal((self.max_depth, self.dim)).astype(_np.float64)
-            for _ in range(self._heads)
-        ]
+        self._planes = [rng.standard_normal((self.max_depth, self.dim)).astype(_np.float64) for _ in range(self._heads)]
         # Buckets per head: dict or array-backed by depth depending on mode
         # Buckets type: packed -> list[ list[ dict[int, list[int]] ] ] or array mode -> list[ list[ list[list[int]] ] ]
         # Unpacked -> list[ dict[tuple[int,...], list[int]] ]
@@ -458,7 +458,9 @@ class UltrametricAttention:
             self._buckets = packed_arr
             self._packed_arrays = True
             # Occupancy bitsets to summarize
-            self._occ = [[np.zeros((1 << d,), dtype=np.uint8) for d in range(self.max_depth + 1)] for _ in range(self._heads)]
+            self._occ = [
+                [np.zeros((1 << d,), dtype=np.uint8) for d in range(self.max_depth + 1)] for _ in range(self._heads)
+            ]
         elif self._packed:
             # dict-based packed
             packed_buckets: BuckPacked = []
@@ -479,6 +481,7 @@ class UltrametricAttention:
     @staticmethod
     def _signature(planes, vec):
         import numpy as _np
+
         proj = planes @ vec  # [D]
         return (proj > 0.0).astype(_np.int8)
 
@@ -488,6 +491,7 @@ class UltrametricAttention:
 
     def insert(self, idx: int, key_vec):
         import numpy as _np
+
         v = _np.asarray(key_vec, dtype=_np.float64)
         self._key_vec[int(idx)] = v
         for h in range(self._heads):
@@ -512,6 +516,7 @@ class UltrametricAttention:
 
     def attend(self, q, V):
         import numpy as _np
+
         if not self._key_vec:
             return _np.zeros_like(V[0])
         Q = _np.asarray(q, dtype=_np.float64)
@@ -529,7 +534,9 @@ class UltrametricAttention:
                     code = (code << 1) | int(sig[d - 1])
                     if self._packed_arrays:
                         buckets_pa = cast(list[list[list[list[int]]]], self._buckets)
-                        lst = buckets_pa[h][d][code] if (d < len(buckets_pa[h]) and code < len(buckets_pa[h][d])) else []
+                        lst = (
+                            buckets_pa[h][d][code] if (d < len(buckets_pa[h]) and code < len(buckets_pa[h][d])) else []
+                        )
                     else:
                         buckets_p = cast(list[list[dict[int, list[int]]]], self._buckets)
                         level = buckets_p[h][d] if d < len(buckets_p[h]) else {}
@@ -882,6 +889,7 @@ def demo():
     # Optional packed timing benchmark to n=4096
     try:
         import time as _time
+
         print("\n[Packed LCP Timing]")
         Ns = [64, 256, 1024, 4096]
         insert_ms, query_ms, head_vars = [], [], []
@@ -899,11 +907,16 @@ def demo():
             q = np.random.randn(dim)
             _ = U.attend(q, vals)
             t2 = _time.perf_counter()
-            var_heads = np.var(np.array(getattr(U, 'last_head_sims', [0.0])), ddof=1) if hasattr(U, 'last_head_sims') else 0.0
-            print(f"N={N:4d} | insert {1000*(t1-t0):6.1f} ms | query {1000*(t2-t1):6.1f} ms | head var {var_heads:.3e}")
+            var_heads = (
+                np.var(np.array(getattr(U, "last_head_sims", [0.0])), ddof=1) if hasattr(U, "last_head_sims") else 0.0
+            )
+            print(
+                f"N={N:4d} | insert {1000 * (t1 - t0):6.1f} ms | query {1000 * (t2 - t1):6.1f} ms | head var {var_heads:.3e}"
+            )
             insert_ms.append(1000 * (t1 - t0))
             query_ms.append(1000 * (t2 - t1))
             head_vars.append(float(var_heads))
+
         # Tiny scaling sparkline for query times
         def _spark(vals):
             bars = "▁▂▃▄▅▆▇█"
@@ -914,6 +927,7 @@ def demo():
                 return bars[0] * len(vals)
             idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
             return "".join(bars[i] for i in idxs)
+
         print("query(ms) spark:", _spark(query_ms))
         if compare:
             # Dict-backed timing for comparison (packed=False)
@@ -935,6 +949,7 @@ def demo():
             try:
                 from rich.console import Console as _Console
                 from rich.table import Table as _Table
+
                 ct = _Table(title="Packed vs Dict Scaling (query ms)", show_header=True, header_style="bold magenta")
                 ct.add_column("N")
                 ct.add_column("packed")
@@ -958,17 +973,27 @@ def demo():
             U2.finalize()
             d_demo = K // 2
             code_demo = (1 << d_demo) // 2
-            print("rank_prefix demo:", U2.rank_prefix(0, d_demo, code_demo), "has_prefix:", U2.has_prefix(0, d_demo, code_demo))
+            print(
+                "rank_prefix demo:",
+                U2.rank_prefix(0, d_demo, code_demo),
+                "has_prefix:",
+                U2.has_prefix(0, d_demo, code_demo),
+            )
             # Rank/Test summary table
             try:
                 from rich.console import Console as _Console
                 from rich.table import Table as _Table
+
                 tab = _Table(title="Rank/Test Summary (array-packed)", show_header=True, header_style="bold magenta")
                 tab.add_column("depth")
                 tab.add_column("code")
                 tab.add_column("rank")
                 tab.add_column("has")
-                demos = [(d_demo-1, (1<<(d_demo-1))//2), (d_demo, code_demo), (d_demo+1, min((1<<(d_demo+1))//2, (1<<(K))-1))]
+                demos = [
+                    (d_demo - 1, (1 << (d_demo - 1)) // 2),
+                    (d_demo, code_demo),
+                    (d_demo + 1, min((1 << (d_demo + 1)) // 2, (1 << (K)) - 1)),
+                ]
                 for dd, cc in demos:
                     rnk = U2.rank_prefix(0, max(1, dd), int(cc))
                     has = U2.has_prefix(0, max(1, dd), int(cc))
@@ -992,6 +1017,7 @@ def demo():
         # Variance reduction (ULTRA_FUSE vs average) across several probes
         try:
             import os as _os
+
             dim = 32
             Uv = UltrametricAttention(dim=dim, p=5, max_depth=10, packed=True, heads=3)
             for i in range(256):
@@ -1002,16 +1028,17 @@ def demo():
                 qv = np.random.randn(dim)
                 _os.environ["ULTRA_FUSE"] = "0"
                 _ = Uv.attend(qv, valsv)
-                var_avg = float(np.var(np.array(getattr(Uv, 'last_head_sims', [0.0])), ddof=1))
+                var_avg = float(np.var(np.array(getattr(Uv, "last_head_sims", [0.0])), ddof=1))
                 _os.environ["ULTRA_FUSE"] = "1"
                 _ = Uv.attend(qv, valsv)
-                var_fuse = float(np.var(np.array(getattr(Uv, 'last_head_sims', [0.0])), ddof=1))
+                var_fuse = float(np.var(np.array(getattr(Uv, "last_head_sims", [0.0])), ddof=1))
                 deltas.append(var_avg - var_fuse)
             var_delta = float(np.mean(deltas))
             # Print a small table for the deltas
             try:
                 from rich.console import Console as _Console
                 from rich.table import Table as _Table
+
                 vt = _Table(title="Variance Reduction Deltas", show_header=True, header_style="bold magenta")
                 vt.add_column("probe")
                 vt.add_column("delta(var)")
@@ -1028,7 +1055,7 @@ def demo():
         # Export diagnostics
         global last_diagnostics
         last_diagnostics = {
-            "last_head_variance": float(var_heads) if 'var_heads' in locals() else None,
+            "last_head_variance": float(var_heads) if "var_heads" in locals() else None,
             "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
             "scaling": {
                 "N": Ns,
@@ -1037,28 +1064,38 @@ def demo():
             },
             "variance_reduction": {
                 "delta_mean": var_delta,
-                "deltas": [float(x) for x in deltas] if 'deltas' in locals() else None,
+                "deltas": [float(x) for x in deltas] if "deltas" in locals() else None,
             },
             "scaling_compare": {
                 "N": Ns,
                 "packed": {"insert_ms": [float(x) for x in insert_ms], "query_ms": [float(x) for x in query_ms]},
                 "dict": {"insert_ms": [float(x) for x in ins2], "query_ms": [float(x) for x in qry2]},
-            } if compare else None,
+            }
+            if compare
+            else None,
             "rank_demo": {
-                "depth": int(d_demo) if 'd_demo' in locals() else None,
-                "code": int(code_demo) if 'code_demo' in locals() else None,
-                "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
-                "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ('U2' in locals()) else None,
+                "depth": int(d_demo) if "d_demo" in locals() else None,
+                "code": int(code_demo) if "code_demo" in locals() else None,
+                "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ("U2" in locals()) else None,
+                "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ("U2" in locals()) else None,
             },
-            "tuner": {"p": int(best_p), "acc": float(best_acc)} if ('best_p' in locals()) else None,
+            "tuner": {"p": int(best_p), "acc": float(best_acc)} if ("best_p" in locals()) else None,
             "rank_samples": [
-                {"depth": int(max(1, d_demo-1)), "code": int((1<<max(1, d_demo-1))//2),
-                 "rank": int(U2.rank_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2)),
-                 "has": bool(U2.has_prefix(0, max(1, d_demo-1), (1<<max(1, d_demo-1))//2))},
-                {"depth": int(d_demo), "code": int(code_demo),
-                 "rank": int(U2.rank_prefix(0, d_demo, code_demo)),
-                 "has": bool(U2.has_prefix(0, d_demo, code_demo))},
-            ] if ('U2' in locals()) else None,
+                {
+                    "depth": int(max(1, d_demo - 1)),
+                    "code": int((1 << max(1, d_demo - 1)) // 2),
+                    "rank": int(U2.rank_prefix(0, max(1, d_demo - 1), (1 << max(1, d_demo - 1)) // 2)),
+                    "has": bool(U2.has_prefix(0, max(1, d_demo - 1), (1 << max(1, d_demo - 1)) // 2)),
+                },
+                {
+                    "depth": int(d_demo),
+                    "code": int(code_demo),
+                    "rank": int(U2.rank_prefix(0, d_demo, code_demo)),
+                    "has": bool(U2.has_prefix(0, d_demo, code_demo)),
+                },
+            ]
+            if ("U2" in locals())
+            else None,
         }
     except Exception as err:
         print(f"[ultrametric] Demo failed: {err}")
@@ -1070,9 +1107,10 @@ if __name__ == "__main__":
 
 # --- Minimal p‑adic helpers for tests ---
 
+
 def p_adic_encode(n: int, p: int, precision: int) -> np.ndarray:
     """Encode integer n modulo p^precision as base‑p digits least significant first."""
-    p_pow = p ** precision
+    p_pow = p**precision
     n_mod = n % p_pow
     digits = []
     for _ in range(precision):
@@ -1106,6 +1144,6 @@ def p_adic_multiply(a: np.ndarray, b: np.ndarray, p: int) -> np.ndarray:
     k = len(a)
     n1 = p_adic_decode(a, p)
     n2 = p_adic_decode(b, p)
-    mod = p ** k
+    mod = p**k
     prod = (n1 * n2) % mod
     return p_adic_encode(prod, p, k)

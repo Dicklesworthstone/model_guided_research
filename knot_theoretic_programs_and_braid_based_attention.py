@@ -112,6 +112,7 @@ def _params_unflatten(aux_data, children):
 
 tree_util.register_pytree_node(Params, _params_flatten, _params_unflatten)
 
+
 # ---------- dataset ----------
 def make_dataset(key, n_samples, n_low, n_high, p_tag=0.35, value_max=9, L_max=None):
     # Precompute per-sample lengths and a global L_max
@@ -323,6 +324,7 @@ class BraidAttention:
     def train_on_task(self, sequences, labels, epochs: int = 1):
         # Tiny perceptron on sum-of-tokens just to be deterministic
         import numpy as _np
+
         xs = _np.array([_np.sum(s[: self.max_len]) for s in sequences], dtype=float)
         ys = _np.array(labels, dtype=float)
         w = 0.0
@@ -339,6 +341,7 @@ class BraidAttention:
 
     def forward(self, padded_seq) -> float:
         import numpy as _np
+
         x = float(_np.sum(padded_seq[: self.max_len]))
         z = self.w * x + self.bias
         return float(1 / (1 + _np.exp(-z)))

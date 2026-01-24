@@ -384,8 +384,10 @@ if __name__ == "__main__":
 
 # --- Minimal surreal number API for tests ---
 
+
 class SurrealNumber:
     """Tiny subset sufficient for tests: represent dyadic rationals as floats with constructors."""
+
     def __init__(self, value: float = 0.0):
         self.value = float(value)
 

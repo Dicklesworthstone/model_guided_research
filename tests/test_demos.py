@@ -16,6 +16,7 @@ def require(condition, message: str):
     if not bool(condition):
         raise AssertionError(message)
 
+
 # List of all demo modules
 DEMO_MODULES = [
     "iterated_function_systems_and_fractal_memory",
@@ -36,7 +37,7 @@ DEMO_MODULES = [
 def test_demo_exists(module_name):
     """Test that each module has a demo function."""
     module = importlib.import_module(module_name)
-    require(hasattr(module, 'demo'), f"Module {module_name} missing demo() function")
+    require(hasattr(module, "demo"), f"Module {module_name} missing demo() function")
     require(callable(module.demo), f"demo in {module_name} is not callable")
 
 
@@ -171,7 +172,10 @@ def test_nanochat_braid_discrete_mode_records_schedule_and_matches_kv_cache():
     order = debug["order"]
     selected = debug["selected"]
     k = debug["k"]
-    require(isinstance(order, torch.Tensor) and isinstance(selected, torch.Tensor) and isinstance(k, torch.Tensor), "Bad debug tensor types")
+    require(
+        isinstance(order, torch.Tensor) and isinstance(selected, torch.Tensor) and isinstance(k, torch.Tensor),
+        "Bad debug tensor types",
+    )
     require(order.shape[-1] == ids.size(1), "Expected schedule to cover all causal keys for the last token")
 
 
@@ -201,7 +205,10 @@ def test_nanochat_standard_attention_entropy_records_per_head_stats():
     attn0 = model.transformer["h"][0].attn
     entropy = getattr(attn0, "attn_entropy_head_mean", None)
     require(torch.is_tensor(entropy), "Expected attn_entropy_head_mean to be a tensor")
-    require(tuple(entropy.shape) == (config.n_head,), f"Expected entropy shape ({config.n_head},), got {tuple(entropy.shape)}")
+    require(
+        tuple(entropy.shape) == (config.n_head,),
+        f"Expected entropy shape ({config.n_head},), got {tuple(entropy.shape)}",
+    )
     require(bool(torch.isfinite(entropy).all().item()), "Expected per-head entropy values to be finite")
 
 
@@ -325,8 +332,12 @@ def test_kv_cache_prefill_expands_batch_dimension():
     require(expanded.kv_cache is not None and other.kv_cache is not None, "KV caches must be initialized after prefill")
 
     # Both batch rows should match the single source prefix exactly.
-    torch.testing.assert_close(expanded.kv_cache[:, :, 0, :, : other.pos, :], other.kv_cache[:, :, 0, :, : other.pos, :])
-    torch.testing.assert_close(expanded.kv_cache[:, :, 1, :, : other.pos, :], other.kv_cache[:, :, 0, :, : other.pos, :])
+    torch.testing.assert_close(
+        expanded.kv_cache[:, :, 0, :, : other.pos, :], other.kv_cache[:, :, 0, :, : other.pos, :]
+    )
+    torch.testing.assert_close(
+        expanded.kv_cache[:, :, 1, :, : other.pos, :], other.kv_cache[:, :, 0, :, : other.pos, :]
+    )
 
 
 def test_cli_regressions_smoke(tmp_path: Path):
@@ -345,12 +356,22 @@ def test_cli_regressions_smoke(tmp_path: Path):
     base_summary = {
         "git": {"commit": "abc123", "dirty": False},
         "config": {"attention_type": "standard", "use_flex_attention": False},
-        "results": {"losses": [3.0, 2.0], "tokens_per_second": 1000.0, "tflops_per_second_est": 1.0, "peak_memory_allocated_gb": 2.0},
+        "results": {
+            "losses": [3.0, 2.0],
+            "tokens_per_second": 1000.0,
+            "tflops_per_second_est": 1.0,
+            "peak_memory_allocated_gb": 2.0,
+        },
     }
     cand_summary = {
         "git": {"commit": "def456", "dirty": True},
         "config": {"attention_type": "standard", "use_flex_attention": True},
-        "results": {"losses": [3.0, 2.1], "tokens_per_second": 950.0, "tflops_per_second_est": 0.95, "peak_memory_allocated_gb": 2.2},
+        "results": {
+            "losses": [3.0, 2.1],
+            "tokens_per_second": 950.0,
+            "tflops_per_second_est": 0.95,
+            "peak_memory_allocated_gb": 2.2,
+        },
     }
     (base_dir / "summary.json").write_text(json.dumps(base_summary), encoding="utf-8")
     (cand_dir / "summary.json").write_text(json.dumps(cand_summary), encoding="utf-8")

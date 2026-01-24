@@ -25,6 +25,7 @@ def qmul(a, b):
 
     return torch.stack((ow, ox, oy, oz), dim=-1)
 
+
 def qconj(q):
     """
     Conjugate of quaternion q.
@@ -33,14 +34,17 @@ def qconj(q):
     w, x, y, z = q.unbind(-1)
     return torch.stack((w, -x, -y, -z), dim=-1)
 
+
 def qnorm(q):
     """
     Norm of quaternion q.
     """
     return torch.norm(q, dim=-1, keepdim=True)
 
+
 def qnormalize(q):
     return F.normalize(q, p=2, dim=-1)
+
 
 class QuaternionCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
@@ -56,7 +60,7 @@ class QuaternionCausalSelfAttention(nn.Module):
         self.head_dim = self.n_embd // self.n_head
 
         if self.head_dim % 4 != 0:
-             raise ValueError("head_dim must be divisible by 4 for Quaternion attention")
+            raise ValueError("head_dim must be divisible by 4 for Quaternion attention")
 
         # We use standard linear layers for projection, but interpret output as quaternions
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
@@ -129,7 +133,7 @@ class QuaternionCausalSelfAttention(nn.Module):
         # 1. Compute Relative Rotors R_ij = Q_i * K_j_conj
         # This is (Tq, Tk, N, 4). Heavy!
         # If we simply compute standard attention scores:
-        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim ** 0.5))
+        scores = (q @ k.transpose(-2, -1)) * (1.0 / (self.head_dim**0.5))
 
         # Masking
         Tq = q.size(2)
@@ -138,7 +142,7 @@ class QuaternionCausalSelfAttention(nn.Module):
             mask = causal_attn_mask(Tq, Tk, device=q.device)
             scores.masked_fill_(~mask, float("-inf"))
 
-        probs = F.softmax(scores, dim=-1) # (B, H, Tq, Tk)
+        probs = F.softmax(scores, dim=-1)  # (B, H, Tq, Tk)
 
         # Value mixing
         # Standard: y = probs @ v
@@ -154,7 +158,7 @@ class QuaternionCausalSelfAttention(nn.Module):
         # Step 1: T = K_conj * V
         # k_q: (B, H, Tk, N, 4)
         # v_q: (B, H, Tk, N, 4)
-        t_q = qmul(qconj(k_q), v_q) # (B, H, Tk, N, 4)
+        t_q = qmul(qconj(k_q), v_q)  # (B, H, Tk, N, 4)
 
         # Flatten T back to (B, H, Tk, D) for aggregation
         t_flat = t_q.view(B, self.n_head, Tk, self.head_dim)

@@ -13,17 +13,19 @@ class GPTConfig:
     sequence_len: int = 1024
     vocab_size: int = 50304
     n_layer: int = 12
-    n_head: int = 6 # number of query heads
-    n_kv_head: int = 6 # number of key/value heads (GQA)
+    n_head: int = 6  # number of query heads
+    n_kv_head: int = 6  # number of key/value heads (GQA)
     n_embd: int = 768
-    use_tropical: bool = False # Existing tropical flag
+    use_tropical: bool = False  # Existing tropical flag
     attention_type: str = "standard"  # Options: "standard", "tropical", "ultrametric"
-    optimizer_type: str = "adamw"     # Options: "adamw", "hoss"
+    optimizer_type: str = "adamw"  # Options: "adamw", "hoss"
     init_cache: bool = False
+
 
 def rms_norm(x):
     # Purely functional rmsnorm with no learnable params
     return x * jax.lax.rsqrt(jnp.mean(jnp.square(x), axis=-1, keepdims=True) + 1e-6)
+
 
 def apply_rotary_emb(x, cos, sin):
     # x: [B, T, H, D]
@@ -42,4 +44,3 @@ def apply_rotary_emb(x, cos, sin):
     y1 = x1 * cos + x2 * sin
     y2 = x1 * (-sin) + x2 * cos
     return jnp.concatenate([y1, y2], axis=-1)
-

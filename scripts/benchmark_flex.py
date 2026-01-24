@@ -223,7 +223,7 @@ def main() -> int:
         report_md = f"""# FlexAttention perf benchmark (SDPA vs Flex)
 
 - Run ID: `{run_id}`
-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}
+- Generated: {time.strftime("%Y-%m-%d %H:%M:%S %Z")}
 
 ## Command
 

@@ -63,11 +63,13 @@ class TestRunner:
         """Run all tests with beautiful progress display."""
         self.start_time = time.time()
 
-        console.print(Panel.fit(
-            "[bold cyan]Model-Guided Research Test Suite[/bold cyan]\n"
-            "[dim]Testing mathematical implementations from AI-generated research directions[/dim]",
-            box=box.DOUBLE
-        ))
+        console.print(
+            Panel.fit(
+                "[bold cyan]Model-Guided Research Test Suite[/bold cyan]\n"
+                "[dim]Testing mathematical implementations from AI-generated research directions[/dim]",
+                box=box.DOUBLE,
+            )
+        )
 
         # Test imports
         console.print("\n[bold]Phase 1: Testing Module Imports[/bold]")
@@ -79,7 +81,7 @@ class TestRunner:
             BarColumn(),
             TaskProgressColumn(),
             TimeElapsedColumn(),
-            console=console
+            console=console,
         ) as progress:
             import_task = progress.add_task("Testing imports...", total=len(DEMO_MODULES))
 
@@ -106,7 +108,7 @@ class TestRunner:
                 BarColumn(),
                 TaskProgressColumn(),
                 TimeElapsedColumn(),
-                console=console
+                console=console,
             ) as progress:
                 quality_task = progress.add_task("Checking code quality...", total=len(DEMO_MODULES))
 
@@ -131,7 +133,7 @@ class TestRunner:
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TimeElapsedColumn(),
-            console=console
+            console=console,
         ) as progress:
             demo_task = progress.add_task("Testing demo functions...", total=len(DEMO_MODULES))
 
@@ -155,7 +157,7 @@ class TestRunner:
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TimeElapsedColumn(),
-            console=console
+            console=console,
         ) as progress:
             doc_task = progress.add_task("Checking documentation...", total=len(DEMO_MODULES))
 
@@ -199,7 +201,7 @@ class TestRunner:
                             lines = content.split("\n")
                             for i, line in enumerate(lines):
                                 if pattern in line and "from" not in line:
-                                    issues.append(f"{category}: Line {i+1}")
+                                    issues.append(f"{category}: Line {i + 1}")
                         else:
                             issues.append(f"{category}: Found '{pattern}'")
 
@@ -217,24 +219,16 @@ class TestRunner:
             start = time.perf_counter()
             module = importlib.import_module(module_name)
             elapsed = time.perf_counter() - start
-            return {
-                "success": True,
-                "module": module,
-                "time": elapsed
-            }
+            return {"success": True, "module": module, "time": elapsed}
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "time": 0
-            }
+            return {"success": False, "error": str(e), "time": 0}
 
     def _test_demo_exists(self, module_name: str) -> dict[str, Any]:
         """Test if a module has a demo function."""
         try:
             module = importlib.import_module(module_name)
-            has_demo = hasattr(module, 'demo')
-            is_callable = callable(getattr(module, 'demo', None))
+            has_demo = hasattr(module, "demo")
+            is_callable = callable(getattr(module, "demo", None))
 
             if has_demo and is_callable:
                 return {"success": True}
@@ -271,32 +265,18 @@ class TestRunner:
         table.add_column("Total", style="white")
 
         table.add_row(
-            "Module Imports",
-            str(import_success),
-            str(len(DEMO_MODULES) - import_success),
-            str(len(DEMO_MODULES))
+            "Module Imports", str(import_success), str(len(DEMO_MODULES) - import_success), str(len(DEMO_MODULES))
         )
 
         if self.check_code_quality:
             table.add_row(
-                "Code Quality",
-                str(quality_success),
-                str(len(DEMO_MODULES) - quality_success),
-                str(len(DEMO_MODULES))
+                "Code Quality", str(quality_success), str(len(DEMO_MODULES) - quality_success), str(len(DEMO_MODULES))
             )
 
         table.add_row(
-            "Demo Functions",
-            str(demo_success),
-            str(len(DEMO_MODULES) - demo_success),
-            str(len(DEMO_MODULES))
+            "Demo Functions", str(demo_success), str(len(DEMO_MODULES) - demo_success), str(len(DEMO_MODULES))
         )
-        table.add_row(
-            "Documentation",
-            str(doc_success),
-            str(len(DEMO_MODULES) - doc_success),
-            str(len(DEMO_MODULES))
-        )
+        table.add_row("Documentation", str(doc_success), str(len(DEMO_MODULES) - doc_success), str(len(DEMO_MODULES)))
 
         console.print("\n")
         console.print(table)
@@ -306,19 +286,23 @@ class TestRunner:
         total_passed = sum(1 for v in self.results.values() if v["success"])
 
         if total_passed == total_tests:
-            console.print(Panel(
-                f"[bold green]✅ ALL TESTS PASSED![/bold green]\n"
-                f"[dim]{total_passed}/{total_tests} tests successful in {elapsed:.2f}s[/dim]",
-                box=box.ROUNDED,
-                style="green"
-            ))
+            console.print(
+                Panel(
+                    f"[bold green]✅ ALL TESTS PASSED![/bold green]\n"
+                    f"[dim]{total_passed}/{total_tests} tests successful in {elapsed:.2f}s[/dim]",
+                    box=box.ROUNDED,
+                    style="green",
+                )
+            )
         else:
-            console.print(Panel(
-                f"[bold red]❌ SOME TESTS FAILED[/bold red]\n"
-                f"[dim]{total_passed}/{total_tests} tests passed in {elapsed:.2f}s[/dim]",
-                box=box.ROUNDED,
-                style="red"
-            ))
+            console.print(
+                Panel(
+                    f"[bold red]❌ SOME TESTS FAILED[/bold red]\n"
+                    f"[dim]{total_passed}/{total_tests} tests passed in {elapsed:.2f}s[/dim]",
+                    box=box.ROUNDED,
+                    style="red",
+                )
+            )
 
         # Display failed tests
         failures = [(k, v) for k, v in self.results.items() if not v["success"]]
@@ -379,6 +363,7 @@ def run_jax_diagnostics():
 
     # Test JIT compilation
     try:
+
         @jax.jit
         def test_func(x):
             return x * 2
@@ -396,16 +381,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Model-Guided Research Test Suite")
-    parser.add_argument(
-        "--no-quality",
-        action="store_true",
-        help="Skip code quality checks"
-    )
-    parser.add_argument(
-        "--no-jax",
-        action="store_true",
-        help="Skip JAX diagnostics"
-    )
+    parser.add_argument("--no-quality", action="store_true", help="Skip code quality checks")
+    parser.add_argument("--no-jax", action="store_true", help="Skip JAX diagnostics")
 
     args = parser.parse_args()
 
@@ -413,14 +390,10 @@ def main():
     header_text = Text.assemble(
         ("🧮 Model-Guided Research Test Suite 🧮\n", "bold magenta"),
         ("Version 1.1 - ", "dim"),
-        ("Harmonized with latest code changes", "dim italic")
+        ("Harmonized with latest code changes", "dim italic"),
     )
 
-    console.print(Panel(
-        header_text,
-        box=box.DOUBLE_EDGE,
-        style="magenta"
-    ))
+    console.print(Panel(header_text, box=box.DOUBLE_EDGE, style="magenta"))
 
     # Run JAX diagnostics
     if not args.no_jax:

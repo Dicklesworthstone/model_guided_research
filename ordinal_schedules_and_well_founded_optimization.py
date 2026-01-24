@@ -115,7 +115,9 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
 
     def on_improved(_):
         return (
-            OrdinalState(st.A, st.B, st.C, st.eta, jnp.minimum(st.L_best, L_ema_new), L_ema_new, st.anneals, st.restarts),
+            OrdinalState(
+                st.A, st.B, st.C, st.eta, jnp.minimum(st.L_best, L_ema_new), L_ema_new, st.anneals, st.restarts
+            ),
             jnp.bool_(False),
             jnp.bool_(False),
         )
@@ -123,21 +125,33 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
     def on_not_improved(_):
         def dec_C(_):
             C_new = jnp.maximum(st.C - jnp.int32(1), jnp.int32(0))
-            return OrdinalState(st.A, st.B, C_new, st.eta, st.L_best, L_ema_new, st.anneals, st.restarts), jnp.bool_(False), jnp.bool_(False)
+            return (
+                OrdinalState(st.A, st.B, C_new, st.eta, st.L_best, L_ema_new, st.anneals, st.restarts),
+                jnp.bool_(False),
+                jnp.bool_(False),
+            )
 
         def consolidate(_):
             def anneal_branch(_):
                 B_new = st.B - jnp.int32(1)
                 eta_new = st.eta * jnp.float32(params.gamma)
                 C_new = patience_for_B(B_new, params)
-                return OrdinalState(st.A, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals + 1, st.restarts), jnp.bool_(False), jnp.bool_(True)
+                return (
+                    OrdinalState(st.A, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals + 1, st.restarts),
+                    jnp.bool_(False),
+                    jnp.bool_(True),
+                )
 
             def restart_branch(_):
                 A_new = st.A - jnp.int32(1)
                 B_new = jnp.int32(params.B_init)
                 eta_new = jnp.float32(params.eta0)
                 C_new = patience_for_B(B_new, params)
-                return OrdinalState(A_new, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals, st.restarts + 1), jnp.bool_(True), jnp.bool_(True)
+                return (
+                    OrdinalState(A_new, B_new, C_new, eta_new, jnp.inf, L_ema_new, st.anneals, st.restarts + 1),
+                    jnp.bool_(True),
+                    jnp.bool_(True),
+                )
 
             return lax.cond(st.B > 0, anneal_branch, restart_branch, operand=None)
 
@@ -220,6 +234,7 @@ class OrdinalSchedule:
     def events(self) -> dict[str, int]:
         st = self.state
         return {"anneals": int(st.anneals), "restarts": int(st.restarts)}
+
 
 # -----------------------------
 # Training Loops (JIT)
@@ -529,26 +544,21 @@ def main():
     if config.use_rich_output:
         conditional_print("[bold yellow]=== Ordinal Scheduler vs. Cosine/Linear Baselines ===[/bold yellow]", level=1)
 
-        experiment_config = {
-            "Runs": summ['runs'],
-            "Steps": args.steps,
-            "Dimension": args.dim,
-            "Seed": args.seed
-        }
+        experiment_config = {"Runs": summ["runs"], "Steps": args.steps, "Dimension": args.dim, "Seed": args.seed}
         print_metrics(experiment_config, "Experiment Configuration")
 
         mse_metrics = {
-            "Ordinal MSE": summ['median_ord'],
-            "Cosine MSE": summ['median_cos'],
-            "Linear MSE": summ['median_lin']
+            "Ordinal MSE": summ["median_ord"],
+            "Cosine MSE": summ["median_cos"],
+            "Linear MSE": summ["median_lin"],
         }
         print_metrics(mse_metrics, "Median MSE Results")
 
         validation_metrics = {
             "Dominance Count": f"{summ['dominance_count']}/{summ['runs']}",
-            "Pass Median Test": summ['pass_median'],
-            "Pass Dominance Test": summ['pass_dominance'],
-            "Overall Pass": summ['passed']
+            "Pass Median Test": summ["pass_median"],
+            "Pass Dominance Test": summ["pass_dominance"],
+            "Overall Pass": summ["passed"],
         }
         print_metrics(validation_metrics, "Validation Results")
 
@@ -556,11 +566,11 @@ def main():
         r0 = results[0]
         conditional_print("\n[bold]First Run Details:[/bold]", level=2)
         first_run_metrics = {
-            "Ordinal MSE": r0['ord_mse'],
-            "Cosine MSE": r0['cos_mse'],
-            "Linear MSE": r0['lin_mse'],
-            "Ordinal Anneals": r0['anneals'],
-            "Restarts": r0['restarts']
+            "Ordinal MSE": r0["ord_mse"],
+            "Cosine MSE": r0["cos_mse"],
+            "Linear MSE": r0["lin_mse"],
+            "Ordinal Anneals": r0["anneals"],
+            "Restarts": r0["restarts"],
         }
         print_metrics(first_run_metrics, "First Run Results")
 

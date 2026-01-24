@@ -67,11 +67,15 @@ class BraidCausalSelfAttention(nn.Module):
             self._verify_ybe_crossing_law_once()
 
     @staticmethod
-    def _crossing_update_restricted(ax: torch.Tensor, ay: torch.Tensor, bx: torch.Tensor, by: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    def _crossing_update_restricted(
+        ax: torch.Tensor, ay: torch.Tensor, bx: torch.Tensor, by: torch.Tensor
+    ) -> tuple[torch.Tensor, ...]:
         return ax + by, ay, bx + ay, by
 
     @staticmethod
-    def _crossing_update_ybe(ax: torch.Tensor, ay: torch.Tensor, bx: torch.Tensor, by: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    def _crossing_update_ybe(
+        ax: torch.Tensor, ay: torch.Tensor, bx: torch.Tensor, by: torch.Tensor
+    ) -> tuple[torch.Tensor, ...]:
         # Swap-output version of the restricted crossing law.
         return bx + ay, by, ax + by, ay
 
@@ -144,7 +148,7 @@ class BraidCausalSelfAttention(nn.Module):
         # "Score = s_q + s_k" (additive interaction) or "s_q * s_k" (multiplicative).
         # The previous "s_q + s_k.T" gave a pairwise matrix.
 
-        scores = s_q + s_k.transpose(-2, -1) # (B, H, Tq, Tk)
+        scores = s_q + s_k.transpose(-2, -1)  # (B, H, Tq, Tk)
 
         # Masking (Causal)
         Tq = q.size(2)
@@ -195,7 +199,9 @@ class BraidCausalSelfAttention(nn.Module):
                     # Sorted scores imply a prefix property for threshold selection.
                     ordered_selected = ordered_scores > self.braid_tau
                     if torch.any(ordered_selected != prefix):
-                        raise RuntimeError("Discrete braid decode failed prefix verification (threshold/sort mismatch).")
+                        raise RuntimeError(
+                            "Discrete braid decode failed prefix verification (threshold/sort mismatch)."
+                        )
 
                     # Invariant check: prefix-sum over permuted values equals mask-sum.
                     v_perm = v.gather(2, order.unsqueeze(-1).expand(-1, -1, -1, v.size(-1)))
@@ -203,10 +209,12 @@ class BraidCausalSelfAttention(nn.Module):
                     sum_mask = (selected.to(v.dtype).unsqueeze(-1) * v).sum(dim=2)
                     max_err = torch.max(torch.abs(sum_perm - sum_mask)).item()
                     if max_err > 1e-4:
-                        raise RuntimeError(f"Discrete braid invariant check failed: max |perm-sum - mask-sum| = {max_err:.3e}")
+                        raise RuntimeError(
+                            f"Discrete braid invariant check failed: max |perm-sum - mask-sum| = {max_err:.3e}"
+                        )
 
-        y = attn_weights @ v # [B, H, Tq, D]
-        y = y / (Tk ** 0.5 + 1e-6)
+        y = attn_weights @ v  # [B, H, Tq, D]
+        y = y / (Tk**0.5 + 1e-6)
 
         y = y.transpose(1, 2).contiguous().view(B, T, -1)
         y = self.c_proj(y)

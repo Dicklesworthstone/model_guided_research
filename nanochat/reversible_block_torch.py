@@ -15,12 +15,13 @@ import torch.nn as nn
 # x2 = y2 - G(y1)
 # x1 = y1 - F(x2)
 
+
 class ReversibleBlock(nn.Module):
     def __init__(self, config, layer_idx, f_block, g_block):
         super().__init__()
         self.layer_idx = layer_idx
-        self.f_block = f_block # Attention-like
-        self.g_block = g_block # MLP-like
+        self.f_block = f_block  # Attention-like
+        self.g_block = g_block  # MLP-like
 
         # For now, we assume f_block and g_block are instantiated modules
         # that take half the embedding dimension?
@@ -67,6 +68,7 @@ class ReversibleBlock(nn.Module):
 
         return torch.cat([x1, x2], dim=-1)
 
+
 # Custom Autograd Function to enable memory saving
 class ReversibleFunction(torch.autograd.Function):
     @staticmethod
@@ -83,14 +85,14 @@ class ReversibleFunction(torch.autograd.Function):
         # The trick is: We detach inputs, run forward, and in backward we recompute inputs.
 
         with torch.no_grad():
-             f_out = f_module(x2, cos_sin, kv_cache)
-             y1 = x1 + f_out
-             g_out = g_module(y1)
-             y2 = x2 + g_out
+            f_out = f_module(x2, cos_sin, kv_cache)
+            y1 = x1 + f_out
+            g_out = g_module(y1)
+            y2 = x2 + g_out
 
         y = torch.cat([y1, y2], dim=-1)
 
-        ctx.save_for_backward(y) # Save output
+        ctx.save_for_backward(y)  # Save output
         ctx.cos_sin = cos_sin
         ctx.kv_cache = kv_cache
         ctx.f_module = f_module
@@ -149,8 +151,7 @@ class ReversibleFunction(torch.autograd.Function):
             f_out.backward(dy1_total, retain_graph=True)
 
             # Grads w.r.t params_F accumulated.
-            dx2_total = dy2 + x2_detached.grad # (dy2 comes from identity path x2->y2)
-            dx1_total = dy1_total # x1 -> y1 is identity
+            dx2_total = dy2 + x2_detached.grad  # (dy2 comes from identity path x2->y2)
+            dx1_total = dy1_total  # x1 -> y1 is identity
 
         return torch.cat([dx1_total, dx2_total], dim=-1), None, None, None, None
-

@@ -51,6 +51,7 @@ def _cosine(u: Tensor, v: Tensor, eps=1e-8) -> Tensor:
     v = v / (v.norm(dim=-1, keepdim=True) + eps)
     return (u * v).sum(dim=-1)
 
+
 def _env_bool(name: str, default: bool = False) -> bool:
     val = os.environ.get(name)
     if val is None:
@@ -206,9 +207,7 @@ class SynapticPresyn(nn.Module):
             # Stochastic release on a fraction of edges
             mask = (torch.rand_like(p[..., 0]) < cfg.stochastic_train_frac).float().unsqueeze(-1)
             # Binomial sampling
-            k_rel = torch.distributions.Binomial(
-                total_count=torch.clamp(rrp, 0, 8).round(), probs=p
-            ).sample()
+            k_rel = torch.distributions.Binomial(total_count=torch.clamp(rrp, 0, 8).round(), probs=p).sample()
             rel = mask * k_rel + (1 - mask) * (p * rrp)
         else:
             rel = p * rrp
@@ -246,14 +245,14 @@ class SynapticPresyn(nn.Module):
         # We want to add 'rel' (B,H,T,K) to 'state' (B,H,T_key) at indices 'idx' (B,H,T,K).
         # We can flatten T,K.
 
-        flat_idx = idx.view(B, H, -1) # (B, H, T*K)
+        flat_idx = idx.view(B, H, -1)  # (B, H, T*K)
         flat_rel = rel.view(B, H, -1)
         flat_drive = drive_safe.view(B, H, -1)
         flat_valid = drive_isfinite.view(B, H, -1).to(flat_rel.dtype)
         flat_amp = amp.view(B, H, -1)
 
         # Accumulators
-        add_vals = torch.zeros_like(state["c"]) # (B, H, T_key)
+        add_vals = torch.zeros_like(state["c"])  # (B, H, T_key)
         drv_vals = torch.zeros_like(state["c"])
         snu_vals = torch.zeros_like(state["c"])
         rru_vals = torch.zeros_like(state["c"])
@@ -261,7 +260,7 @@ class SynapticPresyn(nn.Module):
 
         add_vals.scatter_add_(2, flat_idx, flat_rel)
         drv_vals.scatter_add_(2, flat_idx, flat_drive)
-        snu_vals.scatter_add_(2, flat_idx, flat_valid) # Count of accesses
+        snu_vals.scatter_add_(2, flat_idx, flat_valid)  # Count of accesses
         rru_vals.scatter_add_(2, flat_idx, flat_rel)
         ampu_vals.scatter_add_(2, flat_idx, flat_amp)
 
@@ -274,27 +273,35 @@ class SynapticPresyn(nn.Module):
         new_delay = state["delay"][1:] + [rru_vals * cfg.rec_rate]
 
         # Priming
-        take = torch.minimum(res_up, torch.ones_like(res_up)) # Max 1 unit per step? Or just soft clamp?
+        take = torch.minimum(res_up, torch.ones_like(res_up))  # Max 1 unit per step? Or just soft clamp?
         # PDF: take=torch.minimum(res_up, torch.ones_like(res_up))
         res_up = torch.clamp(res_up - cfg.prime_rate * take, 0)
-        rrp_up = torch.clamp(rrp_up + cfg.prime_rate * take, 0, 30.0) # Cap RRP
+        rrp_up = torch.clamp(rrp_up + cfg.prime_rate * take, 0, 30.0)  # Cap RRP
 
         # SNARE / Clamp / AMPA / Energy
-        sn_up = torch.clamp(state["sn"] * (1.0 - cfg.unprime_per_release * add_vals) + cfg.nsf_recover * (1.0 - state["sn"]), 0, 1)
+        sn_up = torch.clamp(
+            state["sn"] * (1.0 - cfg.unprime_per_release * add_vals) + cfg.nsf_recover * (1.0 - state["sn"]), 0, 1
+        )
         cl_up = torch.clamp(state["cl"] * 0.995 + 0.005, 0, 1)
         amp_up = torch.clamp(state["amp"] + cfg.amp_load * (1.2 - state["amp"]) - cfg.amp_leak * state["amp"], 0, 2)
-        en_up = torch.clamp(state["en"] + cfg.energy_fill * (cfg.energy_max - state["en"]) - cfg.energy_use * add_vals, 0, cfg.energy_max)
+        en_up = torch.clamp(
+            state["en"] + cfg.energy_fill * (cfg.energy_max - state["en"]) - cfg.energy_use * add_vals,
+            0,
+            cfg.energy_max,
+        )
 
-        state.update({
-            "c": c_up,
-            "rrp": rrp_up,
-            "res": res_up,
-            "delay": new_delay,
-            "sn": sn_up,
-            "cl": cl_up,
-            "amp": amp_up,
-            "en": en_up
-        })
+        state.update(
+            {
+                "c": c_up,
+                "rrp": rrp_up,
+                "res": res_up,
+                "delay": new_delay,
+                "sn": sn_up,
+                "cl": cl_up,
+                "amp": amp_up,
+                "en": en_up,
+            }
+        )
 
         # EMA normalization
         ema = self.ema_e.detach().clone()
@@ -434,9 +441,7 @@ class SynapticLinear(nn.Module):
         else:
             object.__setattr__(self, "input_ln", None)
 
-    def forward(
-        self, x: Tensor, calcium: Tensor, energy: Tensor, update_mem: bool = True, genes: Tensor | None = None
-    ):
+    def forward(self, x: Tensor, calcium: Tensor, energy: Tensor, update_mem: bool = True, genes: Tensor | None = None):
         if self.input_ln is not None:
             x = self.input_ln(x)
 
@@ -469,8 +474,8 @@ class SynapticLinear(nn.Module):
                 # We can use those to project.
 
                 # Actually, let's just use the mean activity for now to keep it simple and fast
-                u_mean = x.mean(0) # (in,)
-                v_mean = y.mean(0) # (out,)
+                u_mean = x.mean(0)  # (in,)
+                v_mean = y.mean(0)  # (out,)
 
                 # We need (in, R) and (R, out).
                 # We can just broadcast or rotate.
@@ -482,12 +487,16 @@ class SynapticLinear(nn.Module):
                 # This creates rank-1 updates.
 
                 # We will do similar here but on u_buf/v_buf
-                self.u_buf.mul_(self.cfg.post_trace_decay).add_(0.05 * u_mean.unsqueeze(-1).expand(-1, self.cfg.rank_eligibility))
-                self.v_buf.mul_(self.cfg.post_trace_decay).add_(0.05 * v_mean.unsqueeze(0).expand(self.cfg.rank_eligibility, -1))
+                self.u_buf.mul_(self.cfg.post_trace_decay).add_(
+                    0.05 * u_mean.unsqueeze(-1).expand(-1, self.cfg.rank_eligibility)
+                )
+                self.v_buf.mul_(self.cfg.post_trace_decay).add_(
+                    0.05 * v_mean.unsqueeze(0).expand(self.cfg.rank_eligibility, -1)
+                )
 
                 # Update Postsynaptic state
                 # Proxy calcium from output activity
-                y.norm(dim=-1).mean().clamp(0, 10.0) # Scalar proxy for the batch
+                y.norm(dim=-1).mean().clamp(0, 10.0)  # Scalar proxy for the batch
                 # We need a vector for per-neuron update?
                 # y is (B, out). ca_proxy should be (out,).
                 ca_vec = y.abs().mean(0).clamp(0, 10.0)
@@ -516,9 +525,22 @@ def build_presyn_state(B: int, T: int, H: int, device, dtype, cfg: SynapticConfi
 
     # Map to old keys for compatibility if needed, or just use new keys
     return {
-        "rrp": R, "res": res, "c": c, "sn": sn, "cl": cl, "amp": amp, "en": en, "delay": delay,
+        "rrp": R,
+        "res": res,
+        "c": c,
+        "sn": sn,
+        "cl": cl,
+        "amp": amp,
+        "en": en,
+        "delay": delay,
         # Aliases for old code compatibility (if any)
-        "RRP": R, "RES": res, "C": c, "PR": sn, "CL": cl, "E": en, "BUF": torch.zeros_like(R)
+        "RRP": R,
+        "RES": res,
+        "C": c,
+        "PR": sn,
+        "CL": cl,
+        "E": en,
+        "BUF": torch.zeros_like(R),
     }
 
 
@@ -544,8 +566,7 @@ class SynapticFlexAttention(nn.Module):
         object.__setattr__(self, "cfg", cfg)
         if not _HAS_FLEX:
             raise ImportError(
-                "SynapticFlexAttention requires torch.nn.attention.flex_attention "
-                "(FlexAttention, torch>=2.5)."
+                "SynapticFlexAttention requires torch.nn.attention.flex_attention (FlexAttention, torch>=2.5)."
             )
 
     @torch.compiler.disable
@@ -823,13 +844,12 @@ class SynapticCausalSelfAttention(nn.Module):
 
 class SynapticMLP(nn.Module):
     cfg: SynapticConfig
+
     def __init__(self, n_embd: int, cfg: SynapticConfig, dropout: float = 0.0):
         super().__init__()
         object.__setattr__(self, "cfg", cfg)
         self.fc = SynapticLinear(n_embd, 4 * n_embd, cfg, bias=True, use_input_ln=True)
-        self.proj = SynapticLinear(
-            4 * n_embd, n_embd, cfg, bias=True, use_input_ln=False
-        )
+        self.proj = SynapticLinear(4 * n_embd, n_embd, cfg, bias=True, use_input_ln=False)
         self.drop = nn.Dropout(dropout)
         self.register_buffer("C0", torch.tensor(0.5))
         self.register_buffer("E0", torch.tensor(0.8))
@@ -853,9 +873,7 @@ class SynapticMLP(nn.Module):
 
 
 class SynapticExpert(nn.Module):
-    def __init__(
-        self, n_embd: int, hidden_mult: int, cfg: SynapticConfig, dropout: float = 0.0
-    ):
+    def __init__(self, n_embd: int, hidden_mult: int, cfg: SynapticConfig, dropout: float = 0.0):
         super().__init__()
         h = hidden_mult * n_embd
         self.fc1 = SynapticLinear(n_embd, h, cfg, bias=True, use_input_ln=False)
@@ -917,12 +935,7 @@ class SynapticMoE(nn.Module):
         object.__setattr__(self, "top_k", top_k)
         object.__setattr__(self, "cfg", cfg)
         self.router = nn.Linear(n_embd, num_experts, bias=False)
-        self.experts = nn.ModuleList(
-            [
-                SynapticExpert(n_embd, hidden_mult, cfg, dropout)
-                for _ in range(num_experts)
-            ]
-        )
+        self.experts = nn.ModuleList([SynapticExpert(n_embd, hidden_mult, cfg, dropout) for _ in range(num_experts)])
         # Projects token features into router embedding space for alignment bias
         self.router_probe = nn.Linear(n_embd, cfg.router_embed_dim, bias=False)
         self.register_buffer("fatigue", torch.zeros(num_experts))
@@ -930,9 +943,7 @@ class SynapticMoE(nn.Module):
         # Router embeddings (biological identity) with unit-norm constraint
         emb = torch.randn(num_experts, cfg.router_embed_dim)
         emb = emb / (emb.norm(dim=-1, keepdim=True) + 1e-8)
-        self.router_embeddings = nn.Parameter(
-            emb, requires_grad=False
-        )  # updated by EMA-style rule
+        self.router_embeddings = nn.Parameter(emb, requires_grad=False)  # updated by EMA-style rule
         object.__setattr__(self, "last_aux_loss", None)
         object.__setattr__(self, "last_ctx", {})
 
@@ -955,7 +966,7 @@ class SynapticMoE(nn.Module):
         fatigue_buf = cast(Tensor, self.fatigue)
         energy_buf = cast(Tensor, self.energy)
 
-        pheno = self._get_phenotype(self.Xi) # (E, 4)
+        pheno = self._get_phenotype(self.Xi)  # (E, 4)
         alpha_fatigue = pheno[:, 0]
         alpha_energy = pheno[:, 1]
 
@@ -973,13 +984,7 @@ class SynapticMoE(nn.Module):
         bias = base_bias + gain_bias + align_bias
         gene_bias = 0.05 * (alpha_energy - alpha_fatigue).view(1, 1, E)
 
-        logits = (
-            logits
-            + gene_bias
-            + bias
-            + 0.1 * energy_buf.view(1, 1, E)
-            - 0.1 * fatigue_buf.view(1, 1, E)
-        )
+        logits = logits + gene_bias + bias + 0.1 * energy_buf.view(1, 1, E) - 0.1 * fatigue_buf.view(1, 1, E)
         topk = min(self.top_k, E)
         g, idx = torch.topk(logits, topk, dim=-1)
         gates = F.softmax(g, dim=-1)
@@ -1014,11 +1019,7 @@ class SynapticMoE(nn.Module):
             fatigue_buf.mul_(1.0 - alpha_fatigue).add_(alpha_fatigue * util)
             energy_buf.mul_(1.0 - alpha_energy).add_(alpha_energy * (1.0 - util))
 
-            object.__setattr__(self, "last_ctx", {
-                "x": x.detach(),
-                "indices": idx.detach(),
-                "gates": gates.detach()
-            })
+            object.__setattr__(self, "last_ctx", {"x": x.detach(), "indices": idx.detach(), "gates": gates.detach()})
 
         me = me / float(B * T)
         pe = pe / float(B * T)
@@ -1053,6 +1054,7 @@ class SynapticMoE(nn.Module):
 
 class StructuralPlasticity(nn.Module):
     cfg: SynapticConfig
+
     def __init__(self, cfg: SynapticConfig):
         super().__init__()
         object.__setattr__(self, "cfg", cfg)
@@ -1064,25 +1066,19 @@ class StructuralPlasticity(nn.Module):
         age = cast(Tensor, self.age)
         age.add_(1.0)
         util = cast(Tensor, self.util)
-        util.mul_(1.0 - self.cfg.structural_tau_util).add_(
-            self.cfg.structural_tau_util * used.float()
-        )
+        util.mul_(1.0 - self.cfg.structural_tau_util).add_(self.cfg.structural_tau_util * used.float())
 
     @torch.no_grad()
     def decision(self):
         util = cast(Tensor, self.util)
         age = cast(Tensor, self.age)
         s = torch.sigmoid(
-            10.0 * (util - 0.2)
-            - self.cfg.structural_age_bias
-            * (age / float(self.cfg.structural_interval))
+            10.0 * (util - 0.2) - self.cfg.structural_age_bias * (age / float(self.cfg.structural_interval))
         )
         return (torch.rand_like(s) > s).item()
 
 
-def structural_plasticity_step(
-    expert_states: list[nn.Module], cfg: SynapticConfig, global_step: int
-):
+def structural_plasticity_step(expert_states: list[nn.Module], cfg: SynapticConfig, global_step: int):
     if cfg.structural_interval < 1 or global_step % cfg.structural_interval != 0:
         return
     for st in expert_states:

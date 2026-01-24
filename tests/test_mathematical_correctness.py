@@ -127,7 +127,7 @@ class TestIFSFractalMemory:
         u_w = jnp.zeros(d)
 
         def F_w(x):
-            A_k = cfg.s ** cfg.k
+            A_k = cfg.s**cfg.k
             return A_k * x + c_w + u_w
 
         y1, y2 = F_w(x1), F_w(x2)
@@ -162,7 +162,7 @@ class TestIFSFractalMemory:
         u_w = store.state.u_leaf[idx]
 
         # Compute F_w(read_value)
-        A_k = cfg.s ** cfg.k
+        A_k = cfg.s**cfg.k
         fixed_point_check = A_k * read_value + c_w + u_w
 
         error = jnp.linalg.norm(fixed_point_check - read_value)
@@ -177,10 +177,7 @@ class TestOrdinalSchedules:
         """Verify that ordinal rank ρ is non-increasing."""
         print("\n🔬 Testing Ordinal Well-Founded Descent...")
 
-        params = ordinal.OrdinalParams(
-            A_init=2, B_init=3, P_init=5,
-            ema_decay=0.9, eta0=0.1, gamma=0.5
-        )
+        params = ordinal.OrdinalParams(A_init=2, B_init=3, P_init=5, ema_decay=0.9, eta0=0.1, gamma=0.5)
 
         state = ordinal.ordinal_state_init(params)
         initial_rank = ordinal.ordinal_rank(state)
@@ -190,9 +187,7 @@ class TestOrdinalSchedules:
             # Simulate validation loss (sometimes improving, sometimes not)
             val_loss = 1.0 + 0.1 * (i % 3)
 
-            state, reset_mom, fired_limit = ordinal.ordinal_scheduler_step(
-                state, val_loss, params
-            )
+            state, reset_mom, fired_limit = ordinal.ordinal_scheduler_step(state, val_loss, params)
 
             rank = ordinal.ordinal_rank(state)
             ranks.append(rank)
@@ -211,10 +206,7 @@ class TestOrdinalSchedules:
         """Verify termination (no infinite descent)."""
         print("\n🔬 Testing Well-Foundedness...")
 
-        params = ordinal.OrdinalParams(
-            A_init=1, B_init=2, P_init=3,
-            ema_decay=0.9, eta0=0.1, gamma=0.5
-        )
+        params = ordinal.OrdinalParams(A_init=1, B_init=2, P_init=3, ema_decay=0.9, eta0=0.1, gamma=0.5)
 
         state = ordinal.ordinal_state_init(params)
 
@@ -284,7 +276,7 @@ class TestMatrixExponentialGauge:
         for i in range(d):
             for j in range(i + 1, d):
                 pairs.append([i, j])
-        pairs = jnp.array(pairs[:len(theta)])
+        pairs = jnp.array(pairs[: len(theta)])
 
         # Test vector
         x = random.normal(key, (d,))
@@ -296,7 +288,9 @@ class TestMatrixExponentialGauge:
         norm_before = jnp.linalg.norm(x)
         norm_after = jnp.linalg.norm(y)
 
-        require(jnp.abs(norm_after - norm_before) < 1e-5, f"Gauge not orthogonal: {norm_before:.6f} -> {norm_after:.6f}")
+        require(
+            jnp.abs(norm_after - norm_before) < 1e-5, f"Gauge not orthogonal: {norm_before:.6f} -> {norm_after:.6f}"
+        )
         print(f"  ✅ Gauge transformation preserves norm: {norm_before:.6f} ≈ {norm_after:.6f}")
 
 
@@ -341,15 +335,14 @@ class TestTropicalGeometry:
         # In classical: max(2 + 2x, 1 + x, 3)
         x = jnp.array([0.0, 1.0, 2.0])
 
-        term1 = tropical.tropical_multiply(jnp.array([2.0, 2.0, 2.0]),
-                                          tropical.tropical_multiply(x, x))
+        term1 = tropical.tropical_multiply(jnp.array([2.0, 2.0, 2.0]), tropical.tropical_multiply(x, x))
         term2 = tropical.tropical_multiply(jnp.array([1.0, 1.0, 1.0]), x)
         term3 = jnp.array([3.0, 3.0, 3.0])
 
         p_x = tropical.tropical_add(tropical.tropical_add(term1, term2), term3)
 
         # Verify against direct computation
-        expected = jnp.maximum(jnp.maximum(2.0 + 2*x, 1.0 + x), 3.0)
+        expected = jnp.maximum(jnp.maximum(2.0 + 2 * x, 1.0 + x), 3.0)
         require(jnp.allclose(p_x, expected), "Polynomial evaluation failed")
         print("  ✅ Tropical polynomial evaluation correct")
         print(f"     p({x[1]}) = {p_x[1]:.2f}")
@@ -368,19 +361,23 @@ class TestSimplicialComplexes:
 
         # Boundary matrix from 2-simplices to 1-simplices
         # ∂[0,1,2] = [1,2] - [0,2] + [0,1]
-        B2 = jnp.array([
-            [1],   # edge [0,1] appears with +1
-            [1],   # edge [1,2] appears with +1
-            [-1]   # edge [0,2] appears with -1
-        ])
+        B2 = jnp.array(
+            [
+                [1],  # edge [0,1] appears with +1
+                [1],  # edge [1,2] appears with +1
+                [-1],  # edge [0,2] appears with -1
+            ]
+        )
 
         # Boundary matrix from 1-simplices to 0-simplices
         # ∂[0,1] = 1 - 0, ∂[1,2] = 2 - 1, ∂[0,2] = 2 - 0
-        B1 = jnp.array([
-            [-1, 0, -1],  # vertex 0
-            [1, -1, 0],   # vertex 1
-            [0, 1, 1]     # vertex 2
-        ])
+        B1 = jnp.array(
+            [
+                [-1, 0, -1],  # vertex 0
+                [1, -1, 0],  # vertex 1
+                [0, 1, 1],  # vertex 2
+            ]
+        )
 
         # Verify ∂² = 0
         boundary_squared = B1 @ B2
@@ -484,7 +481,7 @@ class TestUltrametricWorlds:
         # Compute p-adic valuations
         def p_adic_valuation(n, p):
             if n == 0:
-                return float('inf')
+                return float("inf")
             v = 0
             while n % p == 0:
                 v += 1
@@ -608,9 +605,9 @@ class TestKnotTheory:
             gen = jnp.eye(n, dtype=jnp.complex64)  # Start with complex type
             # Swap strands i and i+1 with phase
             gen = gen.at[i, i].set(0)
-            gen = gen.at[i+1, i+1].set(0)
-            gen = gen.at[i, i+1].set(jnp.exp(1j * jnp.pi/4))
-            gen = gen.at[i+1, i].set(jnp.exp(-1j * jnp.pi/4))
+            gen = gen.at[i + 1, i + 1].set(0)
+            gen = gen.at[i, i + 1].set(jnp.exp(1j * jnp.pi / 4))
+            gen = gen.at[i + 1, i].set(jnp.exp(-1j * jnp.pi / 4))
             return gen
 
         # Test commutation for non-adjacent generators
@@ -643,7 +640,7 @@ class TestKnotTheory:
         print(f"  ✅ Unknot bracket: ⟨O⟩ = {unknot_bracket}")
 
         # Disjoint union property
-        factor = -A**2 - A**(-2)
+        factor = -(A**2) - A ** (-2)
         print(f"  ✅ Disjoint union factor: {factor:.4f}")
 
 
@@ -723,7 +720,7 @@ class TestNonstandardAnalysis:
                 x_minus_1 = nonstandard.hyperreal_add(x, minus_one)
                 return nonstandard.hyperreal_multiply(x_minus_1, x_minus_1)
             else:
-                return x**2 - 2*x + 1
+                return x**2 - 2 * x + 1
 
         # Test at standard point
         x_std = 3.0
@@ -742,9 +739,9 @@ class TestNonstandardAnalysis:
 
 def run_all_tests():
     """Run all substantive mathematical tests."""
-    print("\n" + "="*80)
-    print(" "*20 + "🧮 SUBSTANTIVE MATHEMATICAL TESTS 🧮")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print(" " * 20 + "🧮 SUBSTANTIVE MATHEMATICAL TESTS 🧮")
+    print("=" * 80)
 
     test_classes = [
         TestReversibleComputation(),
@@ -757,20 +754,20 @@ def run_all_tests():
         TestOctonions(),
         TestKnotTheory(),
         TestSurrealNumbers(),
-        TestNonstandardAnalysis()
+        TestNonstandardAnalysis(),
     ]
 
     failed_tests = []
 
     for test_class in test_classes:
         class_name = test_class.__class__.__name__
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Testing: {class_name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Run all test methods
         for method_name in dir(test_class):
-            if method_name.startswith('test_'):
+            if method_name.startswith("test_"):
                 try:
                     method = getattr(test_class, method_name)
                     method()
@@ -779,9 +776,9 @@ def run_all_tests():
                     print(f"  ❌ {method_name} FAILED: {e}")
 
     # Summary
-    print("\n" + "="*80)
-    print(" "*25 + "📊 TEST SUMMARY 📊")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print(" " * 25 + "📊 TEST SUMMARY 📊")
+    print("=" * 80)
 
     if not failed_tests:
         print("\n🎉 ALL TESTS PASSED! 🎉")
@@ -802,7 +799,7 @@ def run_all_tests():
         for class_name, method_name, error in failed_tests:
             print(f"  ❌ {class_name}.{method_name}: {error}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     return len(failed_tests) == 0
 
 

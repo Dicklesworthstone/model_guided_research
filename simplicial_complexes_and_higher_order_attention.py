@@ -120,11 +120,12 @@ def build_flag_complex_from_adjacency(A):
 
 def build_er_graph_flag_complex(p, edge_prob, key):
     """Sample an undirected Erdos–Renyi graph G(n=p, p=edge_prob) and build its flag complex."""
-    keyA, = jax.random.split(key, 1)
+    (keyA,) = jax.random.split(key, 1)
     mask = jax.random.bernoulli(keyA, edge_prob, (p, p))
     A = jnp.triu(mask.astype(jnp.int32), k=1)
     A = A + A.T
     return build_flag_complex_from_adjacency(A)
+
 
 def cycle_indicator_on_edges(p, cycle_vertices, edges=None):
     """Create a cycle indicator vector on edges.
@@ -458,6 +459,7 @@ def hodge_readout(flow: np.ndarray, A: np.ndarray, k_small: int = 3) -> np.ndarr
     For small graphs, use dense eigh; this is for interpretability/readout only.
     """
     import numpy as _np
+
     L0 = _np.diag(A.sum(axis=1)) - A
     lam, U = _np.linalg.eigh(L0)
     idx = _np.argsort(lam)[:k_small]
@@ -531,9 +533,9 @@ def main():
     X_test, Y_test = generate_dataset(jax.random.PRNGKey(8), complex_, num=256, r=r)
 
     # Use config for training hyperparameters
-    lr = config.default_learning_rate if hasattr(config, 'default_learning_rate') else 1e-2
+    lr = config.default_learning_rate if hasattr(config, "default_learning_rate") else 1e-2
     lam_bdry = 1e-4
-    batch_size = config.default_batch_size if hasattr(config, 'default_batch_size') else 64
+    batch_size = config.default_batch_size if hasattr(config, "default_batch_size") else 64
 
     def batches(X, Y, bs):
         n = X.shape[0]
@@ -563,12 +565,7 @@ def main():
         acc_epoch = float(jnp.mean(jnp.array(accs)))
 
         # Use conditional logging
-        metrics = {
-            "loss": loss_epoch,
-            "acc": acc_epoch,
-            "boundary": float(bd),
-            "mass": float(mass)
-        }
+        metrics = {"loss": loss_epoch, "acc": acc_epoch, "boundary": float(bd), "mass": float(mass)}
         log_metrics_conditionally(epoch, metrics)
 
         # Save checkpoint if configured

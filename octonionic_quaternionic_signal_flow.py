@@ -432,6 +432,7 @@ def demo():
 
 # --- Minimal 8D octonion operations for tests ---
 
+
 def octonion_multiply(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     """Cayley-Dickson construction: multiply two octonions (a+bε)*(c+dε) with ε^2=-1.
     We implement the octonion algebra as H ⊕ H ε where (a,b),(c,d) ∈ H and
@@ -441,11 +442,14 @@ def octonion_multiply(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     b = x[..., 4:]
     c = y[..., :4]
     d = y[..., 4:]
+
     # Quaternion helpers using our existing quaternion ops
     def qconj4(q):
         return jnp.concatenate([q[..., :1], -q[..., 1:]], axis=-1)
+
     def qmul4(u, v):
         return qmul(u, v)
+
     ac = qmul4(a, c)
     d_conj = qconj4(d)
     qconj4(b)

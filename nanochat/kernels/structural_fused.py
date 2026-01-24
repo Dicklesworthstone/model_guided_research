@@ -8,14 +8,7 @@ from nanochat.torch_imports import torch
 
 @triton.jit
 def mix_rows_kernel(
-    Mat_ptr,
-    stride_r, stride_c,
-    idx1, idx2,
-    alpha,
-    noise_scale,
-    seed,
-    n_cols,
-    BLOCK_SIZE: tl.constexpr
+    Mat_ptr, stride_r, stride_c, idx1, idx2, alpha, noise_scale, seed, n_cols, BLOCK_SIZE: tl.constexpr
 ):
     pid = tl.program_id(0)
     cols = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -42,6 +35,7 @@ def mix_rows_kernel(
     tl.store(ptr1, merged, mask=mask)
     tl.store(ptr2, cloned, mask=mask)
 
+
 def mix_and_shift_rows(mat, idx1, idx2, alpha, noise_scale):
     """
     Merges row[idx2] into row[idx1] with weight alpha,
@@ -63,24 +57,20 @@ def mix_and_shift_rows(mat, idx1, idx2, alpha, noise_scale):
 
     mix_rows_kernel[grid](
         mat,
-        mat.stride(0), mat.stride(1),
-        idx1, idx2,
+        mat.stride(0),
+        mat.stride(1),
+        idx1,
+        idx2,
         alpha,
         noise_scale,
         seed,
         n_cols,
-        BLOCK_SIZE=cast(Any, BLOCK_SIZE)
+        BLOCK_SIZE=cast(Any, BLOCK_SIZE),
     )
 
+
 @triton.jit
-def mix_tensors_kernel(
-    T1_ptr, T2_ptr,
-    alpha,
-    noise_scale,
-    seed,
-    n_elements,
-    BLOCK_SIZE: tl.constexpr
-):
+def mix_tensors_kernel(T1_ptr, T2_ptr, alpha, noise_scale, seed, n_elements, BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
@@ -100,6 +90,7 @@ def mix_tensors_kernel(
 
     tl.store(ptr1, merged, mask=mask)
     tl.store(ptr2, cloned, mask=mask)
+
 
 def mix_and_shift_tensors(t1, t2, alpha, noise_scale):
     """
@@ -131,12 +122,4 @@ def mix_and_shift_tensors(t1, t2, alpha, noise_scale):
         t2.copy_(t2_c)
         return
 
-    mix_tensors_kernel[grid](
-        t1, t2,
-        alpha,
-        noise_scale,
-        seed,
-        n_elements,
-        BLOCK_SIZE=cast(Any, BLOCK_SIZE)
-    )
-
+    mix_tensors_kernel[grid](t1, t2, alpha, noise_scale, seed, n_elements, BLOCK_SIZE=cast(Any, BLOCK_SIZE))

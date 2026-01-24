@@ -19,15 +19,16 @@ import sys
 from ast import literal_eval
 
 
-def print0(s="",**kwargs):
-    ddp_rank = int(os.environ.get('RANK', 0))
+def print0(s="", **kwargs):
+    ddp_rank = int(os.environ.get("RANK", 0))
     if ddp_rank == 0:
         print(s, **kwargs)
 
+
 for arg in sys.argv[1:]:
-    if '=' not in arg:
+    if "=" not in arg:
         # assume it's the name of a config file
-        if arg.startswith('--'):
+        if arg.startswith("--"):
             raise ValueError("Config file path should not start with '--'")
         config_file = arg
         print0(f"Overriding config with {config_file}:")
@@ -42,9 +43,9 @@ for arg in sys.argv[1:]:
         print0(f"Loaded keys: {', '.join(sorted(exported))}")
     else:
         # assume it's a --key=value argument
-        if not arg.startswith('--'):
+        if not arg.startswith("--"):
             raise ValueError("Override arguments must start with '--'")
-        key, val = arg.split('=')
+        key, val = arg.split("=")
         key = key[2:]
         if key in globals():
             try:

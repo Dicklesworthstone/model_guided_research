@@ -114,13 +114,7 @@ def _reduce_elig_norm(expert: SynapticExpert) -> float:
             u = cast(torch.Tensor, fc.post.U)
             v = cast(torch.Tensor, fc.post.V)
             h = cast(torch.Tensor, fc.post.H_fast)
-            vals.append(
-                float(
-                    u.norm().item()
-                    + v.norm().item()
-                    + h.norm().item()
-                )
-            )
+            vals.append(float(u.norm().item() + v.norm().item() + h.norm().item()))
     return float(np.mean(vals)) if vals else 0.0
 
 
@@ -176,18 +170,12 @@ class LineageBook:
         # layer_id -> list of events [(step, "merge", w,l,child), (step, "split", parent, child)]
         self.events: dict[str, list[tuple[int, str, list[int]]]] = {}
 
-    def log_merge(
-        self, layer_name: str, step: int, parent_i: int, parent_j: int, child_idx: int
-    ):
-        self.events.setdefault(layer_name, []).append(
-            (step, "merge", [parent_i, parent_j, child_idx])
-        )
+    def log_merge(self, layer_name: str, step: int, parent_i: int, parent_j: int, child_idx: int):
+        self.events.setdefault(layer_name, []).append((step, "merge", [parent_i, parent_j, child_idx]))
         self._persist(layer_name)
 
     def log_split(self, layer_name: str, step: int, parent_idx: int, child_idx: int):
-        self.events.setdefault(layer_name, []).append(
-            (step, "split", [parent_idx, child_idx])
-        )
+        self.events.setdefault(layer_name, []).append((step, "split", [parent_idx, child_idx]))
         self._persist(layer_name)
 
     def _persist(self, layer_name: str):
@@ -351,9 +339,7 @@ class NeuroVizManager:
     ):
         name = self._name_of(moe)
         if name:
-            step = (
-                step if step is not None else int(time.time())
-            )  # fallback when caller didn't supply step
+            step = step if step is not None else int(time.time())  # fallback when caller didn't supply step
             self.lineage.log_merge(name, step, parent_i, parent_j, child_idx)
 
     def on_split(
@@ -442,11 +428,7 @@ class NeuroVizManager:
             self._last_img = step
 
         # Optional interactive HTML
-        if (
-            self.cfg.write_interactive_html
-            and _HAS_PLOTLY
-            and step - self._last_html >= self.cfg.interactive_every
-        ):
+        if self.cfg.write_interactive_html and _HAS_PLOTLY and step - self._last_html >= self.cfg.interactive_every:
             for name, moe in self.layers:
                 self.lineage.render_interactive_html(name, step)
             self._last_html = step
@@ -472,10 +454,7 @@ class NeuroVizManager:
 
         # embedding projector
         emb2d = _fit_2d(m["embedding"])
-        meta = [
-            f"id:{i} util:{m['util'][i]:.3f} E:{m['energy'][i]:.2f}"
-            for i in range(moe.num_experts)
-        ]
+        meta = [f"id:{i} util:{m['util'][i]:.3f} E:{m['energy'][i]:.2f}" for i in range(moe.num_experts)]
         # add_embedding expects N x D; for 2D, it still works; for larger, projector clusters in higher-D
         self.tb.add_embedding(
             torch.from_numpy(m["embedding"]),
@@ -564,7 +543,7 @@ class NeuroVizManager:
         if not hasattr(moe, "Xi") or not hasattr(moe, "_get_phenotype"):
             return
 
-        pheno = moe._get_phenotype(moe.Xi) # (E, 4)
+        pheno = moe._get_phenotype(moe.Xi)  # (E, 4)
         pheno_np = _to_np(pheno)
 
         # [0] fatigue rate, [1] energy refill, [2] camkii, [3] pp1
@@ -573,7 +552,7 @@ class NeuroVizManager:
             "energy_refill": pheno_np[:, 1],
             "camkii_gain": pheno_np[:, 2],
             "pp1_gain": pheno_np[:, 3],
-            "utilization": _to_np(cast(Tensor, moe.fatigue)) # Use fatigue as proxy for util history
+            "utilization": _to_np(cast(Tensor, moe.fatigue)),  # Use fatigue as proxy for util history
         }
         self._save_json(data, os.path.join(outdir, f"{name}_genetics_{step:09d}.json"))
 
@@ -584,11 +563,7 @@ class NeuroVizManager:
         # Sort by energy to show inequality
         sorted_idx = np.argsort(energy)
 
-        data = {
-            "energy": energy[sorted_idx],
-            "fatigue": fatigue[sorted_idx],
-            "ids": sorted_idx.tolist()
-        }
+        data = {"energy": energy[sorted_idx], "fatigue": fatigue[sorted_idx], "ids": sorted_idx.tolist()}
         self._save_json(data, os.path.join(outdir, f"{name}_metabolism_{step:09d}.json"))
 
     def _save_json(self, data: dict[str, Any], path: str):
@@ -598,7 +573,8 @@ class NeuroVizManager:
             if isinstance(obj, torch.Tensor):
                 return obj.detach().cpu().tolist()
             return str(obj)
-        with open(path, 'w') as f:
+
+        with open(path, "w") as f:
             json.dump(data, f, default=default)
 
     def _plot_presynaptic_dynamics(self, name: str, moe: SynapticMoE, step: int, outdir: str):
@@ -608,7 +584,7 @@ class NeuroVizManager:
         from .synaptic import SynapticPresyn, build_presyn_state
 
         cfg = moe.cfg
-        head_dim = 64 # Assumption, but doesn't matter for this simulation as we fake logits
+        head_dim = 64  # Assumption, but doesn't matter for this simulation as we fake logits
         pre = SynapticPresyn(head_dim, cfg).to("cpu")
 
         T = 50
@@ -650,22 +626,17 @@ class NeuroVizManager:
         # So RRP[t] is the vesicle pool of token t (acting as a Key).
 
         # So we want to plot RRP of Token 0 and Token 1.
-        rrp = final_state["RRP"][0, 0].numpy() # (T,)
+        rrp = final_state["RRP"][0, 0].numpy()  # (T,)
         c_val = final_state["C"][0, 0].numpy()
 
         # Release probability?
         # We can infer it from syn_logit or just re-calculate.
         # syn_logit is (B,H,T,T).
         # Let's look at syn_logit[:,:,t,0] (attention to token 0 at step t)
-        syn_adjust = syn_logit[0, 0, :, 0].numpy() # (T,)
+        syn_adjust = syn_logit[0, 0, :, 0].numpy()  # (T,)
 
         # Save data for interactive dashboard
-        data = {
-            "rrp": rrp,
-            "calcium": c_val,
-            "logit_delta": syn_adjust,
-            "steps": list(range(T))
-        }
+        data = {"rrp": rrp, "calcium": c_val, "logit_delta": syn_adjust, "steps": list(range(T))}
         self._save_json(data, os.path.join(outdir, f"{name}_presyn_{step:09d}.json"))
 
         fig, ax = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
@@ -745,7 +716,7 @@ class NeuroVizManager:
         flat_indices = indices.reshape(-1, k)
 
         # Take first 100 tokens
-        L = min(100, B*T)
+        L = min(100, B * T)
 
         # Create a matrix (Experts, Time)
         E = moe.num_experts
@@ -776,7 +747,7 @@ class NeuroVizManager:
     def _contribution_plot(self, name: str, moe: SynapticMoE, step: int, outdir: str):
         # Visualize the magnitude of fast weights vs slow weights
         # We'll sample a few experts
-        experts = moe.experts[:min(5, len(moe.experts))]
+        experts = moe.experts[: min(5, len(moe.experts))]
 
         slow_norms = []
         fast_norms = []
@@ -798,21 +769,20 @@ class NeuroVizManager:
             ids.append(f"Exp {i}")
 
         # Save data
-        self._save_json({
-            "ids": ids,
-            "slow_norms": slow_norms,
-            "fast_norms": fast_norms
-        }, os.path.join(outdir, f"{name}_contrib_{step:09d}.json"))
+        self._save_json(
+            {"ids": ids, "slow_norms": slow_norms, "fast_norms": fast_norms},
+            os.path.join(outdir, f"{name}_contrib_{step:09d}.json"),
+        )
 
         fig, ax = plt.subplots(figsize=(8, 5))
         x = np.arange(len(ids))
         width = 0.35
 
-        ax.bar(x - width/2, slow_norms, width, label='Slow (Static)', color='#4472C4')
-        ax.bar(x + width/2, fast_norms, width, label='Fast (Bio)', color='#ED7D31')
+        ax.bar(x - width / 2, slow_norms, width, label="Slow (Static)", color="#4472C4")
+        ax.bar(x + width / 2, fast_norms, width, label="Fast (Bio)", color="#ED7D31")
 
-        ax.set_ylabel('Weight Norm (L2)')
-        ax.set_title(f'{name} - Static vs Bio Weight Magnitude')
+        ax.set_ylabel("Weight Norm (L2)")
+        ax.set_title(f"{name} - Static vs Bio Weight Magnitude")
         ax.set_xticks(x)
         ax.set_xticklabels(ids)
         ax.legend()
@@ -836,9 +806,7 @@ class NeuroVizManager:
         th = np.linspace(0, 2 * np.pi, K, endpoint=False)
 
         # Compute global max per metric for fair comparison
-        max_vals = np.array([
-            np.max(m[key]) + 1e-6 for key in labels
-        ], dtype=np.float32)
+        max_vals = np.array([np.max(m[key]) + 1e-6 for key in labels], dtype=np.float32)
 
         fig = plt.figure(figsize=(7, 7))
         ax = plt.subplot(111, polar=True)

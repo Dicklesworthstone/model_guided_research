@@ -145,6 +145,7 @@ class _PackedPrefixTrie:
         den += counts[self.K].to(dtype=torch.float32) * (alpha**self.K)
         return num / den.clamp_min(1e-9)
 
+
 class UltrametricCausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -163,7 +164,11 @@ class UltrametricCausalSelfAttention(nn.Module):
         self.p = int(getattr(config, "ultrametric_p", 2))
         self.alpha = float(getattr(config, "ultrametric_alpha", 2.0))
         self.lcp_beta = float(getattr(config, "ultrametric_lcp_beta", 32.0))
-        mode = str(getattr(config, "ultrametric_mode", os.environ.get("NANOCHAT_ULTRAMETRIC_MODE", "kernel"))).strip().lower()
+        mode = (
+            str(getattr(config, "ultrametric_mode", os.environ.get("NANOCHAT_ULTRAMETRIC_MODE", "kernel")))
+            .strip()
+            .lower()
+        )
         self.ultrametric_mode = mode
         self.ultrametric_hard_digits = bool(getattr(config, "ultrametric_hard_digits", False))
 
@@ -198,7 +203,8 @@ class UltrametricCausalSelfAttention(nn.Module):
             if len(state.tries) == B and (B == 0 or len(state.tries[0]) == H):
                 return state
         tries = [
-            [_PackedPrefixTrie(p=self.p, K=self.K, head_dim=self.head_dim, device=device) for _ in range(H)] for _ in range(B)
+            [_PackedPrefixTrie(p=self.p, K=self.K, head_dim=self.head_dim, device=device) for _ in range(H)]
+            for _ in range(B)
         ]
         state = _TrieCacheState(tries=tries, seen_Tk=0)
         self._trie_cache[kv_cache] = state
@@ -217,8 +223,8 @@ class UltrametricCausalSelfAttention(nn.Module):
         if state.seen_Tk >= Tk:
             return
 
-        k_new = k[:, :, state.seen_Tk:Tk]
-        v_new = v[:, :, state.seen_Tk:Tk]
+        k_new = k[:, :, state.seen_Tk : Tk]
+        v_new = v[:, :, state.seen_Tk : Tk]
         digits = self._digits_hard_int(self.to_digits_k(k_new))  # (B, H, Tnew, K)
         B = int(k.size(0))
         H = int(k.size(1))

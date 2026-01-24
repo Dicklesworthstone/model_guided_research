@@ -117,4 +117,3 @@ def update_metrics_fused(indices, gates, energy, state, cfg):
     _sync_back(state, "prev_contrib")
 
     return True
-

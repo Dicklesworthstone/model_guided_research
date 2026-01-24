@@ -212,9 +212,7 @@ class GPTSynaptic(nn.Module):
                 if not isinstance(cached, list):
                     raise TypeError("kv_cache.presyn_state must be a list[dict|None] for GPTSynaptic KV-cache mode")
                 if len(cached) != self.config.n_layer:
-                    raise ValueError(
-                        f"kv_cache.presyn_state length ({len(cached)}) != n_layer ({self.config.n_layer})"
-                    )
+                    raise ValueError(f"kv_cache.presyn_state length ({len(cached)}) != n_layer ({self.config.n_layer})")
                 presyn_states = cached
 
         for li, block in enumerate(self.h):
@@ -307,7 +305,11 @@ class GPTSynaptic(nn.Module):
             adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
             AdamWFactory = DistAdamW if ddp else torch.optim.AdamW
             adam_params = embedding_params + lm_head_params + other_params
-            if (not ddp) and any(p.is_cuda for p in adam_params) and ("fused" in inspect.signature(torch.optim.AdamW).parameters):
+            if (
+                (not ddp)
+                and any(p.is_cuda for p in adam_params)
+                and ("fused" in inspect.signature(torch.optim.AdamW).parameters)
+            ):
                 adamw_kwargs["fused"] = True
             adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
 

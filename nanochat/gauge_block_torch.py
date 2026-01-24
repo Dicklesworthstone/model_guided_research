@@ -122,6 +122,7 @@ class GaugeBlock(nn.Module):
         cos, sin = cos_sin
         # ... RoPE implementation usually provided in model_utils
         from nanochat.model_utils import apply_rotary_emb
+
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
 
         # Attention

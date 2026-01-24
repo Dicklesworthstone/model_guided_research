@@ -12,18 +12,12 @@ def require(condition, message: str):
     if not bool(condition):
         raise AssertionError(message)
 
+
 def test_tropical_forward():
     print("Testing Tropical Attention Forward Pass...")
 
     # Configure with Tropical Attention
-    config = GPTConfig(
-        n_layer=2,
-        n_head=4,
-        n_kv_head=4,
-        n_embd=64,
-        sequence_len=32,
-        use_tropical=True
-    )
+    config = GPTConfig(n_layer=2, n_head=4, n_kv_head=4, n_embd=64, sequence_len=32, use_tropical=True)
 
     model = GPT(config)
     rng = jax.random.PRNGKey(0)
@@ -34,11 +28,11 @@ def test_tropical_forward():
     # Init
     print("Initializing model...")
     variables = model.init(rng, x, train=False)
-    params = variables['params']
+    params = variables["params"]
 
     # Forward
     print("Running forward pass...")
-    logits = model.apply({'params': params}, x, train=False)
+    logits = model.apply({"params": params}, x, train=False)
 
     print(f"Logits shape: {logits.shape}")
     require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")
@@ -46,18 +40,12 @@ def test_tropical_forward():
 
     print("Tropical Attention Forward Pass Successful!")
 
+
 def test_standard_forward():
     print("\nTesting Standard Attention Forward Pass (Baseline)...")
 
     # Configure with Standard Attention
-    config = GPTConfig(
-        n_layer=2,
-        n_head=4,
-        n_kv_head=4,
-        n_embd=64,
-        sequence_len=32,
-        use_tropical=False
-    )
+    config = GPTConfig(n_layer=2, n_head=4, n_kv_head=4, n_embd=64, sequence_len=32, use_tropical=False)
 
     model = GPT(config)
     rng = jax.random.PRNGKey(0)
@@ -67,15 +55,16 @@ def test_standard_forward():
 
     # Init
     variables = model.init(rng, x, train=False)
-    params = variables['params']
+    params = variables["params"]
 
     # Forward
-    logits = model.apply({'params': params}, x, train=False)
+    logits = model.apply({"params": params}, x, train=False)
 
     print(f"Logits shape: {logits.shape}")
     require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")
 
     print("Standard Attention Forward Pass Successful!")
+
 
 if __name__ == "__main__":
     test_tropical_forward()

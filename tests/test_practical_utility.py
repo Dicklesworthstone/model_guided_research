@@ -480,6 +480,7 @@ class TestTropicalGeometryUtility:
         # Optional: print property mini-table
         if os.environ.get("PRINT_TROP_TABLE", "0") == "1":
             from rich.table import Table as _Table
+
             console.print(_Table(title="Tropical Lipschitz Check", show_header=True, header_style="bold magenta"))
             t = _Table(show_header=True, header_style="bold magenta")
             t.add_column("Quantity")
@@ -533,7 +534,7 @@ class TestSimplicialComplexUtility:
 
                 # Inject triangle-dependent signal to nodes in any triangle
                 tri_nodes = set()
-                for (a, b, c) in triangles:
+                for a, b, c in triangles:
                     tri_nodes.update([a, b, c])
                 if tri_nodes:
                     boost = np.ones(16) * 0.75
@@ -688,6 +689,7 @@ class TestUltrametricUtility:
 
         if os.environ.get("PRINT_ULTRA_TABLE", "0") == "1":
             from rich.table import Table as _Table
+
             t = _Table(title="Ultrametric Scaling Exponents", show_header=True, header_style="bold magenta")
             t.add_column("Method")
             t.add_column("Exponent", justify="right")
@@ -888,13 +890,29 @@ class TestSurrealNumbersUtility:
         scenarios = [
             # (data_size, model_depth, model_width, optimal_choice)
             # Data-limited
-            (60, 8, 128, "data"), (80, 10, 96, "data"), (120, 6, 64, "data"), (300, 16, 16, "data"), (400, 12, 24, "data"),
+            (60, 8, 128, "data"),
+            (80, 10, 96, "data"),
+            (120, 6, 64, "data"),
+            (300, 16, 16, "data"),
+            (400, 12, 24, "data"),
             # Depth-limited
-            (6000, 4, 32, "depth"), (9000, 5, 96, "depth"), (12000, 7, 64, "depth"), (15000, 6, 48, "depth"), (18000, 7, 80, "depth"),
+            (6000, 4, 32, "depth"),
+            (9000, 5, 96, "depth"),
+            (12000, 7, 64, "depth"),
+            (15000, 6, 48, "depth"),
+            (18000, 7, 80, "depth"),
             # Width-limited
-            (20000, 64, 8, "width"), (7000, 32, 10, "width"), (5000, 64, 12, "width"), (16000, 48, 6, "width"), (14000, 40, 9, "width"),
+            (20000, 64, 8, "width"),
+            (7000, 32, 10, "width"),
+            (5000, 64, 12, "width"),
+            (16000, 48, 6, "width"),
+            (14000, 40, 9, "width"),
             # Mixed edge cases
-            (550, 20, 20, "data"), (520, 30, 40, "data"), (11000, 9, 18, "depth"), (9000, 12, 14, "depth"), (15000, 24, 7, "width"),
+            (550, 20, 20, "data"),
+            (520, 30, 40, "data"),
+            (11000, 9, 18, "depth"),
+            (9000, 12, 14, "depth"),
+            (15000, 24, 7, "width"),
         ]
 
         # Baseline: Fixed heuristic
@@ -953,15 +971,16 @@ class TestSurrealNumbersUtility:
                 if (scores[pred_z] - scores.get(base_pred, -1e9)) > guardband:
                     return pred_z
                 return base_pred
+
             return decide
 
         # Tune guardband on the tune set to maximize accuracy while preserving ≥ baseline
         guard_candidates = [0.2, 0.3, 0.4, 0.5]
         best_guard = guard_candidates[0]
         best_acc = -1.0
-        base_tune_acc = np.mean([
-            baseline_choice(d, dep, w) == opt for (d, dep, w, opt) in tune_scen
-        ]) if tune_scen else 0.0
+        base_tune_acc = (
+            np.mean([baseline_choice(d, dep, w) == opt for (d, dep, w, opt) in tune_scen]) if tune_scen else 0.0
+        )
         for g in guard_candidates:
             dec = make_surreal_decider(g)
             acc = np.mean([dec(d, dep, w) == opt for (d, dep, w, opt) in tune_scen]) if tune_scen else 0.0
@@ -1123,7 +1142,9 @@ def run_all_utility_tests():
             if result.approach_name == "Reversible Computation":
                 ckpt_items = result.details.get("checkpoint_memory_mb_ordered")
                 if ckpt_items:
-                    t = Table(title="Checkpoint K Sweep (lower is better)", show_header=True, header_style="bold magenta")
+                    t = Table(
+                        title="Checkpoint K Sweep (lower is better)", show_header=True, header_style="bold magenta"
+                    )
                     t.add_column("K", justify="center")
                     t.add_column("Peak Mem (MB)", justify="right")
                     for k, mem in ckpt_items:

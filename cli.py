@@ -119,9 +119,7 @@ _T_CRIT_975: dict[int, float] = {
 
 def _summary_stats(values: list[float]) -> dict[str, Any]:
     vals = [
-        float(v)
-        for v in values
-        if isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(float(v))
+        float(v) for v in values if isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(float(v))
     ]
     n = len(vals)
     if n == 0:
@@ -140,9 +138,7 @@ def _aggregate_per_head(samples: list[tuple[int, list[float]]]) -> dict[str, Any
     valid = [
         (seed, vec)
         for seed, vec in samples
-        if isinstance(vec, list)
-        and vec
-        and all(isinstance(x, int | float) and not isinstance(x, bool) for x in vec)
+        if isinstance(vec, list) and vec and all(isinstance(x, int | float) and not isinstance(x, bool) for x in vec)
     ]
     if not valid:
         return None
@@ -380,11 +376,7 @@ def list_demos():
     table.add_column("Module", style="dim white")
 
     for name, info in DEMOS.items():
-        table.add_row(
-            name,
-            info["description"],
-            info["module"]
-        )
+        table.add_row(name, info["description"], info["module"])
 
     console.print(table)
     console.print("\n[dim]Run a demo with:[/dim] [bold green]mgr run <demo-name>[/bold green]")
@@ -393,122 +385,106 @@ def list_demos():
 
 @app.command()
 def run(
-    demo_name: Annotated[str, typer.Argument(
-        help="Name of the demo to run",
-        autocompletion=lambda: DEMOS.keys()  # type: ignore[call-arg]
-    )],
-    config_file: Annotated[Path | None, typer.Option(
-        "--config", "-c",
-        help="Path to JSON config file (see config.example.json)"
-    )] = None,
-    verbose: Annotated[bool, typer.Option(
-        "--verbose", "-v",
-        help="Show verbose output"
-    )] = False,
-    verbose_level: Annotated[int | None, typer.Option(
-        "--verbose-level",
-        min=0, max=3,
-        help="Verbosity level: 0=silent, 1=normal, 2=detailed, 3=debug"
-    )] = None,
-    seed: Annotated[int | None, typer.Option(
-        "--seed", "-s",
-        help="Random seed for reproducibility"
-    )] = None,
-    max_iterations: Annotated[int | None, typer.Option(
-        "--max-iterations",
-        min=1,
-        help="Override ProjectConfig.max_iterations (for demos that respect it)"
-    )] = None,
-    no_rich: Annotated[bool, typer.Option(
-        "--no-rich",
-        help="Disable rich formatting for plain text output"
-    )] = False,
-    debug: Annotated[bool, typer.Option(
-        "--debug",
-        help="Enable debug mode with numerical checking"
-    )] = False,
-    ultra_packed: Annotated[bool, typer.Option(
-        "--ultra-packed",
-        help="Use packed bit-trie implementation in ultrametric demo (and set ULTRA_PACKED for tests)"
-    )] = False,
-    tropical_cert: Annotated[bool, typer.Option(
-        "--tropical-cert",
-        help="Compute a tropical attention robustness margin certificate"
-    )] = False,
-    simplicial_hodge: Annotated[bool, typer.Option(
-        "--simplicial-hodge",
-        help="Demonstrate Hodge-based readout coefficients on a tiny graph"
-    )] = False,
-    simplicial_signed: Annotated[bool, typer.Option(
-        "--simplicial-signed",
-        help="Demonstrate signed (orientation-aware) diffusion vs unsigned"
-    )] = False,
-    rev_cayley: Annotated[bool, typer.Option(
-        "--rev-cayley",
-        help="Demonstrate Cayley orthogonal property check (skew → orthogonal)"
-    )] = False,
-    rev_cayley_o1: Annotated[bool, typer.Option(
-        "--rev-cayley-o1/--no-rev-cayley-o1",
-        help="Use O(1)-memory custom gradient for Cayley step (default on)"
-    )] = True,
-    rev_cayley_iters: Annotated[int, typer.Option(
-        "--rev-cayley-iters",
-        help="Cayley fixed-point iterations (trade compute for accuracy)",
-        min=1
-    )] = 1,
-    rev_symplectic: Annotated[bool, typer.Option(
-        "--rev-symplectic",
-        help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)"
-    )] = False,
-    rev_inv_iters: Annotated[int, typer.Option(
-        "--rev-inv-iters",
-        help="Inverse fixed-point iteration count for Cayley inverse",
-        min=1
-    )] = 1,
-    rev_pareto: Annotated[bool, typer.Option(
-        "--rev-pareto",
-        help="Run a small Cayley-iterations Pareto sweep (time vs memory)"
-    )] = False,
-    rev_symp_hybrid: Annotated[bool, typer.Option(
-        "--rev-symplectic-hybrid",
-        help="Enable a symplectic leapfrog step inside coupling (hybrid)"
-    )] = False,
-    rev_givens: Annotated[bool, typer.Option(
-        "--rev-givens",
-        help="Use strict Givens mixing (exact inverse; det=1)"
-    )] = False,
-    rev_generating: Annotated[bool, typer.Option(
-        "--rev-generating",
-        help="Enable generating-function symplectic step (exact inverse)"
-    )] = False,
-    rev_gen_vjp: Annotated[bool, typer.Option(
-        "--rev-gen-vjp",
-        help="Use custom VJP for generating step (O(1) grads; ignores ∂/∂(a,b,c))"
-    )] = False,
-    gauge_structured: Annotated[bool, typer.Option(
-        "--gauge-structured",
-        help="Enable structured SO/SPD/Sp channel blocks in matrix-gauge demo"
-    )] = False,
-    gauge_bch_compact: Annotated[bool, typer.Option(
-        "--gauge-bch-compact",
-        help="Print only compact BCH summary table (skip heatmap)"
-    )] = False,
-    gauge_alt_struct: Annotated[bool, typer.Option(
-        "--gauge-alt-struct",
-        help="Alternate structured/unstructured on odd blocks in matrix-gauge demo"
-    )] = False,
-    export_json: Annotated[Path | None, typer.Option(
-        "--export-json",
-        help="Write a JSON artifact with any computed certificates/readouts"
-    )] = None,
-    artifacts_dir: Annotated[Path | None, typer.Option(
-        "--artifacts-dir",
-        help="Write run artifacts under this directory using the standard layout (see artifacts/README.md)."
-    )] = None,
-    run_id: Annotated[str | None, typer.Option(
-        "--run-id",
-        help="Run identifier (directory name) when writing artifacts. Defaults to YYYYMMDD_HHMMSS."
-    )] = None,
+    demo_name: Annotated[
+        str,
+        typer.Argument(
+            help="Name of the demo to run",
+            autocompletion=lambda: DEMOS.keys(),  # type: ignore[call-arg]
+        ),
+    ],
+    config_file: Annotated[
+        Path | None, typer.Option("--config", "-c", help="Path to JSON config file (see config.example.json)")
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show verbose output")] = False,
+    verbose_level: Annotated[
+        int | None,
+        typer.Option("--verbose-level", min=0, max=3, help="Verbosity level: 0=silent, 1=normal, 2=detailed, 3=debug"),
+    ] = None,
+    seed: Annotated[int | None, typer.Option("--seed", "-s", help="Random seed for reproducibility")] = None,
+    max_iterations: Annotated[
+        int | None,
+        typer.Option(
+            "--max-iterations", min=1, help="Override ProjectConfig.max_iterations (for demos that respect it)"
+        ),
+    ] = None,
+    no_rich: Annotated[bool, typer.Option("--no-rich", help="Disable rich formatting for plain text output")] = False,
+    debug: Annotated[bool, typer.Option("--debug", help="Enable debug mode with numerical checking")] = False,
+    ultra_packed: Annotated[
+        bool,
+        typer.Option(
+            "--ultra-packed",
+            help="Use packed bit-trie implementation in ultrametric demo (and set ULTRA_PACKED for tests)",
+        ),
+    ] = False,
+    tropical_cert: Annotated[
+        bool, typer.Option("--tropical-cert", help="Compute a tropical attention robustness margin certificate")
+    ] = False,
+    simplicial_hodge: Annotated[
+        bool, typer.Option("--simplicial-hodge", help="Demonstrate Hodge-based readout coefficients on a tiny graph")
+    ] = False,
+    simplicial_signed: Annotated[
+        bool, typer.Option("--simplicial-signed", help="Demonstrate signed (orientation-aware) diffusion vs unsigned")
+    ] = False,
+    rev_cayley: Annotated[
+        bool, typer.Option("--rev-cayley", help="Demonstrate Cayley orthogonal property check (skew → orthogonal)")
+    ] = False,
+    rev_cayley_o1: Annotated[
+        bool,
+        typer.Option(
+            "--rev-cayley-o1/--no-rev-cayley-o1", help="Use O(1)-memory custom gradient for Cayley step (default on)"
+        ),
+    ] = True,
+    rev_cayley_iters: Annotated[
+        int,
+        typer.Option("--rev-cayley-iters", help="Cayley fixed-point iterations (trade compute for accuracy)", min=1),
+    ] = 1,
+    rev_symplectic: Annotated[
+        bool, typer.Option("--rev-symplectic", help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)")
+    ] = False,
+    rev_inv_iters: Annotated[
+        int, typer.Option("--rev-inv-iters", help="Inverse fixed-point iteration count for Cayley inverse", min=1)
+    ] = 1,
+    rev_pareto: Annotated[
+        bool, typer.Option("--rev-pareto", help="Run a small Cayley-iterations Pareto sweep (time vs memory)")
+    ] = False,
+    rev_symp_hybrid: Annotated[
+        bool, typer.Option("--rev-symplectic-hybrid", help="Enable a symplectic leapfrog step inside coupling (hybrid)")
+    ] = False,
+    rev_givens: Annotated[
+        bool, typer.Option("--rev-givens", help="Use strict Givens mixing (exact inverse; det=1)")
+    ] = False,
+    rev_generating: Annotated[
+        bool, typer.Option("--rev-generating", help="Enable generating-function symplectic step (exact inverse)")
+    ] = False,
+    rev_gen_vjp: Annotated[
+        bool, typer.Option("--rev-gen-vjp", help="Use custom VJP for generating step (O(1) grads; ignores ∂/∂(a,b,c))")
+    ] = False,
+    gauge_structured: Annotated[
+        bool, typer.Option("--gauge-structured", help="Enable structured SO/SPD/Sp channel blocks in matrix-gauge demo")
+    ] = False,
+    gauge_bch_compact: Annotated[
+        bool, typer.Option("--gauge-bch-compact", help="Print only compact BCH summary table (skip heatmap)")
+    ] = False,
+    gauge_alt_struct: Annotated[
+        bool,
+        typer.Option("--gauge-alt-struct", help="Alternate structured/unstructured on odd blocks in matrix-gauge demo"),
+    ] = False,
+    export_json: Annotated[
+        Path | None, typer.Option("--export-json", help="Write a JSON artifact with any computed certificates/readouts")
+    ] = None,
+    artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--artifacts-dir",
+            help="Write run artifacts under this directory using the standard layout (see artifacts/README.md).",
+        ),
+    ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id", help="Run identifier (directory name) when writing artifacts. Defaults to YYYYMMDD_HHMMSS."
+        ),
+    ] = None,
 ):
     """Run a specific demo by name"""
 
@@ -548,24 +524,31 @@ def run(
     # Optional environment knobs for tests/internals
     if ultra_packed:
         import os as _os
+
         _os.environ["ULTRA_PACKED"] = "1"
     if gauge_structured:
         import os as _os
+
         _os.environ["GAUGE_STRUCTURED"] = "1"
     if gauge_bch_compact:
         import os as _os
+
         _os.environ["GAUGE_BCH_COMPACT"] = "1"
     if gauge_alt_struct:
         import os as _os
+
         _os.environ["GAUGE_ALT_STRUCT"] = "1"
     if rev_givens:
         import os as _os
+
         _os.environ["REV_GIVENS"] = "1"
     if rev_generating:
         import os as _os
+
         _os.environ["REV_GENERATING"] = "1"
     if rev_gen_vjp:
         import os as _os
+
         _os.environ["REV_GEN_VJP"] = "1"
 
     if demo_name not in DEMOS:
@@ -579,8 +562,7 @@ def run(
 
     # Display what we're running
     panel = Panel(
-        f"[bold cyan]{demo_info['description']}[/bold cyan]\n"
-        f"[dim]Module: {demo_info['module']}.py[/dim]",
+        f"[bold cyan]{demo_info['description']}[/bold cyan]\n[dim]Module: {demo_info['module']}.py[/dim]",
         title=f"Running Demo: {demo_name}",
         box=box.ROUNDED,
     )
@@ -593,10 +575,10 @@ def run(
         if verbose:
             console.print(f"[dim]Importing module: {demo_info['module']}[/dim]")
 
-        module = importlib.import_module(demo_info['module'])
+        module = importlib.import_module(demo_info["module"])
 
         # Get the demo function
-        func_name = demo_info['func']
+        func_name = demo_info["func"]
         if hasattr(module, func_name):
             demo_func = getattr(module, func_name)
 
@@ -608,6 +590,7 @@ def run(
                 import numpy as _np
 
                 from tropical_geometry_and_idempotent_algebra import TropicalAttention
+
                 Q_np = _np.random.randn(32, 16)
                 K_np = _np.random.randn(32, 16)
                 V_np = _np.random.randn(32, 16)
@@ -615,7 +598,7 @@ def run(
                 _ = attn(Q_np, K_np, V_np)
                 table = Table(title="Tropical Robustness Certificate", show_header=True, header_style="bold magenta")
                 table.add_column("Min (best−second) margin", justify="center")
-                margin = float(getattr(attn, 'last_min_margin', 0.0))
+                margin = float(getattr(attn, "last_min_margin", 0.0))
                 table.add_row(f"{margin:.4f}")
                 console.print(table)
                 artifacts["certificates"]["tropical_min_margin"] = margin
@@ -626,6 +609,7 @@ def run(
                 import numpy as _np
 
                 from simplicial_complexes_and_higher_order_attention import hodge_readout
+
                 n = 8
                 A = _np.zeros((n, n))
                 for _ in range(12):
@@ -642,10 +626,13 @@ def run(
                 console.print(t)
                 artifacts["certificates"]["simplicial_hodge_coeffs"] = [float(c) for c in coeff]
 
-            if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid or (rev_inv_iters != 1)):
+            if (demo_name == "reversible") and (
+                rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid or (rev_inv_iters != 1)
+            ):
                 import numpy as _np
 
                 from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
+
                 # Cayley orthogonal check
                 if rev_cayley:
                     try:
@@ -654,16 +641,19 @@ def run(
                             set_reversible_cayley_iters,
                             set_reversible_cayley_o1,
                         )
+
                         set_reversible_cayley(True)
                         set_reversible_cayley_o1(bool(rev_cayley_o1))
                         set_reversible_cayley_iters(int(rev_cayley_iters))
                         import os as _os
+
                         _os.environ["REV_LAYER_CERT"] = "1"
                     except Exception:
                         pass
                     M = _np.random.randn(16, 16)
                     A = 0.1 * (M - M.T)  # skew
                     import jax.numpy as _jnp
+
                     Q = cayley_orthogonal_from_skew(_jnp.array(A))
                     eye_q = _jnp.eye(Q.shape[-1])
                     err = float(_jnp.linalg.norm(Q.T @ Q - eye_q))
@@ -678,6 +668,7 @@ def run(
                     H = _np.random.randn(2 * n, 2 * n)
                     H = 0.1 * (H + H.T)
                     import jax.numpy as _jnp
+
                     S = symplectic_cayley(_jnp.array(H))
                     Z = _jnp.zeros((n, n))
                     eye_n = _jnp.eye(n)
@@ -690,16 +681,19 @@ def run(
                     artifacts["certificates"]["reversible_symplectic_err"] = err
                 if rev_pareto:
                     import os as _os
+
                     _os.environ["REV_PARETO"] = "1"
                 if rev_inv_iters and rev_inv_iters != 1:
                     try:
                         import os as _os
+
                         _os.environ["REV_INV_ITERS"] = str(int(rev_inv_iters))
                     except Exception:
                         pass
                 if rev_symp_hybrid:
                     try:
                         from reversible_computation_and_measure_preserving_learning import set_reversible_symplectic
+
                         set_reversible_symplectic(True)
                     except Exception:
                         pass
@@ -715,8 +709,6 @@ def run(
                     artifacts.setdefault("diagnostics", {})[demo_name] = diag
             except Exception:
                 pass
-
-
 
         # Write artifacts if requested (legacy path)
         if export_json is not None:
@@ -767,8 +759,8 @@ def run(
             report_md = f"""# Demo certificate run: `{demo_name}`
 
 - Run ID: `{resolved_run_id}`
-- Generated: {meta['generated_at']}
-- Commit: {meta['git']['commit_full']}{' (dirty)' if meta['git']['dirty'] else ' (clean)'}
+- Generated: {meta["generated_at"]}
+- Commit: {meta["git"]["commit_full"]}{" (dirty)" if meta["git"]["dirty"] else " (clean)"}
 
 ## Command
 
@@ -797,6 +789,7 @@ This run writes `summary.json` (machine-readable) and `run.md` (human-readable) 
         console.print(f"[bold red]Error running demo:[/bold red] {e}")
         if verbose:
             import traceback
+
             console.print("[dim]Traceback:[/dim]")
             traceback.print_exc()
         raise typer.Exit(1) from e
@@ -807,7 +800,7 @@ def info(
     demo_name: str = typer.Argument(
         ...,
         help="Name of the demo to get info about",
-        autocompletion=lambda: DEMOS.keys()  # type: ignore[call-arg]
+        autocompletion=lambda: DEMOS.keys(),  # type: ignore[call-arg]
     ),
 ):
     """Show detailed information about a specific demo"""
@@ -848,7 +841,7 @@ def info(
                         in_docstring = True
                         # Check if it's a one-liner
                         if line.count('"""') == 2:
-                            docstring_lines.append(line.strip().replace('"""', ''))
+                            docstring_lines.append(line.strip().replace('"""', ""))
                             break
                     else:
                         in_docstring = False
@@ -858,11 +851,13 @@ def info(
 
             if docstring_lines:
                 console.print("\n[bold]Module Documentation:[/bold]")
-                console.print(Panel(
-                    '\n'.join(docstring_lines),
-                    box=box.ROUNDED,
-                    padding=(1, 2),
-                ))
+                console.print(
+                    Panel(
+                        "\n".join(docstring_lines),
+                        box=box.ROUNDED,
+                        padding=(1, 2),
+                    )
+                )
 
         except Exception as e:
             if str(e):  # Only show error if it has a message
@@ -873,14 +868,8 @@ def info(
 
 @app.command()
 def config(
-    output: Annotated[Path | None, typer.Option(
-        "--output", "-o",
-        help="Output path for config file"
-    )] = None,
-    show: Annotated[bool, typer.Option(
-        "--show",
-        help="Show current configuration"
-    )] = False,
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Output path for config file")] = None,
+    show: Annotated[bool, typer.Option("--show", help="Show current configuration")] = False,
 ):
     """Generate example config file or show current configuration"""
 
@@ -917,30 +906,25 @@ def config(
         "jax_debug_nans": False,
         "jax_debug_infs": False,
         "jax_disable_jit": False,
-
         "verbose": True,
         "verbose_level": 1,
         "save_outputs": False,
         "output_dir": "outputs",
         "save_checkpoints": False,
         "checkpoint_dir": "checkpoints",
-
         "log_metrics": True,
         "log_interval": 100,
         "use_rich_output": True,
         "show_progress_bars": True,
-
         "debug_mode": False,
         "check_numerics": False,
         "profile_performance": False,
-
         "max_iterations": 1000,
         "convergence_threshold": 1e-6,
         "early_stopping_patience": 10,
-
         "default_learning_rate": 0.001,
         "default_batch_size": 32,
-        "gradient_clip_norm": None
+        "gradient_clip_norm": None,
     }
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -952,18 +936,11 @@ def config(
 
 @app.command()
 def run_all(
-    delay: Annotated[int, typer.Option(
-        "--delay", "-d",
-        help="Delay in seconds between demos"
-    )] = 2,
-    seed: Annotated[int | None, typer.Option(
-        "--seed", "-s",
-        help="Random seed for reproducibility"
-    )] = None,
-    skip_errors: Annotated[bool, typer.Option(
-        "--skip-errors/--stop-on-error",
-        help="Continue running demos even if one fails"
-    )] = True,
+    delay: Annotated[int, typer.Option("--delay", "-d", help="Delay in seconds between demos")] = 2,
+    seed: Annotated[int | None, typer.Option("--seed", "-s", help="Random seed for reproducibility")] = None,
+    skip_errors: Annotated[
+        bool, typer.Option("--skip-errors/--stop-on-error", help="Continue running demos even if one fails")
+    ] = True,
 ):
     """Run all available demos in sequence"""
 
@@ -986,8 +963,8 @@ def run_all(
 
         try:
             # Import and run the demo
-            module = importlib.import_module(info['module'])
-            func_name = info['func']
+            module = importlib.import_module(info["module"])
+            func_name = info["func"]
 
             if hasattr(module, func_name):
                 console.print(f"[cyan]{info['description']}[/cyan]\n")
@@ -1014,6 +991,7 @@ def run_all(
         # Add delay between demos (except after the last one)
         if i < len(DEMOS) and delay > 0:
             import time
+
             console.print(f"\n[dim]Waiting {delay} seconds before next demo...[/dim]")
             time.sleep(delay)
 
@@ -1026,10 +1004,7 @@ def run_all(
 
 @app.callback()
 def main(
-    version: bool = typer.Option(
-        False, "--version", "-V",
-        help="Show version information"
-    ),
+    version: bool = typer.Option(False, "--version", "-V", help="Show version information"),
 ):
     """
     Model Guided Research CLI - Run experimental mathematical models for ML research
@@ -1045,34 +1020,35 @@ def main(
 
 @app.command("eval")
 def evaluate(
-    ultra_packed: Annotated[bool, typer.Option(
-        "--ultra-packed",
-        help="Use packed bit-trie implementation for ultrametric tests (sets ULTRA_PACKED=1)"
-    )] = False,
-    seed: Annotated[int | None, typer.Option(
-        "--seed", "-s",
-        help="Random seed for reproducibility"
-    )] = None,
-    export_json: Annotated[Path | None, typer.Option(
-        "--export-json",
-        help="Write a combined JSON artifact of the practical utility suite"
-    )] = None,
-    artifacts_dir: Annotated[Path | None, typer.Option(
-        "--artifacts-dir",
-        help="Write run artifacts under this directory using the standard layout (see artifacts/README.md)."
-    )] = None,
-    run_id: Annotated[str | None, typer.Option(
-        "--run-id",
-        help="Run identifier (directory name) when writing artifacts. Defaults to YYYYMMDD_HHMMSS."
-    )] = None,
-    print_ultra_table: Annotated[bool, typer.Option(
-        "--print-ultra-table",
-        help="Print ultrametric exponent table"
-    )] = False,
-    print_trop_table: Annotated[bool, typer.Option(
-        "--print-trop-table",
-        help="Print tropical Lipschitz table"
-    )] = False,
+    ultra_packed: Annotated[
+        bool,
+        typer.Option(
+            "--ultra-packed", help="Use packed bit-trie implementation for ultrametric tests (sets ULTRA_PACKED=1)"
+        ),
+    ] = False,
+    seed: Annotated[int | None, typer.Option("--seed", "-s", help="Random seed for reproducibility")] = None,
+    export_json: Annotated[
+        Path | None, typer.Option("--export-json", help="Write a combined JSON artifact of the practical utility suite")
+    ] = None,
+    artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--artifacts-dir",
+            help="Write run artifacts under this directory using the standard layout (see artifacts/README.md).",
+        ),
+    ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id", help="Run identifier (directory name) when writing artifacts. Defaults to YYYYMMDD_HHMMSS."
+        ),
+    ] = None,
+    print_ultra_table: Annotated[
+        bool, typer.Option("--print-ultra-table", help="Print ultrametric exponent table")
+    ] = False,
+    print_trop_table: Annotated[
+        bool, typer.Option("--print-trop-table", help="Print tropical Lipschitz table")
+    ] = False,
 ):
     """Run the practical utility test suite and optionally export a JSON artifact."""
     from config import ProjectConfig, set_config
@@ -1085,6 +1061,7 @@ def evaluate(
     seed_everything(config.random_seed)
 
     import os as _os
+
     if ultra_packed:
         _os.environ["ULTRA_PACKED"] = "1"
     if print_ultra_table:
@@ -1093,21 +1070,24 @@ def evaluate(
         _os.environ["PRINT_TROP_TABLE"] = "1"
 
     from tests.test_practical_utility import run_all_utility_tests
+
     results = run_all_utility_tests()
 
     if export_json is not None:
         payload = []
         for r in results:
-            payload.append({
-                "approach": r.approach_name,
-                "claim": r.claim,
-                "baseline": float(r.baseline_metric),
-                "proposed": float(r.proposed_metric),
-                "improvement": float(r.improvement_ratio),
-                "is_better": bool(r.is_better),
-                "verdict": r.verdict,
-                "details": r.details,
-            })
+            payload.append(
+                {
+                    "approach": r.approach_name,
+                    "claim": r.claim,
+                    "baseline": float(r.baseline_metric),
+                    "proposed": float(r.proposed_metric),
+                    "improvement": float(r.improvement_ratio),
+                    "is_better": bool(r.is_better),
+                    "verdict": r.verdict,
+                    "details": r.details,
+                }
+            )
         try:
             export_json.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -1144,8 +1124,8 @@ def evaluate(
         report_md = f"""# Practical Utility Suite
 
 - Run ID: `{resolved_run_id}`
-- Generated: {summary['meta']['generated_at']}
-- Commit: {summary['meta']['git']['commit_full']}{' (dirty)' if summary['meta']['git']['dirty'] else ' (clean)'}
+- Generated: {summary["meta"]["generated_at"]}
+- Commit: {summary["meta"]["git"]["commit_full"]}{" (dirty)" if summary["meta"]["git"]["dirty"] else " (clean)"}
 
 ## Command
 
@@ -1158,113 +1138,184 @@ See `summary.json` for full details.
         _write_artifacts(run_dir, summary=summary, report_md=report_md)
         console.print(f"[dim]Wrote artifacts → {run_dir}[/dim]")
 
+
 @app.command("bench-fixed-flops")
 def bench_fixed_flops(
-    attention_types: Annotated[list[str], typer.Option(
-        "--attention-type", "-a",
-        help="Nanochat attention types to benchmark (repeatable).",
-    )] = ("standard", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
-    device: Annotated[str, typer.Option(
-        "--device",
-        help="Device for nanochat training runs (passed through to nanochat.train).",
-    )] = "cpu",
-    target_flops: Annotated[float, typer.Option(
-        "--target-flops",
-        help="Target total FLOPs budget (est) per run.",
-        min=1e6,
-    )] = 2e9,
-    seed: Annotated[int, typer.Option(
-        "--seed",
-        help="Training seed (same seed used for each attention type).",
-    )] = 0,
-    score_tail: Annotated[int, typer.Option(
-        "--score-tail",
-        help="Score is mean of last N losses from nanochat summary.json.",
-        min=1,
-    )] = 3,
-    batch_size: Annotated[int, typer.Option(
-        "--batch-size",
-        help="Batch size for nanochat training.",
-        min=1,
-    )] = 8,
-    sequence_len: Annotated[int, typer.Option(
-        "--sequence-len",
-        help="Sequence length for nanochat training.",
-        min=8,
-    )] = 256,
-    n_layer: Annotated[int, typer.Option(
-        "--n-layer",
-        help="Number of transformer layers.",
-        min=1,
-    )] = 4,
-    n_head: Annotated[int, typer.Option(
-        "--n-head",
-        help="Number of attention heads.",
-        min=1,
-    )] = 4,
-    n_kv_head: Annotated[int, typer.Option(
-        "--n-kv-head",
-        help="Number of KV heads (GQA).",
-        min=1,
-    )] = 4,
-    n_embd: Annotated[int, typer.Option(
-        "--n-embd",
-        help="Embedding dimension.",
-        min=16,
-    )] = 128,
-    optimizer_type: Annotated[str, typer.Option(
-        "--optimizer-type",
-        help="nanochat optimizer type (passed through).",
-    )] = "adamw",
-    learning_rate: Annotated[float, typer.Option(
-        "--learning-rate",
-        help="Base learning rate for nanochat.train.",
-        min=1e-8,
-    )] = 6e-4,
-    warmup_steps: Annotated[int, typer.Option(
-        "--warmup-steps",
-        help="Warmup steps excluded from throughput measurement.",
-        min=0,
-    )] = 0,
-    log_interval: Annotated[int, typer.Option(
-        "--log-interval",
-        help="Train logging interval (steps).",
-        min=1,
-    )] = 1,
-    check_numerics: Annotated[bool, typer.Option(
-        "--check-numerics",
-        help="Enable NaN/Inf watchpoints inside nanochat.train.",
-    )] = False,
-    compile: Annotated[bool, typer.Option(
-        "--compile/--no-compile",
-        help="Enable torch.compile in nanochat.train (optional).",
-    )] = False,
-    auto_download_data: Annotated[bool, typer.Option(
-        "--auto-download-data/--no-auto-download-data",
-        help="Auto-download minimal dataset shards if missing.",
-    )] = True,
-    min_parquet_files: Annotated[int, typer.Option(
-        "--min-parquet-files",
-        help="Minimum number of parquet shards required (>=2 recommended).",
-        min=2,
-    )] = 2,
-    include_demo_certs: Annotated[bool, typer.Option(
-        "--include-demo-certs/--no-include-demo-certs",
-        help="Also run a few demo certificate runs (math-specific diagnostics) and link them in the suite report.",
-    )] = False,
-    artifacts_dir: Annotated[Path, typer.Option(
-        "--artifacts-dir",
-        help="Base directory for artifacts (default: artifacts/).",
-    )] = Path("artifacts"),
-    run_id: Annotated[str | None, typer.Option(
-        "--run-id",
-        help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS.",
-    )] = None,
-    timeout_s: Annotated[float, typer.Option(
-        "--timeout-s",
-        help="Per-run timeout (seconds) for subprocess invocations.",
-        min=1.0,
-    )] = 1800.0,
+    attention_types: Annotated[
+        list[str],
+        typer.Option(
+            "--attention-type",
+            "-a",
+            help="Nanochat attention types to benchmark (repeatable).",
+        ),
+    ] = ("standard", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
+    device: Annotated[
+        str,
+        typer.Option(
+            "--device",
+            help="Device for nanochat training runs (passed through to nanochat.train).",
+        ),
+    ] = "cpu",
+    target_flops: Annotated[
+        float,
+        typer.Option(
+            "--target-flops",
+            help="Target total FLOPs budget (est) per run.",
+            min=1e6,
+        ),
+    ] = 2e9,
+    seed: Annotated[
+        int,
+        typer.Option(
+            "--seed",
+            help="Training seed (same seed used for each attention type).",
+        ),
+    ] = 0,
+    score_tail: Annotated[
+        int,
+        typer.Option(
+            "--score-tail",
+            help="Score is mean of last N losses from nanochat summary.json.",
+            min=1,
+        ),
+    ] = 3,
+    batch_size: Annotated[
+        int,
+        typer.Option(
+            "--batch-size",
+            help="Batch size for nanochat training.",
+            min=1,
+        ),
+    ] = 8,
+    sequence_len: Annotated[
+        int,
+        typer.Option(
+            "--sequence-len",
+            help="Sequence length for nanochat training.",
+            min=8,
+        ),
+    ] = 256,
+    n_layer: Annotated[
+        int,
+        typer.Option(
+            "--n-layer",
+            help="Number of transformer layers.",
+            min=1,
+        ),
+    ] = 4,
+    n_head: Annotated[
+        int,
+        typer.Option(
+            "--n-head",
+            help="Number of attention heads.",
+            min=1,
+        ),
+    ] = 4,
+    n_kv_head: Annotated[
+        int,
+        typer.Option(
+            "--n-kv-head",
+            help="Number of KV heads (GQA).",
+            min=1,
+        ),
+    ] = 4,
+    n_embd: Annotated[
+        int,
+        typer.Option(
+            "--n-embd",
+            help="Embedding dimension.",
+            min=16,
+        ),
+    ] = 128,
+    optimizer_type: Annotated[
+        str,
+        typer.Option(
+            "--optimizer-type",
+            help="nanochat optimizer type (passed through).",
+        ),
+    ] = "adamw",
+    learning_rate: Annotated[
+        float,
+        typer.Option(
+            "--learning-rate",
+            help="Base learning rate for nanochat.train.",
+            min=1e-8,
+        ),
+    ] = 6e-4,
+    warmup_steps: Annotated[
+        int,
+        typer.Option(
+            "--warmup-steps",
+            help="Warmup steps excluded from throughput measurement.",
+            min=0,
+        ),
+    ] = 0,
+    log_interval: Annotated[
+        int,
+        typer.Option(
+            "--log-interval",
+            help="Train logging interval (steps).",
+            min=1,
+        ),
+    ] = 1,
+    check_numerics: Annotated[
+        bool,
+        typer.Option(
+            "--check-numerics",
+            help="Enable NaN/Inf watchpoints inside nanochat.train.",
+        ),
+    ] = False,
+    compile: Annotated[
+        bool,
+        typer.Option(
+            "--compile/--no-compile",
+            help="Enable torch.compile in nanochat.train (optional).",
+        ),
+    ] = False,
+    auto_download_data: Annotated[
+        bool,
+        typer.Option(
+            "--auto-download-data/--no-auto-download-data",
+            help="Auto-download minimal dataset shards if missing.",
+        ),
+    ] = True,
+    min_parquet_files: Annotated[
+        int,
+        typer.Option(
+            "--min-parquet-files",
+            help="Minimum number of parquet shards required (>=2 recommended).",
+            min=2,
+        ),
+    ] = 2,
+    include_demo_certs: Annotated[
+        bool,
+        typer.Option(
+            "--include-demo-certs/--no-include-demo-certs",
+            help="Also run a few demo certificate runs (math-specific diagnostics) and link them in the suite report.",
+        ),
+    ] = False,
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option(
+            "--artifacts-dir",
+            help="Base directory for artifacts (default: artifacts/).",
+        ),
+    ] = Path("artifacts"),
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS.",
+        ),
+    ] = None,
+    timeout_s: Annotated[
+        float,
+        typer.Option(
+            "--timeout-s",
+            help="Per-run timeout (seconds) for subprocess invocations.",
+            min=1.0,
+        ),
+    ] = 1800.0,
 ):
     attention_types = list(attention_types)
     """Benchmark nanochat attention variants under a fixed FLOPs budget.
@@ -1501,7 +1552,9 @@ def bench_fixed_flops(
             demo_certs.append(
                 {
                     "demo": demo_name,
-                    "status": "ok" if returncode == 0 and cert_summary.exists() else ("timeout" if returncode == 124 else "error"),
+                    "status": "ok"
+                    if returncode == 0 and cert_summary.exists()
+                    else ("timeout" if returncode == 124 else "error"),
                     "returncode": int(returncode),
                     "command": shlex.join(cmd),
                     "summary_path": str(cert_summary.relative_to(artifacts_dir)) if cert_summary.exists() else None,
@@ -1533,8 +1586,12 @@ def bench_fixed_flops(
             f"{float(score):.6f}" if isinstance(score, int | float) else "n/a",
             f"{float(delta):+.2%}" if isinstance(delta, int | float) else "n/a",
             f"{float(r['tokens_per_second']):,.0f}" if isinstance(r.get("tokens_per_second"), int | float) else "n/a",
-            f"{float(r['tflops_per_second_est']):.2f}" if isinstance(r.get("tflops_per_second_est"), int | float) else "n/a",
-            f"{float(r['peak_memory_allocated_gb']):.2f}" if isinstance(r.get("peak_memory_allocated_gb"), int | float) else "n/a",
+            f"{float(r['tflops_per_second_est']):.2f}"
+            if isinstance(r.get("tflops_per_second_est"), int | float)
+            else "n/a",
+            f"{float(r['peak_memory_allocated_gb']):.2f}"
+            if isinstance(r.get("peak_memory_allocated_gb"), int | float)
+            else "n/a",
         )
 
     console.print(table)
@@ -1583,9 +1640,15 @@ def bench_fixed_flops(
                     str(r["status"]),
                     f"{float(score):.6f}" if isinstance(score, (int, float)) else "n/a",
                     f"{float(delta):+.2%}" if isinstance(delta, (int, float)) else "n/a",
-                    f"{float(r['tokens_per_second']):,.0f}" if isinstance(r.get("tokens_per_second"), (int, float)) else "n/a",
-                    f"{float(r['tflops_per_second_est']):.2f}" if isinstance(r.get("tflops_per_second_est"), (int, float)) else "n/a",
-                    f"{float(r['peak_memory_allocated_gb']):.2f}" if isinstance(r.get("peak_memory_allocated_gb"), (int, float)) else "n/a",
+                    f"{float(r['tokens_per_second']):,.0f}"
+                    if isinstance(r.get("tokens_per_second"), (int, float))
+                    else "n/a",
+                    f"{float(r['tflops_per_second_est']):.2f}"
+                    if isinstance(r.get("tflops_per_second_est"), (int, float))
+                    else "n/a",
+                    f"{float(r['peak_memory_allocated_gb']):.2f}"
+                    if isinstance(r.get("peak_memory_allocated_gb"), (int, float))
+                    else "n/a",
                 ]
             )
         )
@@ -1599,7 +1662,9 @@ def bench_fixed_flops(
         md_lines.append(f"- Best (lowest score): `{best['attention_type']}` score=`{float(best['score']):.6f}`")
         if baseline and baseline.get("score") is not None:
             base = float(baseline["score"])
-            md_lines.append(f"- Baseline `{baseline_attn}` score=`{base:.6f}`; best Δ=`{(float(best['score']) - base) / base:+.2%}`")
+            md_lines.append(
+                f"- Baseline `{baseline_attn}` score=`{base:.6f}`; best Δ=`{(float(best['score']) - base) / base:+.2%}`"
+            )
         better = []
         worse = []
         if baseline and baseline.get("score") is not None:
@@ -1638,90 +1703,145 @@ def bench_fixed_flops(
 
 @app.command("per-head-metrics")
 def per_head_metrics(
-    device: Annotated[str, typer.Option(
-        "--device",
-        help="Device for nanochat training runs (passed through to nanochat.train).",
-    )] = "cpu",
-    seeds: Annotated[list[int], typer.Option(
-        "--seed", "-s",
-        help="Training seeds (repeatable).",
-    )] = (0, 1, 2),
-    target_flops: Annotated[float, typer.Option(
-        "--target-flops",
-        help="Target total FLOPs budget (est) per run.",
-        min=1e6,
-    )] = 2e8,
-    batch_size: Annotated[int, typer.Option(
-        "--batch-size",
-        help="Batch size for nanochat training.",
-        min=1,
-    )] = 8,
-    sequence_len: Annotated[int, typer.Option(
-        "--sequence-len",
-        help="Sequence length for nanochat training.",
-        min=8,
-    )] = 256,
-    n_layer: Annotated[int, typer.Option(
-        "--n-layer",
-        help="Number of transformer layers.",
-        min=1,
-    )] = 4,
-    n_head: Annotated[int, typer.Option(
-        "--n-head",
-        help="Number of attention heads.",
-        min=1,
-    )] = 4,
-    n_kv_head: Annotated[int, typer.Option(
-        "--n-kv-head",
-        help="Number of KV heads (GQA).",
-        min=1,
-    )] = 4,
-    n_embd: Annotated[int, typer.Option(
-        "--n-embd",
-        help="Embedding dimension.",
-        min=16,
-    )] = 128,
-    optimizer_type: Annotated[str, typer.Option(
-        "--optimizer-type",
-        help="nanochat optimizer type (passed through).",
-    )] = "adamw",
-    learning_rate: Annotated[float, typer.Option(
-        "--learning-rate",
-        help="Base learning rate for nanochat.train.",
-        min=1e-8,
-    )] = 6e-4,
-    warmup_steps: Annotated[int, typer.Option(
-        "--warmup-steps",
-        help="Warmup steps excluded from throughput measurement.",
-        min=0,
-    )] = 0,
-    log_interval: Annotated[int, typer.Option(
-        "--log-interval",
-        help="Train logging interval (steps).",
-        min=1,
-    )] = 1,
-    auto_download_data: Annotated[bool, typer.Option(
-        "--auto-download-data/--no-auto-download-data",
-        help="Auto-download minimal dataset shards if missing.",
-    )] = True,
-    min_parquet_files: Annotated[int, typer.Option(
-        "--min-parquet-files",
-        help="Minimum number of parquet shards required (>=2 recommended).",
-        min=2,
-    )] = 2,
-    artifacts_dir: Annotated[Path, typer.Option(
-        "--artifacts-dir",
-        help="Base directory for artifacts (default: artifacts/).",
-    )] = Path("artifacts"),
-    run_id: Annotated[str | None, typer.Option(
-        "--run-id",
-        help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS.",
-    )] = None,
-    timeout_s: Annotated[float, typer.Option(
-        "--timeout-s",
-        help="Per-run timeout (seconds) for subprocess invocations.",
-        min=1.0,
-    )] = 1800.0,
+    device: Annotated[
+        str,
+        typer.Option(
+            "--device",
+            help="Device for nanochat training runs (passed through to nanochat.train).",
+        ),
+    ] = "cpu",
+    seeds: Annotated[
+        list[int],
+        typer.Option(
+            "--seed",
+            "-s",
+            help="Training seeds (repeatable).",
+        ),
+    ] = (0, 1, 2),
+    target_flops: Annotated[
+        float,
+        typer.Option(
+            "--target-flops",
+            help="Target total FLOPs budget (est) per run.",
+            min=1e6,
+        ),
+    ] = 2e8,
+    batch_size: Annotated[
+        int,
+        typer.Option(
+            "--batch-size",
+            help="Batch size for nanochat training.",
+            min=1,
+        ),
+    ] = 8,
+    sequence_len: Annotated[
+        int,
+        typer.Option(
+            "--sequence-len",
+            help="Sequence length for nanochat training.",
+            min=8,
+        ),
+    ] = 256,
+    n_layer: Annotated[
+        int,
+        typer.Option(
+            "--n-layer",
+            help="Number of transformer layers.",
+            min=1,
+        ),
+    ] = 4,
+    n_head: Annotated[
+        int,
+        typer.Option(
+            "--n-head",
+            help="Number of attention heads.",
+            min=1,
+        ),
+    ] = 4,
+    n_kv_head: Annotated[
+        int,
+        typer.Option(
+            "--n-kv-head",
+            help="Number of KV heads (GQA).",
+            min=1,
+        ),
+    ] = 4,
+    n_embd: Annotated[
+        int,
+        typer.Option(
+            "--n-embd",
+            help="Embedding dimension.",
+            min=16,
+        ),
+    ] = 128,
+    optimizer_type: Annotated[
+        str,
+        typer.Option(
+            "--optimizer-type",
+            help="nanochat optimizer type (passed through).",
+        ),
+    ] = "adamw",
+    learning_rate: Annotated[
+        float,
+        typer.Option(
+            "--learning-rate",
+            help="Base learning rate for nanochat.train.",
+            min=1e-8,
+        ),
+    ] = 6e-4,
+    warmup_steps: Annotated[
+        int,
+        typer.Option(
+            "--warmup-steps",
+            help="Warmup steps excluded from throughput measurement.",
+            min=0,
+        ),
+    ] = 0,
+    log_interval: Annotated[
+        int,
+        typer.Option(
+            "--log-interval",
+            help="Train logging interval (steps).",
+            min=1,
+        ),
+    ] = 1,
+    auto_download_data: Annotated[
+        bool,
+        typer.Option(
+            "--auto-download-data/--no-auto-download-data",
+            help="Auto-download minimal dataset shards if missing.",
+        ),
+    ] = True,
+    min_parquet_files: Annotated[
+        int,
+        typer.Option(
+            "--min-parquet-files",
+            help="Minimum number of parquet shards required (>=2 recommended).",
+            min=2,
+        ),
+    ] = 2,
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option(
+            "--artifacts-dir",
+            help="Base directory for artifacts (default: artifacts/).",
+        ),
+    ] = Path("artifacts"),
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS.",
+        ),
+    ] = None,
+    timeout_s: Annotated[
+        float,
+        typer.Option(
+            "--timeout-s",
+            help="Per-run timeout (seconds) for subprocess invocations.",
+            min=1.0,
+        ),
+    ] = 1800.0,
 ):
     """Compute per-head stability/error bars across multiple seeds for a few small nanochat configs.
 
@@ -1986,10 +2106,18 @@ def per_head_metrics(
         loss_stats = _summary_stats(loss_vals)
 
         entropy_agg = _aggregate_per_head(
-            [(int(r["seed"]), r["attention_entropy_head_mean"]) for r in runs if isinstance(r.get("seed"), int) and isinstance(r.get("attention_entropy_head_mean"), list)]
+            [
+                (int(r["seed"]), r["attention_entropy_head_mean"])
+                for r in runs
+                if isinstance(r.get("seed"), int) and isinstance(r.get("attention_entropy_head_mean"), list)
+            ]
         )
         gamma_agg = _aggregate_per_head(
-            [(int(r["seed"]), r["tropical_gamma_head_mean"]) for r in runs if isinstance(r.get("seed"), int) and isinstance(r.get("tropical_gamma_head_mean"), list)]
+            [
+                (int(r["seed"]), r["tropical_gamma_head_mean"])
+                for r in runs
+                if isinstance(r.get("seed"), int) and isinstance(r.get("tropical_gamma_head_mean"), list)
+            ]
         )
         metrics: dict[str, Any] = {}
         if entropy_agg is not None:
@@ -2053,7 +2181,9 @@ def per_head_metrics(
         md_lines.append(f"- label: `{v['label']}`")
         md_lines.append(f"- attention_type: `{v['attention_type']}`")
         md_lines.append(f"- expected_use_flex_attention: `{v['expected_use_flex_attention']}`")
-        md_lines.append(f"- final_loss: mean=`{v['final_loss']['mean']}` std=`{v['final_loss']['std']}` ci95=`{v['final_loss']['ci95']}` n=`{v['final_loss']['n']}`")
+        md_lines.append(
+            f"- final_loss: mean=`{v['final_loss']['mean']}` std=`{v['final_loss']['std']}` ci95=`{v['final_loss']['ci95']}` n=`{v['final_loss']['n']}`"
+        )
         md_lines.append("")
         metrics = v.get("metrics", {})
         if isinstance(metrics, dict) and metrics.get("attention_entropy") is not None:
@@ -2148,76 +2278,121 @@ def per_head_metrics(
 
 @app.command()
 def regressions(
-    baseline: Annotated[Path, typer.Option(
-        "--baseline",
-        "-b",
-        help="Baseline run directory or summary.json (relative paths also searched under --artifacts-dir).",
-    )],
-    candidate: Annotated[Path, typer.Option(
-        "--candidate",
-        "-c",
-        help="Candidate run directory or summary.json (relative paths also searched under --artifacts-dir).",
-    )],
-    baseline_variant: Annotated[str | None, typer.Option(
-        "--baseline-variant",
-        help="Optional sub-run selector inside baseline (e.g. attention_type in suite summaries; or 'sdpa'/'flex' in flex perf summaries).",
-    )] = None,
-    candidate_variant: Annotated[str | None, typer.Option(
-        "--candidate-variant",
-        help="Optional sub-run selector inside candidate (e.g. attention_type in suite summaries; or 'sdpa'/'flex' in flex perf summaries).",
-    )] = None,
-    loss_abs: Annotated[float, typer.Option(
-        "--loss-abs",
-        help="Absolute loss regression threshold (candidate > baseline + loss_abs).",
-        min=0.0,
-    )] = 0.01,
-    loss_rel: Annotated[float, typer.Option(
-        "--loss-rel",
-        help="Relative loss regression threshold (candidate > baseline*(1+loss_rel)).",
-        min=0.0,
-    )] = 0.01,
-    throughput_rel: Annotated[float, typer.Option(
-        "--throughput-rel",
-        help="Relative throughput regression threshold (candidate < baseline*(1-throughput_rel)).",
-        min=0.0,
-        max=1.0,
-    )] = 0.05,
-    tflops_rel: Annotated[float, typer.Option(
-        "--tflops-rel",
-        help="Relative TFLOP/s regression threshold (candidate < baseline*(1-tflops_rel)).",
-        min=0.0,
-        max=1.0,
-    )] = 0.05,
-    memory_rel: Annotated[float, typer.Option(
-        "--memory-rel",
-        help="Relative memory regression threshold (candidate > baseline*(1+memory_rel)).",
-        min=0.0,
-        max=10.0,
-    )] = 0.05,
-    artifacts_dir: Annotated[Path, typer.Option(
-        "--artifacts-dir",
-        help="Artifacts base directory (default: artifacts/).",
-    )] = Path("artifacts"),
-    run_id: Annotated[str | None, typer.Option(
-        "--run-id",
-        help="Regression report run id (directory name). Defaults to YYYYMMDD_HHMMSS.",
-    )] = None,
-    write_artifacts: Annotated[bool, typer.Option(
-        "--write-artifacts/--no-write-artifacts",
-        help="Write summary.json + run.md under artifacts/regressions/<run_id>/.",
-    )] = True,
-    html: Annotated[bool, typer.Option(
-        "--html/--no-html",
-        help="Also write a minimal HTML report alongside run.md (when --write-artifacts is on).",
-    )] = True,
-    fail_on_regression: Annotated[bool, typer.Option(
-        "--fail-on-regression/--no-fail-on-regression",
-        help="Exit with code 1 if any metric is flagged as a regression (useful for guardrails/CI).",
-    )] = False,
-    fail_on_missing: Annotated[bool, typer.Option(
-        "--fail-on-missing/--no-fail-on-missing",
-        help="Also treat missing metrics as failures when --fail-on-regression is enabled.",
-    )] = False,
+    baseline: Annotated[
+        Path,
+        typer.Option(
+            "--baseline",
+            "-b",
+            help="Baseline run directory or summary.json (relative paths also searched under --artifacts-dir).",
+        ),
+    ],
+    candidate: Annotated[
+        Path,
+        typer.Option(
+            "--candidate",
+            "-c",
+            help="Candidate run directory or summary.json (relative paths also searched under --artifacts-dir).",
+        ),
+    ],
+    baseline_variant: Annotated[
+        str | None,
+        typer.Option(
+            "--baseline-variant",
+            help="Optional sub-run selector inside baseline (e.g. attention_type in suite summaries; or 'sdpa'/'flex' in flex perf summaries).",
+        ),
+    ] = None,
+    candidate_variant: Annotated[
+        str | None,
+        typer.Option(
+            "--candidate-variant",
+            help="Optional sub-run selector inside candidate (e.g. attention_type in suite summaries; or 'sdpa'/'flex' in flex perf summaries).",
+        ),
+    ] = None,
+    loss_abs: Annotated[
+        float,
+        typer.Option(
+            "--loss-abs",
+            help="Absolute loss regression threshold (candidate > baseline + loss_abs).",
+            min=0.0,
+        ),
+    ] = 0.01,
+    loss_rel: Annotated[
+        float,
+        typer.Option(
+            "--loss-rel",
+            help="Relative loss regression threshold (candidate > baseline*(1+loss_rel)).",
+            min=0.0,
+        ),
+    ] = 0.01,
+    throughput_rel: Annotated[
+        float,
+        typer.Option(
+            "--throughput-rel",
+            help="Relative throughput regression threshold (candidate < baseline*(1-throughput_rel)).",
+            min=0.0,
+            max=1.0,
+        ),
+    ] = 0.05,
+    tflops_rel: Annotated[
+        float,
+        typer.Option(
+            "--tflops-rel",
+            help="Relative TFLOP/s regression threshold (candidate < baseline*(1-tflops_rel)).",
+            min=0.0,
+            max=1.0,
+        ),
+    ] = 0.05,
+    memory_rel: Annotated[
+        float,
+        typer.Option(
+            "--memory-rel",
+            help="Relative memory regression threshold (candidate > baseline*(1+memory_rel)).",
+            min=0.0,
+            max=10.0,
+        ),
+    ] = 0.05,
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option(
+            "--artifacts-dir",
+            help="Artifacts base directory (default: artifacts/).",
+        ),
+    ] = Path("artifacts"),
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            help="Regression report run id (directory name). Defaults to YYYYMMDD_HHMMSS.",
+        ),
+    ] = None,
+    write_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--write-artifacts/--no-write-artifacts",
+            help="Write summary.json + run.md under artifacts/regressions/<run_id>/.",
+        ),
+    ] = True,
+    html: Annotated[
+        bool,
+        typer.Option(
+            "--html/--no-html",
+            help="Also write a minimal HTML report alongside run.md (when --write-artifacts is on).",
+        ),
+    ] = True,
+    fail_on_regression: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-regression/--no-fail-on-regression",
+            help="Exit with code 1 if any metric is flagged as a regression (useful for guardrails/CI).",
+        ),
+    ] = False,
+    fail_on_missing: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-missing/--no-fail-on-missing",
+            help="Also treat missing metrics as failures when --fail-on-regression is enabled.",
+        ),
+    ] = False,
 ):
     """Compare two artifact snapshots and highlight regressions/improvements.
 
@@ -2429,7 +2604,9 @@ def regressions(
     if write_artifacts:
         _write_artifacts(report_dir, summary=summary, report_md=report_md)
         if html:
-            html_table = ["<table><thead><tr><th>metric</th><th>baseline</th><th>candidate</th><th>delta</th><th>delta%</th><th>status</th></tr></thead><tbody>"]
+            html_table = [
+                "<table><thead><tr><th>metric</th><th>baseline</th><th>candidate</th><th>delta</th><th>delta%</th><th>status</th></tr></thead><tbody>"
+            ]
             for row in comparisons:
                 b = row["baseline"]
                 c = row["candidate"]

@@ -34,13 +34,13 @@ class OrdinalLRScheduler:
         self.gamma = gamma
         self.min_lr = min_lr
 
-        self.best_loss = float('inf')
+        self.best_loss = float("inf")
         self.ema_loss = None
-        self.alpha = 0.1 # EMA smoothing factor
+        self.alpha = 0.1  # EMA smoothing factor
 
         # Set initial LR
         for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.eta_init
+            param_group["lr"] = self.eta_init
 
     def step(self, loss):
         if torch.is_tensor(loss):
@@ -68,13 +68,13 @@ class OrdinalLRScheduler:
             if self.B > 0:
                 # Anneal (omega-term drop)
                 self.B -= 1
-                self.C = self.P_init # Reset patience
+                self.C = self.P_init  # Reset patience
                 # Decay LR
                 for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = max(self.min_lr, param_group['lr'] * self.gamma)
-                    param_group['lr']
+                    param_group["lr"] = max(self.min_lr, param_group["lr"] * self.gamma)
+                    param_group["lr"]
                 # Reset best loss to allow new exploration (JAX: "reset best metric")
-                self.best_loss = float('inf')
+                self.best_loss = float("inf")
 
             elif self.A > 0:
                 # Restart (omega^2-term drop)
@@ -83,15 +83,15 @@ class OrdinalLRScheduler:
                 self.C = self.P_init
                 # Reset LR to init
                 for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = self.eta_init
+                    param_group["lr"] = self.eta_init
                 # Reset optimizer state
                 self.optimizer.state.clear()
 
-                self.best_loss = float('inf')
+                self.best_loss = float("inf")
 
             else:
                 # Terminate or plateau
                 pass
 
     def get_last_lr(self):
-        return [group['lr'] for group in self.optimizer.param_groups]
+        return [group["lr"] for group in self.optimizer.param_groups]

@@ -34,9 +34,11 @@ from dataclasses import dataclass
 
 # -----------------------------------------------------------------------------
 
+
 @dataclass
 class ExecutionResult:
     """Result of executing Python code in a sandbox."""
+
     success: bool
     stdout: str
     stderr: str
@@ -218,7 +220,6 @@ def reliability_guard(maximum_memory_bytes: int | None = None):
 def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None, result_dict):
     """Execute code in a subprocess with safety guards. Results are written to result_dict."""
     with create_tempdir():
-
         # These system calls are needed when cleaning up tempdir.
         import os
         import shutil
@@ -232,14 +233,16 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
         reliability_guard(maximum_memory_bytes=maximum_memory_bytes)
 
         # Default to failure
-        result_dict.update({
-            "success": False,
-            "stdout": "",
-            "stderr": "",
-            "timeout": False,
-            "memory_exceeded": False,
-            "error": None,
-        })
+        result_dict.update(
+            {
+                "success": False,
+                "stdout": "",
+                "stderr": "",
+                "timeout": False,
+                "memory_exceeded": False,
+                "error": None,
+            }
+        )
 
         tmp_path = None
         try:
@@ -260,28 +263,36 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
                         # information on how OpenAI sandboxes its code, see the accompanying paper.
                         runpy.run_path(tmp_path, run_name="__main__")
 
-                result_dict.update({
-                    "success": True,
-                    "stdout": stdout_capture.getvalue(),
-                    "stderr": stderr_capture.getvalue(),
-                })
+                result_dict.update(
+                    {
+                        "success": True,
+                        "stdout": stdout_capture.getvalue(),
+                        "stderr": stderr_capture.getvalue(),
+                    }
+                )
 
             except TimeoutException:
-                result_dict.update({
-                    "timeout": True,
-                    "error": "Execution timed out",
-                })
+                result_dict.update(
+                    {
+                        "timeout": True,
+                        "error": "Execution timed out",
+                    }
+                )
 
             except MemoryError as e:
-                result_dict.update({
-                    "memory_exceeded": True,
-                    "error": f"Memory limit exceeded: {e}",
-                })
+                result_dict.update(
+                    {
+                        "memory_exceeded": True,
+                        "error": f"Memory limit exceeded: {e}",
+                    }
+                )
 
             except BaseException as e:
-                result_dict.update({
-                    "error": f"{type(e).__name__}: {e}",
-                })
+                result_dict.update(
+                    {
+                        "error": f"{type(e).__name__}: {e}",
+                    }
+                )
 
         finally:
             if tmp_path and os.path.exists(tmp_path):
@@ -300,8 +311,8 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
 
 def execute_code(
     code: str,
-    timeout: float = 5.0, # 5 seconds default
-    maximum_memory_bytes: int | None = 256 * 1024 * 1024, # 256MB default
+    timeout: float = 5.0,  # 5 seconds default
+    maximum_memory_bytes: int | None = 256 * 1024 * 1024,  # 256MB default
 ) -> ExecutionResult:
     """
     Execute Python code in a sandboxed environment.
@@ -327,10 +338,7 @@ def execute_code(
     manager = ctx.Manager()
     result_dict = manager.dict()
 
-    p = ctx.Process(
-        target=_unsafe_execute,
-        args=(code, timeout, maximum_memory_bytes, result_dict)
-    )
+    p = ctx.Process(target=_unsafe_execute, args=(code, timeout, maximum_memory_bytes, result_dict))
     try:
         p.start()
         p.join(timeout=timeout + 1)

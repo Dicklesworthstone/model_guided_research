@@ -148,17 +148,14 @@ class EnhancedTestRunner:
             Layout(name="header", size=3),
             Layout(name="progress", size=10),
             Layout(name="details", size=15),
-            Layout(name="footer", size=3)
+            Layout(name="footer", size=3),
         )
 
         # Header
         header = Panel(
-            Align.center(
-                Text("🧮 Model-Guided Research Enhanced Test Suite 🧮", style="bold cyan"),
-                vertical="middle"
-            ),
+            Align.center(Text("🧮 Model-Guided Research Enhanced Test Suite 🧮", style="bold cyan"), vertical="middle"),
             box=box.DOUBLE,
-            style="cyan"
+            style="cyan",
         )
         layout["header"].update(header)
 
@@ -201,10 +198,7 @@ class EnhancedTestRunner:
         with Live(layout, console=console, refresh_per_second=4):
             # Calculate total tests
             total_tests = len(DEMO_MODULES) * 5  # import, syntax, functions, docs, smoke
-            main_task = overall_progress.add_task(
-                "[cyan]Running comprehensive tests...",
-                total=total_tests
-            )
+            main_task = overall_progress.add_task("[cyan]Running comprehensive tests...", total=total_tests)
 
             # Phase 1: Import Tests
             import_branch = details_tree.add("📦 Phase 1: Import Tests")
@@ -267,7 +261,7 @@ class EnhancedTestRunner:
                 self.results.append(result)
 
                 status = "✅" if result.success else "❌"
-                size_str = f"{result.memory_used/1024:.1f}KB" if result.memory_used else "N/A"
+                size_str = f"{result.memory_used / 1024:.1f}KB" if result.memory_used else "N/A"
                 doc_branch.add(f"{status} {config['short_name']}: {size_str}")
 
                 test_progress.update(doc_task, advance=1)
@@ -311,20 +305,11 @@ class EnhancedTestRunner:
         try:
             importlib.import_module(module_name)
             duration = time.perf_counter() - start
-            return TestResult(
-                module_name=module_name,
-                test_type="import",
-                success=True,
-                duration=duration
-            )
+            return TestResult(module_name=module_name, test_type="import", success=True, duration=duration)
         except Exception as e:
             duration = time.perf_counter() - start
             return TestResult(
-                module_name=module_name,
-                test_type="import",
-                success=False,
-                duration=duration,
-                error=str(e)
+                module_name=module_name, test_type="import", success=False, duration=duration, error=str(e)
             )
 
     def _test_syntax(self, module_name: str) -> TestResult:
@@ -354,16 +339,12 @@ class EnhancedTestRunner:
                 test_type="syntax",
                 success=len(warnings) == 0,
                 duration=duration,
-                warnings=warnings if warnings else []
+                warnings=warnings if warnings else [],
             )
         except Exception as e:
             duration = time.perf_counter() - start
             return TestResult(
-                module_name=module_name,
-                test_type="syntax",
-                success=False,
-                duration=duration,
-                error=str(e)
+                module_name=module_name, test_type="syntax", success=False, duration=duration, error=str(e)
             )
 
     def _test_functions(self, module_name: str, expected_functions: list[str]) -> TestResult:
@@ -387,23 +368,14 @@ class EnhancedTestRunner:
                     test_type="functions",
                     success=False,
                     duration=duration,
-                    error=f"Missing: {', '.join(missing)}"
+                    error=f"Missing: {', '.join(missing)}",
                 )
 
-            return TestResult(
-                module_name=module_name,
-                test_type="functions",
-                success=True,
-                duration=duration
-            )
+            return TestResult(module_name=module_name, test_type="functions", success=True, duration=duration)
         except Exception as e:
             duration = time.perf_counter() - start
             return TestResult(
-                module_name=module_name,
-                test_type="functions",
-                success=False,
-                duration=duration,
-                error=str(e)
+                module_name=module_name, test_type="functions", success=False, duration=duration, error=str(e)
             )
 
     def _test_documentation(self, module_name: str) -> TestResult:
@@ -432,7 +404,7 @@ class EnhancedTestRunner:
                 success=True,
                 duration=duration,
                 memory_used=float(size),
-                warnings=warnings if warnings else []
+                warnings=warnings if warnings else [],
             )
 
         duration = time.perf_counter() - start
@@ -441,7 +413,7 @@ class EnhancedTestRunner:
             test_type="documentation",
             success=False,
             duration=duration,
-            error="Documentation file not found"
+            error="Documentation file not found",
         )
 
     def _test_demo_execution(self, module_name: str) -> TestResult:
@@ -452,13 +424,13 @@ class EnhancedTestRunner:
         try:
             module = importlib.import_module(module_name)
 
-            if not hasattr(module, 'demo'):
+            if not hasattr(module, "demo"):
                 return TestResult(
                     module_name=module_name,
                     test_type="execution",
                     success=False,
                     duration=0,
-                    error="No demo function found"
+                    error="No demo function found",
                 )
 
             # Capture output
@@ -500,7 +472,7 @@ class EnhancedTestRunner:
                 duration=duration,
                 output=output[:500] if output else None,
                 memory_used=memory_used,
-                warnings=warnings if warnings else []
+                warnings=warnings if warnings else [],
             )
 
         except Exception as e:
@@ -510,7 +482,7 @@ class EnhancedTestRunner:
                 test_type="execution",
                 success=False,
                 duration=duration,
-                error=f"{type(e).__name__}: {str(e)}"
+                error=f"{type(e).__name__}: {str(e)}",
             )
 
     def _get_system_info(self) -> str:
@@ -518,11 +490,7 @@ class EnhancedTestRunner:
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
 
-        return (
-            f"CPU: {cpu_percent:.1f}% | "
-            f"Memory: {memory.percent:.1f}% | "
-            f"Time: {datetime.now().strftime('%H:%M:%S')}"
-        )
+        return f"CPU: {cpu_percent:.1f}% | Memory: {memory.percent:.1f}% | Time: {datetime.now().strftime('%H:%M:%S')}"
 
     def _display_enhanced_summary(self) -> None:
         """Display comprehensive test summary with rich formatting."""
@@ -549,7 +517,7 @@ class EnhancedTestRunner:
                 box=box.ROUNDED,
                 show_header=True,
                 title_style="bold",
-                header_style="bold magenta"
+                header_style="bold magenta",
             )
 
             table.add_column("Module", style="cyan", no_wrap=True)
@@ -600,11 +568,11 @@ class EnhancedTestRunner:
                         Text(f"{total_passed}/{total_tests} tests successful", justify="center"),
                         Text(f"Completed in {elapsed:.2f} seconds", style="dim", justify="center"),
                     ),
-                    vertical="middle"
+                    vertical="middle",
                 ),
                 box=box.DOUBLE,
                 style="green",
-                padding=(1, 2)
+                padding=(1, 2),
             )
         else:
             summary_panel = Panel(
@@ -614,11 +582,11 @@ class EnhancedTestRunner:
                         Text(f"{total_passed}/{total_tests} tests passed", justify="center"),
                         Text(f"Completed in {elapsed:.2f} seconds", style="dim", justify="center"),
                     ),
-                    vertical="middle"
+                    vertical="middle",
                 ),
                 box=box.DOUBLE,
                 style="yellow",
-                padding=(1, 2)
+                padding=(1, 2),
             )
 
         console.print(summary_panel)
@@ -638,7 +606,7 @@ class EnhancedTestRunner:
                     ),
                     box=box.ROUNDED,
                     style="red",
-                    title="❌ Test Failure"
+                    title="❌ Test Failure",
                 )
                 console.print(error_panel)
 
@@ -743,12 +711,11 @@ def run_jax_diagnostics():
         console.print(table)
 
     except ImportError:
-        console.print(Panel(
-            "[red]JAX is not installed![/red]\n"
-            "Install with: pip install jax jaxlib",
-            box=box.ROUNDED,
-            style="red"
-        ))
+        console.print(
+            Panel(
+                "[red]JAX is not installed![/red]\nInstall with: pip install jax jaxlib", box=box.ROUNDED, style="red"
+            )
+        )
 
 
 def main():
@@ -765,19 +732,21 @@ def main():
     args = parser.parse_args()
 
     # Display header
-    console.print(Panel(
-        Align.center(
-            Group(
-                Text("🧮 Model-Guided Research", style="bold magenta", justify="center"),
-                Text("Enhanced Test Suite v2.0", style="bold cyan", justify="center"),
-                Text("Testing mathematical implementations from AI research", style="dim", justify="center"),
+    console.print(
+        Panel(
+            Align.center(
+                Group(
+                    Text("🧮 Model-Guided Research", style="bold magenta", justify="center"),
+                    Text("Enhanced Test Suite v2.0", style="bold cyan", justify="center"),
+                    Text("Testing mathematical implementations from AI research", style="dim", justify="center"),
+                ),
+                vertical="middle",
             ),
-            vertical="middle"
-        ),
-        box=box.DOUBLE_EDGE,
-        style="magenta",
-        padding=(1, 2)
-    ))
+            box=box.DOUBLE_EDGE,
+            style="magenta",
+            padding=(1, 2),
+        )
+    )
 
     # Run JAX diagnostics
     if not args.no_jax:
@@ -785,11 +754,7 @@ def main():
         console.print("")
 
     # Run tests
-    runner = EnhancedTestRunner(
-        verbose=args.verbose,
-        run_demos=args.demos,
-        timeout=args.timeout
-    )
+    runner = EnhancedTestRunner(verbose=args.verbose, run_demos=args.demos, timeout=args.timeout)
 
     success = runner.run_all_tests()
 

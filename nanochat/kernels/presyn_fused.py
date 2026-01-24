@@ -13,6 +13,7 @@ def _sigmoid(x):
     out32 = 1.0 / (1.0 + tl.exp(-x32))
     return out32.to(x.dtype)
 
+
 @triton.jit
 def _softplus(x):
     # softplus(x) = log(1 + exp(x))
@@ -21,23 +22,61 @@ def _softplus(x):
     out32 = tl.where(x32 > 20.0, x32, tl.log(1.0 + tl.exp(x32)))
     return out32.to(x.dtype)
 
+
 @triton.jit
 def presyn_fused_kernel_forward(
-    Q_ptr, K_ptr, Logits_ptr,  # (B,H,T,D), (B,H,T,D), (B,H,T,T)
-    C_ptr, BUF_ptr, RRP_ptr, RES_ptr, PR_ptr, CL_ptr, E_ptr, # (B,H,T)
+    Q_ptr,
+    K_ptr,
+    Logits_ptr,  # (B,H,T,D), (B,H,T,D), (B,H,T,T)
+    C_ptr,
+    BUF_ptr,
+    RRP_ptr,
+    RES_ptr,
+    PR_ptr,
+    CL_ptr,
+    E_ptr,  # (B,H,T)
     # Strides
-    Logits_stride_b, Logits_stride_h, Logits_stride_t, Logits_stride_k,
-    Q_stride_b, Q_stride_h, Q_stride_t, Q_stride_d,
-    K_stride_b, K_stride_h, K_stride_t, K_stride_d,
-    State_stride_b, State_stride_h, State_stride_t,
+    Logits_stride_b,
+    Logits_stride_h,
+    Logits_stride_t,
+    Logits_stride_k,
+    Q_stride_b,
+    Q_stride_h,
+    Q_stride_t,
+    Q_stride_d,
+    K_stride_b,
+    K_stride_h,
+    K_stride_t,
+    K_stride_d,
+    State_stride_b,
+    State_stride_h,
+    State_stride_t,
     # Config constants
-    T: tl.constexpr, D: tl.constexpr, BLOCK_SIZE_T: tl.constexpr,
-    tau_c, tau_buf, tau_prime, tau_rrp, tau_energy,
-    alpha_ca, alpha_buf_on, alpha_buf_off,
-    alpha_prime, alpha_refill, alpha_unprime,
-    energy_in, energy_cost_rel, energy_cost_pump,
-    syt_fast_kd, syt_slow_kd, complexin_bias,
-    qmax, q_beta, barrier_strength, epsilon, sqrt_D
+    T: tl.constexpr,
+    D: tl.constexpr,
+    BLOCK_SIZE_T: tl.constexpr,
+    tau_c,
+    tau_buf,
+    tau_prime,
+    tau_rrp,
+    tau_energy,
+    alpha_ca,
+    alpha_buf_on,
+    alpha_buf_off,
+    alpha_prime,
+    alpha_refill,
+    alpha_unprime,
+    energy_in,
+    energy_cost_rel,
+    energy_cost_pump,
+    syt_fast_kd,
+    syt_slow_kd,
+    complexin_bias,
+    qmax,
+    q_beta,
+    barrier_strength,
+    epsilon,
+    sqrt_D,
 ):
     # Program ID (sequence index = batch * n_head + head)
     pid = tl.program_id(0)
@@ -136,25 +175,27 @@ def presyn_fused_kernel_forward(
         influx = influx_accum / tl.maximum(count_accum, 1.0)
 
         # 2. Update State
-        c_next = rho_c * c_curr + alpha_ca * influx - alpha_buf_on * c_curr * (1.0 - buf_curr) + alpha_buf_off * buf_curr
+        c_next = (
+            rho_c * c_curr + alpha_ca * influx - alpha_buf_on * c_curr * (1.0 - buf_curr) + alpha_buf_off * buf_curr
+        )
         buf_next = rho_b * buf_curr + alpha_buf_on * c_curr * (1.0 - buf_curr) - alpha_buf_off * buf_curr
         c_next = tl.where(c_next < 0.0, 0.0, c_next)
         buf_next = tl.where(buf_next < 0.0, 0.0, buf_next)
         buf_next = tl.where(buf_next > 1.0, 1.0, buf_next)
 
-        pr_mid = (rho_p * pr_curr + alpha_prime * (1.0 - pr_curr))
+        pr_mid = rho_p * pr_curr + alpha_prime * (1.0 - pr_curr)
         pr_mid = tl.where(pr_mid < 0.0, 0.0, pr_mid)
         pr_mid = tl.where(pr_mid > 1.0, 1.0, pr_mid)
 
-        rrp_refill = (rho_r * rrp_curr + alpha_refill * res_curr)
+        rrp_refill = rho_r * rrp_curr + alpha_refill * res_curr
         rrp_refill = tl.where(rrp_refill < 0.0, 0.0, rrp_refill)
         rrp_refill = tl.where(rrp_refill > 1.0, 1.0, rrp_refill)
 
-        res_mid = (res_curr - alpha_refill * res_curr)
+        res_mid = res_curr - alpha_refill * res_curr
         res_mid = tl.where(res_mid < 0.0, 0.0, res_mid)
         res_mid = tl.where(res_mid > 1.0, 1.0, res_mid)
 
-        e_mid = (rho_e * e_curr + energy_in)
+        e_mid = rho_e * e_curr + energy_in
         e_mid = tl.where(e_mid < 0.0, 0.0, e_mid)
         e_mid = tl.where(e_mid > 1.6, 1.6, e_mid)
 
@@ -231,19 +272,19 @@ def presyn_fused_kernel_forward(
         used_rrp = raw_rel_accum * scale
 
         # Update final states
-        rrp_new = (rrp_refill - used_rrp)
+        rrp_new = rrp_refill - used_rrp
         rrp_new = tl.where(rrp_new < 0.0, 0.0, rrp_new)
         rrp_new = tl.where(rrp_new > 1.0, 1.0, rrp_new)
 
-        res_new = (res_mid + used_rrp)
+        res_new = res_mid + used_rrp
         res_new = tl.where(res_new < 0.0, 0.0, res_new)
         res_new = tl.where(res_new > 1.0, 1.0, res_new)
 
-        pr_new = (pr_mid - alpha_unprime * used_rrp)
+        pr_new = pr_mid - alpha_unprime * used_rrp
         pr_new = tl.where(pr_new < 0.0, 0.0, pr_new)
         pr_new = tl.where(pr_new > 1.0, 1.0, pr_new)
 
-        e_new = (e_mid - energy_cost_rel * used_rrp - energy_cost_pump * (1.0 - res_new))
+        e_new = e_mid - energy_cost_rel * used_rrp - energy_cost_pump * (1.0 - res_new)
         e_new = tl.where(e_new < 0.0, 0.0, e_new)
         e_new = tl.where(e_new > 1.6, 1.6, e_new)
 
@@ -332,34 +373,64 @@ def presyn_step(q, k, logits, state, cfg):
     N_seq = total_sequences
 
     # Grid: One block per sequence (N_seq)
-    grid = (N_seq, )
+    grid = (N_seq,)
 
     # Block size for T loops
-    BLOCK_SIZE_T = 64 # Tuning parameter
+    BLOCK_SIZE_T = 64  # Tuning parameter
 
     presyn_fused_kernel_forward[grid](
-        q_flat, k_flat, logits_flat,
-        state_tensors["C"], state_tensors["BUF"], state_tensors["RRP"],
-        state_tensors["RES"], state_tensors["PR"], state_tensors["CL"], state_tensors["E"],
+        q_flat,
+        k_flat,
+        logits_flat,
+        state_tensors["C"],
+        state_tensors["BUF"],
+        state_tensors["RRP"],
+        state_tensors["RES"],
+        state_tensors["PR"],
+        state_tensors["CL"],
+        state_tensors["E"],
         # Strides (for flat inputs, stride_b is stride_seq)
-        logits_flat.stride(0), 0, logits_flat.stride(1), logits_flat.stride(2), # stride_b, h(unused), t, k
-        q_flat.stride(0), 0, q_flat.stride(1), q_flat.stride(2),
-        k_flat.stride(0), 0, k_flat.stride(1), k_flat.stride(2),
-        state_tensors["C"].stride(0), 0, state_tensors["C"].stride(1),
+        logits_flat.stride(0),
+        0,
+        logits_flat.stride(1),
+        logits_flat.stride(2),  # stride_b, h(unused), t, k
+        q_flat.stride(0),
+        0,
+        q_flat.stride(1),
+        q_flat.stride(2),
+        k_flat.stride(0),
+        0,
+        k_flat.stride(1),
+        k_flat.stride(2),
+        state_tensors["C"].stride(0),
+        0,
+        state_tensors["C"].stride(1),
         # Constants
-        T=T, D=D, BLOCK_SIZE_T=cast(Any, BLOCK_SIZE_T),
-        tau_c=cfg.tau_c, tau_buf=cfg.tau_buf, tau_prime=cfg.tau_prime,
-        tau_rrp=cfg.tau_rrp, tau_energy=cfg.tau_energy,
-        alpha_ca=cfg.alpha_ca, alpha_buf_on=cfg.alpha_buf_on,
-        alpha_buf_off=cfg.alpha_buf_off, alpha_prime=cfg.alpha_prime,
-        alpha_refill=cfg.alpha_refill, alpha_unprime=cfg.alpha_unprime,
-        energy_in=cfg.energy_in, energy_cost_rel=cfg.energy_cost_rel,
+        T=T,
+        D=D,
+        BLOCK_SIZE_T=cast(Any, BLOCK_SIZE_T),
+        tau_c=cfg.tau_c,
+        tau_buf=cfg.tau_buf,
+        tau_prime=cfg.tau_prime,
+        tau_rrp=cfg.tau_rrp,
+        tau_energy=cfg.tau_energy,
+        alpha_ca=cfg.alpha_ca,
+        alpha_buf_on=cfg.alpha_buf_on,
+        alpha_buf_off=cfg.alpha_buf_off,
+        alpha_prime=cfg.alpha_prime,
+        alpha_refill=cfg.alpha_refill,
+        alpha_unprime=cfg.alpha_unprime,
+        energy_in=cfg.energy_in,
+        energy_cost_rel=cfg.energy_cost_rel,
         energy_cost_pump=cfg.energy_cost_pump,
-        syt_fast_kd=cfg.syt_fast_kd, syt_slow_kd=cfg.syt_slow_kd,
+        syt_fast_kd=cfg.syt_fast_kd,
+        syt_slow_kd=cfg.syt_slow_kd,
         complexin_bias=cfg.complexin_bias,
-        qmax=cfg.qmax, q_beta=cfg.q_beta,
-        barrier_strength=cfg.barrier_strength, epsilon=cfg.epsilon,
-        sqrt_D=math.sqrt(D)
+        qmax=cfg.qmax,
+        q_beta=cfg.q_beta,
+        barrier_strength=cfg.barrier_strength,
+        epsilon=cfg.epsilon,
+        sqrt_D=math.sqrt(D),
     )
 
     # Copy back state (updates were in-place on contiguous copies)

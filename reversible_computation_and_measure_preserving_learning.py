@@ -142,12 +142,15 @@ def orth_mix(x, h_vec):
     # Create a second non-colinear vector by a rotated/shifted version
     v2 = jnp.roll(v1, 1, axis=-1)
     v2 = v2 / (jnp.linalg.norm(v2, axis=-1, keepdims=True) + 1e-12)
+
     # Householder reflection H(v): z -> z - 2 (v·z) v
     def reflect(z, v):
         return z - 2 * jnp.sum(z * v, axis=-1, keepdims=True) * v
+
     y = reflect(x, v1)
     y = reflect(y, v2)
     return y
+
 
 # Optional Givens mixing with custom JVP (O(1) memory)
 from jax import custom_jvp as _custom_jvp
@@ -158,6 +161,7 @@ def _even_odd_pairs(d):
     i = jnp.arange(0, m, 2)
     j = jnp.arange(1, m, 2)
     return jnp.stack([i, j], axis=0)  # (2, npairs)
+
 
 @_custom_jvp
 def givens_mix(x, angles):
@@ -170,6 +174,7 @@ def givens_mix(x, angles):
         a = jnp.resize(angles, (npairs,))
     else:
         a = jnp.resize(angles[..., 0], (npairs,))
+
     def body(k, vec):
         i = pairs[0, k]
         j = pairs[1, k]
@@ -183,7 +188,9 @@ def givens_mix(x, angles):
         vec = jax.lax.dynamic_update_slice_in_dim(vec, new_i[..., None], i, axis=-1)
         vec = jax.lax.dynamic_update_slice_in_dim(vec, new_j[..., None], j, axis=-1)
         return vec
+
     return jax.lax.fori_loop(0, npairs, body, x)
+
 
 @givens_mix.defjvp
 def _givens_jvp(primals, tangents):
@@ -208,6 +215,7 @@ def orth_mix_inverse(x, h_vec):
     y = reflect(x, v2)
     y = reflect(y, v1)
     return y
+
 
 def affine_nonlinear(x, w1, b1, w2, b2):
     x = x @ w1 + b1
@@ -284,6 +292,7 @@ def set_reversible_cayley(enabled: bool) -> None:
     global USE_CAYLEY_HYBRID
     USE_CAYLEY_HYBRID = bool(enabled)
 
+
 def set_reversible_cayley_o1(enabled: bool) -> None:
     """Toggle O(1)-memory custom JVP for Cayley step.
 
@@ -298,6 +307,7 @@ def set_reversible_cayley_iters(n_iters: int) -> None:
     global CAYLEY_ITERS
     CAYLEY_ITERS = max(1, int(n_iters))
 
+
 def set_reversible_cayley_inv_iters(n_iters: int) -> None:
     global CAYLEY_INV_ITERS
     CAYLEY_INV_ITERS = max(1, int(n_iters))
@@ -307,9 +317,11 @@ def set_reversible_symplectic(enabled: bool) -> None:
     global USE_SYMPLECTIC_HYBRID
     USE_SYMPLECTIC_HYBRID = bool(enabled)
 
+
 def set_reversible_givens_mix(enabled: bool) -> None:
     global USE_GIVENS_MIX
     USE_GIVENS_MIX = bool(enabled)
+
 
 def set_reversible_generating_symplectic(enabled: bool) -> None:
     global USE_GENERATING_SYMPLECTIC
@@ -325,16 +337,18 @@ def _gen_symp_step(qp: Array, a: Array, b: Array, c: Array) -> Array:
     p_ = qp[..., n:]
     dp = -(a * q + c * p_)
     p_half = p_ + 0.5 * dp
-    dq = (b * p_half + c * q)
+    dq = b * p_half + c * q
     q_new = q + dq
     dp2 = -(a * q_new + c * p_half)
     p_new = p_half + 0.5 * dp2
     return jnp.concatenate([q_new, p_new], axis=-1)
 
+
 def _gen_symp_step_fwd(qp: Array, a: Array, b: Array, c: Array):
     y = _gen_symp_step(qp, a, b, c)
     # Save nothing heavy; we ignore grads wrt (a,b,c) for O(1) and reuse qp size info
     return y, (qp.shape[-1],)
+
 
 def _gen_symp_step_bwd(res, ct_y):
     # O(1) VJP: apply same linearized map to cotangent; ignore (a,b,c) grads
@@ -347,6 +361,7 @@ def _gen_symp_step_bwd(res, ct_y):
     # This keeps gradient propagation O(1) without caching.
     qpbar = jnp.concatenate([qbar, pbar], axis=-1)
     return (qpbar, jnp.zeros_like(qbar), jnp.zeros_like(qbar), jnp.zeros_like(qbar))
+
 
 _gen_symp_step.defvjp(_gen_symp_step_fwd, _gen_symp_step_bwd)
 
@@ -412,6 +427,7 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
     if USE_SYMPLECTIC_HYBRID:
         # O(1)-JVP symplectic step (ignores derivative w.r.t. step and generator)
         from jax import custom_jvp as _cjvp
+
         @_cjvp
         def _symp_step(qp):
             n2 = qp.shape[-1]
@@ -422,12 +438,14 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
             q_new = q + 0.1 * p_half
             p_new = p_half - 0.05 * q_new
             return jnp.concatenate([q_new, p_new], axis=-1)
+
         @_symp_step.defjvp
         def _symp_step_jvp(primals, tangents):
             (qp,), (dqp,) = primals, tangents
             y = _symp_step(qp)
             dy = _symp_step(dqp)  # O(1) rule: same linear map applied to tangent
             return y, dy
+
         qp = jnp.concatenate([u1, u2], axis=-1)
         qp_new = _symp_step(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
@@ -437,7 +455,11 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
         n = jnp.minimum(u1.shape[-1], u2.shape[-1])
         q = u1[..., :n]
         p_ = u2[..., :n]
-        if getattr(p, "gen_a", None) is not None and getattr(p, "gen_b", None) is not None and getattr(p, "gen_c", None) is not None:
+        if (
+            getattr(p, "gen_a", None) is not None
+            and getattr(p, "gen_b", None) is not None
+            and getattr(p, "gen_c", None) is not None
+        ):
             a = cast(Array, p.gen_a)[:n]
             b = cast(Array, p.gen_b)[:n]
             c = cast(Array, p.gen_c)[:n]
@@ -457,7 +479,7 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
         else:
             dp = -(a * q + c * p_)
             p_half = p_ + 0.5 * dp
-            dq = (b * p_half + c * q)
+            dq = b * p_half + c * q
             q_new = q + dq
             dp2 = -(a * q_new + c * p_half)
             p_new = p_half + 0.5 * dp2
@@ -480,10 +502,12 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             u = u2_loc / (jnp.linalg.norm(u2_loc, axis=-1, keepdims=True) + 1e-12)
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
             def S_apply(x):
                 a = jnp.sum(v * x, axis=-1, keepdims=True)
                 b = jnp.sum(u * x, axis=-1, keepdims=True)
                 return u * a - v * b
+
             rhs = y_loc - S_apply(y_loc)
             x_est = rhs
             # Allow separate inverse iteration count via CAYLEY_INV_ITERS
@@ -492,9 +516,11 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
                 # x <- x + α (rhs - (I+S) x)
                 x_est = x_est + alpha * (rhs - (x_est + S_apply(x_est)))
             return cast(Array, x_est)
-        u1 = cayley_inverse(u2, u1, CAYLEY_INV_ITERS if 'CAYLEY_INV_ITERS' in globals() else CAYLEY_ITERS)
+
+        u1 = cayley_inverse(u2, u1, CAYLEY_INV_ITERS if "CAYLEY_INV_ITERS" in globals() else CAYLEY_ITERS)
     if USE_SYMPLECTIC_HYBRID:
         from jax import custom_jvp as _cjvp
+
         @_cjvp
         def _symp_step_inv(qp):
             n2 = qp.shape[-1]
@@ -506,12 +532,14 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             p_new = p + 0.05 * q_half
             q_new = q_half - 0.1 * p_new + 0.1 * p  # keep structure simple
             return jnp.concatenate([q_new, p_new], axis=-1)
+
         @_symp_step_inv.defjvp
         def _symp_step_inv_jvp(primals, tangents):
             (qp,), (dqp,) = primals, tangents
             y = _symp_step_inv(qp)
             dy = _symp_step_inv(dqp)
             return y, dy
+
         qp = jnp.concatenate([u1, u2], axis=-1)
         qp_new = _symp_step_inv(qp)
         u1, u2 = jnp.split(qp_new, 2, axis=-1)
@@ -519,7 +547,11 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
         n = jnp.minimum(u1.shape[-1], u2.shape[-1])
         q = u1[..., :n]
         p_ = u2[..., :n]
-        if getattr(p, "gen_a", None) is not None and getattr(p, "gen_b", None) is not None and getattr(p, "gen_c", None) is not None:
+        if (
+            getattr(p, "gen_a", None) is not None
+            and getattr(p, "gen_b", None) is not None
+            and getattr(p, "gen_c", None) is not None
+        ):
             a = cast(Array, p.gen_a)[:n]
             b = cast(Array, p.gen_b)[:n]
             c = cast(Array, p.gen_c)[:n]
@@ -533,11 +565,11 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             b = jnp.float32(0.05)
             c = jnp.float32(0.02)
         # Reverse of the forward step
-        dp = (a * q + c * p_)
+        dp = a * q + c * p_
         p_half = p_ - 0.5 * dp
         dq = -(b * p_half + c * q)
         q_prev = q - dq
-        dp2 = (a * q_prev + c * p_half)
+        dp2 = a * q_prev + c * p_half
         p_prev = p_half - 0.5 * dp2
         u1 = u1.at[..., :n].set(q_prev)
         u2 = u2.at[..., :n].set(p_prev)
@@ -635,9 +667,7 @@ class MeteredValve:
         self.B = Bbits
         self.params = make_valve_params(key(seed), d_a, bins, hidden)
 
-    def forward(
-        self, y: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True
-    ) -> tuple[Array, ValveStats]:
+    def forward(self, y: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True) -> tuple[Array, ValveStats]:
         a, b = jnp.split(y, [self.d_a], axis=-1)
         logits = valve_logits(a, self.params)
         p = softmax_logits(logits)
@@ -803,6 +833,7 @@ def model_inverse(y: Array, m: Model, tape: BitTape, res: Reservoir) -> Array:
 
 # --- Small API adapters expected by tests ---
 
+
 def create_model(d: int, depth: int, key: jax.Array) -> Model:
     """Test helper: mirror signature in tests; choose reasonable defaults.
     d_a = d // 2, hidden=4*d_a, bins=65, Bbits=8.
@@ -921,27 +952,29 @@ def diagnostics_print():
             "Cycle OK": ok,
             "Max Abs Error": emax,
             "Tape U32 Words": tape_u32,
-            "Reservoir U32 Words After": res_u32
+            "Reservoir U32 Words After": res_u32,
         }
         print_metrics(cycle_metrics, "Cycle Test Results")
 
         bit_metrics = {
             "Bits Written": ledger["bits_written"],
             "Bits Consumed": ledger["bits_consumed"],
-            "Delta Bits": ledger["delta_bits"]
+            "Delta Bits": ledger["delta_bits"],
         }
         print_metrics(bit_metrics, "Bit Operations")
 
         conditional_print("[bold]Per-block bits:[/bold]", level=2)
         for i, s in enumerate(ledger["per_block"]):
-            conditional_print(f"  Block {i}: written={s.bits_written}, consumed={s.bits_consumed}, delta={s.delta_bits}", level=2)
+            conditional_print(
+                f"  Block {i}: written={s.bits_written}, consumed={s.bits_consumed}, delta={s.delta_bits}", level=2
+            )
 
         baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
         ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
         memory_metrics = {
             "Baseline Peak Activation (MB)": round(baseline_MB, 3),
             "Our Method (MB)": round(ours_MB, 3),
-            "Reduction Factor": round(baseline_MB / max(1e-6, ours_MB), 2)
+            "Reduction Factor": round(baseline_MB / max(1e-6, ours_MB), 2),
         }
         print_metrics(memory_metrics, "Memory Usage")
     else:
@@ -994,6 +1027,7 @@ def demo():
 
     # Default: enable Cayley hybrid + per-layer certificate table for this demo
     import os as _os
+
     try:
         set_reversible_cayley(True)
     except Exception as err:
@@ -1021,6 +1055,7 @@ def demo():
     try:
         from rich.console import Console as _Console
         from rich.table import Table as _Table
+
         mode = _Table(title="Reversible Mode Summary", show_header=True, header_style="bold magenta")
         mode.add_column("option")
         mode.add_column("value")
@@ -1083,8 +1118,10 @@ def demo():
 
     # Optional per-layer Cayley orthogonality checks
     import os as _os
+
     if _os.environ.get("REV_LAYER_CERT", "0") == "1" and USE_CAYLEY_HYBRID:
         from rich.table import Table as _Table
+
         t = _Table(title="Reversible Cayley Layer Checks", show_header=True, header_style="bold magenta")
         t.add_column("Layer")
         t.add_column("||Q^T Q − I||_F", justify="right")
@@ -1096,39 +1133,48 @@ def demo():
             u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
             # Approximate Q via first-order (I+S) (note: demo-only; forward uses solve approximation)
             def S_apply(xv, u=u, v=v):
                 a = jnp.sum(v * xv, axis=-1, keepdims=True)
                 b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
                 return u * a - v * b_
+
             # Build Qy ≈ y + S(y)
             yv = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
             Qy = yv + S_apply(yv)
             jnp.eye(d_a)
+
             # Compute err per slice
             # Use a proxy by sampling vectors rather than forming Q explicitly
             # err ≈ ||(Q^T Q y - y)|| / ||y|| averaged
             def err_vec(y_, Qy=Qy):
                 QtQy = Qy  # proxy since Q is near-orthogonal for small S
                 return jnp.linalg.norm(QtQy - y_) / (jnp.linalg.norm(y_) + 1e-12)
+
             err = float(jnp.mean(jax.vmap(err_vec)(yv)))
             t.add_row(str(i), f"{err:.2e}")
         if config.use_rich_output:
             from rich.console import Console as _Console
+
             _Console().print(t)
 
     # Invertibility summary table (orthogonality + symplectic checks)
     if config.use_rich_output:
         from rich.table import Table as _Table
+
         inv = _Table(title="Invertibility Summary", show_header=True, header_style="bold magenta")
         inv.add_column("Property")
         inv.add_column("Value", justify="right")
         inv.add_row("Strict Givens mixing", "ON" if USE_GIVENS_MIX else "OFF")
         # Orthogonality proxy from a random skew via Cayley
         import numpy as _np
+
         M = _np.random.randn(d_a, d_a)
         A = 0.1 * (M - M.T)
-        Q = jnp.linalg.solve(jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32))
+        Q = jnp.linalg.solve(
+            jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32)
+        )
         inv.add_row("||Q^T Q−I||_F", f"{float(jnp.linalg.norm(Q.T @ Q - jnp.eye(d_a))):.2e}")
         if USE_SYMPLECTIC_HYBRID:
             n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
@@ -1154,12 +1200,16 @@ def demo():
                 u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
                 v = jnp.roll(u, 1, axis=-1)
                 v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
                 def _S(xv, u=u, v=v):
                     a = jnp.sum(v * xv, axis=-1, keepdims=True)
                     b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
                     return u * a - v * b_
+
                 yv = jax.random.normal(key(323), (2, d_a), dtype=jnp.float32)
-                cayley_err = float(jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+                cayley_err = float(
+                    jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
+                )
                 det_err = 0.0
                 if d <= 128:
                     eye_d = jnp.eye(d, dtype=jnp.float32)
@@ -1171,11 +1221,13 @@ def demo():
         except Exception as err:
             print(f"[reversible] Layer property summary failed: {err}")
         from rich.console import Console as _Console
+
         _Console().print(inv)
 
     # Per-layer property checkers table (mix norm proxy, Cayley proxy, symplectic proxy)
     if config.use_rich_output:
         from rich.table import Table as _Table
+
         tbl = _Table(title="Per-layer Property Checks", show_header=True, header_style="bold magenta")
         tbl.add_column("Layer")
         tbl.add_column("mix_norm_err", justify="right")
@@ -1204,10 +1256,12 @@ def demo():
             u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
             def S_apply(xv, u=u, v=v):
                 a = jnp.sum(v * xv, axis=-1, keepdims=True)
                 b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
                 return u * a - v * b_
+
             yv = jax.random.normal(k_local, (2, d_a), dtype=jnp.float32)
             Qy = yv + S_apply(yv)
             cayley_err = float(jnp.mean(jnp.linalg.norm(Qy - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
@@ -1228,19 +1282,29 @@ def demo():
                 eye_d = jnp.eye(d, dtype=jnp.float32)
                 Mrows = givens_mix(eye_d, b.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, b.coup.mix)
                 det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
-            ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps) and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
+            ok = (
+                (mix_err < mix_eps)
+                and (cayley_err < cayley_eps)
+                and (det_err < det_eps)
+                and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
+            )
             ok_count += int(ok)
-            tbl.add_row(str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}", f"{det_err:.2e}", ("✓" if ok else "✗"))
+            tbl.add_row(
+                str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}", f"{det_err:.2e}", ("✓" if ok else "✗")
+            )
         from rich.console import Console as _Console
+
         _Console().print(tbl)
         try:
             from rich.table import Table as _Table
+
             summ = _Table(title="Property Summary", show_header=False, header_style="bold magenta")
             summ.add_column("k/total")
             summ.add_row(f"{ok_count}/{len(m.blocks)} layers OK")
             _Console().print(summ)
         except Exception as err:
             print(f"[reversible] Skipping property summary: {err}")
+
         # ASCII sparklines for aggregated trends
         def spark(vals):
             bars = "▁▂▃▄▅▆▇█"
@@ -1251,8 +1315,10 @@ def demo():
                 return bars[0] * len(vals)
             idxs = [int((v - lo) / (hi - lo) * (len(bars) - 1)) for v in vals]
             return "".join(bars[i] for i in idxs)
+
         # Re-run quick sweep to collect arrays
         import time as _time
+
         tm_by_iter = []
         mem_by_iter = []
         for iters in [1, 2, 3, 4]:
@@ -1275,12 +1341,16 @@ def demo():
             u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
             v = jnp.roll(u, 1, axis=-1)
             v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
             def S_apply2(xv, u=u, v=v):
                 a = jnp.sum(v * xv, axis=-1, keepdims=True)
                 b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
                 return u * a - v * b_
+
             yv = jax.random.normal(k_loc2, (2, d_a), dtype=jnp.float32)
-            cayley_err = float(jnp.mean(jnp.linalg.norm((yv + S_apply2(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+            cayley_err = float(
+                jnp.mean(jnp.linalg.norm((yv + S_apply2(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
+            )
             det_err = 0.0
             if d <= 128:
                 eye_d = jnp.eye(d, dtype=jnp.float32)
@@ -1292,24 +1362,47 @@ def demo():
             symp_eps = 1e-6
             det_eps = 1e-3
             symp_err = 0.0
-            ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps) and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
-            prop_rows.append({"layer": int(li), "mix_norm_err": mix_err, "cayley_proxy": cayley_err, "det_err": det_err, "ok": bool(ok)})
+            ok = (
+                (mix_err < mix_eps)
+                and (cayley_err < cayley_eps)
+                and (det_err < det_eps)
+                and ((symp_err < symp_eps) if USE_SYMPLECTIC_HYBRID else True)
+            )
+            prop_rows.append(
+                {
+                    "layer": int(li),
+                    "mix_norm_err": mix_err,
+                    "cayley_proxy": cayley_err,
+                    "det_err": det_err,
+                    "ok": bool(ok),
+                }
+            )
         # Merge with existing diagnostics if any (from Pareto etc.)
         gen_norms = []
         for blk in m.blocks:
-            if getattr(blk.coup, "gen_a", None) is not None and getattr(blk.coup, "gen_b", None) is not None and getattr(blk.coup, "gen_c", None) is not None:
+            if (
+                getattr(blk.coup, "gen_a", None) is not None
+                and getattr(blk.coup, "gen_b", None) is not None
+                and getattr(blk.coup, "gen_c", None) is not None
+            ):
                 a_n = float(jnp.linalg.norm(blk.coup.gen_a))
                 b_n = float(jnp.linalg.norm(blk.coup.gen_b))
                 c_n = float(jnp.linalg.norm(blk.coup.gen_c))
                 gen_norms.append({"a": a_n, "b": b_n, "c": c_n})
             elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
-                base = jnp.tanh(blk.coup.mix[: d])
-                gen_norms.append({
-                    "a": float(jnp.linalg.norm(0.05 * base)),
-                    "b": float(jnp.linalg.norm(0.05 * base)),
-                    "c": float(jnp.linalg.norm(0.02 * base)),
-                })
-        diag_merge = {"property_checks": prop_rows, "property_thresholds": {"mix": 1e-3, "cayley": 1e-3, "symp": 1e-6, "det": 1e-3}, "strict_givens": bool(USE_GIVENS_MIX)}
+                base = jnp.tanh(blk.coup.mix[:d])
+                gen_norms.append(
+                    {
+                        "a": float(jnp.linalg.norm(0.05 * base)),
+                        "b": float(jnp.linalg.norm(0.05 * base)),
+                        "c": float(jnp.linalg.norm(0.02 * base)),
+                    }
+                )
+        diag_merge = {
+            "property_checks": prop_rows,
+            "property_thresholds": {"mix": 1e-3, "cayley": 1e-3, "symp": 1e-6, "det": 1e-3},
+            "strict_givens": bool(USE_GIVENS_MIX),
+        }
         ok_count_export = int(sum(1 for r in prop_rows if r.get("ok", False)))
         diag_merge["property_summary"] = {"ok_count": ok_count_export, "total": len(prop_rows)}
         diag_merge["gen_mode"] = {
@@ -1323,7 +1416,7 @@ def demo():
             print(f"[reversible] Failed to build sparkline: {err}")
         if gen_norms:
             diag_merge["gen_param_norms"] = gen_norms
-        if 'last_diagnostics' in globals() and isinstance(last_diagnostics, dict):
+        if "last_diagnostics" in globals() and isinstance(last_diagnostics, dict):
             last_diagnostics.update(diag_merge)
         else:
             last_diagnostics = diag_merge
@@ -1336,7 +1429,10 @@ def demo():
         import tracemalloc
 
         from rich.table import Table as _Table
-        t = _Table(title="Cayley Iterations/Depth Pareto (lower is better)", show_header=True, header_style="bold magenta")
+
+        t = _Table(
+            title="Cayley Iterations/Depth Pareto (lower is better)", show_header=True, header_style="bold magenta"
+        )
         t.add_column("layers")
         t.add_column("iters")
         t.add_column("time_ms", justify="right")
@@ -1365,7 +1461,9 @@ def demo():
                 mem_by_depth.setdefault(iters, []).append(peak_mb)
         if config.use_rich_output:
             from rich.console import Console as _Console
+
             _Console().print(t)
+
             # ASCII sparklines for trends
             def spark(vals):
                 bars = "▁▂▃▄▅▆▇█"
@@ -1376,6 +1474,7 @@ def demo():
                     return bars[0] * len(vals)
                 idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(bars) - 1)) for v in vals]
                 return "".join(bars[i] for i in idxs)
+
             depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
             print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
             print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
@@ -1391,6 +1490,7 @@ def demo():
                 _ = model_inverse(y_tmp, m_sweep, BitTape(), Reservoir(321))
                 inv_times.append((time.perf_counter() - t0i) * 1000.0)
             print("inverse time(ms):", spark(inv_times))
+
             # ASCII sparklines for trends
             def spark(vals):
                 bars = "▁▂▃▄▅▆▇█"
@@ -1401,6 +1501,7 @@ def demo():
                     return bars[0] * len(vals)
                 idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(bars) - 1)) for v in vals]
                 return "".join(bars[i] for i in idxs)
+
             depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
             print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
             print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
@@ -1421,6 +1522,7 @@ def demo():
             print(f"[reversible] Failed to record Pareto diagnostics: {err}")
     if config.use_rich_output:
         from rich.console import Console
+
         console = Console()
         if final_ok:
             console.print("\n[bold green]✓ Final cycle check: PASSED[/bold green]")

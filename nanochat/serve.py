@@ -13,8 +13,7 @@ try:
     from pydantic import BaseModel, Field
 except ModuleNotFoundError as e:
     raise ImportError(
-        "nanochat.serve requires optional server dependencies. "
-        "Install them with `uv sync --extra server`."
+        "nanochat.serve requires optional server dependencies. Install them with `uv sync --extra server`."
     ) from e
 
 import jax
@@ -63,12 +62,9 @@ def load_model() -> None:
     model = GPT(config)
     rng = jax.random.PRNGKey(42)
     dummy_input = jnp.ones((1, config.sequence_len), dtype=jnp.int32)
-    params = model.init(rng, dummy_input, train=False)['params']
+    params = model.init(rng, dummy_input, train=False)["params"]
 
-    model_state = {
-        "params": params,
-        "apply_fn": model.apply
-    }
+    model_state = {"params": params, "apply_fn": model.apply}
 
     console.print("[bold cyan]Loading tokenizer...[/bold cyan]")
     tokenizer = get_tokenizer()
@@ -88,9 +84,11 @@ app = FastAPI(lifespan=lifespan)
 async def get_ui() -> str:
     return _UI_PATH.read_text(encoding="utf-8")
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "backend": "jax"}
+
 
 @app.post("/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
@@ -114,11 +112,11 @@ async def chat_completions(request: ChatCompletionRequest):
     prompt += "assistant: "
 
     input_ids = tokenizer.encode(prompt)
-    input_ids = jnp.array([input_ids], dtype=jnp.int32) # [1, T]
+    input_ids = jnp.array([input_ids], dtype=jnp.int32)  # [1, T]
 
     # Truncate if too long
     if input_ids.shape[1] > config.sequence_len:
-        input_ids = input_ids[:, -config.sequence_len:]
+        input_ids = input_ids[:, -config.sequence_len :]
 
     async def generate_stream():
         current_ids = input_ids
@@ -128,11 +126,11 @@ async def chat_completions(request: ChatCompletionRequest):
             # We need to handle context length.
             # If current_ids > sequence_len, we crop.
             if current_ids.shape[1] > config.sequence_len:
-                cond_ids = current_ids[:, -config.sequence_len:]
+                cond_ids = current_ids[:, -config.sequence_len :]
             else:
                 cond_ids = current_ids
 
-            logits = model_state["apply_fn"]({'params': model_state["params"]}, cond_ids, train=False)
+            logits = model_state["apply_fn"]({"params": model_state["params"]}, cond_ids, train=False)
             next_token_logits = logits[0, -1, :]
 
             # Sampling
@@ -168,8 +166,10 @@ async def chat_completions(request: ChatCompletionRequest):
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 
+
 if __name__ == "__main__":
     import uvicorn
+
     host = os.environ.get("NANOCHAT_BIND_HOST", "127.0.0.1")
     port = int(os.environ.get("NANOCHAT_PORT", "8000"))
     uvicorn.run(app, host=host, port=port)

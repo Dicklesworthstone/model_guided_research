@@ -40,7 +40,9 @@ def tropical_max_plus_attention(
     if q.ndim != 4 or k.ndim != 4 or v.ndim != 4:
         raise ValueError("tropical_max_plus_attention expects q/k/v of shape (B, H, T, D)")
     if k.shape != v.shape:
-        raise ValueError(f"tropical_max_plus_attention expects k and v to have the same shape, got k={k.shape}, v={v.shape}")
+        raise ValueError(
+            f"tropical_max_plus_attention expects k and v to have the same shape, got k={k.shape}, v={v.shape}"
+        )
     if q.shape[0] != k.shape[0] or q.shape[1] != k.shape[1] or q.shape[3] != k.shape[3]:
         raise ValueError(f"tropical_max_plus_attention head shapes mismatch: q={q.shape}, k={k.shape}, v={v.shape}")
 
