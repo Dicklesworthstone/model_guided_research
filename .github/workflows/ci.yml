@@ -32,7 +32,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --frozen --extra dev
 
       - name: Run ruff linter
         run: uv run ruff check .
@@ -57,7 +57,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --frozen --extra dev
 
       - name: Run mypy
         run: uv run mypy . --ignore-missing-imports
@@ -80,7 +80,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --group test
+        run: uv sync --frozen --extra dev --extra test
 
       - name: Run tests with pytest
         run: |
