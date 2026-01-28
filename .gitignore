@@ -67,3 +67,7 @@ artifacts/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Beads ephemeral files
+.beads/last-touched
+.beads/.bv.lock
