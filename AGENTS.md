@@ -82,8 +82,6 @@ Common pitfalls:
 
 All issue tracking goes through **br**. No other TODO systems.
 
-**Note:** `br` (beads_rust) is non-invasive and never executes git commands directly. You must manually run git operations after `br sync --flush-only`.
-
 Key invariants:
 
 - `.beads/` is authoritative state and **must always be committed** with code changes.
@@ -94,27 +92,27 @@ Key invariants:
 Check ready work:
 
 ```bash
-br ready --json
+bd ready --json
 ```
 
 Create issues:
 
 ```bash
-br create "Issue title" -t bug|feature|task -p 0-4 --json
-br create "Issue title" -p 1 --deps discovered-from:br-123 --json
+bd create "Issue title" -t bug|feature|task -p 0-4 --json
+bd create "Issue title" -p 1 --deps discovered-from:br-123 --json
 ```
 
 Update:
 
 ```bash
-br update br-42 --status in_progress --json
-br update br-42 --priority 1 --json
+bd update br-42 --status in_progress --json
+bd update br-42 --priority 1 --json
 ```
 
 Complete:
 
 ```bash
-br close br-42 --reason "Completed" --json
+bd close br-42 --reason "Completed" --json
 ```
 
 Types:
@@ -131,8 +129,8 @@ Priorities:
 
 Agent workflow:
 
-1. `br ready` to find unblocked work.
-2. Claim: `br update <id> --status in_progress`.
+1. `bd ready` to find unblocked work.
+2. Claim: `bd update <id> --status in_progress`.
 3. Implement + test.
 4. If you discover new work, create a new bead with `discovered-from:<parent-id>`.
 5. Close when done.
@@ -140,7 +138,7 @@ Agent workflow:
 
 Sync workflow:
 
-- Run `br sync --flush-only` to export to JSONL (does NOT run git commands).
+- Run `bd sync` to export to JSONL (does NOT run git commands).
 - Then manually run: `git add .beads/ && git commit -m "Update beads" && git push`
 
 Never:
@@ -353,7 +351,7 @@ rg -l -t py 'pandas' | xargs ast-grep run -l Python -p 'import pandas as $ALIAS'
 When starting a beads-tracked task:
 
 1. **Pick ready work** (Beads)
-   - `br ready --json` → choose one item (highest priority, no blockers)
+   - `bd ready --json` → choose one item (highest priority, no blockers)
 2. **Reserve edit surface** (Mail)
    - `file_reservation_paths(project_key, agent_name, ["src/**"], ttl_seconds=3600, exclusive=true, reason="br-123")`
 3. **Announce start** (Mail)
@@ -361,7 +359,7 @@ When starting a beads-tracked task:
 4. **Work and update**
    - Reply in-thread with progress and attach artifacts/images; keep the discussion in one thread per issue id
 5. **Complete and release**
-   - `br close br-123 --reason "Completed"` (Beads is status authority)
+   - `bd close br-123 --reason "Completed"` (Beads is status authority)
    - `release_file_reservations(project_key, agent_name, paths=["src/**"])`
    - Final Mail reply: `[br-123] Completed` with summary and links
 
@@ -385,7 +383,7 @@ Mapping cheat-sheet:
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   br sync --flush-only  # Export to JSONL (does NOT run git commands)
+   bd sync  # Export to JSONL (does NOT run git commands)
    git add .beads/ && git commit -m "Update beads" && git push
    git status  # MUST show "up to date with origin"
    ```
