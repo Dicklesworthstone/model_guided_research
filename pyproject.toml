@@ -34,7 +34,7 @@ dependencies = [
     # Visualization (optional, only used in one demo)
     "matplotlib>=3.8.0",
     # CLI and console output
-    "typer>=0.15.0",
+    "typer>=0.24.1",
     "rich>=13.7.0",
     "psutil>=7.0.0",
     # Nanochat dependencies
