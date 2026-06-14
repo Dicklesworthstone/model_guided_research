@@ -116,7 +116,13 @@ INIT_VARIANTS: dict[str, InitVariant] = {
     "standard": InitVariant("standard", None, 1.0, "baseline normal_ init"),
     "ca_rule30": InitVariant("ca_rule30", "rule30", 1.0, "pure CA (rule30) init"),
     "ca_mix0.5": InitVariant("ca_mix0.5", "rule30", 0.5, "0.5*CA(rule30) + 0.5*standard"),
+    "ca_mix0.25": InitVariant("ca_mix0.25", "rule30", 0.25, "0.25*CA(rule30) + 0.75*standard (bias-like)"),
 }
+
+# bench mode sweeps these three; ca_mix0.25 is reserved for the retention
+# (bias-axis) experiment so adding it does not change the default bench sweep.
+BENCH_VARIANTS = ["standard", "ca_rule30", "ca_mix0.5"]
+RETENTION_VARIANTS = ["standard", "ca_rule30", "ca_mix0.5", "ca_mix0.25"]
 
 
 @dataclass
@@ -272,6 +278,7 @@ def _run_train_cell(
     run_dir: Path,
     artifacts_dir: Path,
     args: argparse.Namespace,
+    checkpoint: bool = False,
 ) -> CellResult:
     topic = f"{run_dir.name}/runs/{arch.name}__{variant.name}"
     cell_run_id = f"seed{seed}"
@@ -293,6 +300,9 @@ def _run_train_cell(
         "--artifacts-topic", topic,
         "--run-id", cell_run_id,
     ]
+    if checkpoint:
+        # save the final model so retention can compare trained vs init weights
+        train_cmd += ["--checkpoint-interval", str(args.max_steps), "--checkpoint-keep", "1"]
     if args.auto_download_data:
         train_cmd += ["--auto-download-data", "--min-parquet-files", str(args.min_parquet_files)]
 
@@ -518,8 +528,199 @@ def _print_table(cells: list[CellResult]) -> None:
     console.print(table)
 
 
+def _measure_retention(
+    arch: ArchConfig, variant: InitVariant, seed: int, *, cell_train_dir: Path, device: str, vocab_size: int
+) -> dict[str, Any]:
+    """How much of the init's weight structure survives training: cosine
+    similarity between the (deterministically reconstructed) init weights and
+    the trained checkpoint, over the CA-initialized tensors (input projections
+    c_q/c_k/c_v/c_fc + the wte embedding; c_proj/lm_head are zeroed at init so
+    they carry no init structure). Returns mean cosine + mean relative L2 drift.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    from nanochat.checkpoint_manager import find_last_step, load_checkpoint
+    from nanochat.gpt import GPT, GPTConfig
+
+    cfg = GPTConfig()
+    cfg.n_layer = arch.n_layer
+    cfg.n_head = arch.n_head
+    cfg.n_kv_head = arch.n_kv_head
+    cfg.n_embd = arch.n_embd
+    cfg.sequence_len = arch.sequence_len
+    cfg.vocab_size = vocab_size
+    cfg.attention_type = "standard"
+    cfg.ca_init_rule = variant.ca_rule
+    cfg.ca_init_alpha = variant.ca_alpha
+    cfg.ca_init_seed = seed
+    torch.manual_seed(seed)
+    model = GPT(cfg)
+    model.init_weights()
+    init_sd = {k: v.detach().float().clone() for k, v in model.state_dict().items()}
+
+    ckpt_dir = cell_train_dir / "checkpoints"
+    step = find_last_step(str(ckpt_dir))
+    if step is None:
+        return {"error": f"no checkpoint under {ckpt_dir}"}
+    final_sd, _, _ = load_checkpoint(str(ckpt_dir), step, device=device)
+
+    cos_by_tensor: dict[str, float] = {}
+    rel_by_tensor: dict[str, float] = {}
+    for k in init_sd:
+        if not (any(s in k for s in ("c_q", "c_k", "c_v", "c_fc")) or k.endswith("wte.weight")):
+            continue
+        if k not in final_sd:
+            continue
+        a = init_sd[k].flatten()
+        b = final_sd[k].float().flatten()
+        if a.norm() == 0:
+            continue
+        cos_by_tensor[k] = float(F.cosine_similarity(a.unsqueeze(0), b.unsqueeze(0)).item())
+        rel_by_tensor[k] = float((b - a).norm().item() / (a.norm().item() + 1e-9))
+
+    cos_vals = list(cos_by_tensor.values())
+    rel_vals = list(rel_by_tensor.values())
+    return {
+        "trained_step": int(step),
+        "n_tensors": len(cos_vals),
+        "cosine_mean": (sum(cos_vals) / len(cos_vals)) if cos_vals else None,
+        "cosine_min": (min(cos_vals) if cos_vals else None),
+        "rel_drift_mean": (sum(rel_vals) / len(rel_vals)) if rel_vals else None,
+        "cosine_by_tensor": cos_by_tensor,
+    }
+
+
+def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path) -> int:
+    """Bead 827: does CA structure persist through training? Trains each
+    alpha-bias variant (pure CA -> blended bias -> standard baseline) with a
+    final checkpoint, then measures init->trained cosine retention.
+
+    NOTE the freeze-channel arm of 827 would need a train.py --freeze-init-steps
+    feature (no default-behavior change here); the implementable arm is the
+    bias-axis (alpha) sweep, which directly answers the retention question.
+    """
+    run_id = run_dir.name
+    console.rule(f"[bold magenta]CA-init retention[/bold magenta] · {run_id}")
+    console.print(f"configs={args.configs}  variants={RETENTION_VARIANTS}  seeds={args.seeds}  "
+                  f"steps={args.max_steps}  device={args.device}")
+
+    rows: list[dict[str, Any]] = []
+    total = len(args.configs) * len(RETENTION_VARIANTS) * len(args.seeds)
+    with Progress(
+        TextColumn("[bold magenta]retention[/bold magenta]"), BarColumn(), MofNCompleteColumn(),
+        TaskProgressColumn(), TimeElapsedColumn(), console=console,
+    ) as prog:
+        task = prog.add_task("cells", total=total)
+        for cfg_name in args.configs:
+            arch = ARCH_CONFIGS[cfg_name]
+            for var_name in RETENTION_VARIANTS:
+                variant = INIT_VARIANTS[var_name]
+                for seed in args.seeds:
+                    cell = _run_train_cell(
+                        arch=arch, variant=variant, seed=seed, run_dir=run_dir,
+                        artifacts_dir=artifacts_dir, args=args, checkpoint=True,
+                    )
+                    ret: dict[str, Any] = {"error": f"train status={cell.status}"}
+                    if cell.status == "ok" and cell.train_dir is not None:
+                        try:
+                            ret = _measure_retention(
+                                arch, variant, seed,
+                                cell_train_dir=artifacts_dir / cell.train_dir,
+                                device=args.device, vocab_size=args.vocab_size,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            ret = {"error": f"{type(exc).__name__}: {exc}"}
+                    rows.append({
+                        "config": cfg_name, "variant": var_name, "seed": seed,
+                        "alpha": variant.ca_alpha if variant.ca_rule else 0.0,
+                        "status": cell.status, "loss_final": cell.loss_final(),
+                        "retention": ret,
+                    })
+                    prog.advance(task)
+
+    # aggregate per (config, variant): mean cosine + rel drift + final loss
+    def _mean(vals: list[float | None]) -> float | None:
+        ok = [v for v in vals if v is not None and math.isfinite(v)]
+        return (sum(ok) / len(ok)) if ok else None
+
+    agg: dict[tuple[str, str], dict[str, Any]] = {}
+    for cfg_name in args.configs:
+        for var_name in RETENTION_VARIANTS:
+            grp = [r for r in rows if r["config"] == cfg_name and r["variant"] == var_name]
+            agg[(cfg_name, var_name)] = {
+                "alpha": INIT_VARIANTS[var_name].ca_alpha if INIT_VARIANTS[var_name].ca_rule else 0.0,
+                "cosine_mean": _mean([r["retention"].get("cosine_mean") for r in grp]),
+                "rel_drift_mean": _mean([r["retention"].get("rel_drift_mean") for r in grp]),
+                "loss_final": _mean([r["loss_final"] for r in grp]),
+                "n_ok": sum(1 for r in grp if r["status"] == "ok"),
+                "n_total": len(grp),
+            }
+
+    _write_json(run_dir / "retention_summary.json", {
+        "schema_version": "mgr.ca_init.retention.v1",
+        "run_id": run_id,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "command": shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:]),
+        "settings": {"max_steps": args.max_steps, "seeds": list(args.seeds),
+                     "configs": args.configs, "variants": RETENTION_VARIANTS,
+                     "learning_rate": args.learning_rate, "device": args.device},
+        "rows": rows,
+    })
+
+    # report
+    lines = [f"# CA-init structure retention — `{run_id}`\n",
+             "Bead model_guided_research-827. After training, how much of the init's weight "
+             "structure survives? Cosine similarity between the (deterministically reconstructed) "
+             "init weights and the trained checkpoint, over the CA-initialized tensors "
+             "(c_q/c_k/c_v/c_fc + wte). Higher cosine = more structure retained.\n",
+             f"- Device `{args.device}` · steps `{args.max_steps}` · lr `{args.learning_rate}` · "
+             f"seeds `{list(args.seeds)}`\n",
+             "Bias axis: `ca_rule30` (alpha=1.0 pure CA) → `ca_mix0.5` → `ca_mix0.25` "
+             "(more bias-like) → `standard` (random-init baseline).\n",
+             "| config | variant | alpha | ok | retention cosine | rel L2 drift | final loss |",
+             "|---|---|---|---|---|---|---|"]
+
+    def f(x: float | None) -> str:
+        return f"{x:.4f}" if isinstance(x, (int, float)) else "—"
+
+    for cfg_name in args.configs:
+        for var_name in RETENTION_VARIANTS:
+            m = agg[(cfg_name, var_name)]
+            lines.append(f"| {cfg_name} | {var_name} | {m['alpha']:.2f} | {m['n_ok']}/{m['n_total']} | "
+                         f"{f(m['cosine_mean'])} | {f(m['rel_drift_mean'])} | {f(m['loss_final'])} |")
+    lines.append("")
+    lines.append("## Reading it\n")
+    lines.append("- **Cosine → 1.0**: the trained weights still point the same way as init → CA "
+                 "structure is retained; SGD only nudged magnitudes.")
+    lines.append("- **Cosine ≪ 1.0**: training reoriented the weights → the init structure washed "
+                 "out (CA-init then acts as a fancy random seed, not a lasting prior).")
+    lines.append("- Compare across the alpha axis: if lower-alpha (more bias-like) variants retain "
+                 "MORE structure at equal/again-better loss, the bias framing helps; if not, pure CA "
+                 "is as good as any blend.\n")
+    lines.append("The freeze-channel arm (freeze CA channels for N warmup steps) is left as a "
+                 "follow-up: it needs a `train.py --freeze-init-steps` feature and is out of scope "
+                 "for a no-default-change experiment.\n")
+    lines.append("## Reproduction\n```\n" +
+                 shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:]) + "\n```\n")
+    _write_text(run_dir / "retention.md", "\n".join(lines))
+
+    table = Table(title=f"CA-init structure retention — {run_id}", header_style="bold")
+    for col in ("config", "variant", "alpha", "ok", "cosine", "rel drift", "final loss"):
+        table.add_column(col, justify="left" if col in ("config", "variant") else "right")
+    for cfg_name in args.configs:
+        for var_name in RETENTION_VARIANTS:
+            m = agg[(cfg_name, var_name)]
+            table.add_row(cfg_name, var_name, f"{m['alpha']:.2f}", f"{m['n_ok']}/{m['n_total']}",
+                          f(m["cosine_mean"]), f(m["rel_drift_mean"]), f(m["loss_final"]))
+    console.print(table)
+    n_ok = sum(1 for r in rows if r["status"] == "ok")
+    console.print(f"[bold green]done[/bold green] {n_ok}/{len(rows)} cells ok → {run_dir}")
+    return 0
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="CA-init early-phase benchmark (bead m32).")
+    parser = argparse.ArgumentParser(description="CA-init experiments: m32 early-phase bench + 827 retention.")
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument("--artifacts-dir", type=str, default="artifacts")
     parser.add_argument("--device", choices=["cpu", "cuda", "mps", "auto"], default="cpu")
@@ -529,8 +730,11 @@ def main() -> int:
     parser.add_argument("--optimizer-type", type=str, default="adamw")
     parser.add_argument("--vocab-size", type=int, default=50304)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1])
+    parser.add_argument("--mode", choices=["bench", "retention"], default="bench",
+                        help="bench: m32 early-phase loss/grad/activation sweep. "
+                             "retention: 827 structure-retention (init vs trained weight cosine).")
     parser.add_argument("--configs", type=str, nargs="+", default=list(ARCH_CONFIGS), choices=list(ARCH_CONFIGS))
-    parser.add_argument("--variants", type=str, nargs="+", default=list(INIT_VARIANTS), choices=list(INIT_VARIANTS))
+    parser.add_argument("--variants", type=str, nargs="+", default=BENCH_VARIANTS, choices=list(INIT_VARIANTS))
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--auto-download-data", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--min-parquet-files", type=int, default=2)
@@ -547,6 +751,9 @@ def main() -> int:
     if run_dir.exists() and any(run_dir.iterdir()):
         raise FileExistsError(f"Run dir already exists and is non-empty: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.mode == "retention":
+        return _run_retention(args, run_dir, artifacts_dir)
 
     console.rule(f"[bold cyan]CA-init benchmark[/bold cyan] · {run_id}")
     console.print(f"configs={args.configs}  variants={args.variants}  seeds={args.seeds}  "
