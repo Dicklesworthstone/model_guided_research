@@ -563,12 +563,18 @@ config = GPTConfig(
     n_kv_head=4,         # Number of KV heads (GQA)
     n_embd=128,          # Embedding dimension
     sequence_len=256,    # Max sequence length
-    attention_type="tropical",  # One of 11 types
+    attention_type="tropical",  # One type, a CSV pattern, or a list[str]
     optimizer_type="hoss",      # One of 3 optimizers
 )
 
 model = GPT(config)
 ```
+
+`attention_type` can also describe a per-layer schedule. A single mechanism
+keeps the homogeneous model. A comma-separated pattern or `list[str]` expands
+across depth only when its length is exactly `n_layer` or evenly divides
+`n_layer`, so `standard,tropical` at `n_layer=4` resolves to
+`standard,tropical,standard,tropical`.
 
 ### Training Script
 
@@ -597,6 +603,11 @@ python -m nanochat.train \
 # (Equivalent env vars: NANOCHAT_CA_INIT_RULE, NANOCHAT_CA_INIT_ALPHA, NANOCHAT_CA_INIT_SEED)
 # Currently applies to nn.Linear/nn.Embedding weights; mixed-precision mixes are computed in fp32 then cast.
 
+# Per-layer heterogeneous stack (pattern repeats because 2 divides n_layer=4)
+python -m nanochat.train \
+    --n-layer 4 \
+    --attention-schedule standard,tropical
+
 # Distributed training
 torchrun --nproc_per_node=4 -m nanochat.train \
     --batch-size 8 \
@@ -611,11 +622,12 @@ The nanochat framework enables systematic exploration of:
 
 **Dimensions**:
 1. **Attention Types** (11): standard, tropical, ultrametric, simplicial, quaternion, braid, fractal, octonion, surreal, reversible, gauge
-2. **Optimizers** (3): adamw, muon, hoss
-3. **Schedulers** (2): none, ordinal
-4. **Hyperparameters**: learning rate, batch size, model size, sequence length
+2. **Per-layer attention schedules**: homogeneous, exact-length stacks, or evenly repeating patterns
+3. **Optimizers** (3): adamw, muon, hoss
+4. **Schedulers** (2): none, ordinal
+5. **Hyperparameters**: learning rate, batch size, model size, sequence length
 
-**Total Base Configurations**: 11 × 3 × 2 = 66
+**Total Homogeneous Base Configurations**: 11 × 3 × 2 = 66
 
 ### Recommended Experimental Protocol
 
@@ -717,6 +729,10 @@ python -m nanochat.train --attention-type [TYPE]
 #   standard, tropical, ultrametric, simplicial, quaternion,
 #   braid, fractal, octonion, surreal, reversible, gauge
 
+# Per-layer attention schedule
+python -m nanochat.train --n-layer 4 --attention-schedule standard,tropical
+# Schedule length must be exactly n_layer, or evenly divide n_layer and repeat.
+
 # Optimizer selection
 python -m nanochat.train --optimizer-type [OPT]
 # Where OPT is one of: adamw, muon, hoss
@@ -771,7 +787,7 @@ mgr bench-fixed-flops \
     --run-id flops_suite_cpu \
     --device cpu \
     --target-flops 2e9 \
-    -a standard -a tropical -a reversible \
+    -a standard -a tropical -a standard,tropical \
     --include-demo-certs
 
 # Practical utility suite (writes artifacts if --artifacts-dir set)

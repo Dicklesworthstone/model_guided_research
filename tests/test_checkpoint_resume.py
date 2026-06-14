@@ -114,6 +114,28 @@ def _assert_bitwise_trajectory(resumed: list[float], reference: list[float], *, 
             )
 
 
+def test_mixed_attention_schedule_train_artifacts(monkeypatch, tmp_path):
+    """7b0.2: tiny CPU training run records the resolved heterogeneous stack."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "schedule-smoke",
+        max_steps=2,
+        n_layer=2,
+        attention_schedule="standard,tropical",
+    )
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "schedule-smoke"
+    assert summary["config"]["attention_type"] == "standard,tropical"
+    assert summary["config"]["resolved_attention_schedule"] == ["standard", "tropical"]
+    assert summary["config"]["attention_schedule_label"] == "standard,tropical"
+    assert len(summary["results"]["losses"]) == 2
+    assert "Attention schedule: `standard,tropical`" in (run_dir / "run.md").read_text()
+
+    metrics_lines = (run_dir / "metrics.jsonl").read_text().splitlines()
+    assert metrics_lines, "metrics.jsonl must be present and parseable"
+    assert all(json.loads(line) for line in metrics_lines)
+
+
 def test_interrupted_run_resumes_bitwise(monkeypatch, tmp_path):
     """THE acceptance test: checkpoint at step 5, resume, steps 6-11 bitwise-match
     the uninterrupted run on CPU fp32 (AdamW + Muon both round-trip)."""

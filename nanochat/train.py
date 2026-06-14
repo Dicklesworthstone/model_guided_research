@@ -36,7 +36,13 @@ from nanochat.checkpoint_manager import (
 from nanochat.common import autodetect_device_type, compute_cleanup, compute_init, print0
 from nanochat.dataloader import tokenizing_distributed_data_loader, tokenizing_distributed_data_loader_with_state
 from nanochat.dataset import ensure_min_parquet_files, list_parquet_files
-from nanochat.gpt import GPT, GPTConfig
+from nanochat.gpt import (
+    GPT,
+    SUPPORTED_ATTENTION_TYPES,
+    GPTConfig,
+    attention_schedule_label,
+    resolve_attention_schedule,
+)
 from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
 from nanochat.ordinal_scheduler import OrdinalLRScheduler
 from nanochat.report import (
@@ -55,19 +61,7 @@ console = Console()
 _SUPPORTED_MODEL_TYPES = ("gpt", "synaptic")
 _SUPPORTED_OPTIMIZER_TYPES = ("adamw", "muon", "hoss")
 _SUPPORTED_SCHEDULER_TYPES = ("none", "ordinal")
-_SUPPORTED_ATTENTION_TYPES = (
-    "standard",
-    "tropical",
-    "ultrametric",
-    "simplicial",
-    "quaternion",
-    "braid",
-    "fractal",
-    "octonion",
-    "surreal",
-    "reversible",
-    "gauge",
-)
+_SUPPORTED_ATTENTION_TYPES = SUPPORTED_ATTENTION_TYPES
 
 # FFN structure variants (bead 8gk.8): the semiring axis extended to the MLP.
 _SUPPORTED_FFN_TYPES = ("standard", "tropical", "tropical-rational")
@@ -83,6 +77,18 @@ def _write_artifacts(run_dir: Path, *, summary: dict[str, Any], report_md: str) 
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (run_dir / "run.md").write_text(report_md, encoding="utf-8")
+
+
+def _attention_spec_mentions(spec: Any, mechanism: str) -> bool:
+    if spec is None:
+        return False
+    if isinstance(spec, list | tuple):
+        parts: list[str] = []
+        for item in spec:
+            parts.extend(str(item).split(","))
+    else:
+        parts = str(spec).split(",")
+    return any(part.strip() == mechanism for part in parts)
 
 
 def _parse_optional_bool(value: str) -> bool | None:
@@ -517,6 +523,26 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
     attention_type = str(getattr(args, "attention_type", "standard"))
     if attention_type not in _SUPPORTED_ATTENTION_TYPES:
         errors.append(f"--attention-type must be one of: {', '.join(_SUPPORTED_ATTENTION_TYPES)}")
+    attention_schedule_arg = getattr(args, "attention_schedule", None)
+    if attention_schedule_arg is not None and str(attention_schedule_arg).strip():
+        if model_type == "synaptic":
+            pass
+        else:
+            schedule_n_kv_head = n_kv_head
+            if n_head > 0 and _attention_spec_mentions(attention_schedule_arg, "reversible"):
+                schedule_n_kv_head = n_head // 2
+            try:
+                resolve_attention_schedule(
+                    GPTConfig(
+                        n_layer=int(getattr(args, "n_layer", 0)),
+                        n_head=n_head,
+                        n_kv_head=schedule_n_kv_head,
+                        n_embd=n_embd,
+                        attention_type=str(attention_schedule_arg),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                errors.append(f"--attention-schedule invalid: {exc}")
 
     ffn_type = str(getattr(args, "ffn_type", "standard"))
     if ffn_type not in _SUPPORTED_FFN_TYPES:
@@ -568,6 +594,8 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
             errors.append("--optimizer-type hoss is not supported for --model-type synaptic (no HVP closure).")
         if attention_type != "standard":
             warnings.append("--attention-type is ignored for --model-type synaptic.")
+        if attention_schedule_arg is not None and str(attention_schedule_arg).strip():
+            warnings.append("--attention-schedule is ignored for --model-type synaptic.")
         if bool(getattr(args, "use_flex_attention", False)):
             warnings.append("--use-flex-attention is ignored for --model-type synaptic.")
     else:
@@ -666,6 +694,8 @@ def train(args) -> None:
     # uninterrupted run consumes the checkpoint step's real reading.
     semiring_resume_coverage: float | None = None
 
+    attention_schedule: list[str] = []
+    attention_label = model_type
     if model_type == "gpt":
         config = GPTConfig()
         config.n_layer = args.n_layer
@@ -674,7 +704,8 @@ def train(args) -> None:
         config.n_embd = args.n_embd
         config.sequence_len = args.sequence_len
         config.optimizer_type = args.optimizer_type
-        config.attention_type = args.attention_type
+        attention_schedule_arg = getattr(args, "attention_schedule", None)
+        config.attention_type = str(attention_schedule_arg).strip() if attention_schedule_arg else args.attention_type
         config.ffn_type = str(getattr(args, "ffn_type", "standard"))
         ffn_beta_arg = getattr(args, "ffn_beta", None)
         config.ffn_beta = float(ffn_beta_arg) if ffn_beta_arg is not None else None
@@ -682,7 +713,27 @@ def train(args) -> None:
         std_entropy = getattr(args, "standard_record_attn_entropy", None)
         if std_entropy is not None:
             config.standard_record_attn_entropy = bool(std_entropy)
-        if config.attention_type == "ultrametric":
+
+        if _attention_spec_mentions(config.attention_type, "reversible"):
+            if config.n_head % 2 != 0:
+                raise ValueError("reversible attention requires n_head to be even")
+            desired_n_kv_head = config.n_head // 2
+            if config.n_kv_head != desired_n_kv_head and ddp_rank == 0:
+                print0(
+                    f"[reversible] Overriding n_kv_head from {config.n_kv_head} to {desired_n_kv_head} "
+                    "to satisfy reversible KV-cache constraints."
+                )
+            config.n_kv_head = desired_n_kv_head
+
+        attention_schedule = resolve_attention_schedule(config)
+        attention_label = attention_schedule_label(config)
+        has_standard = "standard" in attention_schedule
+        has_tropical = "tropical" in attention_schedule
+        has_ultrametric = "ultrametric" in attention_schedule
+        has_reversible = "reversible" in attention_schedule
+        has_braid = "braid" in attention_schedule
+
+        if has_ultrametric:
             config.ultrametric_mode = str(getattr(args, "ultrametric_mode", config.ultrametric_mode))
             ultra_hard = getattr(args, "ultrametric_hard_digits", None)
             if ultra_hard is not None:
@@ -690,11 +741,11 @@ def train(args) -> None:
             ultra_k = getattr(args, "ultrametric_K", None)
             if ultra_k is not None:
                 config.ultrametric_K = int(ultra_k)
-        if config.attention_type == "standard":
+        if has_standard:
             no_norms = getattr(args, "disable_block_norms", None)
             if no_norms is not None:
                 config.disable_block_norms = bool(no_norms)
-        if config.attention_type == "reversible":
+        if has_reversible:
             config.reversible_mode = str(getattr(args, "reversible_mode", config.reversible_mode))
             rev_tied = getattr(args, "reversible_tied", None)
             if rev_tied is not None:
@@ -705,7 +756,7 @@ def train(args) -> None:
             rev_energy = getattr(args, "reversible_record_energy", None)
             if rev_energy is not None:
                 config.reversible_record_energy = bool(rev_energy)
-        if config.attention_type == "braid":
+        if has_braid:
             config.braid_mode = str(getattr(args, "braid_mode", config.braid_mode))
             config.braid_tau = float(getattr(args, "braid_tau", config.braid_tau))
             config.braid_crossing_law = str(getattr(args, "braid_crossing_law", config.braid_crossing_law))
@@ -716,17 +767,17 @@ def train(args) -> None:
             if braid_verify is not None:
                 config.braid_verify = bool(braid_verify)
             config.braid_rmatrix_probes = int(getattr(args, "braid_rmatrix_probes", config.braid_rmatrix_probes))
-        if config.use_flex_attention and config.attention_type != "standard":
+        if config.use_flex_attention and not has_standard:
             if ddp_rank == 0:
-                print0("[flex] --use-flex-attention only applies to --attention-type standard; disabling.")
+                print0("[flex] --use-flex-attention only applies to standard attention layers; disabling.")
             config.use_flex_attention = False
         if config.use_flex_attention and device.type != "cuda":
             if ddp_rank == 0:
                 print0(f"[flex] FlexAttention requires CUDA; disabling (device={device.type}).")
             config.use_flex_attention = False
-        if config.standard_record_attn_entropy and config.attention_type != "standard":
+        if config.standard_record_attn_entropy and not has_standard:
             if ddp_rank == 0:
-                print0("[entropy] --standard-record-attn-entropy only applies to --attention-type standard; disabling.")
+                print0("[entropy] --standard-record-attn-entropy only applies to standard attention layers; disabling.")
             config.standard_record_attn_entropy = False
 
         config.compile_backend = compile_backend
@@ -741,17 +792,6 @@ def train(args) -> None:
             )
         else:
             config.compile_flex_attention = False
-
-        if config.attention_type == "reversible":
-            if config.n_head % 2 != 0:
-                raise ValueError("reversible attention requires n_head to be even")
-            desired_n_kv_head = config.n_head // 2
-            if config.n_kv_head != desired_n_kv_head and ddp_rank == 0:
-                print0(
-                    f"[reversible] Overriding n_kv_head from {config.n_kv_head} to {desired_n_kv_head} "
-                    "to satisfy reversible KV-cache constraints."
-                )
-            config.n_kv_head = desired_n_kv_head
 
         ca_rule = _normalize_ca_rule(getattr(args, "ca_init_rule", None))
         ca_alpha = float(getattr(args, "ca_init_alpha", 1.0))
@@ -774,16 +814,16 @@ def train(args) -> None:
         tropical_record_margins = getattr(args, "tropical_record_margins", None)
         tropical_log_margins = bool(getattr(args, "tropical_log_margins", False))
         semiring_beta_arg = getattr(args, "semiring_beta", None)
-        if config.attention_type != "tropical":
+        if not has_tropical:
             if (
                 tropical_gauge_fix is not None
                 or tropical_score_center is not None
                 or tropical_record_margins is not None
                 or semiring_beta_arg is not None
             ) and ddp_rank == 0:
-                print0("[tropical] Ignoring tropical flags because --attention-type is not tropical.")
+                print0("[tropical] Ignoring tropical flags because the attention schedule has no tropical layers.")
             if tropical_log_margins and ddp_rank == 0:
-                print0("[tropical] Ignoring --tropical-log-margins because --attention-type is not tropical.")
+                print0("[tropical] Ignoring --tropical-log-margins because the attention schedule has no tropical layers.")
         else:
             if tropical_gauge_fix is not None:
                 config.tropical_gauge_fix = bool(tropical_gauge_fix)
@@ -891,6 +931,10 @@ def train(args) -> None:
             )
         assert resume_model_data is not None
         raw_model.load_state_dict(resume_model_data, strict=True)
+    config_artifact = asdict(config)
+    if model_type == "gpt":
+        config_artifact["resolved_attention_schedule"] = list(attention_schedule)
+        config_artifact["attention_schedule_label"] = attention_label
     model: torch.nn.Module = raw_model
     compiled_model = False
     if compile_requested:
@@ -1054,6 +1098,14 @@ def train(args) -> None:
         console.print(
             f"[bold green]Starting training[/bold green] on [bold]{device}[/bold] (world_size={ddp_world_size})"
         )
+        if model_type == "gpt":
+            schedule_table = Table(title="Resolved attention schedule", box=box.ROUNDED)
+            schedule_table.add_column("layer", justify="right", style="cyan")
+            schedule_table.add_column("mechanism", style="bold")
+            schedule_table.add_column("constraint check", style="green")
+            for layer_idx, mechanism in enumerate(attention_schedule):
+                schedule_table.add_row(str(layer_idx), mechanism, "ok")
+            console.print(schedule_table)
         compile_flex_attention = bool(getattr(config, "compile_flex_attention", False))
         if compiled_model or compile_flex_attention:
             status_bits = [f"model={'enabled' if compiled_model else 'disabled'}"]
@@ -1126,7 +1178,7 @@ def train(args) -> None:
     # Per-step metrics stream (bead rz8.2): rank-0 only; the header (with the
     # tamper-evidence provenance block) is flushed immediately so even a
     # crashed run leaves an attributable artifact.
-    provenance = build_provenance(asdict(config))
+    provenance = build_provenance(config_artifact)
     metrics_stream: MetricsStream | None = None
     dashboard: TrainingDashboard | None = None
     if ddp_rank == 0:
@@ -1147,25 +1199,27 @@ def train(args) -> None:
                 else Path(args.artifacts_dir) / "dashboard" / f"{resolved_run_id}.html"
             )
             dash_flags: dict[str, Any] = {
-                "attention": config.attention_type,
+                "attention": attention_label,
                 "ffn": getattr(config, "ffn_type", "standard"),
                 "optimizer": str(args.optimizer_type),
                 "scheduler": str(args.scheduler_type),
                 "flex": bool(getattr(config, "use_flex_attention", False)),
                 "device": device.type,
             }
-            if config.attention_type == "reversible":
+            if len(set(attention_schedule)) > 1:
+                dash_flags["schedule"] = list(attention_schedule)
+            if "reversible" in attention_schedule:
                 dash_flags["mode"] = getattr(config, "reversible_mode", "additive")
                 dash_flags["tied"] = getattr(config, "reversible_tied", False)
-            if config.attention_type == "tropical" and getattr(args, "semiring_beta", None) is not None:
+            if "tropical" in attention_schedule and getattr(args, "semiring_beta", None) is not None:
                 dash_flags["beta"] = str(args.semiring_beta)
-            if config.attention_type == "braid":
+            if "braid" in attention_schedule:
                 dash_flags["law"] = getattr(config, "braid_crossing_law", "restricted")
-            if config.attention_type == "standard" and getattr(config, "disable_block_norms", False):
+            if all(name == "standard" for name in attention_schedule) and getattr(config, "disable_block_norms", False):
                 dash_flags["no_norms"] = True
             dashboard = TrainingDashboard(
                 run_id=resolved_run_id,
-                mechanism=config.attention_type if model_type == "gpt" else model_type,
+                mechanism=attention_label if model_type == "gpt" else model_type,
                 max_steps=max_steps,
                 flags=dash_flags,
                 html_path=html_path,
@@ -1517,7 +1571,7 @@ def train(args) -> None:
                 if (
                     bool(getattr(args, "tropical_log_margins", False))
                     and model_type == "gpt"
-                    and getattr(config, "attention_type", None) == "tropical"
+                    and "tropical" in attention_schedule
                 ):
                     tropical = _collect_tropical_margin_stats(raw_model)
                     if tropical is not None:
@@ -1575,7 +1629,7 @@ def train(args) -> None:
                         }
                     if (
                         model_type == "gpt"
-                        and getattr(config, "attention_type", None) == "tropical"
+                        and "tropical" in attention_schedule
                         and bool(getattr(config, "tropical_record_margins", False))
                     ):
                         trop_stats = _collect_tropical_margin_stats(raw_model)
@@ -1585,7 +1639,7 @@ def train(args) -> None:
                             record["tropical_gamma_head_mean"] = trop_stats.get("head_mean")
                     if (
                         model_type == "gpt"
-                        and getattr(config, "attention_type", None) == "tropical"
+                        and "tropical" in attention_schedule
                         and current_semiring_beta is not None
                     ):
                         # D2 schema gains the annealing telemetry (8gk.1):
@@ -1597,7 +1651,7 @@ def train(args) -> None:
                             if route_coverage_first is None:
                                 route_coverage_first = coverage
                             route_coverage_last = coverage
-                    if model_type == "gpt" and getattr(config, "attention_type", None) == "braid":
+                    if model_type == "gpt" and "braid" in attention_schedule:
                         # D2 schema gains the conserved-charge telemetry (u55.3):
                         # Q1 mass-partition defect and Q2 braid-consistency residual
                         # separate integrable (rmatrix) from heuristic mixing live.
@@ -1612,7 +1666,7 @@ def train(args) -> None:
                                 record["braid_rapidity_span_per_layer"] = braid_stats["rapidity_span_per_layer"]
                     if (
                         model_type == "gpt"
-                        and getattr(config, "attention_type", None) == "reversible"
+                        and "reversible" in attention_schedule
                         and getattr(config, "reversible_record_energy", False)
                     ):
                         # D2 schema gains the shadow-energy telemetry (u55.5):
@@ -1772,7 +1826,7 @@ def train(args) -> None:
         "tflops_per_second_est": est_tflops,
         "peak_memory_allocated_gb": peak_mem_gb,
     }
-    if model_type == "gpt" and getattr(config, "attention_type", None) == "tropical":
+    if model_type == "gpt" and "tropical" in attention_schedule:
         tropical = _collect_tropical_margin_stats(raw_model)
         if tropical is not None:
             results["tropical_margins"] = tropical
@@ -1818,7 +1872,7 @@ def train(args) -> None:
             "semiring_beta_spec": (
                 str(args.semiring_beta)
                 if getattr(args, "semiring_beta", None) is not None
-                and getattr(config, "attention_type", None) == "tropical"
+                and "tropical" in attention_schedule
                 else None
             ),
             "synaptic_config": (asdict(config.syn_cfg) if model_type == "synaptic" else None),
@@ -1833,7 +1887,7 @@ def train(args) -> None:
             "dynamic": compile_dynamic,
             "compile_flex_attention": bool(getattr(config, "compile_flex_attention", False)),
         },
-        "config": asdict(config),
+        "config": config_artifact,
         "dataset": {
             "data_dir": data_dir,  # null = the FineWeb cache
             "parquet_files_count": len(parquet_files),
@@ -1858,6 +1912,8 @@ def train(args) -> None:
     report_table.add_row("Artifacts", f"{artifacts_kind}/{artifacts_topic}/{resolved_run_id}")
     report_table.add_row("Commit", f"{commit_label}{dirty}")
     report_table.add_row("Device", str(device))
+    if model_type == "gpt":
+        report_table.add_row("Attention schedule", attention_label)
     report_table.add_row("Steps", str(max_steps))
     report_table.add_row("Warmup Steps", str(args.warmup_steps))
     report_table.add_row("check_numerics", str(check_numerics))
@@ -1896,6 +1952,7 @@ def train(args) -> None:
 - Generated: {generated_at}
 - Artifacts: `{artifacts_kind}/{artifacts_topic}/{resolved_run_id}`
 - Commit: {commit_label}{dirty}
+{"- Attention schedule: `" + attention_label + "`" if model_type == "gpt" else ""}
 
 ## Command
 
@@ -1989,6 +2046,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--optimizer-type", type=str, default="adamw", choices=_SUPPORTED_OPTIMIZER_TYPES)
     parser.add_argument("--attention-type", type=str, default="standard", choices=_SUPPORTED_ATTENTION_TYPES)
+    parser.add_argument(
+        "--attention-schedule",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated per-layer attention pattern. The pattern must be exactly n_layer entries "
+            "or a shorter pattern whose length evenly divides n_layer, e.g. standard,tropical."
+        ),
+    )
     parser.add_argument(
         "--ffn-type",
         type=str,

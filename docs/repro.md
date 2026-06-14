@@ -124,11 +124,14 @@ Current checks live in:
   - `--n-embd` must be divisible by `--n-head`
   - `--n-kv-head` must divide `--n-head` and be `<= --n-head` (GQA/MQA constraint)
 - Optional features:
+  - `--attention-schedule` accepts a comma-separated per-layer pattern; its length must be exactly `--n-layer`, or evenly divide `--n-layer` and repeat
+  - Per-layer schedule errors name the bad schedule entry or layer index (unknown mechanism, quaternion/octonion head-dim divisibility, gauge/reversible even-width constraints)
   - `--use-flex-attention` requires torch FlexAttention to exist (`torch.nn.attention.flex_attention`, torch>=2.5)
-  - `--use-flex-attention` only applies to `--attention-type standard` and requires CUDA (otherwise it is ignored/disabled with a log)
+  - `--use-flex-attention` only applies to standard attention layers and requires CUDA (otherwise it is ignored/disabled with a log)
 - Synaptic mode:
   - `--optimizer-type hoss` is rejected for `--model-type synaptic` (no HVP closure)
   - `--attention-type` is currently ignored for `--model-type synaptic` (warns)
+  - `--attention-schedule` is currently ignored for `--model-type synaptic` (warns)
   - `--synaptic-config` must point to an existing JSON file when `--model-type synaptic` is selected
 
 **Plan (next extensions):**

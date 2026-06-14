@@ -56,6 +56,31 @@ def test_symplectic_counts_the_double_backward():
     assert m.estimate_flops() == 6 * nonblock + 18 * nblock + 3 * attn
 
 
+def test_mixed_symplectic_schedule_counts_only_reversible_layers():
+    # Mixed stacks should charge the double-backward correction only to the
+    # symplectic reversible layers, while ordinary layers keep canonical 6N.
+    m = GPT(
+        GPTConfig(
+            attention_type="standard,reversible",
+            reversible_mode="symplectic",
+            reversible_tied=False,
+            **_Z4XX,
+        )
+    )
+    nparams = sum(p.numel() for p in m.parameters())
+    nemb = m.transformer.wte.weight.numel()
+    symplectic_blocks = [
+        block for block in m.transformer.h if getattr(block, "attention_type", None) == "reversible"
+    ]
+    nblock = sum(p.numel() for block in symplectic_blocks for p in block.parameters())
+    nonblock = (nparams - nemb) - nblock
+    h, q, t = m.config.n_head, m.config.n_embd // m.config.n_head, m.config.sequence_len
+    attn_per_layer = 12 * h * q * t
+    attn = attn_per_layer * (m.config.n_layer + 2 * len(symplectic_blocks))
+    assert 0 < len(symplectic_blocks) < m.config.n_layer
+    assert m.estimate_flops() == 6 * nonblock + 18 * nblock + attn
+
+
 def test_symplectic_anchor_numbers():
     # Pre-fix: 45,269,772 (the artifact). Post-fix: 58,542,372.
     assert _flops(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True) == 58_542_372

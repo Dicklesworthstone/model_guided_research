@@ -14,16 +14,20 @@ for *how to turn each on* and *what's still demo-only*.
 
 ## How dispatch works
 
-`nanochat/gpt.py:319 Block.__init__` routes `config.attention_type`:
+`nanochat.gpt.resolve_attention_schedule(config)` expands
+`GPTConfig.attention_type` into one mechanism per layer. A single mechanism
+keeps the historical homogeneous model; a comma-separated pattern or `list[str]`
+must either have length exactly `n_layer` or evenly divide `n_layer` and repeat.
+`Block.__init__` then routes each layer's resolved mechanism:
 
 - **Special blocks** that replace the whole Attention+MLP skeleton:
-  - `gauge` → `GaugeBlock` (owns its residual + MLP slot) — `gpt.py:324`
+  - `gauge` → `GaugeBlock` (owns its residual + MLP slot)
   - `reversible` → `ReversibleBlock` over a half-width sub-config
-    (`n_embd//2`, `n_head//2`, `n_kv_head` unchanged) — `gpt.py:329`
+    (`n_embd//2`, `n_head//2`, `n_kv_head` unchanged)
 - **Attention-slot modules** (normal `x + attn(norm(x)); x + mlp(norm(x))`):
   tropical, ultrametric, simplicial, quaternion, braid, fractal, octonion,
-  surreal — `gpt.py:348–363`
-- **standard** (default `else`) → `CausalSelfAttention` — `gpt.py:365`
+  surreal
+- **standard** (default `else`) → `CausalSelfAttention`
 
 All non-special blocks share the FFN built by `_build_ffn(config)`, so
 `ffn_type ∈ {standard, tropical, tropical-rational}` composes with *any*
@@ -53,16 +57,17 @@ experiment that applies to any mechanism; `GPTConfig.ca_init_*`, `gpt.py:163`.)
 
 Universal (`gpt.py:419 _validate_config`): `n_embd % n_head == 0`;
 `n_kv_head | n_head` and `≤ n_head` (GQA); `head_dim = n_embd//n_head` **even**
-(RoPE). Per-mechanism additions:
+(RoPE). Per-layer schedules are validated before construction, with errors that
+name the offending schedule entry or layer index. Per-mechanism additions:
 
 | Mechanism | Extra constraint | Enforced at |
 |---|---|---|
 | quaternion | `n_embd % 4 == 0` **and** `head_dim % 4 == 0` | `quaternion_attention_torch.py:67,69` |
 | octonion | `n_embd % 8 == 0` **and** `head_dim % 8 == 0` | `octonion_attention_torch.py:74,76` |
-| reversible | `n_head` **even**; `n_kv_head | (n_head//2)` | `gpt.py:443–450` |
-| reversible | `reversible_tied` ⇒ `reversible_mode=symplectic` | `gpt.py:455` |
+| reversible | `n_head` **even**; `n_kv_head | (n_head//2)` | `GPT._validate_config` |
+| reversible | `reversible_tied` ⇒ `reversible_mode=symplectic` and every layer reversible | `GPT._validate_config` |
 | ultrametric (trie) | CPU only | `ultrametric_attention_torch.py:55` |
-| `disable_block_norms` | only with `attention_type=standard` (z4xx control) | `gpt.py:461` |
+| `disable_block_norms` | only when every scheduled layer is `standard` (z4xx control) | `GPT._validate_config` |
 
 So e.g. the E1 rung `D128/H4` ⇒ `head_dim=32`, which satisfies %4 and %8 —
 quaternion and octonion both run there. A `D128/H8` rung ⇒ `head_dim=16` (still

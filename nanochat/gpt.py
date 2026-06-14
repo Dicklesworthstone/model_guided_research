@@ -53,6 +53,76 @@ _CA_RULES: dict[str, int] = {
     "rule116": 116,
 }
 
+SUPPORTED_ATTENTION_TYPES: tuple[str, ...] = (
+    "standard",
+    "tropical",
+    "ultrametric",
+    "simplicial",
+    "quaternion",
+    "braid",
+    "fractal",
+    "octonion",
+    "surreal",
+    "reversible",
+    "gauge",
+)
+
+
+def _split_attention_spec(spec: str | list[str] | tuple[str, ...]) -> list[str]:
+    if isinstance(spec, str):
+        parts = [part.strip() for part in spec.split(",")]
+    elif isinstance(spec, list | tuple):
+        parts = []
+        for item in spec:
+            if not isinstance(item, str):
+                raise TypeError(f"attention schedule entries must be strings, got {type(item).__name__}")
+            parts.extend(part.strip() for part in item.split(","))
+    else:
+        raise TypeError(f"attention_type must be a string or list of strings, got {type(spec).__name__}")
+    return [part for part in parts if part]
+
+
+def resolve_attention_schedule(config: "GPTConfig") -> list[str]:
+    """Expand GPTConfig.attention_type into one mechanism name per layer.
+
+    A single name keeps the historical homogeneous model. A comma-separated
+    pattern or list repeats across the depth only when it divides n_layer
+    exactly, so every layer's mechanism is auditable from the short spec.
+    """
+
+    n_layer = int(getattr(config, "n_layer", 0))
+    if n_layer <= 0:
+        raise ValueError("n_layer must be positive before resolving the attention schedule")
+    pattern = _split_attention_spec(getattr(config, "attention_type", "standard"))
+    if not pattern:
+        raise ValueError("attention schedule must name at least one mechanism")
+    for idx, name in enumerate(pattern):
+        if name not in SUPPORTED_ATTENTION_TYPES:
+            raise ValueError(
+                f"attention schedule entry {idx} has unknown mechanism {name!r}; "
+                f"expected one of: {', '.join(SUPPORTED_ATTENTION_TYPES)}"
+            )
+    if len(pattern) > n_layer:
+        raise ValueError(
+            f"attention schedule length {len(pattern)} exceeds n_layer={n_layer}; "
+            "provide exactly n_layer entries or a shorter repeating pattern"
+        )
+    if len(pattern) != n_layer and n_layer % len(pattern) != 0:
+        raise ValueError(
+            f"attention schedule length {len(pattern)} does not evenly divide n_layer={n_layer}; "
+            "provide exactly n_layer entries or a shorter repeating pattern"
+        )
+    return [pattern[i % len(pattern)] for i in range(n_layer)]
+
+
+def attention_schedule_contains(config: "GPTConfig", mechanism: str) -> bool:
+    return mechanism in resolve_attention_schedule(config)
+
+
+def attention_schedule_label(config: "GPTConfig") -> str:
+    schedule = resolve_attention_schedule(config)
+    return schedule[0] if all(name == schedule[0] for name in schedule) else ",".join(schedule)
+
 
 def _ca_bitfield(*, rule: int, length: int, generator: torch.Generator) -> torch.Tensor:
     """
@@ -150,7 +220,7 @@ class GPTConfig:
     n_head: int = 6  # number of query heads
     n_kv_head: int = 6  # number of key/value heads (GQA)
     n_embd: int = 768
-    attention_type: str = "standard"
+    attention_type: str | list[str] = "standard"
     use_flex_attention: bool = False
     compile_flex_attention: bool = False
     compile_backend: str = "inductor"
@@ -320,17 +390,20 @@ class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
         self.config = config
+        self.layer_idx = layer_idx
+        self.attention_type = resolve_attention_schedule(config)[layer_idx]
         # Special Block Types that replace the standard Attention+MLP structure
-        if config.attention_type == "gauge":
+        if self.attention_type == "gauge":
             # The gauge block owns its residual skeleton and MLP slot (1fr6);
             # the MLP is built here so ffn_type dispatch applies to gauge too.
             self.special_block = GaugeBlock(config, layer_idx, _build_ffn(config))
             return
-        if config.attention_type == "reversible":
+        if self.attention_type == "reversible":
             # Reversible blocks split channels in half: x = [x1, x2].
             # We keep the RoPE head_dim constant by halving the number of query heads.
             # IMPORTANT: KV cache is allocated from the top-level config, so we keep n_kv_head unchanged.
             sub_config = GPTConfig(**config.__dict__)
+            sub_config.attention_type = "standard"
             sub_config.n_embd = config.n_embd // 2
             sub_config.n_head = config.n_head // 2
             sub_config.n_kv_head = config.n_kv_head
@@ -345,30 +418,30 @@ class Block(nn.Module):
             )
             return
 
-        if config.attention_type == "tropical":
+        if self.attention_type == "tropical":
             self.attn = TropicalCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "ultrametric":
+        elif self.attention_type == "ultrametric":
             self.attn = UltrametricCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "simplicial":
+        elif self.attention_type == "simplicial":
             self.attn = SimplicialCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "quaternion":
+        elif self.attention_type == "quaternion":
             self.attn = QuaternionCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "braid":
+        elif self.attention_type == "braid":
             self.attn = BraidCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "fractal":
+        elif self.attention_type == "fractal":
             self.attn = FractalCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "octonion":
+        elif self.attention_type == "octonion":
             self.attn = OctonionCausalSelfAttention(config, layer_idx)
-        elif config.attention_type == "surreal":
+        elif self.attention_type == "surreal":
             self.attn = SurrealCausalSelfAttention(config, layer_idx)
         else:
             self.attn = CausalSelfAttention(config, layer_idx)
         self.mlp = _build_ffn(config)
 
     def forward(self, x, cos_sin, kv_cache):
-        if self.config.attention_type == "gauge":
+        if self.attention_type == "gauge":
             return self.special_block(x, cos_sin, kv_cache)
-        if self.config.attention_type == "reversible":
+        if self.attention_type == "reversible":
             return self.special_block(x, cos_sin, kv_cache)
 
         if getattr(self.config, "disable_block_norms", False):
@@ -439,7 +512,46 @@ class GPT(nn.Module):
         if head_dim % 2 != 0:
             raise ValueError("head_dim (= n_embd // n_head) must be even for RoPE")
 
-        if self.config.attention_type == "reversible":
+        attention_schedule = resolve_attention_schedule(self.config)
+        has_reversible = "reversible" in attention_schedule
+        all_reversible = all(name == "reversible" for name in attention_schedule)
+
+        for layer_idx, attention_type in enumerate(attention_schedule):
+            if attention_type == "quaternion" and head_dim % 4 != 0:
+                raise ValueError(
+                    f"attention schedule layer {layer_idx} uses quaternion, which requires "
+                    f"head_dim % 4 == 0 (got head_dim={head_dim})"
+                )
+            if attention_type == "octonion" and head_dim % 8 != 0:
+                raise ValueError(
+                    f"attention schedule layer {layer_idx} uses octonion, which requires "
+                    f"head_dim % 8 == 0 (got head_dim={head_dim})"
+                )
+            if attention_type == "gauge" and self.config.n_embd % 2 != 0:
+                raise ValueError(
+                    f"attention schedule layer {layer_idx} uses gauge, which requires even n_embd "
+                    f"(got n_embd={self.config.n_embd})"
+                )
+            if attention_type == "reversible":
+                if self.config.n_embd % 2 != 0:
+                    raise ValueError(
+                        f"attention schedule layer {layer_idx} uses reversible, which requires even n_embd "
+                        f"(got n_embd={self.config.n_embd})"
+                    )
+                if self.config.n_head % 2 != 0:
+                    raise ValueError(
+                        f"attention schedule layer {layer_idx} uses reversible, which requires even n_head "
+                        f"(got n_head={self.config.n_head})"
+                    )
+                sub_n_head = self.config.n_head // 2
+                if not (self.config.n_kv_head <= sub_n_head and sub_n_head % self.config.n_kv_head == 0):
+                    raise ValueError(
+                        f"attention schedule layer {layer_idx} uses reversible, which requires n_kv_head to "
+                        f"divide n_head // 2 and be <= n_head // 2 "
+                        f"(got n_kv_head={self.config.n_kv_head}, n_head//2={sub_n_head})"
+                    )
+
+        if has_reversible:
             if self.config.n_head % 2 != 0:
                 raise ValueError("reversible attention requires n_head to be even (to keep head_dim constant)")
             sub_n_head = self.config.n_head // 2
@@ -454,14 +566,19 @@ class GPT(nn.Module):
                 raise ValueError("reversible_lambda_min must be >= 0 (0 = unconfined falsification control)")
             if getattr(self.config, "reversible_tied", False) and rev_mode != "symplectic":
                 raise ValueError("reversible_tied requires reversible_mode=symplectic (the tied shadow regime)")
+            if getattr(self.config, "reversible_tied", False) and not all_reversible:
+                raise ValueError("reversible_tied requires every attention schedule layer to be reversible")
         elif getattr(self.config, "reversible_mode", "additive") != "additive" or getattr(
             self.config, "reversible_tied", False
         ):
-            raise ValueError("reversible_mode/reversible_tied require attention_type=reversible")
-        if getattr(self.config, "disable_block_norms", False) and self.config.attention_type != "standard":
+            raise ValueError("reversible_mode/reversible_tied require at least one reversible attention layer")
+        if getattr(self.config, "disable_block_norms", False) and not all(
+            name == "standard" for name in attention_schedule
+        ):
+            bad_idx, bad_name = next((i, n) for i, n in enumerate(attention_schedule) if n != "standard")
             raise ValueError(
                 "disable_block_norms is the standard-attention falsification arm only (z4xx); "
-                f"got attention_type {self.config.attention_type!r}"
+                f"attention schedule layer {bad_idx} is {bad_name!r}"
             )
         ffn_type = getattr(self.config, "ffn_type", "standard")
         if ffn_type not in ("standard", "tropical", "tropical-rational"):
@@ -472,7 +589,7 @@ class GPT(nn.Module):
         semiring_beta = getattr(self.config, "semiring_beta", None)
         if semiring_beta is not None and not (float(semiring_beta) > 0):
             raise ValueError(f"semiring_beta must be None or > 0, got {semiring_beta!r}")
-        if semiring_beta is not None and getattr(self.config, "attention_type", "standard") != "tropical":
+        if semiring_beta is not None and "tropical" not in attention_schedule:
             raise ValueError("semiring_beta applies to the tropical attention path only (8gk.1)")
 
         ca_rule = getattr(self.config, "ca_init_rule", None)
@@ -694,17 +811,30 @@ class GPT(nn.Module):
             self.config.sequence_len,
         )
         attn_flops_per_token = 12 * l * h * q * t
-        is_symplectic = self.config.attention_type == "reversible" and (
-            str(getattr(self.config, "reversible_mode", "additive")) == "symplectic"
-        )
-        if is_symplectic:
+        schedule = resolve_attention_schedule(self.config)
+        symplectic_layers = [
+            i
+            for i, name in enumerate(schedule)
+            if name == "reversible" and str(getattr(self.config, "reversible_mode", "additive")) == "symplectic"
+        ]
+        if symplectic_layers:
             # Block params live inside the kicks (the double-backward path);
             # lm_head and any other non-block, non-embedding params take the
             # ordinary 6x. A tied block dedupes by identity in .parameters(),
             # matching the global nparams count.
-            nparams_block = sum(p.numel() for p in self.transformer.h.parameters())
+            seen_blocks: set[int] = set()
+            symplectic_blocks: list[nn.Module] = []
+            for idx in symplectic_layers:
+                block = self.transformer.h[idx]
+                if id(block) in seen_blocks:
+                    continue
+                seen_blocks.add(id(block))
+                symplectic_blocks.append(block)
+            nparams_block = sum(p.numel() for block in symplectic_blocks for p in block.parameters())
             nparams_nonblock = (nparams - nparams_embedding) - nparams_block
-            return 6 * nparams_nonblock + 18 * nparams_block + 3 * attn_flops_per_token
+            attn_per_layer = 12 * h * q * t
+            attn_flops = attn_per_layer * (len(schedule) + 2 * len(symplectic_layers))
+            return 6 * nparams_nonblock + 18 * nparams_block + attn_flops
         num_flops_per_token = 6 * (nparams - nparams_embedding) + attn_flops_per_token
         return num_flops_per_token
 

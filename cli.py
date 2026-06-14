@@ -1196,7 +1196,7 @@ def bench_fixed_flops(
         typer.Option(
             "--attention-type",
             "-a",
-            help="Nanochat attention types to benchmark (repeatable).",
+            help="Nanochat attention type or comma-separated attention schedule to benchmark (repeatable).",
         ),
     ] = ("standard", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
     device: Annotated[
@@ -1397,7 +1397,7 @@ def bench_fixed_flops(
         ),
     ] = 1800.0,
 ):
-    attention_types = list(attention_types)
+    attention_types = [str(attn).strip() for attn in attention_types if str(attn).strip()]
     """Benchmark nanochat attention variants under a fixed FLOPs budget.
 
     Per-run nanochat artifacts:
@@ -1454,6 +1454,7 @@ def bench_fixed_flops(
     def _run_train(attn: str, run_seed: int) -> dict[str, Any]:
         run_topic = f"fixed_flops/nanochat/{suite_run_id}/{attn}"
         run_id_local = f"seed_{run_seed}"
+        attention_flag = "--attention-schedule" if "," in attn else "--attention-type"
         train_cmd = [
             sys.executable,
             "-m",
@@ -1478,7 +1479,7 @@ def bench_fixed_flops(
             str(learning_rate),
             "--optimizer-type",
             str(optimizer_type),
-            "--attention-type",
+            attention_flag,
             attn,
             "--target-flops",
             str(float(target_flops)),
@@ -1594,7 +1595,7 @@ def bench_fixed_flops(
         for attn in attention_types:
             for run_seed in seed_list:
                 console.print(
-                    Panel(f"[bold]nanochat[/bold] attention_type={attn!r} seed={run_seed}", box=box.ROUNDED)
+                    Panel(f"[bold]nanochat[/bold] variant={attn!r} seed={run_seed}", box=box.ROUNDED)
                 )
                 results.append(_run_train(attn, run_seed))
                 prog.advance(task)

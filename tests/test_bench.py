@@ -11,7 +11,6 @@ import json
 import math
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 import cli
@@ -160,3 +159,59 @@ def test_score_metric_falls_back_to_train_tail_without_val(tmp_path, monkeypatch
     )
     assert summary["score_metric"] == "score"  # train-tail fallback
     assert summary["aggregates"]["tropical"]["metric_mean"] is not None
+
+
+def test_schedule_arm_uses_attention_schedule_flag(tmp_path, monkeypatch):
+    suite = "synthetic-schedule-arm"
+    arts = tmp_path / "artifacts"
+    for attn, val_ce in (("standard", 3.0), ("standard,tropical", 2.8)):
+        _write_bench_run(arts, suite, attn, 0, val_ce=val_ce, losses=[val_ce + 0.1, val_ce])
+
+    import subprocess as _sub
+
+    commands: list[list[str]] = []
+
+    class _FakeProc:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    def _fake_run(cmd, **kw):
+        commands.append(list(cmd))
+        return _FakeProc()
+
+    monkeypatch.setattr(_sub, "run", _fake_run)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "bench-fixed-flops",
+            "-a",
+            "standard",
+            "-a",
+            "standard,tropical",
+            "--seeds",
+            "0",
+            "--device",
+            "cpu",
+            "--target-flops",
+            "1e6",
+            "--no-auto-download-data",
+            "--artifacts-dir",
+            str(arts),
+            "--run-id",
+            suite,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    standard_cmd = next(cmd for cmd in commands if "--attention-type" in cmd)
+    schedule_cmd = next(cmd for cmd in commands if "--attention-schedule" in cmd)
+    assert standard_cmd[standard_cmd.index("--attention-type") + 1] == "standard"
+    assert schedule_cmd[schedule_cmd.index("--attention-schedule") + 1] == "standard,tropical"
+    assert "--attention-type" not in schedule_cmd
+
+    summary = json.loads(
+        (arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text()
+    )
+    assert "standard,tropical" in summary["aggregates"]

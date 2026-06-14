@@ -72,6 +72,91 @@ def test_documentation_exists():
         require(doc_file.exists(), f"Documentation missing for {module_name}")
 
 
+def test_attention_schedule_instantiates_per_layer_dispatch():
+    import torch
+
+    from nanochat.gpt import GPT, GPTConfig, resolve_attention_schedule
+
+    torch.manual_seed(0)
+    config = GPTConfig(
+        sequence_len=16,
+        vocab_size=128,
+        n_layer=4,
+        n_head=4,
+        n_kv_head=2,
+        n_embd=64,
+        attention_type="standard,tropical",
+    )
+    model = GPT(config).train(False)
+    assert resolve_attention_schedule(config) == ["standard", "tropical", "standard", "tropical"]
+    assert [block.attention_type for block in model.transformer.h] == [
+        "standard",
+        "tropical",
+        "standard",
+        "tropical",
+    ]
+
+
+def test_attention_schedule_validation_errors_name_bad_layer():
+    from nanochat.gpt import GPT, GPTConfig
+
+    with pytest.raises(ValueError, match="length 2 does not evenly divide n_layer=3"):
+        GPT(GPTConfig(n_layer=3, n_head=4, n_kv_head=2, n_embd=64, attention_type="standard,tropical"))
+
+    with pytest.raises(ValueError, match="entry 1 has unknown mechanism 'bogus'"):
+        GPT(GPTConfig(n_layer=2, n_head=4, n_kv_head=2, n_embd=64, attention_type="standard,bogus"))
+
+    with pytest.raises(ValueError, match="layer 1 uses octonion.*head_dim % 8 == 0"):
+        GPT(GPTConfig(n_layer=2, n_head=4, n_kv_head=2, n_embd=24, attention_type="standard,octonion"))
+
+
+def test_attention_schedule_kv_cache_single_and_chunk_match_full_forward():
+    import torch
+
+    from nanochat.engine import KVCache
+    from nanochat.gpt import GPT, GPTConfig
+
+    torch.manual_seed(2)
+    config = GPTConfig(
+        sequence_len=16,
+        vocab_size=128,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=2,
+        n_embd=64,
+        attention_type=["standard", "tropical"],
+    )
+    model = GPT(config).train(False)
+    ids = torch.randint(0, config.vocab_size, (1, 8), dtype=torch.long)
+
+    with torch.inference_mode():
+        full = model(ids).float()
+
+        kv_cache = KVCache(
+            batch_size=1,
+            num_heads=config.n_kv_head,
+            seq_len=ids.size(1),
+            head_dim=config.n_embd // config.n_head,
+            num_layers=config.n_layer,
+        )
+        _ = model(ids[:, :-1], kv_cache=kv_cache)
+        cached_last = model(ids[:, -1:], kv_cache=kv_cache)[:, -1, :].float()
+        torch.testing.assert_close(cached_last, full[:, -1, :], rtol=1e-3, atol=1e-2)
+
+        prefix = ids[:, :5]
+        chunk = ids[:, 5:]
+        kv_cache = KVCache(
+            batch_size=1,
+            num_heads=config.n_kv_head,
+            seq_len=ids.size(1),
+            head_dim=config.n_embd // config.n_head,
+            num_layers=config.n_layer,
+        )
+        _ = model(prefix, kv_cache=kv_cache)
+        cached_chunk = model(chunk, kv_cache=kv_cache).float()
+        torch.testing.assert_close(cached_chunk, full[:, 5:, :], rtol=1e-3, atol=1e-2)
+
+
 @pytest.mark.parametrize(
     "attention_type",
     [
