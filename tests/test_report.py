@@ -313,3 +313,58 @@ def test_training_dashboard_renders_and_exports_html(tmp_path):
     dash.close({"train_ce_final": 3.0, "val_ce_final": 3.2})
     content = html.read_text()
     assert "run-x" in content and "symplectic_shadow_energy_mean" in content
+
+
+def test_dashboard_per_head_heatmap(tmp_path):
+    """bead 92m: per-head metric vectors (route margins / entropy) carried in a
+    step record render as a heatmap panel inline AND in the HTML export, with a
+    cross-head diversity (σ) summary. Scalars stay sparklines, not heat rows."""
+    from rich.console import Console
+
+    from nanochat.report import TrainingDashboard
+
+    html = tmp_path / "dash" / "trop.html"
+    dash = TrainingDashboard(run_id="trop", mechanism="tropical", max_steps=4, html_path=html)
+    for step in range(4):
+        dash.observe({
+            "type": "step", "step": step, "loss": 4.0 - step, "lr": 1e-3,
+            "grad_norm": 0.5, "tokens_per_s": 1000.0, "tflops": 0.04, "peak_mem_gb": None,
+            "elapsed_s": float(step),
+            # per-head vector (4 heads) — the field train.py already emits
+            "tropical_gamma_head_mean": [0.10 + 0.01 * step, 0.05, 0.20, 0.02],
+            "attn_entropy_head_mean": [2.1, 2.0, 1.5, 2.2],
+            "lr_groups": [1e-3, 1e-3],  # a core list field: must NOT become a heat row
+        })
+
+    assert "tropical_gamma_head_mean" in dash._head_latest
+    assert "attn_entropy_head_mean" in dash._head_latest
+    assert "lr_groups" not in dash._head_latest  # excluded (core key)
+    assert dash._head_latest["tropical_gamma_head_mean"][0] == 0.13  # latest step wins
+
+    console = Console(record=True, width=120, force_terminal=True)
+    console.print(dash._render())
+    text = console.export_text()
+    assert "per-head route diversity" in text
+    assert "tropical_gamma" in text and "attn_entropy" in text
+    assert "div σ" in text
+
+    dash.close()
+    assert "per-head route diversity" in html.read_text()
+
+
+def test_dashboard_head_heatmap_toggle_off():
+    """show_head_heatmaps=False suppresses both capture and panel."""
+    from rich.console import Console
+
+    from nanochat.report import TrainingDashboard
+
+    dash = TrainingDashboard(run_id="x", mechanism="tropical", max_steps=2, show_head_heatmaps=False)
+    dash.observe({
+        "type": "step", "step": 0, "loss": 3.0, "lr": 1e-3, "grad_norm": 0.5,
+        "tokens_per_s": 1.0, "tflops": 0.0, "peak_mem_gb": None, "elapsed_s": 0.0,
+        "tropical_gamma_head_mean": [0.1, 0.2, 0.3, 0.4],
+    })
+    assert dash._head_latest == {}
+    console = Console(record=True, width=120, force_terminal=True)
+    console.print(dash._render())
+    assert "per-head route diversity" not in console.export_text()

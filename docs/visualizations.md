@@ -103,6 +103,35 @@ Outputs: a grouped bar chart of the per-head signal (`per_head_entropy_diversity
 a `summary.json` with every number, and an `index.html`. Saved under
 `artifacts/vis/entropy/`.
 
+## Training-dashboard per-head heatmap (92m)
+
+The live training dashboard (`--dashboard`) grows a **per-head route
+diversity / entropy heatmap** panel, fed by the per-head metric vectors the
+trainer already streams (e.g. `tropical_gamma_head_mean`). Each per-head metric
+renders as a self-scaled colored strip (one cell per head, red→green = low→high)
+with a cross-head spread `σ` (a cheap route-diversity scalar) and mean `μ`. The
+panel shows inline in the terminal **and** in the recorded HTML export
+(`<artifacts-dir>/dashboard/<run_id>.html`).
+
+It is **data-gated** (invisible until a per-head field flows, so standard runs
+pay nothing) and **toggleable** via `TrainingDashboard(show_head_heatmaps=...)`.
+
+```bash
+# Dashboard with the per-head heatmap (tropical route margins per head).
+python -m nanochat.train \
+    --attention tropical --tropical-record-margins \
+    --dashboard \
+    --device cpu --target-flops 2e8 --batch-size 8 \
+    --artifacts-kind bench --artifacts-topic dashboard/nanochat \
+    --run-id dash_trop_demo
+# -> live panel "per-head route diversity / entropy · heatmap (bead 92m)"
+#    + artifacts/.../dashboard/dash_trop_demo.html
+```
+
+Any `*head*` step-record field that is a length-2..64 numeric vector is picked up
+automatically, so when standard-attention per-head entropy is streamed
+(`attn_entropy_head_mean`) it appears in the same panel with no further wiring.
+
 ## Notes
 
 - **Reproducibility** — `--seed` seeds model init and the sample batch; the

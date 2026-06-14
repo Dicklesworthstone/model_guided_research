@@ -302,6 +302,56 @@ def _drift_flag(series: list[float], min_history: int = 8, k: float = 3.0) -> bo
     return abs(last - mu) > k * sd
 
 
+# bead 92m: per-head heatmap rendering for the dashboard. A per-head metric is a
+# short numeric vector (one entry per attention head, length 2..64) carried in a
+# step record under a "head"-named key (tropical_gamma_head_mean, etc.).
+_HEAT_RAMP = "·░▒▓█"  # lowest is a dot (not a blank) so a row keeps its shape
+
+
+def _is_head_vector(val: Any) -> bool:
+    if not isinstance(val, (list, tuple)) or not (2 <= len(val) <= 64):
+        return False
+    return all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in val)
+
+
+def _head_heat_row(values: list[float]) -> Any:
+    """A single colored heat strip for a per-head vector (self-scaled).
+
+    Each head becomes a shaded, 256-color cell (red=low → green=high within the
+    row), so route specialization across heads reads at a glance in the terminal
+    and in the recorded HTML export.
+    """
+    import math as math_mod
+
+    from rich.text import Text
+
+    finite = [v for v in values if math_mod.isfinite(v)]
+    lo, hi = (min(finite), max(finite)) if finite else (0.0, 1.0)
+    span = (hi - lo) or 1.0
+    out = Text()
+    for v in values:
+        if not math_mod.isfinite(v):
+            out.append(" ✕ ", style="bold red")
+            continue
+        frac = (v - lo) / span
+        ch = _HEAT_RAMP[min(len(_HEAT_RAMP) - 1, int(frac * (len(_HEAT_RAMP) - 1) + 0.5))]
+        # 256-color ramp from red(196) to green(46) through the cube
+        color = 196 - int(round(frac * 6)) * 36 + int(round(frac * 5))
+        out.append(f"{ch}", style=f"color({max(16, min(231, color))})")
+    return out
+
+
+def _head_diversity(values: list[float]) -> float | None:
+    """Cross-head spread (population stdev) - a cheap route-diversity scalar."""
+    import math as math_mod
+    import statistics as stats_mod
+
+    finite = [v for v in values if math_mod.isfinite(v)]
+    if len(finite) < 2:
+        return None
+    return float(stats_mod.pstdev(finite))
+
+
 class TrainingDashboard:
     """Rich live console dashboard for a training run (bead nyp).
 
@@ -326,6 +376,7 @@ class TrainingDashboard:
         html_path: Any = None,
         console: Any = None,
         window: int = 256,
+        show_head_heatmaps: bool = True,
     ):
         from collections import deque
 
@@ -344,6 +395,13 @@ class TrainingDashboard:
         self._tflops: deque[float] = deque(maxlen=self._window)
         self._val: list[tuple[int, float]] = []
         self._diags: dict[str, deque[float]] = {}
+        # bead 92m: per-head metric vectors (e.g. tropical_gamma_head_mean,
+        # attn_entropy_head_mean) -> latest snapshot, rendered as a route
+        # diversity/entropy heatmap. Data-gated: the panel only appears when a
+        # per-head field actually flows, so standard runs pay nothing.
+        self.show_head_heatmaps = bool(show_head_heatmaps)
+        self._head_latest: dict[str, list[float]] = {}
+        self._head_step: dict[str, int] = {}
         self._step = 0
         self._latest: dict[str, Any] = {}
         self._nan_seen = False
@@ -371,9 +429,14 @@ class TrainingDashboard:
                     if not math_mod.isfinite(float(val)):
                         self._nan_seen = True
             for key, val in record.items():
-                if key in _DASH_CORE_KEYS or not isinstance(val, (int, float)) or isinstance(val, bool):
+                if key in _DASH_CORE_KEYS:
                     continue
-                self._diags.setdefault(key, _deque(maxlen=self._window)).append(float(val))
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    self._diags.setdefault(key, _deque(maxlen=self._window)).append(float(val))
+                elif self.show_head_heatmaps and "head" in key and _is_head_vector(val):
+                    # bead 92m: a per-head metric vector (route margins / entropy)
+                    self._head_latest[key] = [float(x) for x in val]
+                    self._head_step[key] = self._step
         elif rtype == "val":
             val = record.get("val_loss")
             if isinstance(val, (int, float)) and not isinstance(val, bool):
@@ -440,6 +503,28 @@ class TrainingDashboard:
                 diag.add_row(name, f"{series[-1]:.5g}  [{style}]{sparkline(series)}[/{style}]{marker}")
             panels.append(
                 Panel(diag, title="mathematical invariants · trailing-band drift watch", border_style="cyan")
+            )
+
+        if self.show_head_heatmaps and self._head_latest:
+            heat = Table(box=None, show_header=True, header_style="dim", padding=(0, 1))
+            heat.add_column("per-head metric", justify="right", style="dim", overflow="fold")
+            heat.add_column("heads (low→high)", justify="left")
+            heat.add_column("div σ", justify="right", style="dim")
+            heat.add_column("μ", justify="right", style="dim")
+            for name in sorted(self._head_latest):
+                vals = self._head_latest[name]
+                div = _head_diversity(vals)
+                finite = [v for v in vals if v == v]  # drop NaN
+                mu = (sum(finite) / len(finite)) if finite else float("nan")
+                label = name.replace("_head_mean", "").replace("_head", "")
+                heat.add_row(
+                    f"{label} [dim](h0…h{len(vals) - 1})[/dim]",
+                    _head_heat_row(vals),
+                    f"{div:.4g}" if div is not None else "—",
+                    f"{mu:.4g}" if finite else "—",
+                )
+            panels.append(
+                Panel(heat, title="per-head route diversity / entropy · heatmap (bead 92m)", border_style="green")
             )
 
         return Group(*panels)
