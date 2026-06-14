@@ -3641,6 +3641,50 @@ def _run_certify_checks(
             detail="lcp(x,z) >= min(lcp(x,y), lcp(y,z)) over all triples (exact, integer)",
         )
 
+        def ultra_kernel_trie_equiv_measure() -> float:
+            # Reduction to the exact implementation (bead uvjq): the packed
+            # prefix-trie decode (33dd) reproduces hard-digit alpha^LCP kernel
+            # attention EXACTLY in O(K T log T). Build a tiny 2-layer GPT,
+            # prefill + one decode step in both modes, compare last-token
+            # logits. Trie state is CPU-side, so this check pins CPU regardless
+            # of --device (the equivalence is device-independent anyway).
+            from nanochat.engine import KVCache
+            from nanochat.gpt import GPT as _GPT
+            from nanochat.gpt import GPTConfig as _GPTConfig
+
+            torch.manual_seed(seed)
+            ids = torch.randint(0, 128, (1, 12), dtype=torch.long)
+
+            def _run(mode: str) -> Any:
+                cfg = _GPTConfig(
+                    sequence_len=32, vocab_size=128, n_layer=2, n_head=4, n_kv_head=2, n_embd=64,
+                    attention_type="ultrametric", ultrametric_mode=mode,
+                    ultrametric_hard_digits=True, ultrametric_lcp_beta=128.0,
+                )
+                model = _GPT(cfg).train(False)
+                kv = KVCache(
+                    batch_size=1, num_heads=cfg.n_kv_head, seq_len=ids.size(1),
+                    head_dim=cfg.n_embd // cfg.n_head, num_layers=cfg.n_layer,
+                )
+                with torch.inference_mode():
+                    _ = model(ids[:, :-1], kv_cache=kv)
+                    return model(ids[:, -1:], kv_cache=kv)[:, -1, :].float()
+
+            torch.manual_seed(seed)
+            out_kernel = _run("kernel")
+            torch.manual_seed(seed)  # identical init so only the attention MODE differs
+            out_trie = _run("trie")
+            return float((out_trie - out_kernel).abs().max())
+
+        add_check(
+            "ultrametric",
+            "trie_decode_matches_hard_kernel",
+            "reduction",
+            ultra_kernel_trie_equiv_measure,
+            tolerance=1e-3,
+            detail="packed-trie decode reproduces hard-digit alpha^LCP kernel attention exactly",
+        )
+
     # ----- braid: YBE law + restricted-law separation + payload invariance -----
     if "braid" in mechanisms:
         from nanochat.braid_attention_torch import BraidCausalSelfAttention as _Braid
@@ -6522,6 +6566,7 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "tropical.maslov_endpoint_within_sandwich",
         "tropical.score_center_pure_gauge_shift",
         "ultrametric.strong_triangle_inequality_lcp",
+        "ultrametric.trie_decode_matches_hard_kernel",
     }
 )
 
