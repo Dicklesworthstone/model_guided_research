@@ -119,33 +119,36 @@ NEW-MECHANISM GATE (docs/new_mechanism_checklist.md) — mechanism <X>
 [ ] 9. Off-floor campaign per the pre-registration template (rung found, claims split, one -H append)
 ```
 
-## Audit: where the existing mechanisms stand (2026-06-13)
+## Audit: where the existing mechanisms stand (2026-06-14)
 
-Honest snapshot from `mgr certify` (run `fdxb-cert-refresh-all`, 50/50 pass)
-and the registry. ✓ present · ✗ gap · — N/A.
+Honest snapshot from `mgr certify` (55/55 pass) and the registry.
+✓ present · ✗ gap · — N/A.
 
 | mechanism | causality | algebra/invariant laws | **reduction-to-known certify** | coordinate-check (lab.1) | goldens |
 |---|---|---|---|---|---|
 | standard | ✓ | ✓ (rope/rmsnorm/softmax) | — (is the baseline) | ✗ | ✓ |
-| tropical | ✓ | ✓ (Lipschitz, ffn-collapse, margin) | ✗ (β-endpoints only in tests) | ✗ | ✓ |
-| ultrametric | ✓ | ✓ (strong-triangle LCP) | ✗ (hard-digit==trie only in tests) | ✗ | ✓ |
+| tropical | ✓ | ✓ (Lipschitz, ffn-collapse, margin) | ✓ (maslov_endpoint_within_sandwich) | ✗ | ✓ |
+| ultrametric | ✓ | ✓ (strong-triangle LCP) | ✓ (trie_decode_matches_hard_kernel) | ✗ | ✓ |
 | quaternion | ✓ | ✓ (assoc, norm, rotor) | — (is a reduction *target*) | ✗ | ✓ |
-| octonion | ✓ | ✓ (alternativity, norm, non-assoc) | ✗ (⊃ quaternion subalgebra uncertified) | ✗ | ✓ |
-| braid | ✓ | ✓ (YBE, charges, r-matrix) | ✗ | ✗ | ✓ |
-| gauge | ✓ | ✓ (rotation roundtrip/additivity) | ✗ (→ standard at zero field uncertified) | ✗ | ✓ |
-| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | ✗ | ✗ | ✓ |
-| simplicial | ✓ | ✓ (mass conservation) | ✗ | ✗ | ✓ |
-| surreal | ✓ | ✓ (row-norm, linearity, equivariance) | ✗ | ✗ | ✓ |
-| fractal | ✓ | ✓ (router simplex) | ✗ | ✗ | ✓ |
+| octonion | ✓ | ✓ (alternativity, norm, non-assoc) | ✓ (reduces_to_quaternion_on_subalgebra) | ✗ | ✓ |
+| braid | ✓ | ✓ (YBE, charges, r-matrix) | — (no simpler sub-mechanism) | ✗ | ✓ |
+| gauge | ✓ | ✓ (rotation roundtrip/additivity) | — (lacks QK-norm; not a clean → standard) | ✗ | ✓ |
+| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — (no simpler sub-mechanism) | ✗ | ✓ |
+| simplicial | ✓ | ✓ (mass conservation) | — (no simpler sub-mechanism) | ✗ | ✓ |
+| surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✗ | ✓ |
+| fractal | ✓ | ✓ (router simplex) | — (no simpler sub-mechanism) | ✗ | ✓ |
 
-**The reduction-test column is empty across the board** — no existing
-mechanism certifies an exact reduction/special-case, even where one is known
-(tropical β-endpoints and ultrametric hard-digit==trie live in
-`tests/test_algebraic_properties.py` / the 33dd trie path, not in `mgr
-certify`). The coordinate-check column is empty because `lab.1` is open. These
-are the gaps; concrete promotion beads are filed (see the beads linked from
-`research_loop.md`). New mechanisms enter the gate green by construction;
-existing mechanisms get retrofitted where a reduction is known and cheap —
-highest value first: **octonion ⊃ quaternion subalgebra**, **tropical
-β-endpoints (promote tests → certify)**, **ultrametric hard-digit == trie
-(promote → certify)**, **gauge → standard at zero field**.
+**The reduction-to-known column is now filled wherever a clean reduction
+exists** (bead uvjq, 2026-06-14): octonion ⊃ quaternion, tropical → its exact
+β→∞ endpoint, ultrametric kernel == trie. `gauge → standard` was analyzed and
+deliberately left out — the GaugeBlock omits the QK-norm that standard
+attention applies, so it reduces only to QK-norm-stripped dot-product
+attention, not the standard *mechanism* (its transport machinery is already
+certified by the `rotation_*` checks). braid/fractal/simplicial/surreal are
+not generalizations of a simpler attention mechanism, so have no
+reduction-to-known to certify. The coordinate-check column is the remaining
+gap, empty because `lab.1` (the muP parameterization harness) is open — that is
+where a new mechanism's init/LR scaling gets verified before any matched-FLOPs
+width comparison. New mechanisms enter the gate green by construction; the
+reduction retrofits for existing mechanisms are complete (bead uvjq closed
+2026-06-14).
