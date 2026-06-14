@@ -9242,5 +9242,77 @@ def adjudicate(
     )
 
 
+@app.command("visualize")
+def visualize(
+    mode: Annotated[
+        str,
+        typer.Argument(help="'state' (hi3: model-state visuals) or 'entropy' (7ow: per-head entropy/diversity)"),
+    ] = "state",
+    attention: Annotated[str, typer.Option("--attention", help="Attention type for a fresh probe (state mode)")] = "standard",
+    baseline: Annotated[str, typer.Option("--baseline", help="Baseline mechanism (entropy mode)")] = "standard",
+    feature: Annotated[str, typer.Option("--feature", help="Math-feature mechanism (entropy mode)")] = "tropical",
+    checkpoint: Annotated[
+        Path | None, typer.Option("--checkpoint", help="Load a trained checkpoint dir instead of a fresh probe (state mode)")
+    ] = None,
+    out: Annotated[Path | None, typer.Option("--out", help="Output dir (default under artifacts/vis/)")] = None,
+    device: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
+    seed: Annotated[int, typer.Option("--seed", "-s", help="Seeds model init + sample batch")] = 0,
+    seq_len: Annotated[int, typer.Option("--seq-len", help="Sample-batch sequence length")] = 64,
+    batch_size: Annotated[int, typer.Option("--batch-size", help="Sample-batch size")] = 4,
+) -> None:
+    """Model-state visualizations (beads hi3, 7ow).
+
+    'state' renders >=3 visuals (per-head attention-entropy heatmap, softmax
+    attention maps, tropical route margins) for a fresh probe or a checkpoint;
+    'entropy' tabulates per-head entropy + cross-head route diversity for a
+    baseline vs a math-feature mechanism. Thin wrapper over `python -m
+    nanochat.viz`; outputs under artifacts/vis/. See docs/visualizations.md.
+    """
+    from nanochat import viz
+
+    if mode == "state":
+        argv = ["state", "--attention", attention, "--device", device, "--seed", str(seed),
+                "--seq-len", str(seq_len), "--batch-size", str(batch_size)]
+        if checkpoint is not None:
+            argv += ["--checkpoint", str(checkpoint)]
+    elif mode == "entropy":
+        argv = ["entropy", "--baseline", baseline, "--feature", feature, "--device", device,
+                "--seed", str(seed), "--seq-len", str(seq_len), "--batch-size", str(batch_size)]
+    else:
+        console.print(f"[bold red]Unknown mode {mode!r}. Use 'state' or 'entropy'.[/bold red]")
+        raise typer.Exit(code=2)
+    if out is not None:
+        argv += ["--out", str(out)]
+    raise typer.Exit(code=viz.main(argv))
+
+
+@app.command("profile")
+def profile(
+    attention: Annotated[str, typer.Option("--attention", help="Attention type to profile")] = "standard",
+    compare_flex: Annotated[bool, typer.Option("--compare-flex", help="standard only: FlexAttention on vs off")] = False,
+    forward_only: Annotated[bool, typer.Option("--forward-only", help="Profile forward only (default: fwd+bwd)")] = False,
+    device: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
+    steps: Annotated[int, typer.Option("--steps", help="Profiled steps (excludes warmup)")] = 5,
+    out: Annotated[Path | None, typer.Option("--out", help="Output dir (default artifacts/profiles/<attention>)")] = None,
+) -> None:
+    """Profile a mechanism's attention/optimizer hot path (bead b1l).
+
+    torch.profiler kernel/memory breakdown + a Chrome trace, with optional
+    FlexAttention on-vs-off comparison (standard). Thin wrapper over `python -m
+    nanochat.profiling bench`; outputs under artifacts/profiles/. See
+    docs/profiling.md.
+    """
+    from nanochat import profiling
+
+    argv = ["bench", "--attention", attention, "--device", device, "--steps", str(steps)]
+    if compare_flex:
+        argv.append("--compare-flex")
+    if forward_only:
+        argv.append("--forward-only")
+    if out is not None:
+        argv += ["--out", str(out)]
+    raise typer.Exit(code=profiling.main(argv))
+
+
 if __name__ == "__main__":
     app()

@@ -24,6 +24,14 @@ All runs are seeded and reproducible. Output lands under `artifacts/vis/`
 (git-ignored); a `summary.json` manifest + an `index.html` gallery + matplotlib
 PNGs are written, and a rich table is printed.
 
+Either the `mgr` wrappers or the module directly (identical behaviour):
+
+```bash
+mgr visualize state --attention standard --out artifacts/vis/state_standard
+mgr visualize entropy --baseline standard --feature tropical
+mgr profile --attention standard --compare-flex   # (profiling, see docs/profiling.md)
+```
+
 ```bash
 # (hi3) >=3 model-state visualizations.
 #   standard -> attention-entropy heatmap + per-head softmax attention maps

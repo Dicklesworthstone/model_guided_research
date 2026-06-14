@@ -43,6 +43,14 @@ Profiles a mechanism's forward(+backward) hot path on a small seeded model,
 prints a kernel/memory breakdown, and exports a Chrome trace (`trace.json` —
 open in `chrome://tracing` or [Perfetto](https://ui.perfetto.dev)).
 
+The `mgr profile` wrapper covers the common case; the module exposes every knob:
+
+```bash
+mgr profile --attention standard --compare-flex          # flex on vs off
+mgr profile --attention tropical --steps 8
+mgr profile --attention standard --forward-only --device cuda
+```
+
 ```bash
 # One mechanism (fwd+bwd by default).
 python -m nanochat.profiling bench --attention standard --out artifacts/profiles/std

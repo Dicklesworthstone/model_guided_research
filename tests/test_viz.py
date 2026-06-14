@@ -142,3 +142,44 @@ def test_render_entropy_diversity_writes_artifacts(tmp_path):
     # standard reports JS route diversity; tropical reports a margin signal
     assert summary["configs"]["standard"]["route_diversity_js"] is not None
     assert summary["configs"]["tropical"]["signal"] == "tropical_margin"
+
+
+def test_mgr_visualize_state_command(tmp_path):
+    """The `mgr visualize state` wrapper delegates to viz and writes artifacts."""
+    from typer.testing import CliRunner
+
+    import cli
+
+    out = tmp_path / "state"
+    result = CliRunner().invoke(
+        cli.app,
+        ["visualize", "state", "--attention", "standard", "--seq-len", "16",
+         "--batch-size", "2", "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (out / "summary.json").is_file()
+    assert (out / "attention_entropy_heatmap.png").is_file()
+
+
+def test_mgr_visualize_entropy_command(tmp_path):
+    from typer.testing import CliRunner
+
+    import cli
+
+    out = tmp_path / "entropy"
+    result = CliRunner().invoke(
+        cli.app,
+        ["visualize", "entropy", "--baseline", "standard", "--feature", "tropical",
+         "--seq-len", "16", "--batch-size", "2", "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (out / "summary.json").is_file()
+
+
+def test_mgr_visualize_unknown_mode_errors():
+    from typer.testing import CliRunner
+
+    import cli
+
+    result = CliRunner().invoke(cli.app, ["visualize", "bogus"])
+    assert result.exit_code == 2

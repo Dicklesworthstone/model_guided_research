@@ -78,3 +78,18 @@ def test_profile_model_forward_only_runs():
     assert summary["meta"]["backward"] is False
     assert summary["meta"]["trace"] is None
     assert summary["ops"]
+
+
+def test_mgr_profile_command(tmp_path):
+    """The `mgr profile` wrapper delegates to the microbench and writes a trace."""
+    from typer.testing import CliRunner
+
+    import cli
+
+    out = tmp_path / "prof"
+    result = CliRunner().invoke(
+        cli.app, ["profile", "--attention", "standard", "--steps", "1", "--out", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (out / "summary.json").is_file()
+    assert (out / "trace.json").is_file()
