@@ -1025,6 +1025,17 @@ def demo():
     config = get_config()
     config.setup_jax()
 
+    # Pedagogical walkthrough (bead 9f1): MGR_WALKTHROUGH=1 narrates this
+    # framework's mathematics before the demo runs. Off by default; the import
+    # and call cost nothing unless the env gate is set.
+    try:
+        from nanochat.walkthrough import narrate_demo, walkthrough_enabled
+
+        if walkthrough_enabled():
+            narrate_demo("reversible")
+    except Exception as _wt_err:  # never let narration break the demo
+        print(f"[reversible] walkthrough narration skipped: {_wt_err}")
+
     # Default: enable Cayley hybrid + per-layer certificate table for this demo
     import os as _os
 
