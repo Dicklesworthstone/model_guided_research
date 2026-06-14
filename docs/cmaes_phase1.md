@@ -112,6 +112,12 @@ uv run python scripts/cmaes_phase1.py \
   --population-size 4 \
   --target-flops 1e10 \
   --search-seed 0 \
-  --eval-seed 123
+  --eval-seeds 123
 ```
+
+> Robustness flags (beads `2mj`/`a3u`/`q8f`/`wiz`): `--eval-seeds 0 1 2`
+> (+ `--seed-agg mean_std`) for multi-seed averaging; `--max-evals` /
+> `--max-wall-seconds` / `--patience` / `--max-crash-rate` for the budget guard;
+> `--resume` to continue a preempted run; `--data-dir` to pin the corpus.
+> Analyze any run with `scripts/cmaes_analyze.py --run-id <id>` (bead `0wn`).
 
