@@ -74,7 +74,11 @@ class MechanismNote:
     observable: str = ""
 
     def doc_path(self) -> str:
-        return f"{DOC_ROOT}/{self.doc}"
+        import os
+
+        # normpath so a "../README.md" doc renders as "README.md", not
+        # "markdown_documentation/../README.md".
+        return os.path.normpath(f"{DOC_ROOT}/{self.doc}")
 
 
 MECHANISM_NOTES: dict[str, MechanismNote] = {
@@ -280,14 +284,14 @@ def narrate_run(
     diag = collect_state(model, idx)
     console.print("\n[bold]Live observable on this batch:[/bold]")
     if diag.has_entropy():
-        flat = [v for row in diag.entropy_layer_head for v in row]
+        flat = [v for row in diag.entropy_layer_head for v in row if math.isfinite(v)]
         seqlen = int(cfg["sequence_len"])
         console.print(
             f"  per-head attention entropy ≈ [bold]{sum(flat) / len(flat):.3f}[/bold] nats "
             f"[dim](range {min(flat):.2f}–{max(flat):.2f}; log({seqlen})≈{math.log(seqlen):.2f} is uniform)[/dim]"
         )
     if diag.has_margins():
-        flat = [v for row in diag.margin_layer_head for v in row]
+        flat = [v for row in diag.margin_layer_head for v in row if math.isfinite(v)]
         console.print(f"  tropical runner-up margin γ ≈ [bold]{sum(flat) / len(flat):.4f}[/bold] [dim](larger = more certifiable routes)[/dim]")
     if note and note.observable:
         console.print(f"  [dim]what to watch: {escape(note.observable)}[/dim]")
@@ -449,15 +453,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m nanochat.walkthrough", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    mechanisms = sorted(MECHANISM_NOTES)
     pr = sub.add_parser("run", help="narrate a live nanochat mini-run for a mechanism")
-    pr.add_argument("--attention", default="standard", help=f"one of: {', '.join(sorted(MECHANISM_NOTES))}")
+    pr.add_argument("--attention", default="standard", choices=mechanisms, metavar="MECH",
+                    help=f"one of: {', '.join(mechanisms)}")
     pr.add_argument("--device", default="cpu")
     pr.add_argument("--seed", type=int, default=0)
     pr.add_argument("--steps", type=int, default=3)
     pr.set_defaults(func=run_run)
 
     pd = sub.add_parser("demo", help="conceptual walkthrough of a framework's math")
-    pd.add_argument("--topic", default="tropical", help=f"one of: {', '.join(sorted(MECHANISM_NOTES))}")
+    pd.add_argument("--topic", default="tropical", choices=mechanisms, metavar="MECH",
+                    help=f"one of: {', '.join(mechanisms)}")
     pd.set_defaults(func=run_demo)
     return parser
 

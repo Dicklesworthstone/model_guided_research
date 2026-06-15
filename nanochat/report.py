@@ -518,8 +518,12 @@ class TrainingDashboard:
                 finite = [v for v in vals if v == v]  # drop NaN
                 mu = (sum(finite) / len(finite)) if finite else float("nan")
                 label = name.replace("_head_mean", "").replace("_head", "")
+                # Flag a stale metric: the per-head field is emitted at the log
+                # cadence, so it can trail the current step (e.g. tropical margins).
+                cap_step = self._head_step.get(name, self._step)
+                stale = " [yellow]·stale[/yellow]" if cap_step < self._step else ""
                 heat.add_row(
-                    f"{label} [dim](h0…h{len(vals) - 1})[/dim]",
+                    f"{label} [dim](h0…h{len(vals) - 1} @{cap_step}){stale}[/dim]",
                     _head_heat_row(vals),
                     f"{div:.4g}" if div is not None else "—",
                     f"{mu:.4g}" if finite else "—",

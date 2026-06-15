@@ -85,16 +85,17 @@ _MECH_DEFAULTS: dict[str, dict[str, int]] = {
 # Record flags to flip on per mechanism so the introspection buffers populate.
 _RECORD_FLAGS: dict[str, dict[str, bool]] = {
     "standard": {"standard_record_attn_entropy": True},
-    "tropical": {"tropical_record_margins": True, "standard_record_attn_entropy": True},
+    "tropical": {"tropical_record_margins": True},
     "reversible": {"reversible_record_energy": True},
 }
 
 
 def _attention_spec_tokens(attention_type: Any) -> list[str]:
+    raw: list[Any]
     if isinstance(attention_type, str):
         raw = [attention_type]
     elif isinstance(attention_type, list | tuple):
-        raw = attention_type
+        raw = list(attention_type)
     else:
         raw = [str(attention_type)]
     tokens: list[str] = []
@@ -295,7 +296,7 @@ def _capture_attention_maps(model: Any, example_idx: int) -> Iterator[dict[int, 
     from nanochat.gpt import CausalSelfAttention, causal_attn_mask
 
     captured: dict[int, Any] = {}
-    patched: list[tuple[Any, Any]] = []  # (module, original_bound_attend)
+    patched: list[Any] = []  # modules we added an instance `attend` to (for restore)
 
     def make_patched(module: Any, layer_idx: int, original: Any):
         def attend(q, k, v, *, kv_cache, pos0):
@@ -319,14 +320,16 @@ def _capture_attention_maps(model: Any, example_idx: int) -> Iterator[dict[int, 
 
     for layer_idx, module, _kind in _iter_attention_modules(model):
         if isinstance(module, CausalSelfAttention):
-            original = module.attend  # bound method
-            module.attend = make_patched(module, layer_idx, original)  # type: ignore[method-assign]
-            patched.append((module, original))
+            # CausalSelfAttention.attend is a class method (no instance attr), so
+            # the `module.attend` evaluated here is the bound method we delegate
+            # to; a clean restore is to drop the instance attribute we add.
+            module.attend = make_patched(module, layer_idx, module.attend)  # type: ignore[method-assign]
+            patched.append(module)
     try:
         yield captured
     finally:
-        for module, original in patched:
-            module.attend = original  # type: ignore[method-assign]
+        for module in patched:
+            module.__dict__.pop("attend", None)
 
 
 @dataclass
@@ -336,10 +339,15 @@ class StateDiagnostics:
     attention_type: str
     n_layer: int
     n_head: int
-    # per-layer per-head attention entropy (standard buffer): [[h...], ...]
+    # per-layer per-head attention entropy (standard buffer): [[h...], ...].
+    # entropy_layers carries the REAL model-layer index of each row, so a
+    # heterogeneous schedule (e.g. layers 0,2 standard / 1,3 tropical) labels
+    # rows by true layer and the entropy/margin/map views never disagree.
     entropy_layer_head: list[list[float]] = field(default_factory=list)
-    # per-layer per-head tropical runner-up margins
+    entropy_layers: list[int] = field(default_factory=list)
+    # per-layer per-head tropical runner-up margins (+ their real layer indices)
     margin_layer_head: list[list[float]] = field(default_factory=list)
+    margin_layers: list[int] = field(default_factory=list)
     margin_min_layer_head: list[list[float]] = field(default_factory=list)
     route_coverage: float | None = None
     # captured softmax maps for one example: layer_idx -> (H, Tq, Tk) tensor
@@ -369,14 +377,16 @@ def collect_state(model: Any, idx: Any, *, example_idx: int = 0, token_labels: l
     diag.attn_maps = captured
 
     coverages: list[float] = []
-    for _i, module, _kind in _iter_attention_modules(model):
+    for layer_idx, module, _kind in _iter_attention_modules(model):
         ent = getattr(module, "attn_entropy_head_mean", None)
         if torch.is_tensor(ent) and ent.ndim == 1 and torch.isfinite(ent).any():
             diag.entropy_layer_head.append([float(x) for x in ent.tolist()])
+            diag.entropy_layers.append(layer_idx)
         gmean = getattr(module, "tropical_gamma_head_mean", None)
         gmin = getattr(module, "tropical_gamma_head_min", None)
         if torch.is_tensor(gmean) and gmean.ndim == 1:
             diag.margin_layer_head.append([float(x) for x in gmean.tolist()])
+            diag.margin_layers.append(layer_idx)
             if torch.is_tensor(gmin) and gmin.ndim == 1:
                 diag.margin_min_layer_head.append([float(x) for x in gmin.tolist()])
         cov = getattr(module, "tropical_route_coverage", None)
@@ -448,6 +458,7 @@ def _heatmap_png(
     ylabel: str,
     cmap: str = "viridis",
     xticklabels: list[str] | None = None,
+    yticklabels: list[str] | None = None,
 ) -> None:
     import matplotlib
 
@@ -466,6 +477,9 @@ def _heatmap_png(
     if xticklabels is not None:
         ax.set_xticks(range(len(xticklabels)))
         ax.set_xticklabels(xticklabels, rotation=90, fontsize=6)
+    if yticklabels is not None:
+        ax.set_yticks(range(len(yticklabels)))
+        ax.set_yticklabels(yticklabels, fontsize=7)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     # annotate small grids
     if arr.shape[0] * arr.shape[1] <= 64 and xticklabels is None:
@@ -478,8 +492,14 @@ def _heatmap_png(
     plt.close(fig)
 
 
-def _rich_heatmap(matrix: list[list[float]], *, row_prefix: str = "L", col_prefix: str = "h") -> Any:
-    """A compact terminal heatmap using background-shaded cells."""
+def _rich_heatmap(
+    matrix: list[list[float]], *, row_labels: list[str] | None = None, row_prefix: str = "L", col_prefix: str = "h"
+) -> Any:
+    """A compact terminal heatmap using background-shaded cells.
+
+    ``row_labels`` (when given) labels each row with its REAL layer index so a
+    heterogeneous schedule isn't mislabelled L0,L1; falls back to positional.
+    """
     from rich.table import Table
     from rich.text import Text
 
@@ -493,7 +513,8 @@ def _rich_heatmap(matrix: list[list[float]], *, row_prefix: str = "L", col_prefi
     for c in range(ncols):
         table.add_column(f"{col_prefix}{c}", justify="center")
     for r, row in enumerate(matrix):
-        cells: list[Any] = [f"{row_prefix}{r}"]
+        label = row_labels[r] if row_labels is not None and r < len(row_labels) else f"{row_prefix}{r}"
+        cells: list[Any] = [label]
         for v in row:
             if not math.isfinite(v):
                 cells.append(Text(" · ", style="dim"))
@@ -545,17 +566,20 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
 
     console.rule(f"[bold cyan]model-state visualizations · {diag.attention_type}")
 
-    # (1) Per-head attention-entropy heatmap (layers x heads).
+    ent_labels = [f"L{i}" for i in diag.entropy_layers]
+    margin_labels = [f"L{i}" for i in diag.margin_layers]
+
+    # (1) Per-head attention-entropy heatmap (REAL layer index x heads).
     if diag.has_entropy():
         png = out_dir / "attention_entropy_heatmap.png"
         _heatmap_png(
             diag.entropy_layer_head, png,
             title=f"Per-head attention entropy ({diag.attention_type})",
-            xlabel="head", ylabel="layer", cmap="magma",
+            xlabel="head", ylabel="layer", cmap="magma", yticklabels=ent_labels,
         )
         images.append(png)
         visuals.append("attention_entropy_heatmap")
-        console.print(Panel(_rich_heatmap(diag.entropy_layer_head), title="attention entropy (nats) · layer×head", border_style="magenta"))
+        console.print(Panel(_rich_heatmap(diag.entropy_layer_head, row_labels=ent_labels), title="attention entropy (nats) · layer×head", border_style="magenta"))
 
     # (2) Per-head softmax attention maps for one example (grid for first layer).
     if diag.attn_maps:
@@ -566,17 +590,17 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
         visuals.append("attention_maps")
         console.print(f"[green]✓[/green] attention maps for layer {layer0}: {diag.attn_maps[layer0].shape} -> {png.name}")
 
-    # (3) Tropical route-margin heatmap (layers x heads).
+    # (3) Tropical route-margin heatmap (REAL layer index x heads).
     if diag.has_margins():
         png = out_dir / "tropical_route_margins.png"
         _heatmap_png(
             diag.margin_layer_head, png,
             title=f"Tropical runner-up margins ({diag.attention_type})",
-            xlabel="head", ylabel="layer", cmap="viridis",
+            xlabel="head", ylabel="layer", cmap="viridis", yticklabels=margin_labels,
         )
         images.append(png)
         visuals.append("tropical_route_margins")
-        console.print(Panel(_rich_heatmap(diag.margin_layer_head), title="tropical route margins · layer×head", border_style="green"))
+        console.print(Panel(_rich_heatmap(diag.margin_layer_head, row_labels=margin_labels), title="tropical route margins · layer×head", border_style="green"))
         if diag.route_coverage is not None:
             console.print(f"[dim]route coverage (β-thresholded): {diag.route_coverage:.4f}[/dim]")
 
@@ -587,7 +611,10 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
         "n_head": diag.n_head,
         "visuals": visuals,
         "entropy_layer_head": diag.entropy_layer_head or None,
+        "entropy_layers": diag.entropy_layers or None,
         "margin_layer_head": diag.margin_layer_head or None,
+        "margin_layers": diag.margin_layers or None,
+        "attn_map_layers": sorted(diag.attn_maps) or None,
         "route_coverage": diag.route_coverage,
         "head_route_diversity_js": head_route_diversity(diag),
         "images": [p.name for p in images],
@@ -691,13 +718,30 @@ def _per_head_entropy_summary(diag: StateDiagnostics) -> dict[str, Any]:
             col = [r[c] for r in diag.margin_layer_head if c < len(r) and math.isfinite(r[c])]
             head_means.append(sum(col) / len(col) if col else float("nan"))
     finite = [x for x in head_means if math.isfinite(x)]
+    # The per-head signal is attention entropy (standard heads) OR tropical
+    # margin (tropical heads) - hence the generic "signal_*" keys; the "signal"
+    # field names which one, so a margin is never mislabelled as entropy. For a
+    # MIXED schedule both buffers populate: head_means is the entropy of the
+    # standard sub-layers; 'signal' says so explicitly (which tropical layers
+    # are omitted) rather than silently presenting it as the whole config.
+    if diag.entropy_layer_head and diag.margin_layer_head:
+        signal = (
+            f"attention_entropy_nats (mixed: tropical layers "
+            f"{diag.margin_layers} omitted from this mean)"
+        )
+    elif diag.entropy_layer_head:
+        signal = "attention_entropy_nats"
+    elif diag.margin_layer_head:
+        signal = "tropical_margin"
+    else:
+        signal = "none"
     return {
         "per_head": head_means,
-        "head_entropy_mean": (sum(finite) / len(finite)) if finite else None,
-        "head_entropy_std": (statistics.pstdev(finite) if len(finite) > 1 else 0.0) if finite else None,
+        "signal_mean": (sum(finite) / len(finite)) if finite else None,
+        "signal_std": (statistics.pstdev(finite) if len(finite) > 1 else 0.0) if finite else None,
         "route_diversity_js": head_route_diversity(diag),
         "route_coverage": diag.route_coverage,
-        "signal": "attention_entropy_nats" if diag.entropy_layer_head else ("tropical_margin" if diag.margin_layer_head else "none"),
+        "signal": signal,
     }
 
 
@@ -716,14 +760,16 @@ def render_entropy_diversity(
     table = Table(title="per-head entropy & route diversity", header_style="bold cyan")
     table.add_column("config")
     table.add_column("signal", style="dim")
-    table.add_column("head entropy μ", justify="right")
-    table.add_column("head entropy σ", justify="right")
+    table.add_column("signal μ", justify="right")
+    table.add_column("signal σ", justify="right")
     table.add_column("route diversity (JS)", justify="right")
     table.add_column("coverage", justify="right")
+
+    def _f(v: Any, spec: str = ".4f") -> str:
+        return format(v, spec) if isinstance(v, (int, float)) else "—"
+
     for name, s in rows.items():
-        def _f(v: Any, spec: str = ".4f") -> str:
-            return format(v, spec) if isinstance(v, (int, float)) else "—"
-        table.add_row(name, str(s["signal"]), _f(s["head_entropy_mean"]), _f(s["head_entropy_std"]),
+        table.add_row(name, str(s["signal"]), _f(s["signal_mean"]), _f(s["signal_std"]),
                       _f(s["route_diversity_js"]), _f(s["route_coverage"]))
     console.print(table)
 
@@ -736,8 +782,10 @@ def render_entropy_diversity(
         "configs": rows,
         "images": [png.name],
         "interpretation": (
-            "head entropy μ = mean per-head attention entropy (nats; higher = flatter/less selective). "
-            "head entropy σ = spread across heads (head specialization). "
+            "signal μ/σ = mean / cross-head spread of the per-head signal named in 'signal' "
+            "(attention entropy in nats for softmax heads — higher = flatter/less selective; "
+            "tropical runner-up margin for tropical heads — higher = more confident routes). "
+            "σ measures head specialization. "
             "route diversity (JS) = mean pairwise Jensen-Shannon divergence between heads' attention maps "
             "(0 = redundant heads, →1 = heads route identical tokens to different places). "
             "coverage = fraction of tropical routes above the β route-stability threshold."

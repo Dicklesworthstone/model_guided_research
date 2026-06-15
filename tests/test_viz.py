@@ -78,6 +78,32 @@ def test_mixed_schedule_probe_defaults_cover_reversible_geometry():
     assert [block.attention_type for block in model.transformer.h] == ["standard", "reversible"]
 
 
+def test_mixed_schedule_rows_carry_real_layer_indices(tmp_path):
+    """Regression: entropy/margin/attn-map views must agree on the REAL layer
+    index, not positional L0/L1 (heterogeneous-schedule mislabeling bug)."""
+    from rich.console import Console
+
+    model, _ = viz.build_probe_model(
+        "standard,tropical", seed=0, n_layer=4, n_head=4, n_kv_head=4, n_embd=64,
+        sequence_len=16, vocab_size=128,
+    )
+    kinds = [b.attention_type for b in model.transformer.h]
+    std = [i for i, k in enumerate(kinds) if k == "standard"]
+    trop = [i for i, k in enumerate(kinds) if k == "tropical"]
+    assert std == [0, 2] and trop == [1, 3]
+
+    idx, _ = viz.sample_batch(text=None, batch_size=2, seq_len=16, vocab_size=128, seed=0)
+    diag = viz.collect_state(model, idx)
+    # rows are tagged with the true layer index, not enumerate position
+    assert diag.entropy_layers == std
+    assert diag.margin_layers == trop
+    assert sorted(diag.attn_maps) == std  # maps live on the standard layers
+    out = viz.render_state(diag, tmp_path / "mixed", console=Console(file=open(tmp_path / "_log", "w")))
+    assert out["entropy_layers"] == std
+    assert out["margin_layers"] == trop
+    assert out["attn_map_layers"] == std
+
+
 def test_route_diversity_in_unit_interval():
     diag = _standard_diag()
     div = viz.head_route_diversity(diag)
