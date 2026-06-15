@@ -59,6 +59,14 @@ def _console() -> Any:
     return Console()
 
 
+def _safe_token_label(s: str) -> str:
+    """A matplotlib/terminal-safe token label: newlines escaped, non-printable
+    bytes (common in byte-level BPE, e.g. control chars) shown as a middle dot so
+    they render without 'glyph missing from font' warnings or garbage."""
+    out = "".join(ch if ch.isprintable() else "·" for ch in s.replace("\n", "\\n"))
+    return out if out else "∅"
+
+
 # --------------------------------------------------------------------------- #
 # Model construction + sample batch                                           #
 # --------------------------------------------------------------------------- #
@@ -186,29 +194,24 @@ def sample_batch(
     import torch
 
     gen = torch.Generator().manual_seed(int(seed))
-    token_labels: list[str] | None = None
+    tok = None
     ids: list[int] | None = None
     if text:
         try:
             from nanochat.tokenizer import get_tokenizer
 
             tok = get_tokenizer()
-            ids = list(tok.encode(text))
             # Clamp ids into the probe vocab so a tiny fresh model stays valid.
-            ids = [int(i) % int(vocab_size) for i in ids]
-            token_labels = [tok.decode([i]).replace("\n", "\\n") for i in ids[:seq_len]]
+            ids = [int(i) % int(vocab_size) for i in tok.encode(text)]
         except Exception:
-            ids = None
-            token_labels = None
-    if ids is None:
+            tok, ids = None, None
+    if not ids:
         flat = torch.randint(0, int(vocab_size), (int(batch_size) * int(seq_len),), generator=gen)
-        idx = flat.view(int(batch_size), int(seq_len))
-        return idx.to(device), None
-    # Tile / truncate the encoded ids to a (B, T) batch.
-    if len(ids) < seq_len:
-        ids = (ids * (seq_len // len(ids) + 1))[:seq_len]
-    else:
-        ids = ids[:seq_len]
+        return flat.view(int(batch_size), int(seq_len)).to(device), None
+    # Tile / truncate the encoded ids to exactly seq_len, THEN derive labels from
+    # the final ids so token_labels lines up 1:1 with the sequence axis.
+    ids = (ids * (seq_len // len(ids) + 1))[:seq_len] if len(ids) < seq_len else ids[:seq_len]
+    token_labels = [_safe_token_label(tok.decode([i])) for i in ids] if tok is not None else None
     row = torch.tensor(ids, dtype=torch.long)
     idx = row.unsqueeze(0).repeat(int(batch_size), 1)
     return idx.to(device), token_labels
@@ -363,7 +366,9 @@ def _js_divergence(p: Any, q: Any, eps: float = 1e-12) -> float:
         return (a * ((a + eps).log() - (b + eps).log())).sum()
 
     js = 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
-    return float(js / math.log(2.0))
+    # JS is in [0, ln2] mathematically; clamp the normalized value to [0, 1] so
+    # float rounding on near-identical distributions can't yield a tiny negative.
+    return max(0.0, min(1.0, float(js / math.log(2.0))))
 
 
 def head_route_diversity(diag: StateDiagnostics) -> float | None:
@@ -457,8 +462,9 @@ def _rich_heatmap(matrix: list[list[float]], *, row_prefix: str = "L", col_prefi
                 continue
             frac = (v - lo) / span
             ch = ramp[min(len(ramp) - 1, int(frac * (len(ramp) - 1) + 0.5))]
-            hue = int(196 + frac * (51 - 196))  # red(196) -> green-ish via 256-color ramp
-            cells.append(Text(f" {ch} ", style=f"color({max(17, min(231, hue))})"))
+            # 256-color cube ramp red(196)=(5,0,0) -> green(46)=(0,5,0), -30/step.
+            hue = 196 - 30 * int(round(frac * 5))
+            cells.append(Text(f" {ch} ", style=f"color({max(16, min(231, hue))})"))
         table.add_row(*cells)
     return table
 
@@ -579,6 +585,13 @@ def _attention_maps_png(maps: Any, out: Path, *, layer: int, token_labels: list[
             ax.set_title(f"head {head}", fontsize=8)
             ax.set_xlabel("key pos", fontsize=7)
             ax.set_ylabel("query pos", fontsize=7)
+            # Label the axes with actual tokens when the sequence is short enough
+            # to stay legible (otherwise the positional axes are clearer).
+            if token_labels is not None and len(token_labels) == mat.shape[0] <= 32:
+                ax.set_xticks(range(len(token_labels)))
+                ax.set_xticklabels(token_labels, rotation=90, fontsize=4)
+                ax.set_yticks(range(len(token_labels)))
+                ax.set_yticklabels(token_labels, fontsize=4)
             fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         else:
             ax.axis("off")

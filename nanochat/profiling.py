@@ -29,7 +29,7 @@ import argparse
 import json
 import sys
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +76,6 @@ class ProfileConfig:
     with_stack: bool = False
     row_limit: int = 15
     trace_dir: Path | None = None
-    extra_activities: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> ProfileConfig:
@@ -323,9 +322,10 @@ def run_bench(args: argparse.Namespace) -> int:
             variants.append((args.attention, True))
 
     results: list[dict[str, Any]] = []
+    multi = len(variants) > 1  # only split into flex_on/flex_off dirs for a real comparison
     for attn, flex in variants:
         label = f"{attn}{' +flex' if flex else ''}"
-        sub_dir = out_dir / ("flex_on" if flex else "flex_off") if args.compare_flex else out_dir
+        sub_dir = (out_dir / ("flex_on" if flex else "flex_off")) if multi else out_dir
         try:
             summary = profile_model(
                 attn, device=args.device, steps=args.steps, warmup=args.warmup,

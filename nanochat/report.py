@@ -335,8 +335,9 @@ def _head_heat_row(values: list[float]) -> Any:
             continue
         frac = (v - lo) / span
         ch = _HEAT_RAMP[min(len(_HEAT_RAMP) - 1, int(frac * (len(_HEAT_RAMP) - 1) + 0.5))]
-        # 256-color ramp from red(196) to green(46) through the cube
-        color = 196 - int(round(frac * 6)) * 36 + int(round(frac * 5))
+        # 256-color cube ramp red(196)=(5,0,0) -> green(46)=(0,5,0): each step
+        # drops a red unit (-36) and adds a green unit (+6), net -30 per step.
+        color = 196 - 30 * int(round(frac * 5))
         out.append(f"{ch}", style=f"color({max(16, min(231, color))})")
     return out
 

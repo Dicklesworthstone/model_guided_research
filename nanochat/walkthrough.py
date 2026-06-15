@@ -231,6 +231,8 @@ def narrate_run(
     console: Any = None,
 ) -> dict[str, Any]:
     """Narrate a real nanochat mini-run for ``attention_type``."""
+    import math
+
     import torch
     from rich.markup import escape
     from rich.panel import Panel
@@ -279,9 +281,10 @@ def narrate_run(
     console.print("\n[bold]Live observable on this batch:[/bold]")
     if diag.has_entropy():
         flat = [v for row in diag.entropy_layer_head for v in row]
+        seqlen = int(cfg["sequence_len"])
         console.print(
             f"  per-head attention entropy ≈ [bold]{sum(flat) / len(flat):.3f}[/bold] nats "
-            f"[dim](range {min(flat):.2f}–{max(flat):.2f}; log(32)≈{__import__('math').log(32):.2f} is uniform)[/dim]"
+            f"[dim](range {min(flat):.2f}–{max(flat):.2f}; log({seqlen})≈{math.log(seqlen):.2f} is uniform)[/dim]"
         )
     if diag.has_margins():
         flat = [v for row in diag.margin_layer_head for v in row]
