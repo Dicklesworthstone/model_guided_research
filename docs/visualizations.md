@@ -96,9 +96,11 @@ the winning (max-plus) route and the second-best, per token, averaged per head.
 `viz entropy` runs a **baseline** and a **math-feature** mechanism on the same
 seeded batch and tabulates, per config:
 
-- **head entropy μ** — mean per-head signal (attention entropy for standard /
-  softmax heads; per-head margin for tropical, where entropy is undefined).
-- **head entropy σ** — spread across heads = *head specialization* (all heads
+- **signal μ** — mean per-head signal, where the **signal** column names which
+  one: attention entropy (nats) for standard / softmax heads, per-head tropical
+  margin for tropical heads (entropy is undefined there). A margin is never
+  mislabelled as entropy.
+- **signal σ** — spread across heads = *head specialization* (all heads
   alike ⇒ σ≈0; a mix of broad and selective heads ⇒ large σ).
 - **route diversity (JS)** — mean pairwise Jensen-Shannon divergence between
   heads' attention maps, in `[0, 1]`. **0** = heads route identically
