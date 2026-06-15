@@ -142,6 +142,33 @@ def test_capture_patch_is_reversible_and_output_unchanged():
     assert torch.equal(baseline, after)
 
 
+def test_capture_preserves_existing_instance_attend_wrapper():
+    model, _ = viz.build_probe_model(
+        "standard", seed=2, n_layer=1, n_head=4, n_kv_head=4, n_embd=64,
+        sequence_len=8, vocab_size=64,
+    )
+    idx, _ = viz.sample_batch(text=None, batch_size=1, seq_len=8, vocab_size=64, seed=2)
+    attn0 = model.transformer.h[0].attn
+    original = attn0.attend
+    calls = {"n": 0}
+
+    def wrapper(q, k, v, *, kv_cache, pos0):
+        calls["n"] += 1
+        return original(q, k, v, kv_cache=kv_cache, pos0=pos0)
+
+    attn0.attend = wrapper
+    assert attn0.__dict__["attend"] is wrapper
+
+    diag = viz.collect_state(model, idx)
+
+    assert diag.attn_maps
+    assert calls["n"] > 0
+    assert attn0.__dict__["attend"] is wrapper
+    with torch.no_grad():
+        _ = model(idx)
+    assert calls["n"] > 1
+
+
 def test_sample_batch_random_is_seeded_and_shaped():
     a, la = viz.sample_batch(text=None, batch_size=3, seq_len=10, vocab_size=64, seed=5)
     b, lb = viz.sample_batch(text=None, batch_size=3, seq_len=10, vocab_size=64, seed=5)

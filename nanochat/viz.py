@@ -296,7 +296,7 @@ def _capture_attention_maps(model: Any, example_idx: int) -> Iterator[dict[int, 
     from nanochat.gpt import CausalSelfAttention, causal_attn_mask
 
     captured: dict[int, Any] = {}
-    patched: list[Any] = []  # modules we added an instance `attend` to (for restore)
+    patched: list[tuple[Any, bool, Any]] = []  # module, had_instance_attend, previous_instance_attend
 
     def make_patched(module: Any, layer_idx: int, original: Any):
         def attend(q, k, v, *, kv_cache, pos0):
@@ -320,16 +320,19 @@ def _capture_attention_maps(model: Any, example_idx: int) -> Iterator[dict[int, 
 
     for layer_idx, module, _kind in _iter_attention_modules(model):
         if isinstance(module, CausalSelfAttention):
-            # CausalSelfAttention.attend is a class method (no instance attr), so
-            # the `module.attend` evaluated here is the bound method we delegate
-            # to; a clean restore is to drop the instance attribute we add.
-            module.attend = make_patched(module, layer_idx, module.attend)  # type: ignore[method-assign]
-            patched.append(module)
+            had_instance_attend = "attend" in module.__dict__
+            previous_instance_attend = module.__dict__.get("attend")
+            original = module.attend
+            module.attend = make_patched(module, layer_idx, original)  # type: ignore[method-assign]
+            patched.append((module, had_instance_attend, previous_instance_attend))
     try:
         yield captured
     finally:
-        for module in patched:
-            module.__dict__.pop("attend", None)
+        for module, had_instance_attend, previous_instance_attend in reversed(patched):
+            if had_instance_attend:
+                module.attend = previous_instance_attend  # type: ignore[method-assign]
+            else:
+                module.__dict__.pop("attend", None)
 
 
 @dataclass
