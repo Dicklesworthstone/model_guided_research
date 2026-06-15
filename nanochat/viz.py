@@ -90,6 +90,40 @@ _RECORD_FLAGS: dict[str, dict[str, bool]] = {
 }
 
 
+def _attention_spec_tokens(attention_type: Any) -> list[str]:
+    if isinstance(attention_type, str):
+        raw = [attention_type]
+    elif isinstance(attention_type, list | tuple):
+        raw = attention_type
+    else:
+        raw = [str(attention_type)]
+    tokens: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            tokens.extend(part.strip() for part in item.split(",") if part.strip())
+    return tokens
+
+
+def _defaults_for_attention_spec(attention_type: Any) -> dict[str, int]:
+    defaults: dict[str, int] = {}
+    for name in _attention_spec_tokens(attention_type):
+        for key, value in _MECH_DEFAULTS.get(name, {}).items():
+            if key == "n_kv_head" and key in defaults:
+                defaults[key] = min(defaults[key], int(value))
+            else:
+                defaults[key] = max(defaults.get(key, int(value)), int(value))
+    return defaults
+
+
+def _record_flags_for_config(config: Any) -> dict[str, bool]:
+    from nanochat.gpt import resolve_attention_schedule
+
+    flags: dict[str, bool] = {}
+    for name in resolve_attention_schedule(config):
+        flags.update(_RECORD_FLAGS.get(name, {}))
+    return flags
+
+
 def build_probe_model(
     attention_type: str,
     *,
@@ -113,7 +147,8 @@ def build_probe_model(
     from nanochat.gpt import GPT, GPTConfig
 
     torch.manual_seed(int(seed))
-    defaults = _MECH_DEFAULTS.get(attention_type, {})
+    effective_attention_type = extra_config.get("attention_type", attention_type) if extra_config else attention_type
+    defaults = _defaults_for_attention_spec(effective_attention_type)
     cfg_kwargs: dict[str, Any] = {
         "n_layer": int(n_layer),
         "n_head": int(n_head if n_head is not None else defaults.get("n_head", 4)),
@@ -123,9 +158,13 @@ def build_probe_model(
         "vocab_size": int(vocab_size),
         "attention_type": attention_type,
     }
-    cfg_kwargs.update(_RECORD_FLAGS.get(attention_type, {}))
     if extra_config:
         cfg_kwargs.update(extra_config)
+    config = GPTConfig(**cfg_kwargs)
+    for key, value in _record_flags_for_config(config).items():
+        if extra_config and key in extra_config:
+            continue
+        cfg_kwargs[key] = value
     config = GPTConfig(**cfg_kwargs)
     model = GPT(config).to(device)
     model.eval()
@@ -161,8 +200,7 @@ def load_probe_model(
     config_dict = dict(ckpt_meta["model_config"])
     if "semiring_beta_live" in ckpt_meta:
         config_dict["semiring_beta"] = ckpt_meta["semiring_beta_live"]
-    attn = str(config_dict.get("attention_type", "standard"))
-    config_dict.update(_RECORD_FLAGS.get(attn, {}))
+    config_dict.update(_record_flags_for_config(GPTConfig(**config_dict)))
     if record_overrides:
         config_dict.update(record_overrides)
     config = GPTConfig(**config_dict)

@@ -56,6 +56,28 @@ def test_tropical_collects_margins():
         assert all(math.isfinite(x) for x in row)
 
 
+def test_mixed_schedule_collects_per_mechanism_diagnostics():
+    model, meta = viz.build_probe_model(
+        "standard,tropical", seed=0, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
+        sequence_len=16, vocab_size=128,
+    )
+    assert meta["config"]["standard_record_attn_entropy"] is True
+    assert meta["config"]["tropical_record_margins"] is True
+    assert [block.attention_type for block in model.transformer.h] == ["standard", "tropical"]
+
+    idx, _ = viz.sample_batch(text=None, batch_size=2, seq_len=16, vocab_size=128, seed=0)
+    diag = viz.collect_state(model, idx)
+    assert diag.has_entropy()
+    assert diag.has_margins()
+
+
+def test_mixed_schedule_probe_defaults_cover_reversible_geometry():
+    model, meta = viz.build_probe_model("standard,reversible", seed=0, n_layer=2, sequence_len=16, vocab_size=128)
+    assert meta["config"]["n_kv_head"] == 2
+    assert meta["config"]["reversible_record_energy"] is True
+    assert [block.attention_type for block in model.transformer.h] == ["standard", "reversible"]
+
+
 def test_route_diversity_in_unit_interval():
     diag = _standard_diag()
     div = viz.head_route_diversity(diag)
