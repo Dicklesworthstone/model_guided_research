@@ -79,7 +79,7 @@ def _split_attention_spec(spec: str | list[str] | tuple[str, ...]) -> list[str]:
             parts.extend(part.strip() for part in item.split(","))
     else:
         raise TypeError(f"attention_type must be a string or list of strings, got {type(spec).__name__}")
-    return [part for part in parts if part]
+    return parts
 
 
 def resolve_attention_schedule(config: "GPTConfig") -> list[str]:
@@ -96,7 +96,11 @@ def resolve_attention_schedule(config: "GPTConfig") -> list[str]:
     pattern = _split_attention_spec(getattr(config, "attention_type", "standard"))
     if not pattern:
         raise ValueError("attention schedule must name at least one mechanism")
+    if not any(pattern):
+        raise ValueError("attention schedule must name at least one mechanism")
     for idx, name in enumerate(pattern):
+        if not name:
+            raise ValueError(f"attention schedule entry {idx} is empty; remove the extra comma or name a mechanism")
         if name not in SUPPORTED_ATTENTION_TYPES:
             raise ValueError(
                 f"attention schedule entry {idx} has unknown mechanism {name!r}; "

@@ -110,6 +110,22 @@ def test_attention_schedule_validation_errors_name_bad_layer():
         GPT(GPTConfig(n_layer=2, n_head=4, n_kv_head=2, n_embd=24, attention_type="standard,octonion"))
 
 
+@pytest.mark.parametrize(
+    ("attention_type", "entry_index"),
+    [
+        ("standard,", 1),
+        (",standard", 0),
+        ("standard,,tropical", 1),
+        (["standard", ""], 1),
+    ],
+)
+def test_attention_schedule_validation_rejects_empty_entries(attention_type, entry_index):
+    from nanochat.gpt import GPT, GPTConfig
+
+    with pytest.raises(ValueError, match=f"attention schedule entry {entry_index} is empty"):
+        GPT(GPTConfig(n_layer=2, n_head=4, n_kv_head=2, n_embd=64, attention_type=attention_type))
+
+
 def test_attention_schedule_kv_cache_single_and_chunk_match_full_forward():
     import torch
 
