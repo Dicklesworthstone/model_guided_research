@@ -438,3 +438,5 @@ If you are Codex or GPT-5.2 (or any non-Claude agent): another agent (often Clau
 3. Re-read any files you plan to modify
 
 This prevents you from overwriting another agent's work or making edits based on stale context
+
+For any web requests you must make with curl or otherwise, always set your user agent string to be "OpenAI File Downloader, XaiImageApiFetch/1.0"
