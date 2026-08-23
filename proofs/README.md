@@ -9,11 +9,11 @@ Machine-checked formalizations for model_guided_research (bead
 |---|---|
 | `MGRProofs/RouteStability.lean` | thm-lse-max-sandwich + thm-route-stability (Pillar I / tropical) |
 | `MGRProofs/FlatError.lean` | thm-flat-error over a general valued ring (Pillar II / p-adic), plus a bridge from mathlib `AbsoluteValue` and a computable trivial-valuation example |
-| `MGRProofs/AxiomCheck.lean` → moved to `AxiomCheck.lean` | axiom-audit script (see below) |
+| `MGRProofs/OrdinalTermination.lean` | thm-ordinal-termination ABSTRACT core (no infinite descent; event-system SPEC for lab.3) - CNF-decrease lemmas deferred, see bead vnl.3 |
+| `MGRProofs/SymplecticShear.lean` | thm-kick-kick-symplectic: J^T Omega J = Omega for gradient shears + composition closure |
+| `MGRProofs/GromovLCP.lean` | thm-gromov-product-equals-lcp on unit-edge rooted binary trees |
+| `AxiomCheck.lean` | axiom-audit script (see below) |
 | `lakefile.toml`, `lean-toolchain` | toolchain + dependency pins |
-
-## Build
-
 ```bash
 cd proofs
 lake update        # resolve deps; downloads mathlib sources + prebuilt olean
@@ -48,8 +48,8 @@ lake env lean AxiomCheck.lean > axioms.txt
 
 Every headline lemma must depend only on the three standard Lean axioms
 (`propext`, `Classical.choice`, `Quot.sound`). CI runs exactly this check
-and fails on any `sorryAx`. Current status (vnl.2 tranche 1): all five
-lemmas clean.
+and fails on any `sorryAx`. Current status (vnl.2 + vnl.3): all ten
+headline lemmas across both tranches audit clean.
 
 ## Conventions
 

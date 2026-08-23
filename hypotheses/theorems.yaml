@@ -342,12 +342,12 @@ theorems:
       i.e. exactly the LCP length of their address strings; tree boundaries
       carry the ultrametric exp(-(x|y)), making ultrametric attention
       boundary-of-a-tree attention exactly.
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [ultrametric, hyperbolic]
     source_note:
       path: pending
       anchor: null
-    proof_location: "Proposition 1 of bead 8gk.6; formalization target of vnl.3"
+    proof_location: "Lean: proofs/MGRProofs/GromovLCP.lean (gromov_root_eq_lcp; treeDist defined independently of LCP so the proof is non-circular). Mathlib pin v4.34.0-rc2 @ 85e3a25e."
     numerical_checks: []
     used_by:
       [model_guided_research-8gk.6, model_guided_research-mnn.4, model_guided_research-vnl.3]
@@ -634,12 +634,12 @@ theorems:
       exact symplectic map (Hessian symmetry), so the block is an exact
       symplectic integrator for the separable Hamiltonian
       H(x1,x2) = phi_F(x2) + phi_G(x1).
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [reversible]
     source_note:
       path: pending
       anchor: null
-    proof_location: "5-line proof in bead u55.5; formalization target of vnl.3"
+    proof_location: "Lean: proofs/MGRProofs/SymplecticShear.lean (kick_jacobian_symplectic for the J^T Omega J = Omega core with symmetric Hessian block; symplectic_composition for closure under composition). Mathlib pin v4.34.0-rc2 @ 85e3a25e. Exactness-as-Hamiltonian-flow recorded as commentary; formal exactness deferred."
     numerical_checks:
       - kind: certify
         ref: reversible.forward_inverse_roundtrip
