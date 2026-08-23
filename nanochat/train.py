@@ -45,6 +45,7 @@ from nanochat.gpt import (
 )
 from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
 from nanochat.ordinal_scheduler import OrdinalLRScheduler
+from nanochat.profiling import ProfileConfig, render_profile_table, summarize_profile, torch_profiler
 from nanochat.report import (
     MetricsStream,
     TrainingDashboard,
@@ -1434,12 +1435,35 @@ def train(args) -> None:
     last_completed_step = start_step - 1
     # pre-clip grad norm captured by the clipping call for reuse in metrics
     # (one-element list: assigned inside the loop, read in the log block)
+
+    # Profiling window (b1l hooks wired via --profile, bead 6m35): profile
+    # only the LAST --profile-steps steps so whole-run overhead stays zero
+    # when the flag is off; the aggregate table + chrome trace land under
+    # run_dir/profile/. Teardown is crash-safe via the finally below.
+    prof_steps = max(1, int(getattr(args, "profile_steps", 5) or 5))
+    prof_cfg = ProfileConfig(
+        enabled=bool(getattr(args, "profile", False)),
+        trace_dir=(run_dir / "profile") if getattr(args, "profile", False) else None,
+    )
+    prof_window_start = max(start_step, max_steps - prof_steps)
+    prof_stack = None
+    prof_handle = None
     last_preclip_grad_norm: list[float | None] = [None]
     try:
         for step, (inputs, targets, loader_state) in enumerate(loader, start=start_step):
             if step >= max_steps:
                 break
             last_loader_state = loader_state
+
+            if prof_cfg.enabled and prof_stack is None and step >= prof_window_start:
+                from contextlib import ExitStack
+
+                prof_stack = ExitStack()
+                prof_handle = prof_stack.enter_context(torch_profiler(prof_cfg))
+                if ddp_rank == 0:
+                    console.print(
+                        f"[bold cyan]profiling[/bold cyan] window: steps {step}..{max_steps - 1} -> {prof_cfg.trace_dir}"
+                    )
 
             if step == args.warmup_steps:
                 if device.type == "cuda":
@@ -1769,6 +1793,18 @@ def train(args) -> None:
             # dashboard state (crash-safe: runs even on KeyboardInterrupt)
             dashboard.close()
         compute_cleanup()
+        if prof_stack is not None:
+            # Crash-safe teardown (same contract as the metrics/dashboard
+            # cleanup above): stop the profiler, render the aggregate op
+            # table, and export the chrome trace for the profiling window.
+            prof_stack.close()
+            if prof_handle is not None and ddp_rank == 0:
+                prof_summary = summarize_profile(prof_handle)
+                render_profile_table(prof_summary, title=f"Training profile (last {prof_steps} steps)", console=console)
+                trace_path = Path(prof_cfg.trace_dir) / f"{resolved_run_id}_steps.json"
+                trace_path.parent.mkdir(parents=True, exist_ok=True)
+                prof_handle.export_chrome_trace(str(trace_path))
+                console.print(f"[bold cyan]profile[/bold cyan] chrome trace -> {trace_path}")
 
     # Final checkpoint so downstream consumers (eval C2, teachers C6) always
     # have the end-of-run state, even when max_steps is not a multiple of the
@@ -2470,6 +2506,8 @@ def build_parser() -> argparse.ArgumentParser:
         "derived per-stage corrections (tropical exact-E[max] constants); default 'current'.",
     )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"])
+    parser.add_argument("--profile", action="store_true", help="Profile the last --profile-steps training steps (b1l torch.profiler hooks): aggregate op table + chrome trace under <run-dir>/profile/. Debug tool; zero overhead when off.")
+    parser.add_argument("--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on.")
     # Checkpoint/resume (bead rz8.1).
     parser.add_argument(
         "--checkpoint-interval",

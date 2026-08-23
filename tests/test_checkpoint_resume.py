@@ -948,3 +948,21 @@ def test_parameterization_recorded_in_run_artifacts(monkeypatch, tmp_path):
 
     flat = _run_train(monkeypatch, tmp_path, "current-default", max_steps=2)
     assert flat["config"]["parameterization"] == "current"
+
+
+def test_profile_flag_writes_summary_and_trace(monkeypatch, tmp_path):
+    """6m35: --profile profiles the FINAL --profile-steps steps and lands a
+    chrome trace under <run-dir>/profile/; the run itself completes normally."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "profiled",
+        max_steps=6,
+        profile=None,  # store_true -> bare flag
+        profile_steps=2,
+    )
+    assert len(summary["results"]["losses"]) == 6
+    trace_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "profiled" / "profile"
+    traces = sorted(trace_dir.glob("*.json"))
+    assert traces, f"no chrome trace written under {trace_dir}"
+    assert all(t.stat().st_size > 0 for t in traces)
