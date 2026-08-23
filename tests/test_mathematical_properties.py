@@ -1341,6 +1341,127 @@ class TestSymplecticReversible:
         print(f"  ✅ no-norm falsification arm diverges (delta {delta:.2e}) and validates standard-only")
 
 
+class TestAdditiveReversibleWiring:
+    """Additive recompute wiring (bead a6k3): grad-enabled forwards route
+    through ReversibleFunction, whose backward reconstructs x2 = y2 - G(y1)
+    and re-runs G/F WITH grad. Claims pinned here: gradients match the eager
+    coupling; the ONLY tensor persisted for backward is the block output
+    (that is the memory win — no F/G intermediates survive the step); and the
+    audit gate holds (volume preservation det J = 1, inverse-after-forward =
+    identity at machine epsilon)."""
+
+    T, CH = 3, 4
+
+    def _tiny_block(self, seed=0):
+        import copy
+        import types
+
+        import torch
+
+        from nanochat.reversible_block_torch import ReversibleBlock
+
+        torch.manual_seed(seed)
+
+        class _Inner(torch.nn.Module):
+            def __init__(self, c):
+                super().__init__()
+                self.w1 = torch.nn.Parameter(torch.randn(c, c) / c**0.5)
+                self.w2 = torch.nn.Parameter(torch.randn(c, c) / c**0.5)
+
+            def forward(self, x, cos_sin=None, kv_cache=None):
+                return torch.tanh(x @ self.w1) @ self.w2
+
+        cfg = types.SimpleNamespace(n_embd=2 * self.CH, reversible_mode="additive", reversible_record_energy=False)
+        block = ReversibleBlock(cfg, 0, _Inner(self.CH), _Inner(self.CH))
+        return block.double(), copy.deepcopy(block).double()
+
+    def _eager_forward(self, block, x):
+        import torch
+
+        x1, x2 = torch.chunk(x, 2, dim=-1)
+        y1 = x1 + block.f_block(x2, None, None)
+        y2 = x2 + block.g_block(y1)
+        return torch.cat([y1, y2], dim=-1)
+
+    def test_gradients_match_eager_coupling(self):
+        """The wired recompute path must produce the same parameter/input
+        gradients as the naive graph-storing coupling (fp64, tight tol)."""
+        import torch
+
+        wired, eager = self._tiny_block(seed=7)
+        x = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float64)
+        w = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float64)
+
+        xw = x.clone().requires_grad_(True)
+        wired(xw, None, None).backward(w)
+
+        xe = x.clone().requires_grad_(True)
+        self._eager_forward(eager, xe).backward(w)
+
+        dx_err = (xw.grad - xe.grad).abs().max() / xe.grad.abs().max().clamp_min(1e-300)
+        require(float(dx_err) < 1e-9, f"input grad mismatch: rel {float(dx_err):.2e}")
+        for (name, pw), (_, pe) in zip(wired.named_parameters(), eager.named_parameters(), strict=True):
+            err = (pw.grad - pe.grad).abs().max() / pe.grad.abs().max().clamp_min(1e-300)
+            require(float(err) < 1e-9, f"param grad mismatch at {name}: rel {float(err):.2e}")
+        print("  ✅ wired recompute gradients match eager coupling (fp64)")
+
+    def test_only_block_output_is_persisted_for_backward(self):
+        """Memory win made precise: saved-tensor byte accounting must show the
+        wired path persists EXACTLY one output tensor, while the eager
+        coupling persists every F/G intermediate."""
+        import torch
+
+        wired, eager = self._tiny_block(seed=11)
+        x = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float64, requires_grad=True)
+
+        def saved_numels(module_call, inp):
+            seen: list[int] = []
+
+            def pack(t):
+                seen.append(t.numel())
+                return t
+
+            with torch.autograd.graph.saved_tensors_hooks(pack, lambda t: t):
+                out = module_call(inp, None, None)
+            return out, sum(seen)
+
+        out_w, n_wired = saved_numels(wired, x)
+        # Control: the MANUAL graph-storing coupling on an identical twin
+        # (calling the twin block directly would route through the same
+        # wired path — that identity is itself covered by the == assertion).
+        _, n_eager = saved_numels(lambda inp, cs, kv: self._eager_forward(eager, inp), x)
+        require(
+            n_wired == out_w.numel(),
+            f"wired path persists more than the output tensor: {n_wired} vs {out_w.numel()} elements",
+        )
+        require(n_eager > n_wired, f"eager control not larger than wired ({n_eager} vs {n_wired})")
+        print(f"  ✅ persisted elements: wired={n_wired} (=output only) < eager={n_eager}")
+
+    def test_volume_preservation_and_roundtrip_audit_gate(self):
+        """Audit gate: the additive coupling is exactly volume-preserving
+        (det J = 1) and inverse(forward(x)) recovers x at machine epsilon,
+        exercised through the WIRED forward (values are identical either way)."""
+
+        import torch
+        dim = 2 * self.T * self.CH
+        wired, _ = self._tiny_block(seed=13)
+        z0 = torch.randn(dim, dtype=torch.float64)
+
+        def flat(z):
+            return wired(z.reshape(1, self.T, 2 * self.CH), None, None).reshape(-1)
+
+        j = torch.autograd.functional.jacobian(flat, z0)
+        det = float(torch.linalg.det(j))
+        require(abs(det - 1.0) < 1e-9, f"additive coupling not volume preserving: det={det:.12f}")
+
+        x = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float64)
+        with torch.no_grad():
+            y = wired(x, None, None)
+            x_rec = wired.inverse(y, None, None)
+        err = float((x_rec - x).abs().max())
+        require(err < 1e-12, f"fwd->inverse round trip exceeds machine epsilon: {err:.2e}")
+        print(f"  ✅ det J = {det:.12f}; round-trip max err {err:.2e} (fp64)")
+
 class TestSurrealNumbers:
     """Test surreal number scaling and field properties."""
 
@@ -1504,13 +1625,13 @@ def run_all_tests():
         TestKnotTheory(),
         TestSurrealNumbers(),
         TestNonstandardAnalysis(),
+        TestAdditiveReversibleWiring(),
     ]
 
     failed_tests = []
 
     for test_class in test_classes:
         class_name = test_class.__class__.__name__
-        print(f"\n{'=' * 60}")
         print(f"Testing: {class_name}")
         print(f"{'=' * 60}")
 

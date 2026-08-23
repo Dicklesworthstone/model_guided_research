@@ -37,11 +37,31 @@ def test_standard_matches_canonical_6n():
     assert GPT(cfg).estimate_flops() == _naive_6n(cfg) == 62_226_432
 
 
-def test_additive_reversible_uses_canonical_6n():
-    # Additive reversible runs the eager fwd+bwd path (the memory-saving
-    # ReversibleFunction recompute is unused), so the correction must NOT apply.
+def test_additive_reversible_charges_wired_recompute():
+    # a6k3 wired the memory-saving ReversibleFunction into the additive
+    # TRAINING path: backward recomputes activations, so a block pair costs
+    # 9 forward-equivalent units per param (vs canonical 6) and its attention
+    # matmuls run on every pass (16 H Q T vs 12).
     cfg = GPTConfig(attention_type="reversible", reversible_mode="additive", **_Z4XX)
-    assert GPT(cfg).estimate_flops() == _naive_6n(cfg)
+    m = GPT(cfg)
+    nparams = sum(p.numel() for p in m.parameters())
+    nemb = m.transformer.wte.weight.numel()
+    nblock = sum(p.numel() for p in m.transformer.h.parameters())
+    h, q, t = cfg.n_head, cfg.n_embd // cfg.n_head, cfg.sequence_len
+    expected = (
+        6 * (nparams - nemb - nblock)
+        + 9 * nblock
+        + 12 * h * q * t * cfg.n_layer
+        + 4 * h * q * t * cfg.n_layer
+    )
+    assert GPT(cfg).estimate_flops() == expected
+
+
+def test_additive_reversible_strictly_exceeds_canonical_6n():
+    # The wired recompute must cost MORE than the naive single-backward rule,
+    # mirroring the symplectic guard below.
+    cfg = GPTConfig(attention_type="reversible", reversible_mode="additive", **_Z4XX)
+    assert GPT(cfg).estimate_flops() > _naive_6n(cfg)
 
 
 def test_symplectic_counts_the_double_backward():
