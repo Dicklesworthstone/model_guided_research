@@ -2740,6 +2740,539 @@ def scaling_sweep(
         raise typer.Exit(code=1)
 
 
+# -----------------------------------------------------------------------------
+# Scaling-law fits & comparative report (bead w94.2): consumes w94.1 sweep
+# manifests, retrains NOTHING.
+#
+# HONESTY CONTRACT (hard-coded into every report):
+#   - fits describe ONLY the measured compute range; no extrapolation claims;
+#   - bootstrap CIs are shown with explicit wide-CI cautions; resisting
+#     over-claim is a deliverable, so when no pairwise exponent difference is
+#     significant the headline says exactly that;
+#   - thin ladders (<3 rungs) get the plain power law only - a 2-point
+#     saturating fit is underdetermined theater and is refused.
+
+
+def _scaling_fmt(x: Any) -> str:
+    """Fixed-precision float rendering; keeps regenerated reports byte-stable."""
+    if x is None:
+        return "—"
+    return f"{float(x):.6g}"
+
+
+def _scaling_report_tail_loss(values: list[float], fraction: float) -> float | None:
+    """Mean of the last `fraction` of a loss series (noise reduction)."""
+    if not values:
+        return None
+    n_tail = max(1, math.ceil(len(values) * float(fraction)))
+    tail = values[-n_tail:]
+    return sum(tail) / len(tail)
+
+
+def _scaling_report_read_losses(seed_dir: Path, fraction: float) -> tuple[float | None, str]:
+    """Tail loss for one seed run: D2 metrics.jsonl stream first (rz8.2),
+    train summary.json losses as fallback."""
+    metrics_path = seed_dir / "metrics.jsonl"
+    if metrics_path.exists():
+        losses: list[float] = []
+        try:
+            for line in metrics_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(rec, dict) and rec.get("type") == "step" and isinstance(rec.get("loss"), int | float):
+                    losses.append(float(rec["loss"]))
+        except OSError:
+            losses = []
+        tail = _scaling_report_tail_loss(losses, fraction)
+        if tail is not None:
+            return tail, "metrics"
+    summary_path = seed_dir / "summary.json"
+    if summary_path.exists():
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            losses = [float(x) for x in payload.get("results", {}).get("losses", [])]
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+            return None, "missing"
+        tail = _scaling_report_tail_loss(losses, fraction)
+        if tail is not None:
+            return tail, "summary"
+    return None, "missing"
+
+
+def _scaling_report_rung_compute(rung: dict[str, Any], manifest: dict[str, Any]) -> float | None:
+    """Total training compute C (FLOPs) for one rung, from manifest fields alone."""
+    if rung.get("target_flops_est") is not None:
+        return float(rung["target_flops_est"])
+    fpt = rung.get("flops_per_token_est")
+    steps = rung.get("planned_max_steps")
+    cfg = manifest.get("sweep_config") or {}
+    batch = cfg.get("batch_size")
+    seq = cfg.get("sequence_len")
+    if fpt is None or steps is None or not batch or not seq:
+        return None
+    return float(fpt) * int(batch) * int(seq) * int(steps)
+
+
+def _scaling_report_load_series(run_path: Path, tail_fraction: float) -> dict[str, Any] | None:
+    """Load one suite directory (or manifest path) into a fit-ready series."""
+    manifest_path = run_path / "manifest.json" if run_path.is_dir() else run_path
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    points: list[dict[str, Any]] = []
+    for rung in manifest.get("rungs", []):
+        if rung.get("status") != "done" or not rung.get("feasible", False):
+            continue
+        compute_c = _scaling_report_rung_compute(rung, manifest)
+        if compute_c is None:
+            continue
+        tails: list[float] = []
+        source = "metrics"
+        for run in rung.get("runs", []):
+            if run.get("status") != "done":
+                continue
+            summary_path = run.get("summary_path")
+            if summary_path:
+                seed_dir = Path(summary_path).parent
+            else:
+                seed_dir = (
+                    manifest_path.parent / f"rung_{rung['index']}" / f"seed_{run.get('seed', 0)}"
+                )
+            tail, src = _scaling_report_read_losses(seed_dir, tail_fraction)
+            if tail is not None:
+                tails.append(tail)
+                source = src
+        if tails:
+            points.append(
+                {
+                    "C": compute_c,
+                    "loss": sum(tails) / len(tails),
+                    "n_seeds": len(tails),
+                    "rung": rung["name"],
+                    "source": source,
+                }
+            )
+    if not points:
+        return None
+    return {
+        "mechanism": manifest.get("mechanism"),
+        "ladder": manifest.get("ladder"),
+        "manifest_path": str(manifest_path),
+        "points": sorted(points, key=lambda p: p["C"]),
+    }
+
+
+def _scaling_report_fit_saturating(cs: Any, ls: Any) -> dict[str, float] | None:
+    """L(C) = a*C^-b + c via robust (soft_l1) least squares on the original scale.
+
+    Raw FLOPs spans many decades, so the solve runs on x = C/max(C) (well
+    conditioned) with the amplitude converted back afterwards; two starts
+    (plain-power-law anchored + span heuristic) guard the soft_l1 basin.
+    """
+    import numpy as np
+    from scipy.optimize import least_squares
+
+    cs_arr = np.asarray(cs, dtype=float)
+    ls_arr = np.asarray(ls, dtype=float)
+    c_ref = float(np.max(cs_arr))
+    x = cs_arr / c_ref
+    span = float(np.max(ls_arr) - np.min(ls_arr))
+    floor0 = max(float(np.min(ls_arr)) * 0.5, 1e-9)
+
+    def model(p: Any) -> Any:
+        return p[0] * x ** (-p[1]) + p[2]
+
+    starts: list[list[float]] = []
+    plain = _scaling_report_fit_plain(cs_arr, ls_arr)
+    if plain is not None:
+        b0 = min(max(float(plain["b"]), 0.0), 2.0 - 1e-9)
+        starts.append([max(float(plain["k"]) * c_ref ** (-float(plain["b"])), 1e-9), b0, floor0])
+    starts.append([max(span, 1e-9), 0.5, floor0])
+
+    best: dict[str, Any] | None = None
+    for p0 in starts:
+        try:
+            res = least_squares(
+                lambda p: model(p) - ls_arr,
+                x0=np.array(p0),
+                bounds=([1e-12, 0.0, 0.0], [np.inf, 2.0 - 1e-9, np.inf]),
+                loss="soft_l1",
+                f_scale=max(span, 1e-9) * 0.1,
+            )
+        except Exception:  # noqa: BLE001 - non-convergence becomes "no fit"
+            continue
+        if not res.success:
+            continue
+        if best is None or float(res.cost) < best["cost"]:
+            best = {"cost": float(res.cost), "x": res.x}
+    if best is None:
+        return None
+    a_scaled, b_fit, c_fit = (float(v) for v in best["x"])
+    pred = a_scaled * x ** (-b_fit) + c_fit
+    ss_res = float(np.sum((ls_arr - pred) ** 2))
+    ss_tot = float(np.sum((ls_arr - np.mean(ls_arr)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    return {"a": a_scaled * c_ref**b_fit, "b": b_fit, "c": c_fit, "r2": r2}
+
+
+def _scaling_report_fit_plain(cs: Any, ls: Any) -> dict[str, float] | None:
+    """Plain power law L = k*C^-b via log-log linear regression."""
+    import numpy as np
+
+    slope, intercept = np.polyfit(np.log10(cs), np.log10(ls), 1)
+    log_pred = slope * np.log10(cs) + intercept
+    ss_res = float(np.sum((np.log10(ls) - log_pred) ** 2))
+    ss_tot = float(np.sum((np.log10(ls) - np.mean(np.log10(ls))) ** 2))
+    r2_log = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    return {"k": float(10.0**intercept), "b": float(-slope), "r2_log": r2_log}
+
+
+def _scaling_report_bootstrap(
+    cs: Any,
+    ls: Any,
+    *,
+    draws: int,
+    seed: int,
+) -> dict[str, Any] | None:
+    """Deterministic bootstrap over rungs; returns exponent b CI + samples."""
+    import numpy as np
+
+    rng = np.random.default_rng(int(seed))
+    n = len(cs)
+    b_samples: list[float] = []
+    a_samples: list[float] = []
+    c_samples: list[float] = []
+    for _ in range(int(draws)):
+        idx = rng.integers(0, n, size=n)
+        if len(set(idx.tolist())) < 3:
+            continue  # saturating fit needs >=3 distinct rungs
+        fit = _scaling_report_fit_saturating(cs[idx], ls[idx])
+        if fit is not None and math.isfinite(fit["b"]):
+            b_samples.append(fit["b"])
+            a_samples.append(fit["a"])
+            c_samples.append(fit["c"])
+    if len(b_samples) < max(50, draws // 20):
+        return None
+    arr = np.array(b_samples)
+    return {
+        "b_ci95": [float(np.percentile(arr, 2.5)), float(np.percentile(arr, 97.5))],
+        "a_mean": float(np.mean(a_samples)),
+        "c_mean": float(np.mean(c_samples)),
+        "n_draws_ok": len(b_samples),
+        "_samples": arr,
+    }
+
+
+def _scaling_report_pairwise(samples_by_mech: dict[str, Any], confidence: float) -> list[dict[str, Any]]:
+    """Bootstrap-overlap test for exponent differences between mechanisms."""
+    import numpy as np
+
+    mechs = sorted(samples_by_mech)
+    lo_q = 100.0 * (1.0 - confidence) / 2.0
+    hi_q = 100.0 - lo_q
+    rows: list[dict[str, Any]] = []
+    for i, m1 in enumerate(mechs):
+        for m2 in mechs[i + 1 :]:
+            s1, s2 = samples_by_mech[m1], samples_by_mech[m2]
+            n = min(len(s1), len(s2))
+            diffs = s1[:n] - s2[:n]
+            lo, hi = (float(x) for x in np.percentile(diffs, [lo_q, hi_q]))
+            rows.append(
+                {
+                    "pair": f"{m1} vs {m2}",
+                    "delta_b": float(np.mean(s1) - np.mean(s2)),
+                    "ci": [lo, hi],
+                    "significant": not (lo <= 0.0 <= hi),
+                }
+            )
+    return rows
+
+
+@app.command("scaling-report")
+def scaling_report(
+    runs: Annotated[
+        list[Path],
+        typer.Option(
+            "--runs",
+            help=(
+                "Suite directory (containing manifest.json) or direct manifest path "
+                "from mgr scaling-sweep; repeatable - one series per mechanism."
+            ),
+        ),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("--out", help="Output directory for the report, fits JSON, and plot."),
+    ] = Path("artifacts/scaling/report"),
+    tail_fraction: Annotated[
+        float,
+        typer.Option("--tail-fraction", help="Loss = mean of the last N-fraction of each run's loss stream.", min=0.01, max=1.0),
+    ] = 0.1,
+    bootstrap: Annotated[
+        int,
+        typer.Option("--bootstrap", help="Bootstrap resamples for exponent CIs.", min=100),
+    ] = 2000,
+    bootstrap_seed: Annotated[
+        int,
+        typer.Option("--bootstrap-seed", help="Deterministic bootstrap RNG seed."),
+    ] = 1729,
+    confidence: Annotated[
+        float,
+        typer.Option("--confidence", help="CI / test confidence level.", min=0.5, max=0.999),
+    ] = 0.95,
+    no_plot: Annotated[
+        bool,
+        typer.Option("--no-plot", help="Skip matplotlib rendering (report + JSON only)."),
+    ] = False,
+):
+    """Fit scaling laws from EXISTING sweep artifacts; never trains.
+
+    Fits L(C) = a*C^-b + c per mechanism (plain power-law alongside),
+    bootstraps exponent CIs, tests pairwise exponent differences, renders a
+    log-log overlay + per-mechanism panels, and emits a G2-compatible
+    mgr.scaling.v1 JSON block. Regenerating from fixed artifacts is
+    byte-stable (deterministic bootstrap seed, fixed formatting).
+    """
+    import numpy as np
+
+    out.mkdir(parents=True, exist_ok=True)
+    series: list[dict[str, Any]] = []
+    for rp in runs:
+        loaded = _scaling_report_load_series(rp, tail_fraction)
+        if loaded is None:
+            console.print(f"[yellow]skipping {rp}: no readable manifest with completed rungs[/yellow]")
+            continue
+        series.append(loaded)
+    if not series:
+        console.print("[bold red]no usable series found; pass mgr scaling-sweep artifact directories.[/bold red]")
+        raise typer.Exit(code=2)
+
+    # ---- fits ----------------------------------------------------------------
+    mech_fits: dict[str, dict[str, Any]] = {}
+    samples_by_mech: dict[str, Any] = {}
+    for s in sorted(series, key=lambda x: str(x["mechanism"])):
+        mech = str(s["mechanism"])
+        cs = np.array([p["C"] for p in s["points"]], dtype=float)
+        ls = np.array([p["loss"] for p in s["points"]], dtype=float)
+        entry: dict[str, Any] = {
+            "ladder": s["ladder"],
+            "manifest_path": s["manifest_path"],
+            "points": [
+                {
+                    "rung": p["rung"],
+                    "C_flops": p["C"],
+                    "tail_loss": p["loss"],
+                    "n_seeds": p["n_seeds"],
+                    "loss_source": p["source"],
+                }
+                for p in s["points"]
+            ],
+        }
+        sat = _scaling_report_fit_saturating(cs, ls) if len(cs) >= 3 else None
+        plain = _scaling_report_fit_plain(cs, ls) if len(cs) >= 2 else None
+        if sat is not None:
+            entry["saturating"] = sat
+        if plain is not None:
+            entry["plain"] = plain
+        if sat is not None and len(cs) >= 3:
+            boot = _scaling_report_bootstrap(cs, ls, draws=bootstrap, seed=bootstrap_seed)
+            if boot is not None:
+                samples_by_mech[mech] = boot.pop("_samples")
+                entry["bootstrap"] = boot
+                width = boot["b_ci95"][1] - boot["b_ci95"][0]
+                entry["b_ci_wide"] = bool(width > 0.5 * abs(sat["b"])) if sat["b"] > 0 else True
+        mech_fits[mech] = entry
+
+    pairwise = _scaling_report_pairwise(samples_by_mech, confidence) if len(samples_by_mech) >= 2 else []
+    significant = [row for row in pairwise if row["significant"]]
+
+    # ---- machine-readable core (byte-stable: sorted keys, fixed floats) ------
+    def _clean(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {k: _clean(v) for k, v in node.items() if k != "b_ci_wide"}
+        if isinstance(node, float):
+            return float(f"{node:.10g}")
+        if isinstance(node, list):
+            return [_clean(v) for v in node]
+        return node
+
+    g2_json = {
+        "schema": "mgr.scaling.v1",
+        "generated_from": sorted(str(p) for p in runs),
+        "config": {
+            "tail_fraction": tail_fraction,
+            "bootstrap_draws": bootstrap,
+            "bootstrap_seed": bootstrap_seed,
+            "confidence": confidence,
+        },
+        "fits": {
+            mech: {
+                "exponent_b": entry.get("saturating", {}).get("b"),
+                "exponent_b_ci95": entry.get("bootstrap", {}).get("b_ci95"),
+                "amplitude_a": entry.get("saturating", {}).get("a"),
+                "floor_c": entry.get("saturating", {}).get("c"),
+                "r2_original_scale": entry.get("saturating", {}).get("r2"),
+                "plain_power_law_b": entry.get("plain", {}).get("b"),
+                "n_rungs": len(entry["points"]),
+                "n_seeds_total": sum(p["n_seeds"] for p in entry["points"]),
+            }
+            for mech, entry in mech_fits.items()
+        },
+        "pairwise_exponent_tests": [
+            {"pair": row["pair"], "delta_b": _clean(row["delta_b"]), "ci95": _clean(row["ci"]), "significant": row["significant"]}
+            for row in pairwise
+        ],
+    }
+    fits_json_text = json.dumps(_clean(g2_json), indent=2, sort_keys=True) + "\n"
+    (out / "fits.json").write_text(fits_json_text, encoding="utf-8")
+
+    # ---- plot -----------------------------------------------------------------
+    plot_name = "scaling_overlay.png"
+    if not no_plot:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        matplotlib.rcParams.update({"figure.dpi": 150, "font.size": 9})
+        fig, axes = plt.subplots(1, max(2, len(mech_fits)), figsize=(4.2 * max(2, len(mech_fits)), 3.6), squeeze=False)
+        ax_all = axes[0][0]
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        for pos, (mech, entry) in enumerate(sorted(mech_fits.items())):
+            ax = axes[0][pos] if pos < axes.shape[1] else ax_all
+            pts = entry["points"]
+            xs = [p["C_flops"] for p in pts]
+            ys = [p["tail_loss"] for p in pts]
+            color = colors[pos % len(colors)]
+            ax.scatter(xs, ys, color=color, label=f"{mech} data", zorder=3)
+            sat = entry.get("saturating")
+            boot = entry.get("bootstrap")
+            if sat is not None:
+                a_pt, c_pt = sat["a"], sat["c"]
+                grid = np.geomspace(min(xs), max(xs), 120)
+                base = lambda b: a_pt * grid ** (-b) + c_pt  # noqa: E731
+                ax.plot(grid, base(sat["b"]), color=color, label=f"{mech} fit")
+                if boot is not None:
+                    ax.fill_between(
+                        grid,
+                        base(boot["b_ci95"][0]),
+                        base(boot["b_ci95"][1]),
+                        color=color,
+                        alpha=0.15,
+                        label="b CI band",
+                    )
+                if ax is not ax_all or len(mech_fits) == 1:
+                    ax.set_title(mech)
+                    ax.set_xlabel("compute C (FLOPs)")
+                    ax.set_ylabel("tail loss")
+                    ax.set_xscale("log")
+                    ax.set_yscale("log")
+                    ax.legend(fontsize=6)
+        ax_all.set_title(f"scaling overlay ({len(mech_fits)} mechanisms)")
+        ax_all.set_xscale("log")
+        ax_all.set_yscale("log")
+        fig.tight_layout()
+        fig.savefig(out / plot_name)
+        plt.close(fig)
+
+    # ---- markdown report -------------------------------------------------------
+    lines: list[str] = [
+        "# Scaling-law comparative report",
+        "",
+        f"- Inputs: `{sorted(str(p) for p in runs)}`",
+        f"- Config: tail_fraction={tail_fraction}, bootstrap={bootstrap}, seed={bootstrap_seed}, confidence={confidence}",
+        "- Loss definition: mean of the last tail_fraction of each run's loss stream "
+        "(D2 metrics.jsonl preferred, summary.json fallback); multi-seed rungs averaged.",
+        "",
+        "> **HONESTY CAVEATS (fixed):** these fits describe ONLY the measured compute range — ",
+        "> extrapolation beyond it is unsupported by construction. Thin ladders carry wide CIs; ",
+        "> treat wide-CI exponent comparisons as undecided, not as evidence of equality.",
+        "",
+    ]
+    if significant:
+        headline = "; ".join(f"{r['pair']} (Δb={_scaling_fmt(r['delta_b'])})" for r in significant)
+        lines += [f"**Headline:** significant exponent differences at this scale: {headline}.", ""]
+    elif pairwise:
+        lines += [
+            "**Headline:** NO pairwise exponent differences are significant at this compute scale — "
+            "treat all exponent rankings among these mechanisms as ties pending larger ladders.",
+            "",
+        ]
+    else:
+        lines += [
+            "**Headline:** fewer than two mechanisms produced saturating fits with valid bootstraps — "
+            "no cross-mechanism comparison is possible yet.",
+            "",
+        ]
+    for mech, entry in sorted(mech_fits.items()):
+        lines += [f"## {mech}", "", "| rung | C (FLOPs) | tail loss | seeds | loss source |", "|---|---|---|---|---|"]
+        for p in entry["points"]:
+            lines.append(
+                f"| {p['rung']} | {_scaling_fmt(p['C_flops'])} | {_scaling_fmt(p['tail_loss'])} | {p['n_seeds']} | {p['loss_source']} |"
+            )
+        lines.append("")
+        sat = entry.get("saturating")
+        plain = entry.get("plain")
+        boot = entry.get("bootstrap")
+        if sat is None:
+            lines.append(
+                f"- Saturating fit REFUSED ({len(entry['points'])} rungs < 3): a 2-parameter-plus-floor fit on two points is underdetermined."
+            )
+        else:
+            ci_txt = (
+                f"b ∈ [{_scaling_fmt(boot['b_ci95'][0])}, {_scaling_fmt(boot['b_ci95'][1])}]"
+                if boot
+                else "bootstrap failed to converge sufficiently"
+            )
+            wide = ", **WIDE CI — comparison undecided**" if entry.get("b_ci_wide") else ""
+            lines.append(
+                f"- Saturating fit: a={_scaling_fmt(sat['a'])}, b={_scaling_fmt(sat['b'])}, c={_scaling_fmt(sat['c'])}, "
+                f"R²(original scale)={_scaling_fmt(sat['r2'])}; {ci_txt}{wide}"
+            )
+        if plain is not None:
+            lines.append(
+                f"- Plain power law: k={_scaling_fmt(plain['k'])}, b={_scaling_fmt(plain['b'])}, R²(log space)={_scaling_fmt(plain['r2_log'])}"
+            )
+        lines.append("")
+    if pairwise:
+        lines += ["## Pairwise exponent tests", "", "| pair | Δb | CI | significant |", "|---|---|---|---|"]
+        for r in pairwise:
+            lines.append(
+                f"| {r['pair']} | {_scaling_fmt(r['delta_b'])} | [{_scaling_fmt(r['ci'][0])}, {_scaling_fmt(r['ci'][1])}] | "
+                f"{'yes' if r['significant'] else 'no'} |"
+            )
+        lines.append("")
+    lines += [
+        "## G2-compatible result block (`mgr.scaling.v1`)",
+        "",
+        "```json",
+        fits_json_text.rstrip("\n"),
+        "```",
+        "",
+        "Registry note: no hypothesis prediction currently targets `mgr.scaling.v1`; when one is "
+        "registered (G1) `mgr adjudicate` can consume this block verbatim.",
+        "",
+    ]
+    (out / "scaling_report.md").write_text("\n".join(lines), encoding="utf-8")
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    f"mechanisms fitted: [bold]{len(mech_fits)}[/bold]; pairwise significant: [bold]{len(significant)}[/bold]",
+                    f"artifacts: {out}/{{scaling_report.md, fits.json{'' if no_plot else ', ' + plot_name}}}",
+                ]
+            ),
+            title="scaling report complete",
+            box=box.ROUNDED,
+        )
+    )
+
+
 @app.command("per-head-metrics")
 def per_head_metrics(
     device: Annotated[

@@ -168,3 +168,29 @@ mgr scaling-sweep --mechanism gauge --ladder small --device cuda \
 # inspect / fit later
 jq '.rungs[] | {name, status, param_count}' artifacts/scaling/gauge/<run_id>/manifest.json
 ```
+
+## Downstream consumer: `mgr scaling-report` (E2, bead w94.2)
+
+The report command re-derives the science from these manifests ALONE (no
+retraining):
+
+```bash
+mgr scaling-report --runs artifacts/scaling/<mechanism>/<run_id> [...] --out DIR
+```
+
+- reads `manifest.json` + each seed's `metrics.jsonl` (fallback:
+  `summary.json` losses), reducing noise via a tail mean
+  (`--tail-fraction`, default 0.1);
+- fits L(C) = a*C^-b + c per mechanism (robust least squares; plain power
+  law alongside), bootstraps exponent CIs over rungs with a deterministic
+  seed (`--bootstrap-seed`, default 1729) so regeneration is byte-stable;
+- runs pairwise bootstrap-overlap tests on exponents and renders an HONEST
+  headline: when nothing separates, it says "NO pairwise exponent
+  differences are significant" rather than manufacturing a winner;
+- refuses saturating fits on <3 rungs (underdetermined theater);
+- emits a `mgr.scaling.v1` JSON block (in `fits.json` and embedded in the
+  markdown) for future G1 predictions / `mgr adjudicate`, plus a log-log
+  overlay + per-mechanism panel PNG.
+
+A committed example from the tropical smoke ladder lives in
+`docs/scaling_report_smoke_tropical.md`.
