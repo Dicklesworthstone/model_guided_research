@@ -966,3 +966,21 @@ def test_profile_flag_writes_summary_and_trace(monkeypatch, tmp_path):
     traces = sorted(trace_dir.glob("*.json"))
     assert traces, f"no chrome trace written under {trace_dir}"
     assert all(t.stat().st_size > 0 for t in traces)
+
+
+def test_clifford_attention_training_smoke(monkeypatch, tmp_path):
+    """mnn.3: --attention-type clifford trains end-to-end through the real
+    loop (chunked geometric-product aggregate + KV scaffold) with finite
+    losses throughout."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "clifford-smoke",
+        max_steps=6,
+        attention_type="clifford",
+    )
+    losses = summary["results"]["losses"]
+    assert len(losses) == 6
+    assert all(loss == loss and abs(loss) != float("inf") for loss in losses), (
+        f"non-finite clifford training losses: {losses}"
+    )

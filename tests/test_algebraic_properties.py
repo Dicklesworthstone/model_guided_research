@@ -337,6 +337,37 @@ def test_octonion_blade_sign_table_is_a_valid_multiplication_table():
             assert got == want, f"table e{i}*e{j}: {(k, s)} vs oracle {want}"
 
 
+def test_clifford_torch_table_matches_independent_oracle():
+    """mnn.3: the PRODUCTION Cl(3,0) structure tensor must agree with an
+    independent Cayley-Dickson-style oracle (the demo's tuple recursion) for
+    every unit-blade pair - exact +-1/0 arithmetic."""
+    import numpy as np
+
+    import clifford_algebra_and_geometric_attention as demo
+    from nanochat.clifford_attention_torch import _STRUCTURE, cgp, creverse
+
+    assert np.allclose(_STRUCTURE.numpy(), demo.STRUCTURE), (
+        "production and demo blade tables diverge"
+    )
+    e = torch.eye(8, dtype=torch.float64)
+    rng = np.random.default_rng(5)
+    x = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
+    y = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
+    z = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
+    # Associativity: Cl(3,0) is associative (contrast: octonions are not).
+    assert float((cgp(cgp(x, y), z) - cgp(x, cgp(y, z))).abs().max()) <= 1e-12
+    # Reversion is an anti-automorphism.
+    assert float((creverse(cgp(x, y)) - cgp(creverse(y), creverse(x))).abs().max()) <= 1e-12
+    # Anticommutation of distinct grade-1 generators: e_i e_j = -e_j e_i.
+    for i in range(1, 4):
+        for j in range(i + 1, 4):
+            ei, ej = e[i], e[j]
+            assert torch.equal(cgp(ei, ej), -cgp(ej, ei)), (i, j)
+    # Vector squares to the metric scalar: e_i^2 = +1 in Cl(3,0).
+    for i in range(1, 4):
+        assert torch.equal(cgp(e[i], e[i]), e[0]), i
+
+
 # ---------------------------------------------------------------------------
 # Ultrametric LCP: strong triangle inequality (EXACT, integer)
 # ---------------------------------------------------------------------------

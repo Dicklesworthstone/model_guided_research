@@ -130,7 +130,7 @@ def gp(a, b):
 
 def reversion(m):
     """Reversion ~M: reverses blade order, sign (-1)^{g(g-1)/2} per grade."""
-    grades = jnp.asarray([0, 1, 2, 1, 2, 2, 2, 3])
+    grades = jnp.asarray([0, 1, 1, 1, 2, 2, 2, 3])
     signs = jnp.where((grades * (grades - 1) // 2) % 2 == 0, 1.0, -1.0)
 
     return m * signs
@@ -138,7 +138,7 @@ def reversion(m):
 
 def grade_project(m, grade):
     """Project a multivector onto its grade-`grade` components."""
-    grades = jnp.asarray([0, 1, 2, 1, 2, 2, 2, 3])
+    grades = jnp.asarray([0, 1, 1, 1, 2, 2, 2, 3])
 
     return jnp.where(grades == grade, m, 0.0)
 

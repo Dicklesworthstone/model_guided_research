@@ -1284,7 +1284,7 @@ def bench_fixed_flops(
             "-a",
             help="Nanochat attention type or comma-separated attention schedule to benchmark (repeatable).",
         ),
-    ] = ("standard", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
+    ] = ("standard", "clifford", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
     device: Annotated[
         str,
         typer.Option(
@@ -2082,10 +2082,12 @@ SCALING_LADDERS: dict[str, list[dict[str, Any]]] = {
 # in the manifest. Soft gates only: nothing here blocks a rung.
 _SCALING_MECHANISM_NOTES: dict[str, str] = {
     "octonion": (
-        "per-query Python loop makes larger rungs wall-clock-infeasible until "
-        "vectorization lands (bead 7b0.6); soft-gated, runs are NOT blocked"
+        "vectorized in 7b0.6 (chunked fused blade product); wall-clock now "
+        "comparable to other dense mechanisms at research-scale rungs"
     ),
     "gauge": "cached eval unsupported until A5; TRAINING runs are unaffected",
+    "clifford": "chunked geometric-product aggregate (mnn.3); same tiling "
+    "budget pattern as octonion post-7b0.6",
 }
 
 
@@ -4380,9 +4382,8 @@ _CERTIFY_MECHANISMS: list[str] = [
     "surreal",
     "reversible",
     "gauge",
+    "clifford",
 ]
-
-
 def _certify_tiny_config(mechanism: str):
     """Build a tiny GPTConfig for `mechanism` satisfying its structural constraints."""
     from nanochat.gpt import GPTConfig
@@ -4781,6 +4782,102 @@ def _run_certify_checks(
         add_check("quaternion", "qmul_norm_multiplicative", "classical", q_norm_mult_measure, tolerance=1e-10)
         add_check("quaternion", "qconj_antihomomorphism", "classical", q_conj_antihom_measure, tolerance=1e-10)
         add_check("quaternion", "rotor_norm_preservation", "classical", q_rotor_norm_measure, tolerance=1e-10)
+    # ----- clifford: derived-table laws + subalgebra reduction (fp64) -----
+    if "clifford" in mechanisms:
+        from nanochat.clifford_attention_torch import cgp, creverse
+
+        def _mvs() -> tuple[Any, Any, Any]:
+            torch.manual_seed(seed)
+            a = torch.randn(512, 8, dtype=torch.float64, device=device)
+            b = torch.randn(512, 8, dtype=torch.float64, device=device)
+            c = torch.randn(512, 8, dtype=torch.float64, device=device)
+            return a, b, c
+
+        def cl_assoc_measure() -> float:
+            a, b, c = _mvs()
+            return float((cgp(cgp(a, b), c) - cgp(a, cgp(b, c))).abs().max())
+
+        def cl_reversion_antihom_measure() -> float:
+            a, b, _ = _mvs()
+            return float((creverse(cgp(a, b)) - cgp(creverse(b), creverse(a))).abs().max())
+
+        def cl_rotor_norm_measure() -> float:
+            # Unit-bivector rotors exp(-theta/2 B) must preserve vector norms
+            # under the sandwich R v ~R (reversion via creverse).
+            torch.manual_seed(seed)
+            worst = 0.0
+            for _ in range(8):
+                plane = torch.randn(3, dtype=torch.float64, device=device)
+                plane = plane / plane.norm()
+                theta = float(torch.randn(()))
+                biv = torch.zeros(8, dtype=torch.float64, device=device)
+                biv[4:7] = -plane * torch.sin(torch.tensor(theta / 2.0, dtype=torch.float64))
+                biv[0] = torch.cos(torch.tensor(theta / 2.0, dtype=torch.float64))
+                v = torch.randn(3, dtype=torch.float64, device=device)
+                vm = torch.zeros(8, dtype=torch.float64, device=device)
+                vm[1:4] = v
+                rv = cgp(cgp(biv, vm), creverse(biv))
+                worst = max(
+                    worst,
+                    float(abs(rv[1:4].norm() - vm[1:4].norm()) / (vm[1:4].norm() + 1e-12)),
+                )
+            return worst
+
+        def cl_quaternion_reduction_measure() -> float:
+            # Even-subalgebra restriction reproduces the Hamilton product.
+            torch.manual_seed(seed)
+            qa = torch.randn(256, 4, dtype=torch.float64, device=device)
+            qb = torch.randn(256, 4, dtype=torch.float64, device=device)
+
+            def embed(q):
+                out = torch.zeros(q.shape[:-1] + (8,), dtype=q.dtype, device=q.device)
+                out[..., 0] = q[..., 0]
+                out[..., 6] = -q[..., 1]
+                out[..., 5] = q[..., 2]
+                out[..., 4] = -q[..., 3]
+                return out
+
+            def extract(m):
+                return torch.stack(
+                    [m[..., 0], -m[..., 6], m[..., 5], -m[..., 4]], dim=-1
+                )
+
+            aw, ax, ay, az = qa.unbind(-1)
+            bw, bx, by, bz = qb.unbind(-1)
+            direct = torch.stack(
+                [
+                    aw * bw - ax * bx - ay * by - az * bz,
+                    aw * bx + ax * bw + ay * bz - az * by,
+                    aw * by - ax * bz + ay * bw + az * bx,
+                    aw * bz + ax * by - ay * bx + az * bw,
+                ],
+                -1,
+            )
+            via_cl = extract(cgp(embed(qa), embed(qb)))
+            return float((via_cl - direct).abs().max())
+
+        add_check("clifford", "cgp_associativity", "classical", cl_assoc_measure, tolerance=1e-10)
+        add_check(
+            "clifford",
+            "reversion_antihomomorphism",
+            "classical",
+            cl_reversion_antihom_measure,
+            tolerance=1e-10,
+        )
+        add_check(
+            "clifford",
+            "rotor_norm_preservation",
+            "classical",
+            cl_rotor_norm_measure,
+            tolerance=1e-9,
+        )
+        add_check(
+            "clifford",
+            "quaternion_subalgebra_reduction",
+            "reduction",
+            cl_quaternion_reduction_measure,
+            tolerance=1e-10,
+        )
 
     # ----- octonion: division-algebra laws + non-associativity witness (fp64) -----
     if "octonion" in mechanisms:
@@ -4813,6 +4910,7 @@ def _run_certify_checks(
             scalar_err = (prod[..., 0] - a.norm(dim=-1) ** 2).abs().max()
             imag_err = prod[..., 1:].abs().max()
             return float(torch.maximum(scalar_err, imag_err))
+
 
         def o_reduces_to_quaternion_measure() -> float:
             # Reduction-to-a-known-mechanism anchor (bead uvjq / the
@@ -8010,6 +8108,10 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "braid.rmatrix_perturbed_transfer_separates",
         "braid.rmatrix_transfer_matrices_commute",
         "braid.ybe_law_holds",
+        "clifford.cgp_associativity",
+        "clifford.quaternion_subalgebra_reduction",
+        "clifford.reversion_antihomomorphism",
+        "clifford.rotor_norm_preservation",
         "fractal.router_branch_simplex",
         "gauge.kv_decode_matches_full_forward",
         "gauge.rotation_additivity_cumsum_law",

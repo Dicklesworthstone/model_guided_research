@@ -1,0 +1,136 @@
+{
+  "aggregates": {
+    "clifford": {
+      "any_failed": false,
+      "metric_key": "score",
+      "metric_mean": 10.825837135314941,
+      "metric_std": 0.0,
+      "metric_values": [
+        10.825837135314941
+      ],
+      "n_ok": 1,
+      "n_total": 1,
+      "nan_inf_total": 0,
+      "peak_memory_allocated_gb_mean": null,
+      "tokens_per_second_mean": 94.17528737111157
+    },
+    "quaternion": {
+      "any_failed": false,
+      "metric_key": "score",
+      "metric_mean": 10.825837135314941,
+      "metric_std": 0.0,
+      "metric_values": [
+        10.825837135314941
+      ],
+      "n_ok": 1,
+      "n_total": 1,
+      "nan_inf_total": 0,
+      "peak_memory_allocated_gb_mean": null,
+      "tokens_per_second_mean": 1826.6076492116833
+    }
+  },
+  "baseline_attention_type": "clifford",
+  "comparisons": {
+    "quaternion": {
+      "delta": null,
+      "reason": "insufficient_seeds_for_welch (need >=2 per arm)"
+    }
+  },
+  "demo_certs": [],
+  "meta": {
+    "argv": [
+      "/data/projects/model_guided_research/.venv/bin/mgr",
+      "bench-fixed-flops",
+      "-a",
+      "clifford",
+      "-a",
+      "quaternion",
+      "--target-flops",
+      "3e7",
+      "--seed",
+      "7"
+    ],
+    "attention_types": [
+      "clifford",
+      "quaternion"
+    ],
+    "device": "cpu",
+    "generated_at": "2026-08-23 17:25:11 EDT",
+    "git": {
+      "branch": "main",
+      "commit": "3d98bcd",
+      "commit_full": "3d98bcd30624ce03dd4d525153b3d381ac4421da",
+      "dirty": true
+    },
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python3",
+      "version": "3.13.0"
+    },
+    "run_id": "20260823_172511",
+    "score_tail": 3,
+    "seed": 7,
+    "seeds": [
+      7
+    ],
+    "suite": "bench_fixed_flops",
+    "target_flops": 30000000.0,
+    "train_config": {
+      "batch_size": 8,
+      "check_numerics": false,
+      "compile": false,
+      "learning_rate": 0.0006,
+      "log_interval": 1,
+      "n_embd": 128,
+      "n_head": 4,
+      "n_kv_head": 4,
+      "n_layer": 4,
+      "optimizer_type": "adamw",
+      "sequence_len": 256,
+      "warmup_steps": 0
+    },
+    "val_batches": 10,
+    "val_interval": 0
+  },
+  "runs": [
+    {
+      "attention_type": "clifford",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 7 --batch-size 8 --sequence-len 256 --n-layer 4 --n-head 4 --n-kv-head 4 --n-embd 128 --learning-rate 0.0006 --optimizer-type adamw --attention-type clifford --target-flops 30000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/20260823_172511/clifford --run-id seed_7 --auto-download-data --min-parquet-files 2",
+      "duration_s": 37.35896486695856,
+      "final_loss": 10.825837135314941,
+      "nan_inf_count": 0,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "seed": 7,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/20260823_172511/logs/nanochat_clifford_seed7.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/20260823_172511/logs/nanochat_clifford_seed7.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/20260823_172511/clifford/seed_7/summary.json",
+      "tflops_per_second_est": 0.004230818004526496,
+      "tokens_per_second": 94.17528737111157,
+      "val_ce_final": null
+    },
+    {
+      "attention_type": "quaternion",
+      "command": "/data/projects/model_guided_research/.venv/bin/python3 -m nanochat.train --device cpu --seed 7 --batch-size 8 --sequence-len 256 --n-layer 4 --n-head 4 --n-kv-head 4 --n-embd 128 --learning-rate 0.0006 --optimizer-type adamw --attention-type quaternion --target-flops 30000000.0 --warmup-steps 0 --log-interval 1 --artifacts-dir artifacts --artifacts-kind bench --artifacts-topic fixed_flops/nanochat/20260823_172511/quaternion --run-id seed_7 --auto-download-data --min-parquet-files 2",
+      "duration_s": 5.735674750059843,
+      "final_loss": 10.825837135314941,
+      "nan_inf_count": 0,
+      "peak_memory_allocated_gb": null,
+      "perplexity_est": 50303.86214338797,
+      "returncode": 0,
+      "score": 10.825837135314941,
+      "seed": 7,
+      "status": "ok",
+      "stderr_path": "bench/fixed_flops/nanochat/20260823_172511/logs/nanochat_quaternion_seed7.stderr.txt",
+      "stdout_path": "bench/fixed_flops/nanochat/20260823_172511/logs/nanochat_quaternion_seed7.stdout.txt",
+      "summary_path": "bench/fixed_flops/nanochat/20260823_172511/quaternion/seed_7/summary.json",
+      "tflops_per_second_est": 0.08206021712508414,
+      "tokens_per_second": 1826.6076492116833,
+      "val_ce_final": null
+    }
+  ],
+  "schema_version": "mgr.bench.fixed_flops.v2",
+  "score_metric": "score"
+}

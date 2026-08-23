@@ -182,6 +182,7 @@ def test_attention_schedule_kv_cache_single_and_chunk_match_full_forward():
         "ultrametric",
         "simplicial",
         "braid",
+        "clifford",
         "fractal",
         "quaternion",
         "octonion",

@@ -1,0 +1,3 @@
+attention_type,n_ok,metric,mean,std,delta_vs_base,ci95_lo,ci95_hi,welch_p,nan_inf,tokens_s_mean
+clifford,1,score,10.825837,0.000000,,,,,0,94.175
+quaternion,1,score,10.825837,0.000000,,,,,0,1826.608

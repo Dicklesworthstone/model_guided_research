@@ -1,0 +1,36 @@
+dataset parquet_files=2 downloaded=0 min_required=2
+Scaling the LR for the AdamW parameters ∝1/√(128/768) = 2.449490
+Starting training on cpu (world_size=1)
+       Resolved attention schedule       
+╭───────┬────────────┬──────────────────╮
+│ layer │ mechanism  │ constraint check │
+├───────┼────────────┼──────────────────┤
+│     0 │ quaternion │ ok               │
+│     1 │ quaternion │ ok               │
+│     2 │ quaternion │ ok               │
+│     3 │ quaternion │ ok               │
+╰───────┴────────────┴──────────────────╯
+budget steps=1 start_step=0 warmup=0 tokens/step=2,048 flops/token=44,924,928 
+flops/step=92,006,252,544
+step      0  loss  10.8258  tok/s       1476  TFLOP/s(est)    0.07
+                                nanochat summary                                
+╭─────────────────────┬────────────────────────────────────────────────────────╮
+│ Field               │ Value                                                  │
+├─────────────────────┼────────────────────────────────────────────────────────┤
+│ Artifacts           │ bench/fixed_flops/nanochat/20260823_172511/quaternion… │
+│ Commit              │ 3d98bcd30624ce03dd4d525153b3d381ac4421da (dirty)       │
+│ Device              │ cpu                                                    │
+│ Attention schedule  │ quaternion                                             │
+│ Steps               │ 1                                                      │
+│ Warmup Steps        │ 0                                                      │
+│ LR warmdown ratio   │ 0.0                                                    │
+│ Parameterization    │ current                                                │
+│ check_numerics      │ False                                                  │
+│ detect_anomaly      │ False                                                  │
+│ torch.compile model │ disabled                                               │
+│ Tokens/s            │ 1,827                                                  │
+│ TFLOP/s (est)       │ 0.08                                                   │
+│ Final Train CE      │ 10.8258                                                │
+╰─────────────────────┴────────────────────────────────────────────────────────╯
+Wrote artifacts → 
+artifacts/bench/fixed_flops/nanochat/20260823_172511/quaternion/seed_7

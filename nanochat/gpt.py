@@ -23,6 +23,7 @@ import torch.nn.functional as F
 
 from nanochat.adamw import DistAdamW
 from nanochat.braid_attention_torch import BraidCausalSelfAttention
+from nanochat.clifford_attention_torch import CliffordCausalSelfAttention
 from nanochat.common import get_dist_info
 from nanochat.fractal_attention_torch import FractalCausalSelfAttention
 from nanochat.gauge_block_torch import GaugeBlock
@@ -55,6 +56,7 @@ _CA_RULES: dict[str, int] = {
 
 SUPPORTED_ATTENTION_TYPES: tuple[str, ...] = (
     "standard",
+    "clifford",
     "tropical",
     "ultrametric",
     "simplicial",
@@ -442,6 +444,8 @@ class Block(nn.Module):
             self.attn = BraidCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "fractal":
             self.attn = FractalCausalSelfAttention(config, layer_idx)
+        elif self.attention_type == "clifford":
+            self.attn = CliffordCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "octonion":
             self.attn = OctonionCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "surreal":
@@ -543,6 +547,11 @@ class GPT(nn.Module):
                 raise ValueError(
                     f"attention schedule layer {layer_idx} uses gauge, which requires even n_embd "
                     f"(got n_embd={self.config.n_embd})"
+                )
+            if attention_type == "clifford" and head_dim % 8 != 0:
+                raise ValueError(
+                    f"attention schedule layer {layer_idx} uses clifford, which requires "
+                    f"head_dim % 8 == 0 (got head_dim={head_dim})"
                 )
             if attention_type == "reversible":
                 if self.config.n_embd % 2 != 0:

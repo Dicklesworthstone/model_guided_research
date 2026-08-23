@@ -1,0 +1,2 @@
+{"config_hash": "8892f61aa159cd9aa9e286ac03676b3aaefeee9a6a0898d220f29301117a976e", "data_snapshot_hash": null, "git_dirty": true, "git_sha": "3d98bcd30624ce03dd4d525153b3d381ac4421da", "schema_version": "mgr.metrics.v1", "tainted": true, "type": "header"}
+{"elapsed_s": 1.1133323116227984, "grad_norm": 0.36665844917297363, "loss": 10.825837135314941, "lr": 0.001469693845669907, "lr_groups": [0.001469693845669907, 0.001469693845669907, 0.0006, 0.0006], "peak_mem_gb": null, "step": 0, "tflops": 0.06630041687563529, "tokens_per_s": 1475.804632911939, "type": "step"}
