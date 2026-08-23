@@ -800,9 +800,12 @@ class GPT(nn.Module):
         rates a symplectic arm CHEAPER than standard (it sees only the half-width
         block params), so equal-target-FLOPs budgeting silently trains it ~37%
         more steps and confounds every equal-FLOPs A/B that contains a symplectic
-        arm (bead 7lba; the z4xx confound). Additive-reversible runs the eager
-        fwd+bwd path (the memory-saving ReversibleFunction recompute is unused),
-        so 6*N is unchanged for it. This is a leading-order analytic estimate;
+        arm (bead 7lba; the z4xx confound). Additive-reversible training now
+        routes through ReversibleFunction (bead a6k3): backward RECOMPUTES the
+        activations, so a block pair costs 9 forward-equivalent units per
+        param (vs the canonical 6) and its attention matmuls execute on every
+        pass (16 H Q T vs 12); both corrections are charged below. This is a
+        leading-order analytic estimate;
         for the strictest symplectic equal-compute contract, budget by matched
         STEPS (train --max-steps without --target-flops) rather than FLOPs.
         """
@@ -815,6 +818,7 @@ class GPT(nn.Module):
             self.config.sequence_len,
         )
         attn_flops_per_token = 12 * l * h * q * t
+        attn_per_layer = 12 * h * q * t
         schedule = resolve_attention_schedule(self.config)
         symplectic_layers = [
             i
@@ -836,9 +840,35 @@ class GPT(nn.Module):
                 symplectic_blocks.append(block)
             nparams_block = sum(p.numel() for block in symplectic_blocks for p in block.parameters())
             nparams_nonblock = (nparams - nparams_embedding) - nparams_block
-            attn_per_layer = 12 * h * q * t
             attn_flops = attn_per_layer * (len(schedule) + 2 * len(symplectic_layers))
             return 6 * nparams_nonblock + 18 * nparams_block + attn_flops
+
+        additive_layers = [
+            i
+            for i, name in enumerate(schedule)
+            if name == "reversible" and str(getattr(self.config, "reversible_mode", "additive")) == "additive"
+        ]
+        if additive_layers:
+            # Block params pay the wired recompute (bead a6k3): forward F+G
+            # under no_grad (2 units) + backward G-reconstruct (1) + G re-run
+            # with grad (3) + F re-run with grad (3) = 9 units vs the
+            # canonical 6. The attention matmuls ride inside f_block and
+            # execute on every pass: fwd(no_grad) + fwd(graph) + bwd =
+            # 16 H Q T vs 12. A tied block dedupes by identity, matching the
+            # symplectic branch above.
+            seen_blocks: set[int] = set()
+            additive_blocks: list[nn.Module] = []
+            for idx in additive_layers:
+                block = self.transformer.h[idx]
+                if id(block) in seen_blocks:
+                    continue
+                seen_blocks.add(id(block))
+                additive_blocks.append(block)
+            nparams_block = sum(p.numel() for block in additive_blocks for p in block.parameters())
+            nparams_nonblock = (nparams - nparams_embedding) - nparams_block
+            attn_flops = attn_per_layer * len(schedule) + 4 * h * q * t * len(additive_layers)
+            return 6 * nparams_nonblock + 9 * nparams_block + attn_flops
+
         num_flops_per_token = 6 * (nparams - nparams_embedding) + attn_flops_per_token
         return num_flops_per_token
 

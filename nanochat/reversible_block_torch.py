@@ -20,8 +20,13 @@ whose shadow is conserved across tied depth and bounds activation norms.
 With ++ signs the conserved quantity is the non-coercive DIFFERENCE
 phi_F - phi_G and norms can blow up (validated: 6.5e4x at kick scale 0.2).
 
-O(1)-memory training (in theory, via recomputation) is unchanged: the kick
-inverse is the negative kick, exact to machine epsilon.
+O(1)-memory training is ACTIVE on the additive path (bead a6k3): grad-enabled
+forwards without a KV cache route through ReversibleFunction below, whose
+backward RECOMPUTES the activations instead of storing them. Decode/generation
+(kv_cache set) and no-grad eval stay eager. Symplectic stays eager too: its
+kicks are double-backward (create_graph=True), which does not compose with the
+detach-and-recompute trick. The kick inverse is the negative kick, exact to
+machine epsilon.
 """
 
 import torch
@@ -167,6 +172,14 @@ class ReversibleBlock(nn.Module):
             return torch.cat([y1, y2], dim=-1)
 
         # additive: y1 = x1 + F(x2); y2 = x2 + G(y1)
+        if torch.is_grad_enabled() and kv_cache is None:
+            # Training path (bead a6k3): the custom autograd Function below
+            # stores only the block OUTPUT and recomputes F/G activations in
+            # backward — this is what realizes the headline O(1)-in-depth
+            # activation memory. Eager (graph-storing) coupling remains for
+            # decode/generation (kv_cache set: re-running F inside backward
+            # would append to the cache twice) and for no-grad eval.
+            return ReversibleFunction.apply(x, cos_sin, kv_cache, self.f_block, self.g_block)
         f_out = self.f_block(x2, cos_sin, kv_cache)
         y1 = x1 + f_out
         g_out = self.g_block(y1)
