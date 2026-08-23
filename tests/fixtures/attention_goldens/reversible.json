@@ -26,6 +26,7 @@
     "n_kv_head": 2,
     "n_layer": 2,
     "optimizer_type": "adamw",
+    "parameterization": "current",
     "reversible_lambda_min": 0.05,
     "reversible_mode": "additive",
     "reversible_record_energy": false,

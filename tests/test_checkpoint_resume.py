@@ -928,3 +928,23 @@ def test_hoss_end_to_end_training_smoke(monkeypatch, tmp_path):
     assert all(loss == loss and abs(loss) != float("inf") for loss in losses), (
         f"non-finite HOSS training losses: {losses}"
     )
+
+
+def test_parameterization_recorded_in_run_artifacts(monkeypatch, tmp_path):
+    """bp08: E1/E2 runs must record WHICH parameterization arm they used —
+    the summary config carries it end-to-end from the CLI flag."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "nsa-flag",
+        max_steps=2,
+        attention_type="tropical",
+        ffn_type="tropical",
+        parameterization="nsa",
+    )
+    assert summary["config"]["parameterization"] == "nsa"
+    assert len(summary["results"]["losses"]) == 2
+    assert all(v == v for v in summary["results"]["losses"]), "NaN loss under nsa arm"
+
+    flat = _run_train(monkeypatch, tmp_path, "current-default", max_steps=2)
+    assert flat["config"]["parameterization"] == "current"

@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from nanochat.model_utils import AttentionCore, causal_attn_mask
+from nanochat.parameterization import exact_expected_max
 
 
 def _tropical_center(x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
@@ -117,13 +118,25 @@ class TropicalMLP(nn.Module):
         if self.beta is not None and not (self.beta > 0):
             raise ValueError(f"ffn_beta must be None or > 0, got {self.beta}")
         self.record_margins = bool(getattr(config, "tropical_record_margins", False))
+        # Width-scaling parameterization arm (lab.1/bp08): "current" keeps the
+        # asymptotic bias init; "nsa" uses the exact finite-N E[max] constants.
+        self.parameterization = str(getattr(config, "parameterization", "current"))
 
         def w(out_f: int, in_f: int) -> nn.Parameter:
             return nn.Parameter(torch.randn(out_f, in_f) * 0.02)
 
         def evt_bias(out_f: int, in_f: int) -> nn.Parameter:
-            # Gumbel location correction: center the max over in_f terms
-            return nn.Parameter(torch.full((out_f,), -math.sqrt(2.0 * math.log(max(in_f, 1)))))
+            # Gumbel location correction: center the max over in_f terms.
+            # "current": second-order asymptote sqrt(2 ln m) (the original
+            # lab.1-prior rule). "nsa": the EXACT order-statistic mean
+            # E[max] from the width-scaling table (validated within 0.2% of
+            # Monte Carlo; the asymptote is ~9-33% off at small m - the note's
+            # single most important implementation footgun).
+            if self.parameterization == "nsa":
+                center = -exact_expected_max(max(in_f, 1))
+            else:
+                center = -math.sqrt(2.0 * math.log(max(in_f, 1)))
+            return nn.Parameter(torch.full((out_f,), float(center)))
 
         def zero_bias(out_f: int) -> nn.Parameter:
             # stage-2 bias: post-max inputs are concentrated, drift is
@@ -187,6 +200,7 @@ def tropical_max_plus_attention(
     score_center: bool,
     return_margins: bool,
     beta: float | None = None,
+    evt_shift: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """
     Pure max-plus (tropical) attention with optional gauge-fixing and margin
@@ -242,6 +256,13 @@ def tropical_max_plus_attention(
         # Similarity/logits: score(q,k) = max_d (q_d + k_d)  (max-plus dot product)
         attn_scores = tropical_inner(q, k)  # (B, H, Tq, Tk)
         attn_scores = attn_scores.masked_fill(~mask, float("-inf"))
+        if evt_shift is not None:
+            # nsa (lab.1/bp08): subtract the exact E[max] of head_dim
+            # unit-scale terms at the FIRST max-stage so the score location
+            # is Theta(1) by derivation rather than only empirically. The
+            # constant commutes with the per-query empirical centering below;
+            # it stands alone when gauge_fix is off.
+            attn_scores = attn_scores - evt_shift
 
         # Score-centering is a pure gauge change (per-query constant shift): it preserves argmax structure.
         if score_center:
@@ -272,6 +293,12 @@ def tropical_max_plus_attention(
     # -inf masking is exact in both semirings (e^{beta * -inf} = 0).
     attn_scores = torch.logsumexp(beta * (q.unsqueeze(-2) + k.unsqueeze(-3)), dim=-1) / beta
     attn_scores = attn_scores.masked_fill(~mask, float("-inf"))
+    if evt_shift is not None:
+        # nsa (lab.1/bp08): exact-E[max] location shift at the unit-scale
+        # first max-stage. Mathematically the normalized finite-beta output
+        # cancels any global score shift; keeping the scores Theta(1) buys
+        # LSE numerical headroom and makes the arm's semantics explicit.
+        attn_scores = attn_scores - evt_shift
     # At finite beta the per-query shift cancels EXACTLY in the normalized
     # difference below; applying it anyway buys floating-point headroom and
     # keeps the beta=inf shadow statement aligned.
@@ -338,6 +365,12 @@ class TropicalCausalSelfAttention(AttentionCore):
         self.semiring_beta: float | None = None if beta is None else float(beta)
         if self.semiring_beta is not None and not (self.semiring_beta > 0):
             raise ValueError(f"semiring_beta must be None or > 0, got {self.semiring_beta}")
+        # Width-scaling parameterization (lab.1/bp08): under "nsa" the FIRST
+        # max-stage (scores over head_dim unit-scale terms) gets the exact
+        # E[max] location shift — theoretical instead of purely empirical
+        # centering. Post-max stages (value aggregation over Tk) are
+        # second-order and get no shift, per the theory note.
+        self.parameterization = str(getattr(config, "parameterization", "current"))
         self.register_buffer(
             "tropical_gamma_head_mean",
             torch.full((self.n_head,), float("nan"), dtype=torch.float32),
@@ -366,6 +399,9 @@ class TropicalCausalSelfAttention(AttentionCore):
         # Causal masking lives inside tropical_max_plus_attention (-inf is
         # the additive identity of the max-plus semiring), so the default
         # mask/softmax pipeline does not apply here.
+        # nsa arm (lab.1/bp08): the exact E[max] over the head_dim unit-scale
+        # score terms - the theoretical first-stage location shift.
+        evt_shift = exact_expected_max(q.size(-1)) if self.parameterization == "nsa" else None
         y, gamma = tropical_max_plus_attention(
             q,
             k,
@@ -374,6 +410,7 @@ class TropicalCausalSelfAttention(AttentionCore):
             score_center=self.tropical_score_center,
             return_margins=self.tropical_record_margins,
             beta=self.semiring_beta,
+            evt_shift=evt_shift,
         )
         if gamma is not None and self.semiring_beta is not None:
             with torch.no_grad():

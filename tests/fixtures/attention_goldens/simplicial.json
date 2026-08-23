@@ -26,6 +26,7 @@
     "n_kv_head": 2,
     "n_layer": 2,
     "optimizer_type": "adamw",
+    "parameterization": "current",
     "reversible_lambda_min": 0.05,
     "reversible_mode": "additive",
     "reversible_record_energy": false,
@@ -47,7 +48,7 @@
     "vocab_size": 128
   },
   "host": {
-    "hostname": "sensedemobox",
+    "hostname": "hetzner2",
     "machine": "x86_64",
     "torch_version": "2.9.1+cu128"
   },
@@ -77,7 +78,7 @@
     4.853835105895996,
     4.8610358238220215,
     4.849668979644775,
-    4.8556318283081055,
+    4.855632781982422,
     4.856049537658691,
     4.849781036376953,
     4.854459762573242,

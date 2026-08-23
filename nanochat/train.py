@@ -725,6 +725,7 @@ def train(args) -> None:
         config.n_layer = args.n_layer
         config.n_head = args.n_head
         config.n_kv_head = args.n_kv_head
+        config.parameterization = getattr(args, "parameterization", "current")
         config.n_embd = args.n_embd
         config.sequence_len = args.sequence_len
         config.optimizer_type = args.optimizer_type
@@ -1242,6 +1243,8 @@ def train(args) -> None:
                 dash_flags["tied"] = getattr(config, "reversible_tied", False)
             if "tropical" in attention_schedule and getattr(args, "semiring_beta", None) is not None:
                 dash_flags["beta"] = str(args.semiring_beta)
+            if getattr(config, "parameterization", "current") != "current":
+                dash_flags["param"] = str(config.parameterization)
             if "braid" in attention_schedule:
                 dash_flags["law"] = getattr(config, "braid_crossing_law", "restricted")
             if all(name == "standard" for name in attention_schedule) and getattr(config, "disable_block_norms", False):
@@ -1968,6 +1971,7 @@ def train(args) -> None:
     report_table.add_row("Steps", str(max_steps))
     report_table.add_row("Warmup Steps", str(args.warmup_steps))
     report_table.add_row("LR warmdown ratio", str(args.lr_warmdown_ratio))
+    report_table.add_row("Parameterization", str(getattr(config, "parameterization", "current")))
     report_table.add_row("check_numerics", str(check_numerics))
     report_table.add_row("detect_anomaly", str(detect_anomaly))
     report_table.add_row("torch.compile model", "enabled" if compiled_model else "disabled")
@@ -2456,6 +2460,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Linearly decay the LR to 0 over the final FRACTION of total steps "
         "(WSD tail for non-ordinal runs, bio_inspired parity; default 0.0 = flat LR).",
+    )
+    parser.add_argument(
+        "--parameterization",
+        type=str,
+        default="current",
+        choices=["current", "nsa"],
+        help="Width-scaling parameterization arm (lab.1/bp08): 'nsa' applies the "
+        "derived per-stage corrections (tropical exact-E[max] constants); default 'current'.",
     )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"])
     # Checkpoint/resume (bead rz8.1).

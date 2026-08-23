@@ -23,8 +23,10 @@ All numerical claims here are validated in tests/test_parameterization.py.
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -49,9 +51,10 @@ def gumbel_asymptotic_location(n: int) -> float:
     return a - (math.log(ln_n) + math.log(4.0 * math.pi)) / (2.0 * a)
 
 
+@functools.cache
 def exact_expected_max(n: int) -> float:
     """E[max of n iid N(0,1)] via quadrature of the order-statistic mean
-    integral  ∫ x · n · phi(x) · Phi(x)^(n-1) dx. The exact finite-n location
+    integral ∫ x · n · phi(x) · Phi(x)^(n-1) dx. The exact finite-n location
     the width-scaling table carries (the asymptotic form is up to ~10% off at
     small n -- a smoke-scale validation against the asymptote would falsely
     refute correct theory)."""
@@ -160,6 +163,7 @@ def measure_activation_scale(
     batch_size: int = 8,
     seed: int = 0,
     device: str = "cpu",
+    parameterization: str = "current",
 ) -> float:
     """Mean RMS of the post-block residual-stream activation for a one-layer
     GPT of `attention_type` at embedding width `width`, on random tokens at
@@ -197,6 +201,7 @@ def measure_activation_scale(
         n_kv_head=kv,
         n_embd=heads * head_dim,
         attention_type=attention_type,
+        parameterization=parameterization,
     )
     model = GPT(cfg).to(device)
     model.eval()
@@ -251,3 +256,47 @@ def coordinate_check(
         "r_squared": float(r2),
         "concentration_class": scaling_rule(attention_type).concentration_class,
     }
+
+
+# ---------------------------------------------------------------------------
+# Artifact emission (bead bp08 part 2): coordinate-check curves as versioned
+# bench artifacts, one JSON per (mechanism, parameterization arm). The schema
+# name follows the mgr.bench.* convention; engine ingestion (so
+# hyp-coordcheck-clt-flat / hyp-tropical-evt-miscoupling become adjudicable)
+# lands in the cli collector.
+# ---------------------------------------------------------------------------
+
+COORD_CURVES_SCHEMA = "mgr.bench.coord_curves.v1"
+
+
+def coord_check_artifact(
+    result: dict[str, Any],
+    *,
+    parameterization: str = "current",
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Wrap a coordinate_check() result as a versioned artifact payload."""
+    return {
+        "schema_version": COORD_CURVES_SCHEMA,
+        "bead": "model_guided_research-bp08",
+        **result,
+        "parameterization": parameterization,
+        "seed": seed,
+    }
+
+
+def write_coord_check_artifact(
+    result: dict[str, Any],
+    out_path: str | Path,
+    *,
+    parameterization: str = "current",
+    seed: int = 0,
+) -> Path:
+    """Write a coordinate-check artifact to disk (JSON) and return its path."""
+    import json
+
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = coord_check_artifact(result, parameterization=parameterization, seed=seed)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return path

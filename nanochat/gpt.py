@@ -255,6 +255,14 @@ class GPTConfig:
     # endpoint); finite beta>0 = (+)_beta semiring (network-wide annealing
     # alongside 8gk.1's attention schedule when that lands).
     ffn_beta: float | None = None
+    # Width-scaling parameterization arm (beads lab.1/bp08): "current" keeps
+    # today's rules; "nsa" applies the nonstandard-analysis per-stage
+    # corrections from WIDTH_SCALING_TABLE (nanochat/parameterization.py):
+    # tropical gets exact finite-N E[max] location constants (MLP bias init +
+    # attention first-stage score shift); quaternion/octonion rotor-LR split
+    # is approximated by the existing Muon/AdamW grouping (derivation in the
+    # table notes). Default "current" until E1 adopts nsa deliberately.
+    parameterization: str = "current"
     # Ultrametric-specific options (see nanochat.ultrametric_attention_torch).
     ultrametric_mode: str = "kernel"  # "kernel" | "trie" | "balltree" (exact O(K T log T), bead 33dd)
     # Eval-time digit-precision truncation (bead 8gk.4): use only the first k
@@ -595,6 +603,17 @@ class GPT(nn.Module):
             raise ValueError(f"semiring_beta must be None or > 0, got {semiring_beta!r}")
         if semiring_beta is not None and "tropical" not in attention_schedule:
             raise ValueError("semiring_beta applies to the tropical attention path only (8gk.1)")
+
+        parameterization = getattr(self.config, "parameterization", "current")
+        if parameterization not in ("current", "nsa"):
+            raise ValueError(f"parameterization must be current | nsa, got {parameterization!r}")
+        if parameterization == "nsa" and "tropical" not in attention_schedule and not any(
+            m in attention_schedule for m in ("quaternion", "octonion")
+        ):
+            raise ValueError(
+                "parameterization='nsa' currently changes only the tropical (E[max] constants) "
+                "and quaternion/octonion (rotor LR derivation) rules; refusing a silent no-op arm"
+            )
 
         ca_rule = getattr(self.config, "ca_init_rule", None)
         if isinstance(ca_rule, str):
