@@ -280,6 +280,22 @@ class _CoverageBetaController:
         self.beta = float(state["beta"])
 
 
+def _lr_warmdown_multiplier(step: int, max_steps: int, warmdown_ratio: float) -> float:
+    """bio-parity WSD tail (bead kj8s): hold the LR flat, then decay linearly
+    to 0 over the final ``warmdown_ratio`` fraction of the run (bio's
+    get_lr_multiplier with warmup_ratio=0.0). Pure function of
+    (step, max_steps): resumed runs land on the same trajectory without any
+    extra checkpoint state."""
+    if warmdown_ratio <= 0.0 or max_steps <= 1:
+        return 1.0
+    warmdown_start = (1.0 - warmdown_ratio) * max_steps
+    if step < warmdown_start:
+        return 1.0
+    span = max(1, (max_steps - 1) - warmdown_start)
+    frac = min((step - warmdown_start) / span, 1.0)
+    return 1.0 - frac
+
+
 def _semiring_beta_at(schedule: _SemiringSpec, step: int, max_steps: int) -> float:
     mode, b0, b1 = str(schedule[0]), float(schedule[1]), float(schedule[2])
     frac = min(max(step / max(max_steps - 1, 1), 0.0), 1.0)
@@ -519,6 +535,14 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
     scheduler_type = str(getattr(args, "scheduler_type", "none"))
     if scheduler_type not in _SUPPORTED_SCHEDULER_TYPES:
         errors.append(f"--scheduler-type must be one of: {', '.join(_SUPPORTED_SCHEDULER_TYPES)}")
+    lr_warmdown_ratio = float(getattr(args, "lr_warmdown_ratio", 0.0) or 0.0)
+    if not (0.0 <= lr_warmdown_ratio < 1.0):
+        errors.append("--lr-warmdown-ratio must be in [0.0, 1.0)")
+    elif lr_warmdown_ratio > 0.0 and scheduler_type == "ordinal":
+        errors.append(
+            "--lr-warmdown-ratio owns the LR tail for flat-LR runs and conflicts with "
+            "--scheduler-type ordinal (the ordinal scheduler drives the LR); use one or the other"
+        )
 
     attention_type = str(getattr(args, "attention_type", "standard"))
     if attention_type not in _SUPPORTED_ATTENTION_TYPES:
@@ -980,6 +1004,11 @@ def train(args) -> None:
         weight_decay=weight_decay,
     )
 
+    # Warmdown baselines captured BEFORE any resume-state overwrite: the
+    # multiplier always applies to these, never to mid-decay restored LRs
+    # (checkpointed LRs may already be inside a decayed tail).
+    base_param_lrs: list[list[float]] = [[float(g["lr"]) for g in opt.param_groups] for opt in optimizers]
+
     # Scheduler
     schedulers: list[OrdinalLRScheduler] = []
     if args.scheduler_type == "ordinal":
@@ -1432,6 +1461,15 @@ def train(args) -> None:
                 config_beta = getattr(config, "semiring_beta", None)
                 current_semiring_beta = float(config_beta) if config_beta is not None else None
             last_semiring_beta = current_semiring_beta
+
+            if args.lr_warmdown_ratio > 0.0:
+                # WSD tail (bead kj8s): multiply every param group's BASE lr by
+                # the schedule factor. Pure function of (step, max_steps), so
+                # resumed runs reproduce the trajectory with no extra state.
+                mult = _lr_warmdown_multiplier(step, max_steps, args.lr_warmdown_ratio)
+                for _opt, _bases in zip(optimizers, base_param_lrs):
+                    for group, base in zip(_opt.param_groups, _bases):
+                        group["lr"] = base * mult
 
             step_t0 = time.perf_counter()
 
@@ -1916,6 +1954,7 @@ def train(args) -> None:
         report_table.add_row("Attention schedule", attention_label)
     report_table.add_row("Steps", str(max_steps))
     report_table.add_row("Warmup Steps", str(args.warmup_steps))
+    report_table.add_row("LR warmdown ratio", str(args.lr_warmdown_ratio))
     report_table.add_row("check_numerics", str(check_numerics))
     report_table.add_row("detect_anomaly", str(detect_anomaly))
     report_table.add_row("torch.compile model", "enabled" if compiled_model else "disabled")
@@ -2398,6 +2437,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable torch.autograd anomaly detection (very slow; debug only).",
     )
     parser.add_argument("--scheduler-type", type=str, default="none", choices=_SUPPORTED_SCHEDULER_TYPES)
+    parser.add_argument(
+        "--lr-warmdown-ratio",
+        type=float,
+        default=0.0,
+        help="Linearly decay the LR to 0 over the final FRACTION of total steps "
+        "(WSD tail for non-ordinal runs, bio_inspired parity; default 0.0 = flat LR).",
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"])
     # Checkpoint/resume (bead rz8.1).
     parser.add_argument(

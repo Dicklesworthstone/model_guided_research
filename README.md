@@ -741,6 +741,10 @@ python -m nanochat.train --optimizer-type [OPT]
 python -m nanochat.train --scheduler-type [SCHED]
 # Where SCHED is one of: none, ordinal
 
+# Optional WSD tail (non-ordinal runs): linearly decay the LR to 0 over the
+# final FRACTION of total steps (default 0.0 = flat LR)
+python -m nanochat.train --lr-warmdown-ratio 0.2
+
 # Hyperparameter tuning
 python -m nanochat.train \
     --batch-size 16 \

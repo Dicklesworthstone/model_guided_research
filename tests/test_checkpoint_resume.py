@@ -851,3 +851,60 @@ def test_stateful_beta_resume_refuses_missing_controller_state(monkeypatch, tmp_
         )
         with pytest.raises(RuntimeError, match="no semiring_"):
             train_mod.train(args)
+
+
+def test_lr_warmdown_multiplier_shape():
+    """kj8s: flat until the tail starts, linear to exactly 0 at the final step,
+    degenerate cases stay at 1.0 (pure function — no hidden state)."""
+    f = train_mod._lr_warmdown_multiplier
+    assert all(f(s, 12, 0.5) == 1.0 for s in range(6)), "must hold flat before the tail"
+    assert f(6, 12, 0.5) == 1.0, "first tail step is still the full LR"
+    shape = [f(s, 12, 0.5) for s in range(6, 12)]
+    assert shape == pytest.approx([1.0, 0.8, 0.6, 0.4, 0.2, 0.0]), f"linear decay broken: {shape}"
+    assert f(11, 12, 0.5) == 0.0, "final step must reach 0"
+    assert f(0, 10, 0.0) == 1.0, "ratio 0 must be a no-op"
+    assert f(0, 1, 0.9) == 1.0, "single-step run has no tail"
+
+
+def test_lr_warmdown_tail_lands_in_metrics(monkeypatch, tmp_path):
+    """kj8s end-to-end: ratio 0.5 over 12 steps — per-step recorded LRs stay
+    flat through the stable phase then decay linearly to ~0; the default run
+    stays perfectly flat (log_interval=1 so every step records an lr)."""
+    summary = _run_train(monkeypatch, tmp_path, "warmdown-run", lr_warmdown_ratio=0.5, log_interval=1)
+    assert len(summary["results"]["losses"]) == 12
+    metrics = [
+        json.loads(line)
+        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "warmdown-run" / "metrics.jsonl").read_text().splitlines()
+    ]
+    lrs = [rec["lr"] for rec in metrics if rec.get("type") == "step"]
+    base = lrs[0]
+    assert base > 0
+    assert lrs[:7] == [base] * 7, f"stable phase must hold the base LR: {lrs[:7]}"
+    tail = lrs[7:]
+    assert tail[-1] < 1e-3 * base, f"tail must decay to ~0: {tail}"
+    assert all(a >= b for a, b in zip(tail, tail[1:])), f"tail must be non-increasing: {tail}"
+
+    _run_train(monkeypatch, tmp_path, "flat-run")
+    flat = [
+        json.loads(line)["lr"]
+        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "flat-run" / "metrics.jsonl").read_text().splitlines()
+        if json.loads(line).get("type") == "step"
+    ]
+    assert len(set(flat)) == 1, f"default must remain flat LR: {set(flat)}"
+
+
+def test_lr_warmdown_conflicts_with_ordinal_scheduler(tmp_path):
+    """kj8s: the warmdown tail owns the LR only on flat-LR runs; combining it
+    with the ordinal scheduler is a configuration error, not silent double-drive."""
+    argv_extra = ["--lr-warmdown-ratio", "0.2", "--scheduler-type", "ordinal"]
+    args = train_mod.build_parser().parse_args(
+        [
+            "--device", "cpu", "--max-steps", "2", "--batch-size", "2",
+            "--sequence-len", "32", "--n-layer", "1", "--n-head", "2",
+            "--n-kv-head", "2", "--n-embd", "32", "--seed", "7",
+            "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "conflict",
+            *argv_extra,
+        ]
+    )
+    with pytest.raises(ValueError, match="lr-warmdown-ratio"):
+        train_mod.train(args)

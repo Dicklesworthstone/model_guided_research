@@ -110,18 +110,19 @@ python -m nanochat.train \
     --attention-type <mech> \
     --optimizer-type adamw \         # AdamW(embed/head)+Muon(matrices), == bio
     --grad-clip-norm 1.0 \           # match bio default (we default OFF)
+    --lr-warmdown-ratio 0.2 \        # match bio's WSD tail (kj8s; we default flat)
     --target-flops <F> \             # shared fixed-FLOPs horizon
     --compile                        # match bio (always-compiled); or drop on both arms
 ```
 
-- **Always-do for cross-repo parity:** `--grad-clip-norm 1.0`, match
-  `--compile`, match `(B, T, world_size)` and `--target-flops`.
-- **Cannot match via flags yet (note in the run):** bio's 20 % LR warmdown
-  and Muon-momentum warmup have no flag here. Either accept a small uniform
-  loss gap vs bio, or land the WSD toggle (below) first.
+- **Always-do for cross-repo parity:** `--grad-clip-norm 1.0`,
+  `--lr-warmdown-ratio 0.2` (bio decays the last 20 %; our default stays flat),
+  match `--compile`, match `(B, T, world_size)` and `--target-flops`.
+- **Still cannot match via flags:** Muon-momentum warmup has no flag here.
+  Accept the small uniform gap vs bio on very short runs, or port it (below).
 - **Within-repo A/B (the project's actual protocol):** no flags required for
-  fairness — all mechanisms share the loop. Just keep the flat-LR caveat in
-  mind when reading absolute `val_ce`.
+  fairness — all mechanisms share the loop. Keep scheduler settings identical
+  across arms when reading absolute `val_ce`.
 
 ---
 
@@ -129,10 +130,11 @@ python -m nanochat.train \
 
 Discovered-work worth a bead (`--deps discovered-from:model_guided_research-wyf`):
 
-1. **Optional WSD/warmdown LR for non-ordinal runs** (`train.py`): add
-   `--lr-warmdown-ratio` (default 0.0 = current flat behaviour) implementing
-   bio's `get_lr_multiplier`. Low-risk, mechanism-agnostic, closes the biggest
-   absolute-parity gap. *Recommended.*
+1. ~~**Optional WSD/warmdown LR for non-ordinal runs**~~ **DONE (bead kj8s)**:
+   `--lr-warmdown-ratio` (default 0.0 = flat) implements the linear tail;
+   conflicts are rejected for `--scheduler-type ordinal`; stateless in
+   (step, max_steps) so resume reproduces trajectories without new checkpoint
+   state.
 2. **Optional Muon momentum warmup** (`gpt.py`/`train.py`): port
    `get_muon_momentum` (0.85→0.95 over N steps) behind a flag. Lower priority;
    only matters on very short runs.
@@ -157,4 +159,3 @@ loss improvement out of the warmdown tail.
 | HOSS (ours-only) | `nanochat/hoss_opt_torch.py` | — |
 | Ordinal LR (ours-only) | `nanochat/ordinal_scheduler.py` | — |
 | tf32/bf16 policy | `nanochat/common.py:188`, `gpt.py:809` | `common.py:194`, `gpt.py:512` |
-</content>
