@@ -163,24 +163,30 @@ def test_parameterization_validation():
 
 def test_coord_check_artifact_schema(tmp_path):
     """bp08 part 2: coordinate-check results wrap into the versioned
-    mgr.bench.coord_curves.v1 payload with the arm recorded."""
+    mgr.bench.coord_curves.v1 payload in the house bench shape (mechanism /
+    meta / results) so the verdict engine's arm matching, observation dedupe,
+    and `bench:results.*` metric paths work unchanged."""
     import json
 
     res = {"attention_type": "standard", "widths": [16, 32], "activation_rms": {"16": 1.0, "32": 1.01}, "loglog_slope": 0.006, "r_squared": 0.9}
-    path = tmp_path / "coord" / "standard_current.json"
+    path = tmp_path / "coord" / "standard_current"
     out = P.write_coord_check_artifact(res, path, parameterization="current", seed=7)
-    assert out == path and path.exists()
-    payload = json.loads(path.read_text())
+    assert out == path / "summary.json" and out.exists()
+    payload = json.loads(out.read_text())
     assert payload["schema_version"] == P.COORD_CURVES_SCHEMA == "mgr.bench.coord_curves.v1"
     assert payload["bead"] == "model_guided_research-bp08"
-    assert payload["parameterization"] == "current" and payload["seed"] == 7
-    assert payload["loglog_slope"] == res["loglog_slope"]
+    assert payload["kind"] == "coord-curve"
+    assert payload["mechanism"] == "standard"
+    assert payload["meta"]["seed"] == 7 and payload["meta"]["device"] == "cpu"
+    assert payload["results"]["parameterization"] == "current"
+    assert payload["results"]["loglog_slope"] == res["loglog_slope"]
     # writer creates parents and round-trips the harness's own result shape
     live = P.coordinate_check("standard", [64, 128], seed=0)
     out2 = P.write_coord_check_artifact(live, tmp_path / "nested" / "dir" / "std.json")
     live_payload = json.loads(out2.read_text())
     # JSON object keys stringify: int widths come back as "64"/"128"
-    assert set(live_payload["activation_rms"]) == {"64", "128"}
+    assert set(live_payload["results"]["activation_rms"]) == {"64", "128"}
+    assert isinstance(live_payload["meta"]["generated_at"], str)
 
 
 def test_measure_activation_scale_passes_parameterization_through():
@@ -189,6 +195,25 @@ def test_measure_activation_scale_passes_parameterization_through():
     import warnings
 
     warnings.filterwarnings("ignore")
-
     rms = P.measure_activation_scale("tropical", 64, seq_len=8, batch_size=2, parameterization="nsa")
     assert math.isfinite(rms) and rms > 0
+
+
+def test_coordinate_check_exposes_both_evt_arms():
+    """bp08: the harness must run the current-vs-nsa arms through the
+    TROPICAL FFN (where the E[max] bias lives); the standard-FFN default
+    keeps historical controls unchanged. Thresholds/flattening claims belong
+    to the preregistered campaign (sizing-probe first) - here we pin only
+    that both arms run, are finite, and the CLT control stays flat."""
+    import warnings
+
+    warnings.filterwarnings("ignore")
+    arms = {
+        mode: P.coordinate_check("tropical", [64, 128], seed=0, parameterization=mode, ffn_type="tropical")
+        for mode in ("current", "nsa")
+    }
+    for mode, res in arms.items():
+        assert math.isfinite(res["loglog_slope"]), f"{mode}: non-finite slope"
+        assert all(v > 0 for v in res["activation_rms"].values())
+    ctl = P.coordinate_check("standard", [64, 128], seed=0)
+    assert abs(ctl["loglog_slope"]) < 0.05

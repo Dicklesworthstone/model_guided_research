@@ -164,10 +164,17 @@ def measure_activation_scale(
     seed: int = 0,
     device: str = "cpu",
     parameterization: str = "current",
+    ffn_type: str = "standard",
 ) -> float:
     """Mean RMS of the post-block residual-stream activation for a one-layer
     GPT of `attention_type` at embedding width `width`, on random tokens at
-    init. The coordinate-check observable: flat in width == correctly scaled."""
+    init. The coordinate-check observable: flat in width == correctly scaled.
+
+    ffn_type defaults to "standard" so the historical CLT-control numbers are
+    unchanged; EVT-class arms pass ffn_type="tropical" - the tropical MLP
+    stage-1 bias init is WHERE the exact-E[max] correction lives, so without
+    it the current-vs-nsa arms are provably identical (the attention-path
+    score shift cancels under default empirical centering)."""
     import torch
 
     from nanochat.gpt import GPT, GPTConfig
@@ -202,6 +209,7 @@ def measure_activation_scale(
         n_embd=heads * head_dim,
         attention_type=attention_type,
         parameterization=parameterization,
+        ffn_type=ffn_type,
     )
     model = GPT(cfg).to(device)
     model.eval()
@@ -274,14 +282,45 @@ def coord_check_artifact(
     *,
     parameterization: str = "current",
     seed: int = 0,
+    device: str = "cpu",
+    run_id: str | None = None,
+    git: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Wrap a coordinate_check() result as a versioned artifact payload."""
+    """Wrap a coordinate_check() result as a versioned bench artifact payload.
+
+    Shape matches the house mgr.bench.* convention the G2 verdict engine
+    already reads (see cli.py bench dispatch + _adj_artifact_matches_arm):
+    top-level `mechanism` for arm membership, `meta` carrying seed/device/
+    generated_at for observation dedupe, and `results` holding the observables
+    so `bench:results.loglog_slope` metric paths resolve. The arm is recorded
+    in results.parameterization so registry variant selectors can separate
+    current-vs-nsa evidence sharing one metric path (rgyl).
+    """
+    import time as _time
+
+    meta: dict[str, Any] = {
+        "generated_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        "seed": seed,
+        "device": device,
+    }
+    if run_id:
+        meta["run_id"] = run_id
+    if git:
+        meta["git"] = git
     return {
         "schema_version": COORD_CURVES_SCHEMA,
+        "kind": "coord-curve",
         "bead": "model_guided_research-bp08",
-        **result,
-        "parameterization": parameterization,
-        "seed": seed,
+        "mechanism": result.get("attention_type"),
+        "meta": meta,
+        "results": {
+            "widths": result.get("widths", []),
+            "activation_rms": result.get("activation_rms", {}),
+            "loglog_slope": result.get("loglog_slope"),
+            "r_squared": result.get("r_squared"),
+            "concentration_class": result.get("concentration_class"),
+            "parameterization": parameterization,
+        },
     }
 
 
@@ -291,12 +330,28 @@ def write_coord_check_artifact(
     *,
     parameterization: str = "current",
     seed: int = 0,
+    device: str = "cpu",
+    run_id: str | None = None,
+    git: dict[str, Any] | None = None,
 ) -> Path:
-    """Write a coordinate-check artifact to disk (JSON) and return its path."""
+    """Write a coordinate-check artifact to disk (JSON) and return its path.
+
+    If ``out_path`` is a directory (no suffix), writes the collector's expected
+    ``summary.json`` inside it; otherwise writes exactly that file.
+    """
     import json
 
     path = Path(out_path)
+    if not path.suffix:
+        path = path / "summary.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = coord_check_artifact(result, parameterization=parameterization, seed=seed)
+    payload = coord_check_artifact(
+        result,
+        parameterization=parameterization,
+        seed=seed,
+        device=device,
+        run_id=run_id,
+        git=git,
+    )
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return path
