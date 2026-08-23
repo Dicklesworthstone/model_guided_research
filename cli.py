@@ -9410,7 +9410,17 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 schema = "train"
             elif sv == "mgr.chargeprobe.v1":
                 schema = "chargeprobe"
-            elif sv in ("mgr.bench.ultrametric_paths.v1", "mgr.bench.precision_curves.v1", "mgr.bench.depth_curves.v1"):
+            elif sv in (
+                "mgr.bench.ultrametric_paths.v1",
+                "mgr.bench.precision_curves.v1",
+                "mgr.bench.depth_curves.v1",
+                "mgr.bench.coord_curves.v1",
+            ):
+                # coord_curves (bp08): coordinate-check curves from
+                # nanochat.parameterization.write_coord_check_artifact -
+                # mechanism/meta/results shape, results.parameterization is
+                # the rgyl arm selector; makes hyp-coordcheck-clt-flat and
+                # hyp-tropical-evt-miscoupling engine-adjudicable.
                 schema = "bench"
             elif sv == 1 and data.get("kind") == "certify":
                 schema = "certify"

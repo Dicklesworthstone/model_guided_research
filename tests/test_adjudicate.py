@@ -1417,3 +1417,62 @@ def test_sizing_probe_quarantine_excluded_from_pools(tmp_path):
     arts = cli._adj_collect_artifacts([tmp_path])
     paths = [a["path"] for a in arts]
     assert len(arts) == 1 and paths[0].endswith("real/summary.json"), paths
+
+
+def _coord_artifact(root: Path, arm: str, seed: int, slope: float, provenance: dict | None = None):
+    """A real mgr.bench.coord_curves.v1 artifact via the bp08 writer."""
+    from nanochat.parameterization import write_coord_check_artifact
+
+    res = {
+        "attention_type": "tropical",
+        "widths": [64, 128, 256],
+        "activation_rms": {"64": 1.0, "128": 1.02, "256": 1.03},
+        "loglog_slope": slope,
+        "r_squared": 0.9,
+        "concentration_class": "EVT (Gumbel max)",
+    }
+    return write_coord_check_artifact(
+        res, root / f"coord_{arm}_s{seed}", parameterization=arm, seed=seed, provenance=provenance
+    )
+
+
+def test_coord_curves_ingest_as_bench_with_arm_selectors(tmp_path):
+    """bp08 part 2: coord-curve artifacts collect as bench evidence; the rgyl
+    selector on results.parameterization separates arms sharing the metric
+    path, and bench:results.loglog_slope resolves through the generic walk."""
+    for arm, slope in (("current", 0.12), ("nsa", 0.014)):
+        _coord_artifact(tmp_path, arm, seed=0, slope=slope)
+    idx = cli._adj_collect_artifacts([tmp_path])
+    coord = [a for a in idx if a["schema"] == "bench" and a["data"].get("schema_version") == "mgr.bench.coord_curves.v1"]
+    assert len(coord) == 2, "coord-curves artifacts must ingest with schema=bench"
+
+    cur = [a for a in coord if cli._adj_variant_matches(a, {"parameterization": "current"})]
+    nsa = [a for a in coord if cli._adj_variant_matches(a, {"parameterization": "nsa"})]
+    assert len(cur) == 1 and len(nsa) == 1, "arm selectors must partition the artifacts"
+    assert cli._adj_observations(cur[0], "results.loglog_slope") == [0.12]
+    assert cli._adj_observations(nsa[0], "results.loglog_slope") == [0.014]
+    assert all(cli._adj_artifact_matches_arm(a, "tropical") for a in coord)
+    assert not any(cli._adj_artifact_matches_arm(a, "standard") for a in coord)
+
+
+def test_coord_curve_single_arm_hypothesis_adjudicates(tmp_path):
+    """End-to-end engine path: a single-arm flatness claim (baseline: null) on
+    clean-provenance nsa-arm coord curves reaches SUPPORTED through ci-v6."""
+    for seed, slope in ((0, 0.010), (1, 0.020), (2, 0.015)):
+        # explicit CLEAN provenance: production writers record real (dirty =>
+        # tainted) provenance; this fixture exercises the verdict path
+        _coord_artifact(tmp_path, "nsa", seed=seed, slope=slope, provenance=CLEAN_PROV)
+    hyp = _hyp(
+        {
+            "metric_path": "bench:results.loglog_slope",
+            "comparator": "<=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 0.05,
+            "baseline": None,
+            "candidate_variant": {"parameterization": "nsa"},
+            "min_seeds": 3,
+        },
+        mechanisms=["tropical"],
+    )
+    v = cli._adjudicate_hypothesis(hyp, cli._adj_collect_artifacts([tmp_path]))
+    assert v["verdict"] == "supported", v

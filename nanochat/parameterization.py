@@ -285,6 +285,7 @@ def coord_check_artifact(
     device: str = "cpu",
     run_id: str | None = None,
     git: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Wrap a coordinate_check() result as a versioned bench artifact payload.
 
@@ -295,8 +296,27 @@ def coord_check_artifact(
     so `bench:results.loglog_slope` metric paths resolve. The arm is recorded
     in results.parameterization so registry variant selectors can separate
     current-vs-nsa evidence sharing one metric path (rgyl).
+
+    provenance defaults to a real build_provenance() block — a dirty tree
+    yields tainted=true and the engine REFUSES the artifact as evidence (by
+    design). Tests may pass an explicit clean block to exercise the engine
+    path deterministically.
     """
     import time as _time
+
+    if provenance is None:
+        from nanochat.report import build_provenance
+
+        provenance = build_provenance(
+            {
+                "coord_curves": {
+                    "mechanism": result.get("attention_type"),
+                    "parameterization": parameterization,
+                    "widths": result.get("widths", []),
+                    "seed": seed,
+                }
+            }
+        )
 
     meta: dict[str, Any] = {
         "generated_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
@@ -313,6 +333,7 @@ def coord_check_artifact(
         "bead": "model_guided_research-bp08",
         "mechanism": result.get("attention_type"),
         "meta": meta,
+        "provenance": provenance,
         "results": {
             "widths": result.get("widths", []),
             "activation_rms": result.get("activation_rms", {}),
@@ -333,6 +354,7 @@ def write_coord_check_artifact(
     device: str = "cpu",
     run_id: str | None = None,
     git: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Path:
     """Write a coordinate-check artifact to disk (JSON) and return its path.
 
@@ -352,6 +374,7 @@ def write_coord_check_artifact(
         device=device,
         run_id=run_id,
         git=git,
+        provenance=provenance,
     )
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return path
