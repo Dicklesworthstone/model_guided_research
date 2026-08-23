@@ -19,8 +19,19 @@ from typing import Any
 import pyarrow.parquet as pq
 import requests
 from filelock import FileLock
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TimeElapsedColumn,
+)
 
 from nanochat.common import get_base_dir
+
+_console = Console()
+_in_pool_worker = __name__ != "__main__" and os.environ.get("DATASET_STANDALONE") is None
 
 # -----------------------------------------------------------------------------
 # The specifics of the current pretraining dataset
@@ -154,48 +165,77 @@ def ensure_min_parquet_files(
 
 
 def download_single_file(index):
-    """Downloads a single file index, with some backoff"""
+    """Downloads a single file index, with some backoff.
+
+    Rich progress bar on the interactive path; concise styled lines from
+    Pool workers (live bars from N processes would interleave into garbage).
+    """
 
     # Construct the local filepath for this file and skip if it already exists
     filename = index_to_filename(index)
     filepath = os.path.join(DATA_DIR, filename)
     if os.path.exists(filepath):
-        print(f"Skipping {filepath} (already exists)")
+        _console.print(f"[dim]Skipping {filepath} (already exists)[/dim]")
         return True
 
     # Construct the remote URL for this file
     url = f"{BASE_URL}/{filename}"
-    print(f"Downloading {filename}...")
+    _console.print(f"[cyan]Downloading[/cyan] {filename}")
+    show_bar = not _in_pool_worker
 
-    # Download with retries
+    # Download with retries (exponential backoff on transient failures)
     max_attempts = 5
     for attempt in range(1, max_attempts + 1):
         try:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
+            total = int(response.headers.get("Content-Length") or 0) or None
             # Write to temporary file first
             temp_path = filepath + ".tmp"
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
-                    if chunk:
-                        f.write(chunk)
+            progress_ctx = (
+                Progress(
+                    SpinnerColumn(),
+                    "[progress.description]{task.description}",
+                    BarColumn(),
+                    DownloadColumn(),
+                    TimeElapsedColumn(),
+                    console=_console,
+                    transient=True,
+                )
+                if show_bar
+                else None
+            )
+            task_id = None
+            if progress_ctx is not None:
+                progress_ctx.start()
+            try:
+                if progress_ctx is not None:
+                    task_id = progress_ctx.add_task(f"shard {index}", total=total)
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                        if chunk:
+                            f.write(chunk)
+                            if progress_ctx is not None:
+                                progress_ctx.advance(task_id, len(chunk))
+            finally:
+                if progress_ctx is not None:
+                    progress_ctx.stop()
             # Move temp file to final location
             os.rename(temp_path, filepath)
-            print(f"Successfully downloaded {filename}")
+            _console.print(f"[green]OK[/green] {filename}")
             return True
 
         except (OSError, requests.RequestException) as e:
-            print(f"Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
+            _console.print(f"[red]Attempt {attempt}/{max_attempts} failed for {filename}: {e}[/red]")
             # Keep any partial files for inspection; subsequent retries will overwrite the temp file.
             # Try a few times with exponential backoff: 2^attempt seconds
             if attempt < max_attempts:
                 wait_time = 2**attempt
-                print(f"Waiting {wait_time} seconds before retry...")
+                _console.print(f"[yellow]Waiting {wait_time}s before retry...[/yellow]")
                 time.sleep(wait_time)
             else:
-                print(f"Failed to download {filename} after {max_attempts} attempts")
+                _console.print(f"[bold red]Failed to download {filename} after {max_attempts} attempts[/bold red]")
                 return False
-
     return False
 
 
