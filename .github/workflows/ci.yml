@@ -5,6 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -156,5 +157,36 @@ jobs:
           fi
           if [[ "${{ needs.certificates.result }}" != "success" ]]; then
             echo "Certificates job failed"
+            exit 1
+          fi
+
+  # Lean proofs (bead vnl.2). SEPARATE, initially NON-BLOCKING job: runs on
+  # pushes to main and manual dispatch only, never on PRs. Promotion to
+  # required: warm build < 10 min sustained for two weeks of green.
+  # NOTE: `lake build` success does NOT imply no `sorry` (sorry only warns);
+  # the axiom gate below greps the audit output for sorryAx explicitly.
+  lean-proofs:
+    name: Lean proofs (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Lean toolchain (elan)
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: proofs
+          auto-config: false
+          use-github-cache: true
+
+      - name: Axiom gate (no sorryAx)
+        working-directory: proofs
+        run: |
+          lake env lean AxiomCheck.lean > axioms.txt
+          cat axioms.txt
+          if grep -q sorryAx axioms.txt; then
+            echo "::error::sorryAx found in axiom audit"
             exit 1
           fi

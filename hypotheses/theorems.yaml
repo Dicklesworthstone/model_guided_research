@@ -76,12 +76,12 @@ theorems:
       For a finite nonempty family x_1..x_n and beta > 0:
       max_i x_i <= (1/beta) log(sum_i exp(beta x_i)) <= max_i x_i + log(n)/beta.
       The inflation is one-sided: log-sum-exp never underestimates the max.
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [tropical, standard]
     source_note:
       path: pending
       anchor: null
-    proof_location: "stated with proof sketch in bead 8gk.1; formalization target of vnl.2"
+    proof_location: "Lean: proofs/MGRProofs/RouteStability.lean (lse_max_sandwich). Mathlib pin v4.34.0-rc2 @ 85e3a25e. Numerical check unchanged - it verifies the IMPLEMENTATION independently of the formal statement (vnl.2)."
     numerical_checks:
       - kind: pytest
         ref: tests/test_mathematical_properties.py::TestTropicalFFN::test_beta_sandwich_bound_exact
@@ -95,12 +95,12 @@ theorems:
       x_i <= y_i <= x_i + c for all i. If gamma > c then argmax y = argmax x
       and is unique. In beta-attention, c = log(m)/beta where m is the INNER
       aggregation arity (e.g. head_dim), not the number of routes.
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [tropical]
     source_note:
       path: pending
       anchor: null
-    proof_location: "3-line proof from thm-lse-max-sandwich; formalization target #1 of vnl.2"
+    proof_location: "Lean: proofs/MGRProofs/RouteStability.lean (route_stability_pointwise, route_stability_unique_max; formalized in the margin form x_j + m <= x_i* for all j != i*, which is the runner-up-margin hypothesis gamma > c with m = gamma). Mathlib pin v4.34.0-rc2 @ 85e3a25e. Companion sandwich: lse_max_sandwich (thm-lse-max-sandwich) same file."
     numerical_checks:
       - kind: certify
         ref: tropical.margin_matches_bruteforce
@@ -256,12 +256,12 @@ theorems:
       for all i in a finite family, then v(sum_i e_i) >= k and
       v(prod_i (1 + e_i) - 1) >= k. Truncation errors cannot accumulate under
       sums or products. The k >= 0 hypothesis is required for the product part.
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [ultrametric]
     source_note:
       path: markdown_documentation/ultrametric_worlds_and_p_adic_computation.md
       anchor: "Accumulation, interference, and error propagation"
-    proof_location: "3-line proof from the strong triangle inequality; formalization target #2 of vnl.2; restated with the interface analysis in padic_precision.md"
+    proof_location: "Lean: proofs/MGRProofs/FlatError.lean (flat_error_sum, flat_error_prod; additive depth k encoded as multiplicative threshold t=eps^k <= 1, bridge from mathlib AbsoluteValue included). Mathlib pin v4.34.0-rc2 @ 85e3a25e. Numerical checks unchanged - they verify the IMPLEMENTATIONS independently of the formal statements (vnl.2)."
     numerical_checks:
       - kind: pytest
         ref: tests/test_algebraic_properties.py::test_flat_error_lemma_sum_exact

@@ -74,3 +74,7 @@ artifacts/
 
 # Claude Code worktrees/settings - untracked junk here must never taint evidence provenance
 .claude/
+
+# Lean proofs (proofs/) build artifacts and dependency cache
+proofs/.lake/
+proofs/axioms.txt

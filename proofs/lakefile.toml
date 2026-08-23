@@ -1,0 +1,17 @@
+# Lean proofs for model_guided_research (bead vnl.2)
+#
+# MATHLIB PIN POLICY (bead refinement): this rev is bumped only as a deliberate
+# maintenance event (its own chore bead: bump, rebuild, fix breakage, document),
+# never as a drive-by. The pinned tag is mathlib v4.34.0-rc2.
+name = "mgrproofs"
+version = "0.1.0"
+defaultTargets = ["MGRProofs"]
+
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "85e3a25e006c35636f0e53b0e9296caca2685bc0"
+
+[[lean_lib]]
+name = "MGRProofs"
+globs = ["MGRProofs", "MGRProofs.+"]
