@@ -1373,6 +1373,15 @@ def train(args) -> None:
             random.setstate((int(py_version), tuple(int(v) for v in py_internal), py_gauss))
 
     is_hoss = args.optimizer_type == "hoss"
+    if is_hoss:
+        # HOSS's HVP differentiates THROUGH the attention backward pass
+        # (create_graph=True + autograd.grad of grads). The flash CPU SDPA
+        # kernel ships no double-backward derivative, so HVP runs must record
+        # their forward under the composed math kernel instead (rz8.3).
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+
+        def _hvp_safe_sdpa_ctx():
+            return sdpa_kernel(SDPBackend.MATH)
 
     losses: list[float] = []
     val_losses: list[tuple[int, float]] = []  # (step, val_loss) pairs
@@ -1475,7 +1484,11 @@ def train(args) -> None:
 
             def closure(inputs=inputs, targets=targets):
                 with autocast_ctx():
-                    loss = _extract_loss(model(inputs, targets))
+                    if is_hoss:
+                        with _hvp_safe_sdpa_ctx():
+                            loss = _extract_loss(model(inputs, targets))
+                    else:
+                        loss = _extract_loss(model(inputs, targets))
                 if check_numerics and (not torch.isfinite(loss).all().item()):
                     if ddp_rank == 0:
                         console.print("[bold red]Non-finite loss detected[/bold red]")

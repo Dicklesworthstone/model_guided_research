@@ -12,8 +12,11 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import math
+
 import jax.numpy as jnp
 import pytest
+import torch
 from jax import random
 
 # Configure JAX using config module for consistency
@@ -1864,6 +1867,169 @@ class TestTropicalFFN:
             raise AssertionError("unknown ffn_type must be rejected")
         except ValueError:
             pass
+
+
+class TestHossTorchParity:
+    """rz8.3: the torch HOSS optimizer must realize framework #11's algorithm
+    honestly - Lanczos curvature, analytic OU macro-step, Lyapunov-shaped
+    noise - with numbers anchored against closed forms, the JAX reference,
+    and the stiff-quadratic LR-robustness claim."""
+
+    @staticmethod
+    def _quadratic_closure(p, H):
+        def closure():
+            loss = 0.5 * p @ H @ p
+            loss.backward(create_graph=True)
+            return loss
+
+        return closure
+
+    def test_lanczos_known_spectrum_and_jax_crosscheck(self):
+        """k-step symmetric Lanczos recovers the extreme eigenvalues of a
+        synthetic spectrum, and the torch and JAX kernels agree on the SAME
+        starting vector (g/g_norm) within 1e-4 (bead AC).
+
+        Both sides run in fp32 - that is PRODUCTION reality (the JAX kernel
+        hard-casts to float32 and HOSS feeds it fp32 grads), so the synthetic
+        spectrum keeps a moderate condition number (~20): at cond 100 the
+        lambda_min estimate carries ~1e-2 fp32 noise, which is a property of
+        the algorithm's precision, not of either implementation."""
+        import numpy as np
+
+        import nanochat.hoss_opt as hoss_jax
+        from nanochat.hoss_opt_torch import lanczos_sym as lanczos_torch
+
+        d, r = 32, 32  # FULL tridiagonalization: T's spectrum is exact, so the
+        # 1e-4 tolerance measures IMPLEMENTATION agreement, not Krylov rank.
+        rng = np.random.default_rng(20260823)
+        q_mat, _ = np.linalg.qr(rng.normal(size=(d, d)))
+        eigs = np.logspace(0, np.log10(20.0), num=d)  # moderate condition ~20
+        H = torch.tensor(q_mat @ np.diag(eigs) @ q_mat.T, dtype=torch.float32)
+        g = torch.tensor(rng.normal(size=d), dtype=torch.float32)
+
+        Q_t, T_t, g_norm_t = lanczos_torch(lambda v: H @ v, g, r, torch.device("cpu"))
+        lam_t = torch.linalg.eigvalsh(T_t.double()).numpy()
+        assert abs(float(lam_t[0]) - eigs.min()) <= 1e-4
+        assert abs(float(lam_t[-1]) - eigs.max()) <= 1e-4
+        assert abs(float(g_norm_t) - float(g.norm())) <= 1e-5
+
+        H_j = jnp.asarray(H.numpy())
+        g_j = jnp.asarray(g.numpy())
+        _, T_j, _ = hoss_jax.lanczos_sym(lambda v: H_j @ v, g_j, r)
+        lam_j = np.linalg.eigvalsh(np.asarray(T_j))
+        assert abs(float(lam_t[0]) - float(lam_j.min())) <= 1e-4
+        assert abs(float(lam_t[-1]) - float(lam_j.max())) <= 1e-4
+
+    def test_lyapunov_integral_matches_closed_form_1d(self):
+        """int_0^delta exp(-sT) S exp(-sT) ds for 1x1 T=[lam] equals
+        S * (1 - exp(-2*lam*delta)) / (2*lam); degenerate lam=0 gives S*delta."""
+        from nanochat.hoss_opt_torch import _lyapunov_integral_from_eigh
+
+        lam, s_val, delta = 2.0, 3.0, 0.7
+        got = _lyapunov_integral_from_eigh(
+            torch.tensor([[lam]], dtype=torch.float64),
+            torch.tensor([[s_val]], dtype=torch.float64),
+            torch.tensor(delta, dtype=torch.float64),
+        )
+        want = s_val * (1.0 - math.exp(-2.0 * lam * delta)) / (2.0 * lam)
+        assert abs(float(got[0, 0]) - want) <= 1e-12 * max(1.0, want)
+
+        got_zero = _lyapunov_integral_from_eigh(
+            torch.tensor([[0.0]], dtype=torch.float64),
+            torch.tensor([[s_val]], dtype=torch.float64),
+            torch.tensor(delta, dtype=torch.float64),
+        )
+        assert abs(float(got_zero[0, 0]) - s_val * delta) <= 1e-12
+
+    def test_hoss_mean_update_matches_analytic_ou_step(self):
+        """With noise off, one HOSS step on a diagonal quadratic must equal the
+        analytic OU mean update w+ = w - Phi_delta(H) g, Phi_delta(lam) =
+        (1 - exp(-lam*delta))/lam - this validates HVP + Lanczos + phi jointly
+        through the public closure API (full-rank Krylov, r = d = 2)."""
+        from nanochat.hoss_opt_torch import HOSS
+
+        H = torch.diag(torch.tensor([4.0, 9.0], dtype=torch.float64))
+        delta = 0.5
+        w = torch.tensor([1.0, -2.0], dtype=torch.float64)
+        p = w.clone().requires_grad_(True)
+        # gradient_norm_clip=None preserves ||g||: the OU-mean identity
+        # assumes unclipped gradients (the JAX reference clips identically,
+        # which rescales the step - mirroring is required, not identity).
+        opt = HOSS(
+            [p], lr=delta, lanczos_rank=2, noise_scale=0.0, isotropic_noise_var=0.0, gradient_norm_clip=None
+        )
+        closure = self._quadratic_closure(p, H)
+        loss = opt.step(closure)
+        require(loss is not None, "HOSS.step must return the closure's loss")
+        phi = (1.0 - torch.exp(-H.diagonal() * delta)) / H.diagonal()
+        want = w - phi * (H.diagonal() * w)
+        # Lanczos runs in fp32 BY DESIGN (mirrors the JAX reference's fp32);
+        # the analytic comparison therefore carries ~1e-6 relative noise.
+        assert torch.allclose(p.detach(), want, atol=5e-5, rtol=0), (
+            f"mean update {p.detach().tolist()} != analytic OU step {want.tolist()}"
+        )
+
+    def test_stiff_quadratic_lr_sweep_certificate(self):
+        """THE claim (bead validation 1): on H=diag(1e6, 1) HOSS converges
+        across a >=100x macro-step range where plain gradient descent at the
+        same learning rates diverges outright (GD stability bound 2/lam_max)."""
+        from nanochat.hoss_opt_torch import HOSS
+
+        H = torch.diag(torch.tensor([1e6, 1.0], dtype=torch.float64))
+        w0 = torch.tensor([1.0, 1.0], dtype=torch.float64)
+        initial_loss = 0.5 * float(w0 @ H @ w0)
+
+        for delta in (0.01, 0.1, 1.0):
+            torch.manual_seed(11)
+            p = w0.clone().requires_grad_(True)
+            # Clipping off so delta is the ONLY step scale: isolates the
+            # LR-robustness claim this certificate exists for.
+            opt = HOSS([p], lr=delta, lanczos_rank=2, gradient_norm_clip=None)
+            closure = self._quadratic_closure(p, H)
+            for _ in range(200):
+                # Mirrors nanochat/train.py's step contract: zero_grad at the
+                # top of every iteration, then opt.step(closure) re-runs the
+                # closure internally.
+                opt.zero_grad(set_to_none=True)
+                opt.step(closure)
+            final_loss = 0.5 * float(p.detach() @ H @ p.detach())
+            require(bool(torch.isfinite(p).all()), f"delta={delta}: HOSS diverged to nonfinite weights")
+            require(final_loss < initial_loss * 1e-6, f"delta={delta}: HOSS did not converge ({final_loss})")
+
+            # Contrast arm: GD at the SAME learning rates diverges.
+            g = w0.clone()
+            for _ in range(200):
+                g = g - delta * (H @ g)
+                if not bool(torch.isfinite(g).all()):
+                    break
+            gd_loss = 0.5 * float(g @ H @ g) if bool(torch.isfinite(g).all()) else float("inf")
+            require(gd_loss > initial_loss, f"GD at lr={delta} was expected to diverge, got {gd_loss}")
+
+    def test_hoss_overhead_vs_adamw_documented(self):
+        """AC: honest overhead number. Times HOSS vs AdamW per step on the
+        tiny quadratic and prints the ratio for the close notes; bounded above
+        so a pathological regression fails loudly instead of silently rotting."""
+        import time
+
+        from nanochat.hoss_opt_torch import HOSS
+
+        H = torch.diag(torch.tensor([4.0, 9.0], dtype=torch.float64))
+
+        def time_optimizer(opt_factory, steps=30):
+            p = torch.tensor([1.0, -2.0], dtype=torch.float64, requires_grad=True)
+            opt = opt_factory([p])
+            closure = self._quadratic_closure(p, H)
+            t0 = time.perf_counter()
+            for _ in range(steps):
+                opt.zero_grad(set_to_none=True)
+                opt.step(closure)
+            return (time.perf_counter() - t0) / steps
+
+        hoss_s = time_optimizer(lambda params: HOSS(params, lr=0.1, lanczos_rank=2, noise_scale=0.0))
+        adamw_s = time_optimizer(lambda params: torch.optim.AdamW(params, lr=0.1))
+        ratio = hoss_s / adamw_s
+        print(f"\n[overhead doc] HOSS/AdamW per-step wall-clock ratio (tiny quadratic, CPU fp64): {ratio:.1f}x")
+        require(ratio < 500.0, f"HOSS overhead exploded: {ratio:.1f}x AdamW")
 
 
 if __name__ == "__main__":

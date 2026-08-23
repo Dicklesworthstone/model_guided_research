@@ -908,3 +908,23 @@ def test_lr_warmdown_conflicts_with_ordinal_scheduler(tmp_path):
     )
     with pytest.raises(ValueError, match="lr-warmdown-ratio"):
         train_mod.train(args)
+
+
+def test_hoss_end_to_end_training_smoke(monkeypatch, tmp_path):
+    """rz8.3: nanochat trains end-to-end with --optimizer-type hoss on the
+    CPU smoke config - the closure path (loss.backward(create_graph=True)
+    feeding HOSS's HVP) runs inside the REAL training loop, and the recorded
+    losses stay finite throughout."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "hoss-smoke",
+        max_steps=6,
+        optimizer_type="hoss",
+        check_numerics=None,
+    )
+    losses = summary["results"]["losses"]
+    assert len(losses) == 6, f"expected 6 HOSS steps, got {len(losses)}"
+    assert all(loss == loss and abs(loss) != float("inf") for loss in losses), (
+        f"non-finite HOSS training losses: {losses}"
+    )
