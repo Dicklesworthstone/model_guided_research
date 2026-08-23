@@ -68,7 +68,7 @@ import tropical_geometry_and_idempotent_algebra as trop_demo
 import ultrametric_worlds_and_p_adic_computation as ultra_demo
 from matrix_exponential_gauge_learning import apply_givens_stage, even_odd_pairs
 from nanochat.gauge_block_torch import GaugeBlock
-from nanochat.octonion_attention_torch import oconj, omul
+from nanochat.octonion_attention_torch import OctonionCausalSelfAttention, oconj, omul, onormalize
 from nanochat.quaternion_attention_torch import qconj, qmul, qnormalize
 from nanochat.tropical_attention_torch import tropical_inner
 from nanochat.ultrametric_attention_torch import _PackedPrefixTrie
@@ -331,3 +331,85 @@ def test_both_tries_agree_on_lcp_structure() -> None:
             "single-key trie read must return the key's value exactly "
             f"(weights cancel); max|diff|={np.max(np.abs(got - val)):.3e}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Torch-internal parity — vectorized vs per-query reference (bead 7b0.6)
+# ---------------------------------------------------------------------------
+
+
+def _octonion_aggregate_per_query_reference(weights, v, q, k, *, n_head, head_dim):
+    """Pre-7b0.6 OctonionCausalSelfAttention.aggregate, kept verbatim as the
+    numerical oracle: one Python iteration per query, explicit
+    ((Q_i * conj(K_j)) * V_j) parenthesization."""
+    B = q.size(0)
+    Tq = q.size(2)
+    N = head_dim // 8
+    q_o = onormalize(q.reshape(B, n_head, Tq, N, 8))
+    k_o = onormalize(k.reshape(B, n_head, -1, N, 8))
+    v_o = v.reshape(B, n_head, -1, N, 8)
+    k_conj = oconj(k_o)
+    y_list = []
+    for i in range(Tq):
+        q_i = q_o[:, :, i : i + 1]
+        r_i = omul(q_i, k_conj)
+        term = omul(r_i, v_o)
+        p_i = weights[:, :, i].unsqueeze(-1).unsqueeze(-1)
+        y_list.append((term * p_i).sum(dim=2).unsqueeze(2))
+    return torch.cat(y_list, dim=2).reshape(B, n_head, Tq, head_dim)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("tile_budget_mb", [None, "0.003", "3"])
+@pytest.mark.parametrize("n_kv_head", [4, 2])  # 4 = GQA off, 2 = GQA on
+@pytest.mark.parametrize("batch", [1, 4])
+@pytest.mark.parametrize("tq", [1, 7, 256])
+def test_octonion_tiled_aggregate_matches_per_query_reference(
+    batch, tq, n_kv_head, tile_budget_mb, dtype, monkeypatch
+) -> None:
+    """The chunked-vectorized aggregate must reproduce the historical
+    per-query loop within fp reduction noise across the bead's shape grid:
+    Tq in {1, 7, 256}, GQA on/off, B in {1, 4}; forced tiny tile budgets
+    exercise ragged multi-tile boundaries (c=1 and c=3 against Tq=7/256)."""
+    from nanochat.gpt import GPTConfig
+    from nanochat.model_utils import causal_attn_mask
+
+    if tile_budget_mb is None:
+        monkeypatch.delenv("NANOCHAT_OCTONION_TILE_BUDGET_MB", raising=False)
+    else:
+        monkeypatch.setenv("NANOCHAT_OCTONION_TILE_BUDGET_MB", tile_budget_mb)
+
+    torch.manual_seed(SEED + batch * 1000 + tq * 10 + n_kv_head + len(tile_budget_mb or ""))
+
+    config = GPTConfig(
+        n_layer=1,
+        n_head=4,
+        n_kv_head=n_kv_head,
+        n_embd=64,
+        sequence_len=max(tq, 2),
+        vocab_size=64,
+        attention_type="octonion",
+    )
+    attn = OctonionCausalSelfAttention(config, layer_idx=0).to(dtype).eval()
+    n_head, head_dim = attn.n_head, attn.head_dim
+    q = torch.randn(batch, n_head, tq, head_dim, dtype=dtype)
+    k = torch.randn(batch, n_head, tq, head_dim, dtype=dtype)
+    v = torch.randn(batch, n_head, tq, head_dim, dtype=dtype)
+
+    # Reproduce the scaffold's score -> causal-mask -> softmax pipeline so
+    # BOTH paths consume identical weights.
+    scores = attn.score(q, k)
+    scores = scores.masked_fill(~causal_attn_mask(tq, tq, device=q.device), float("-inf"))
+    weights = torch.softmax(scores, dim=-1)
+
+    got = attn.aggregate(weights, v, q=q, k=k, kv_cache=None, pos0=None)
+    want = _octonion_aggregate_per_query_reference(weights, v, q, k, n_head=n_head, head_dim=head_dim)
+    assert got.shape == want.shape == (batch, n_head, tq, head_dim)
+    assert torch.isfinite(got).all(), "vectorized aggregate produced non-finite output"
+    atol = 1e-6 if dtype == torch.float32 else 5e-12
+    max_diff = float((got - want).abs().max())
+    assert max_diff <= atol, (
+        f"tiled aggregate diverged from per-query reference "
+        f"(B={batch}, Tq={tq}, n_kv_head={n_kv_head}, budget={tile_budget_mb}, {dtype}): "
+        f"max|diff|={max_diff:.3e} > {atol}"
+    )

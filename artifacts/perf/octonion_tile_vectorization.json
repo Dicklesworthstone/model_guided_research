@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-7b0.6",
+  "generated_at": "2026-08-23 14:39:34 EDT",
+  "git": {
+    "commit": "a9dbf51",
+    "dirty": true
+  },
+  "hardware": {
+    "host": "hetzner2",
+    "platform": "linux",
+    "cpu_count_logical": 16,
+    "python_version": "3.13.0",
+    "torch_version": "2.9.1+cu128"
+  },
+  "config": {
+    "device": "cpu",
+    "dtype": "fp32",
+    "B": 8,
+    "n_embd": 128,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "seqs": [
+      256
+    ],
+    "warmup": 2,
+    "iters": 7,
+    "torch_threads": 8
+  },
+  "rows": [
+    {
+      "B": 8,
+      "T": 256,
+      "n_embd": 128,
+      "n_head": 4,
+      "head_dim": 32,
+      "dtype": "float32",
+      "device": "cpu",
+      "parity_max_abs_fp32": 2.682209014892578e-07,
+      "loop_ms_fwd": 2104.7489,
+      "tiled_ms_fwd": 324.714,
+      "speedup_fwd": 6.48,
+      "loop_ms_fwd_bwd": 6809.0156,
+      "tiled_ms_fwd_bwd": 1012.5921,
+      "speedup_fwd_bwd": 6.72,
+      "decode_loop_ms": 7.4719,
+      "decode_tiled_ms": 5.7567,
+      "decode_speedup": 1.3
+    }
+  ]
+}

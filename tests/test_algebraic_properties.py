@@ -32,7 +32,7 @@ import torch
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from nanochat.octonion_attention_torch import oconj, omul
+from nanochat.octonion_attention_torch import _BLADE_SIGN_TABLE, _omul_blades, oconj, omul
 from nanochat.quaternion_attention_torch import qconj, qmul
 
 settings.register_profile(
@@ -200,6 +200,141 @@ def test_octonion_nonassociativity_exists():
     e4[4] = 1.0
     associator = omul(omul(e1, e2), e4) - omul(e1, omul(e2, e4))
     assert float(associator.abs().max()) > 0.5, "octonion multiplication must NOT be associative"
+
+
+# ---------------------------------------------------------------------------
+# Octonion vectorized-path guards (bead model_guided_research-7b0.6)
+# ---------------------------------------------------------------------------
+
+
+def _cd_add(x, y):
+    if isinstance(x, tuple):
+        return tuple(_cd_add(a, b) for a, b in zip(x, y, strict=True))
+    return x + y
+
+
+def _cd_sub(x, y):
+    if isinstance(x, tuple):
+        return tuple(_cd_add(a, _cd_neg(b)) for a, b in zip(x, y, strict=True))
+    return x - y
+
+
+def _cd_neg(x):
+    if isinstance(x, tuple):
+        return tuple(_cd_neg(v) for v in x)
+    return -x
+
+
+def _cd_mul(x, y):
+    # Cayley-Dickson recursion, INDEPENDENT of nanochat's qmul/omul:
+    # (a, b) * (c, d) = (a*c - conj(d)*b, d*a + b*conj(c))
+    if isinstance(x, tuple):
+        a, b = x
+        c, d = y
+        return (
+            _cd_sub(_cd_mul(a, c), _cd_mul(_cd_conj(d), b)),
+            _cd_add(_cd_mul(d, a), _cd_mul(b, _cd_conj(c))),
+        )
+    return x * y
+
+
+def _cd_conj(x):
+    if isinstance(x, tuple):
+        a, b = x
+        return (_cd_conj(a), _cd_neg(b))
+    return x
+
+
+def _cd_unit(i: int, depth: int = 3):
+    """Unit blade e_i as a nested Cayley-Dickson tuple (depth 3 -> 8 dims)."""
+
+    def build_zero(level: int):
+        if level == 0:
+            return 0.0
+        return (build_zero(level - 1), build_zero(level - 1))
+
+    def build(level: int, pos: int):
+        if level == 0:
+            return 1.0 if pos == 0 else 0.0
+        half = 2 ** (level - 1)
+        if pos < half:
+            return (build(level - 1, pos), build_zero(level - 1))
+        return (build_zero(level - 1), build(level - 1, pos - half))
+
+    return build(depth, i)
+
+
+def _cd_flatten(x, out):
+    if isinstance(x, tuple):
+        for v in x:
+            _cd_flatten(v, out)
+    else:
+        out.append(float(x))
+    return out
+
+
+@pytest.mark.parametrize("i", range(8))
+@pytest.mark.parametrize("j", range(8))
+def test_octonion_blade_table_matches_independent_cayley_dickson(i: int, j: int) -> None:
+    """omul's blade table must equal a brute-force Cayley-Dickson oracle.
+
+    Guards any future reimplementation (einsum over blades, fused kernel)
+    against silently swapping the multiplication table (bead 7b0.6 pitfall).
+    Exact: every entry is -1, 0, or +1.
+    """
+    e_i = torch.zeros(8, dtype=torch.float64)
+    e_j = torch.zeros(8, dtype=torch.float64)
+    e_i[i] = 1.0
+    e_j[j] = 1.0
+    got = omul(e_i, e_j)
+    want = _cd_flatten(_cd_mul(_cd_unit(i), _cd_unit(j)), [])
+    assert got.tolist() == want, f"e{i}*e{j}: torch {got.tolist()} vs oracle {want}"
+
+
+@given(seed=st.integers(min_value=0, max_value=2**32 - 1))
+def test_octonion_blade_fused_product_matches_omul_and_preserves_laws(seed: int):
+    """The tiled aggregate's fused blade-table product (_omul_blades) must
+    equal omul everywhere omul is defined, and must inherit alternativity
+    x(xy)=(xx)y plus norm multiplicativity |xy|=|x||y| under the exact
+    broadcast layouts aggregate() feeds it (bead 7b0.6)."""
+    gen = torch.Generator().manual_seed(seed)
+    for shape in [(64, 8), (2, 3, 5, 4, 8), (2, 2, 3, 1, 2, 8), (2, 2, 1, 5, 2, 8)]:
+        x = torch.randn(*shape, generator=gen, dtype=torch.float64)
+        y = torch.randn(*shape, generator=gen, dtype=torch.float64)
+        ref = omul(x, y)
+        got = _omul_blades(x, y)
+        assert float((got - ref).abs().max()) <= 1e-12, "fused blade product diverged from omul"
+
+    # Laws under the attention tile layouts (x over queries, y over keys).
+    xt = torch.randn(2, 2, 3, 1, 2, 8, generator=gen, dtype=torch.float64)
+    yt = torch.randn(2, 2, 1, 5, 2, 8, generator=gen, dtype=torch.float64)
+    xy = _omul_blades(xt, yt)
+    xx = _omul_blades(xt, xt)
+    tol = _scaled_atol(xy, xx, base=1e-11)
+    assert float((_omul_blades(xt, xy) - _omul_blades(xx, yt)).abs().max()) <= tol, (
+        "alternativity broke in the fused blade product"
+    )
+    norm_xy = xy.norm(dim=-1)
+    assert float((norm_xy - xt.norm(dim=-1) * yt.norm(dim=-1)).abs().max()) <= _scaled_atol(
+        xy, base=1e-11
+    ), "norm multiplicativity broke in the fused blade product"
+
+
+def test_octonion_blade_sign_table_is_a_valid_multiplication_table():
+    """_BLADE_SIGN_TABLE (the fused product's source of truth) must agree
+    blade-for-blade with the independent Cayley-Dickson oracle used for
+    omul above - exact +-1 entries covering all 64 pairs."""
+    for i in range(8):
+        for j in range(8):
+            k, s = _BLADE_SIGN_TABLE[i][j]
+            e_i = torch.zeros(8, dtype=torch.float64)
+            e_j = torch.zeros(8, dtype=torch.float64)
+            e_i[i] = 1.0
+            e_j[j] = 1.0
+            want = _cd_flatten(_cd_mul(_cd_unit(i), _cd_unit(j)), [])
+            got = [0.0] * 8
+            got[k] = float(s)
+            assert got == want, f"table e{i}*e{j}: {(k, s)} vs oracle {want}"
 
 
 # ---------------------------------------------------------------------------
