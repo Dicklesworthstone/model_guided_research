@@ -19,6 +19,7 @@ def require(condition, message: str):
 
 # List of all demo modules
 DEMO_MODULES = [
+    "clifford_algebra_and_geometric_attention",
     "iterated_function_systems_and_fractal_memory",
     "knot_theoretic_programs_and_braid_based_attention",
     "matrix_exponential_gauge_learning",
@@ -1075,6 +1076,29 @@ def test_certify_detects_violation(monkeypatch):
     require(
         norm_check["status"] == "fail",
         f"Broken qmul must fail the norm-multiplicativity certificate, got {norm_check['status']}",
+    )
+
+
+def test_clifford_property_checks_green():
+    """mnn.2: all in-demo Clifford property checks must pass."""
+    import clifford_algebra_and_geometric_attention as clifford
+
+    checks = clifford.run_property_checks(seed=7)
+    require(len(checks) == 6, f"expected 6 property checks, got {len(checks)}")
+    failing = [(name, detail) for name, ok, detail in checks if not ok]
+    require(not failing, f"Clifford property checks failed: {failing}")
+
+
+def test_clifford_rotor_extrapolation_smoke():
+    """mnn.2 payoff: rotor model trained near identity extrapolates to far
+    rotations at near-machine precision, below the MLP baseline."""
+    import clifford_algebra_and_geometric_attention as clifford
+
+    res = clifford.run_generalization_experiment(seed=7, steps=150)
+    require(res["rotor_test_far_mse"] < 1e-6, f"rotor far-rotation MSE too high: {res}")
+    require(
+        res["rotor_test_far_mse"] < res["mlp_test_far_mse"],
+        f"rotor model should beat MLP on far rotations: {res}",
     )
 
 

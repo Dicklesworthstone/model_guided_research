@@ -391,6 +391,11 @@ DEMOS = {
         "description": "Iterated Function Systems and Fractal Memory structures",
         "func": "demo",
     },
+    "clifford": {
+        "module": "clifford_algebra_and_geometric_attention",
+        "description": "Clifford algebra (Cl(3,0)) geometric products, rotors, and equivariance",
+        "func": "demo",
+    },
     "knot-braid": {
         "module": "knot_theoretic_programs_and_braid_based_attention",
         "description": "Knot-theoretic programs and braid-based attention mechanisms",

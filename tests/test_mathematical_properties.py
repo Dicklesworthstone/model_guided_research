@@ -1869,6 +1869,84 @@ class TestTropicalFFN:
             pass
 
 
+class TestCliffordAlgebra:
+    """mnn.2: mirrored assertions for the Cl(3,0) demo's in-process checks."""
+
+    def test_derived_blade_table_identities(self):
+        import jax.numpy as jnp
+
+        import clifford_algebra_and_geometric_attention as clifford
+
+        blade = lambda name: jnp.zeros((8,)).at[clifford._BLADE_INDEX[name]].set(1.0)
+        e1, e2 = blade((1,)), blade((2,))
+        require(
+            bool(jnp.allclose(clifford.gp(clifford.gp(e1, e2), e1), -e2, atol=0)),
+            "e1 e2 e1 must equal -e2 in Cl(3,0)",
+        )
+        require(
+            bool(jnp.allclose(clifford.gp(blade((1, 2)), blade((1, 2))), -jnp.eye(8)[0], atol=0)),
+            "e12^2 must equal -1",
+        )
+
+    def test_quaternion_subalgebra_reduction(self):
+        import jax
+        import jax.numpy as jnp
+
+        import clifford_algebra_and_geometric_attention as clifford
+
+        key = jax.random.PRNGKey(11)
+        qa = jax.random.normal(key, (64, 4))
+        qb = jax.random.normal(jax.random.split(key)[1], (64, 4))
+        via_gp = clifford.clifford_to_quat(
+            clifford.gp(clifford.quat_to_clifford(qa), clifford.quat_to_clifford(qb))
+        )
+        direct = clifford.hamilton_qmul(qa, qb)
+        gap = float(jnp.max(jnp.abs(via_gp - direct)))
+        require(gap <= 1e-6, f"Cl+(3,0) reduction to Hamilton product broken: {gap:.3e}")
+
+    def test_associativity_contrast_with_octonions(self):
+        import jax
+        import jax.numpy as jnp
+
+        import clifford_algebra_and_geometric_attention as clifford
+
+        key = jax.random.PRNGKey(12)
+        a, b, c = (jax.random.normal(k, (64, 8)) for k in jax.random.split(key, 3))
+        assoc = float(
+            jnp.max(jnp.abs(clifford.gp(clifford.gp(a, b), c) - clifford.gp(a, clifford.gp(b, c))))
+        )
+        require(assoc < 1e-5, f"geometric product must be associative: {assoc:.3e}")
+
+    def test_rotor_norm_and_composition(self):
+        import math
+
+        import jax
+        import jax.numpy as jnp
+
+        import clifford_algebra_and_geometric_attention as clifford
+
+        key = jax.random.PRNGKey(13)
+        plane = jax.random.normal(key, (3,))
+        r = clifford.rotor_from_bivector(clifford.unit_bivector_from_params(plane), math.pi / 3)
+        v = jax.random.normal(jax.random.split(key)[1], (3,))
+        rv = clifford.apply_rotor(r, v[None, :])[0]
+        require(
+            abs(float(jnp.linalg.norm(rv)) - float(jnp.linalg.norm(v))) < 1e-5,
+            "unit rotors must preserve vector norms",
+        )
+
+        p1 = jax.random.normal(jax.random.split(key)[1], (3,))
+        p2 = jax.random.normal(jax.random.split(key)[1], (3,))
+        r1 = clifford.rotor_from_bivector(clifford.unit_bivector_from_params(p1), 0.7)
+        r2 = clifford.rotor_from_bivector(clifford.unit_bivector_from_params(p2), 1.9)
+        m1, m2 = clifford.rotor_compose_matrix(r1), clifford.rotor_compose_matrix(r2)
+        m12 = clifford.rotor_compose_matrix(clifford.gp(r2, r1))
+        require(
+            float(jnp.max(jnp.abs(m12 - m2 @ m1))) < 1e-5,
+            "rotor composition must match rotation-matrix composition",
+        )
+
+
 class TestHossTorchParity:
     """rz8.3: the torch HOSS optimizer must realize framework #11's algorithm
     honestly - Lanczos curvature, analytic OU macro-step, Lyapunov-shaped
