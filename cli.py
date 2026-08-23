@@ -1920,6 +1920,826 @@ def bench_fixed_flops(
     console.print(f"[dim]Wrote suite artifacts → {suite_dir}[/dim]")
 
 
+# -----------------------------------------------------------------------------
+# Scaling sweep harness (bead w94.1): resumable model-size ladders per mechanism
+#
+# WHY: scaling-law comparisons need many training runs across a parameter
+# ladder per attention mechanism, and individual rungs can take hours. The
+# sweep is therefore resumable at BOTH levels:
+#   - mid-sweep: manifest.json tracks per-(rung, seed) status; re-invoking
+#     with the same --run-id skips completed work;
+#   - mid-rung: when checkpoints were enabled for a run, an interrupted seed
+#     continues via nanochat's D1 resume (`--resume-from latest`), which also
+#     restores the ORIGINAL step budget from the checkpoint meta.
+#
+# LADDER RATIONALE (the bead demands documented rationale):
+#   - head_dim is FIXED at 32 on every rung: wide enough that the narrowest
+#     useful rung (n_embd=64) is still multi-head, divisible by 8 so the
+#     quaternion (%4) and octonion (%8) mechanisms are feasible everywhere,
+#     and every ladder n_head (= n_embd // head_dim) is even, satisfying the
+#     reversible mechanism's even-n_head constraint on every rung (reversible
+#     additionally halves the attention heads, so it trains with n_kv_head =
+#     n_head // 2 — see _scaling_kv_heads; every other mechanism uses GQA-off
+#     n_kv_head = n_head).
+#   - aspect ratio n_embd / n_layer = 32 is CONSTANT across rungs: depth
+#     grows in lockstep with width (the standard deep-narrow ladder shape).
+#   - vocab stays at the GPTConfig default (50304) because the FineWeb
+#     tokenizer's id range requires it. The untied wte/lm_head pair therefore
+#     dominates small rungs; param counts below are exact TOTALS (including
+#     embeddings), instantiated and measured per rung, never estimated.
+#
+# TOKEN BUDGETS: research ladders spend tokens ~= token_multiplier x params
+# (default 20x, the Chinchilla heuristic), expressed to nanochat.train as a
+# per-rung derived --target-flops. The smoke ladder pins explicit tiny step
+# counts instead: it verifies PLUMBING end-to-end on CPU in minutes, not
+# science.
+
+SCALING_HEAD_DIM = 32
+
+
+def _scaling_rung(name: str, n_layer: int, n_embd: int, *, max_steps: int | None = None) -> dict[str, Any]:
+    n_head = n_embd // SCALING_HEAD_DIM
+    if n_embd % SCALING_HEAD_DIM != 0 or n_head < 1:
+        raise ValueError(f"ladder rung {name!r}: n_embd={n_embd} must be a positive multiple of {SCALING_HEAD_DIM}")
+    if n_head % 2 != 0:
+        raise ValueError(f"ladder rung {name!r}: n_head={n_head} must stay even (reversible constraint)")
+    rung: dict[str, Any] = {"name": name, "n_layer": int(n_layer), "n_embd": int(n_embd)}
+    if max_steps is not None:
+        rung["max_steps"] = int(max_steps)
+    return rung
+
+
+SCALING_LADDERS: dict[str, list[dict[str, Any]]] = {
+    # Smoke: same shapes as the two smallest research rungs, pinned tiny step
+    # counts -> CPU plumbing verification in minutes (CI-lite friendly).
+    "smoke": [
+        _scaling_rung("smoke_6M", 2, 64, max_steps=25),
+        _scaling_rung("smoke_14M", 4, 128, max_steps=40),
+    ],
+    # Small: single-GPU / CPU-patient ladder spanning ~7x in parameters.
+    "small": [
+        _scaling_rung("6M", 2, 64),
+        _scaling_rung("14M", 4, 128),
+        _scaling_rung("32M", 8, 256),
+    ],
+    # Full: adds the 60M and 102M rungs (~16x span) for scaling fits.
+    "full": [
+        _scaling_rung("6M", 2, 64),
+        _scaling_rung("14M", 4, 128),
+        _scaling_rung("32M", 8, 256),
+        _scaling_rung("60M", 12, 384),
+        _scaling_rung("102M", 16, 512),
+    ],
+}
+
+# Per-mechanism honesty notes surfaced in the feasibility table and recorded
+# in the manifest. Soft gates only: nothing here blocks a rung.
+_SCALING_MECHANISM_NOTES: dict[str, str] = {
+    "octonion": (
+        "per-query Python loop makes larger rungs wall-clock-infeasible until "
+        "vectorization lands (bead 7b0.6); soft-gated, runs are NOT blocked"
+    ),
+    "gauge": "cached eval unsupported until A5; TRAINING runs are unaffected",
+}
+
+
+def _scaling_kv_heads(mechanism: str, n_head: int) -> int:
+    """GQA width for a rung. Every mechanism runs full attention (n_kv_head =
+    n_head) EXCEPT reversible, whose coupling halves the head count and so
+    requires n_kv_head to divide (and not exceed) n_head // 2 — the natural
+    choice n_head // 2 satisfies both (gpt.py Block validation)."""
+    return n_head // 2 if mechanism == "reversible" else n_head
+
+
+def _scaling_feasibility_rows(
+    mechanism: str,
+    ladder_name: str,
+    *,
+    batch_size: int,
+    sequence_len: int,
+    token_multiplier: float,
+) -> list[dict[str, Any]]:
+    """Instantiate each rung once on CPU to measure EXACT totals and validity."""
+    from nanochat.gpt import GPT, GPTConfig
+
+    rows: list[dict[str, Any]] = []
+    for idx, rung in enumerate(SCALING_LADDERS[ladder_name]):
+        n_head = rung["n_embd"] // SCALING_HEAD_DIM
+        n_kv_head = _scaling_kv_heads(mechanism, n_head)
+        row: dict[str, Any] = {
+            "index": idx,
+            **rung,
+            "n_head": n_head,
+            "n_kv_head": n_kv_head,
+            "feasible": True,
+            "reason": None,
+            "notes": _SCALING_MECHANISM_NOTES.get(mechanism),
+            "param_count": None,
+            "flops_per_token_est": None,
+            "token_budget": None,
+            "planned_max_steps": None,
+            "target_flops_est": None,
+        }
+        try:
+            model = GPT(
+                GPTConfig(
+                    sequence_len=int(sequence_len),
+                    n_layer=int(rung["n_layer"]),
+                    n_head=n_head,
+                    n_kv_head=n_kv_head,
+                    n_embd=int(rung["n_embd"]),
+                    attention_type=mechanism,
+                )
+            )
+            row["param_count"] = int(sum(p.numel() for p in model.parameters()))
+            row["flops_per_token_est"] = int(model.estimate_flops())
+            del model
+        except ValueError as exc:
+            row["feasible"] = False
+            row["reason"] = str(exc)
+            rows.append(row)
+            continue
+        if rung.get("max_steps") is not None:
+            row["planned_max_steps"] = int(rung["max_steps"])
+        else:
+            tokens = int(round(float(token_multiplier) * row["param_count"]))
+            row["token_budget"] = tokens
+            row["planned_max_steps"] = max(1, math.ceil(tokens / (int(batch_size) * int(sequence_len))))
+            row["target_flops_est"] = int(row["flops_per_token_est"]) * tokens
+        rows.append(row)
+    return rows
+
+
+def _scaling_train_command(
+    row: dict[str, Any],
+    *,
+    mechanism: str,
+    suite_run_id: str,
+    seed: int,
+    device: str,
+    batch_size: int,
+    sequence_len: int,
+    learning_rate: float,
+    optimizer_type: str,
+    warmup_steps: int,
+    val_interval: int,
+    val_batches: int,
+    artifacts_dir: Path,
+    checkpoint_interval: int,
+    checkpoint_keep: int,
+    data_dir: Path | None,
+    auto_download_data: bool,
+    min_parquet_files: int,
+    continue_from_checkpoint: bool,
+) -> list[str]:
+    """Build one nanochat.train invocation; layout mirrors bench-fixed-flops."""
+    topic = f"{mechanism}/{suite_run_id}/rung_{row['index']}"
+    seed_run_id = f"seed_{seed}"
+    seed_dir = artifacts_dir / "scaling" / topic / seed_run_id
+    cmd = [
+        sys.executable,
+        "-m",
+        "nanochat.train",
+        "--device",
+        device,
+        "--seed",
+        str(int(seed)),
+        "--batch-size",
+        str(int(batch_size)),
+        "--sequence-len",
+        str(int(sequence_len)),
+        "--n-layer",
+        str(int(row["n_layer"])),
+        "--n-head",
+        str(int(row["n_head"])),
+        "--n-kv-head",
+        str(int(row["n_kv_head"])),
+        "--n-embd",
+        str(int(row["n_embd"])),
+        "--learning-rate",
+        str(float(learning_rate)),
+        "--optimizer-type",
+        str(optimizer_type),
+        "--warmup-steps",
+        str(int(warmup_steps)),
+        "--attention-type",
+        mechanism,
+    ]
+    if row.get("target_flops_est") is not None:
+        cmd += ["--target-flops", str(int(row["target_flops_est"]))]
+    elif row.get("planned_max_steps") is not None:
+        cmd += ["--max-steps", str(int(row["planned_max_steps"]))]
+    if int(val_interval) > 0:
+        cmd += ["--val-interval", str(int(val_interval)), "--val-batches", str(int(val_batches))]
+    cmd += [
+        "--artifacts-dir",
+        str(artifacts_dir),
+        "--artifacts-kind",
+        "scaling",
+        "--artifacts-topic",
+        topic,
+        "--run-id",
+        seed_run_id,
+    ]
+    if int(checkpoint_interval) > 0:
+        cmd += ["--checkpoint-interval", str(int(checkpoint_interval)), "--checkpoint-keep", str(int(checkpoint_keep))]
+    if continue_from_checkpoint:
+        # D1 within-run resume: 'latest' scans --checkpoint-dir; train restores
+        # the original step budget from the checkpoint meta on its own.
+        cmd += ["--resume-from", "latest", "--checkpoint-dir", str(seed_dir / "checkpoints")]
+    if data_dir is not None:
+        cmd += ["--data-dir", str(data_dir)]
+    if auto_download_data:
+        cmd += ["--auto-download-data", "--min-parquet-files", str(int(min_parquet_files))]
+    return cmd
+
+
+def _scaling_launch_train(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+    """Run one training subprocess; returns (returncode, stdout, stderr).
+
+    Module-level so tests can monkeypatch the launcher without spawning
+    real training (mirrors how test_bench exercises aggregation only).
+    """
+    try:
+        proc = subprocess.run(  # nosec B603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=float(timeout_s),
+            check=False,
+        )
+        return int(proc.returncode), proc.stdout or "", proc.stderr or ""
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        return 124, stdout, stderr
+
+
+def _scaling_seed_dir(artifacts_dir: Path, mechanism: str, suite_run_id: str, row: dict[str, Any], seed: int) -> Path:
+    return artifacts_dir / "scaling" / mechanism / suite_run_id / f"rung_{row['index']}" / f"seed_{seed}"
+
+
+def _scaling_write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _scaling_manifest_rung(row: dict[str, Any], seeds: list[int], prior_runs: dict[tuple[int, int], dict[str, Any]]) -> dict[str, Any]:
+    """Fresh manifest entry for one feasibility row, adopting prior per-seed
+    run records (status/metrics) when a run (index, seed) was seen before."""
+    runs = []
+    for seed in seeds:
+        prior = prior_runs.get((int(row["index"]), int(seed)))
+        if prior is not None:
+            runs.append({**prior})
+        else:
+            runs.append({"seed": int(seed), "status": "pending", "summary_path": None, "wall_seconds": None})
+    return {
+        "index": row["index"],
+        "name": row["name"],
+        "n_layer": row["n_layer"],
+        "n_embd": row["n_embd"],
+        "n_head": row["n_head"],
+        "n_kv_head": row["n_kv_head"],
+        "max_steps": row.get("max_steps"),
+        "feasible": bool(row["feasible"]),
+        "infeasible_reason": row["reason"],
+        "notes": row["notes"],
+        "param_count": row["param_count"],
+        "flops_per_token_est": row["flops_per_token_est"],
+        "token_budget": row["token_budget"],
+        "planned_max_steps": row["planned_max_steps"],
+        "target_flops_est": row["target_flops_est"],
+        "runs": runs,
+        # Rung status is always DERIVED from its seed runs; the execution loop
+        # refreshes it after each pass so resumed sweeps recompute honestly.
+        "status": _scaling_rung_status(runs, feasible=bool(row["feasible"])),
+    }
+
+
+def _scaling_rung_status(runs: list[dict[str, Any]], *, feasible: bool) -> str:
+    if not feasible:
+        return "infeasible"
+    statuses = [str(run["status"]) for run in runs]
+    if statuses and all(s == "done" for s in statuses):
+        return "done"
+    if any(s == "failed" for s in statuses):
+        return "failed"
+    return "pending"
+
+
+def _scaling_new_manifest(
+    *,
+    mechanism: str,
+    ladder_name: str,
+    rows: list[dict[str, Any]],
+    seeds: list[int],
+    sweep_config: dict[str, Any],
+    dataset_fp: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "suite": "scaling_sweep",
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "mechanism": mechanism,
+        "ladder": ladder_name,
+        "git": _get_git_info(),
+        "python": {"executable": sys.executable, "version": platform.python_version()},
+        "argv": sys.argv,
+        "sweep_config": sweep_config,
+        "dataset_fingerprint": dataset_fp,
+        "rungs": [_scaling_manifest_rung(row, seeds, {}) for row in rows],
+    }
+
+
+_SCALING_RESUME_CONTRACT_KEYS = (
+    "mechanism",
+    "ladder",
+)
+
+
+def _scaling_load_manifest_for_resume(
+    existing: dict[str, Any],
+    *,
+    mechanism: str,
+    ladder_name: str,
+    sweep_config: dict[str, Any],
+    dataset_fp: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Reuse per-(rung, seed) statuses when the sweep definition matches.
+
+    Returns (manifest, warnings). Raises typer.Exit on an incompatible reuse:
+    silently mixing sweeps would corrupt the scaling comparison.
+    """
+    problems: list[str] = []
+    wanted = {"mechanism": mechanism, "ladder": ladder_name}
+    for key in _SCALING_RESUME_CONTRACT_KEYS:
+        if existing.get(key) != wanted[key]:
+            problems.append(f"{key}: manifest={existing.get(key)!r} request={wanted[key]!r}")
+    old_cfg = existing.get("sweep_config") or {}
+    for key in ("batch_size", "sequence_len", "token_multiplier", "optimizer_type", "learning_rate"):
+        if old_cfg.get(key) != sweep_config.get(key):
+            problems.append(f"sweep_config.{key}: manifest={old_cfg.get(key)!r} request={sweep_config.get(key)!r}")
+    if problems:
+        details = "\n".join(f"  - {p}" for p in problems)
+        console.print(f"[bold red]manifest mismatch under --run-id[/bold red]\n{details}")
+        console.print("[bold red]Refusing to mix sweeps; choose a new --run-id or delete the stale manifest.[/bold red]")
+        raise typer.Exit(code=2)
+    warnings: list[str] = []
+    old_fp = existing.get("dataset_fingerprint") or {}
+    if old_fp.get("resolved") and dataset_fp.get("resolved") and old_fp.get("digest") != dataset_fp.get("digest"):
+        warnings.append(
+            f"dataset changed since this sweep started (digest {str(old_fp.get('digest'))[:12]}… -> "
+            f"{str(dataset_fp.get('digest'))[:12]}…); completed rungs trained on different data"
+        )
+    existing["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    existing["sweep_config"] = sweep_config
+    existing["dataset_fingerprint"] = dataset_fp
+    return existing, warnings
+
+
+def _scaling_report_md(manifest: dict[str, Any]) -> str:
+    """Human-readable sweep report; written incrementally after every rung."""
+    m = manifest
+    lines: list[str] = [
+        "# Scaling sweep report",
+        "",
+        f"- Suite: `{m['suite']}` (schema v{m['schema_version']})",
+        f"- Mechanism: `{m['mechanism']}` | ladder: `{m['ladder']}`",
+        f"- Updated: {m['updated_at']}",
+        f"- Sweep config: `{json.dumps(m['sweep_config'], sort_keys=True)}`",
+        "",
+        "## Ladder",
+        "",
+        "| rung | n_layer | n_embd | n_head | params | flops/token | tokens | steps | target FLOPs | feasible |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for r in m["rungs"]:
+        fmt = lambda v: ("—" if v is None else f"{v:,}")  # noqa: E731
+        lines.append(
+            f"| {r['name']} | {r['n_layer']} | {r['n_embd']} | {r['n_head']} | {fmt(r['param_count'])} | "
+            f"{fmt(r['flops_per_token_est'])} | {fmt(r['token_budget'])} | {fmt(r['planned_max_steps'])} | "
+            f"{fmt(r['target_flops_est'])} | {r['status'] if not r['feasible'] else 'yes'} |"
+        )
+    lines += ["", "## Runs", "", "| rung | seed | status | final loss | val CE | tok/s | wall s | summary |", "|---|---|---|---|---|---|---|---|"]
+    any_notes = False
+    for r in m["rungs"]:
+        if r.get("notes"):
+            any_notes = True
+        for run in r["runs"]:
+            metrics = run.get("metrics") or {}
+            loss = metrics.get("final_loss")
+            val_ce = metrics.get("val_ce_final")
+            tps = metrics.get("tokens_per_second")
+            fmt2 = lambda v: ("—" if v is None else f"{v:.4g}")  # noqa: E731
+            summary = run.get("summary_path") or "—"
+            lines.append(
+                f"| {r['name']} | {run['seed']} | {run['status']} | {fmt2(loss)} | {fmt2(val_ce)} | "
+                f"{fmt2(tps)} | {fmt2(run.get('wall_seconds'))} | `{summary}` |"
+            )
+        if r["status"] == "failed":
+            lines.append("")
+            lines.append(f"Rung `{r['name']}` FAILED: inspect stderr logs under its `seed_*/logs/` directory.")
+    if any_notes:
+        lines += ["", "## Mechanism notes", ""]
+        for r in m["rungs"]:
+            if r.get("notes"):
+                lines.append(f"- `{m['mechanism']}`: {r['notes']}")
+    lines += ["", "## Command", "", "```bash", shlex.join(sys.argv), "```", ""]
+    return "\n".join(lines)
+
+
+def _scaling_extract_metrics(summary_path: Path | None) -> dict[str, float | None]:
+    """Pull headline scalars out of a train summary.json (missing -> Nones)."""
+    empty: dict[str, float | None] = {"final_loss": None, "val_ce_final": None, "tokens_per_second": None}
+    if summary_path is None or not summary_path.exists():
+        return empty
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return empty
+    results = payload.get("results", {}) if isinstance(payload, dict) else {}
+    losses = [float(x) for x in results.get("losses", []) if isinstance(x, int | float)]
+    metrics: dict[str, float | None] = {"final_loss": losses[-1] if losses else None}
+    val = results.get("val_ce_final")
+    metrics["val_ce_final"] = float(val) if isinstance(val, int | float) else None
+    tps = results.get("tokens_per_second")
+    metrics["tokens_per_second"] = float(tps) if isinstance(tps, int | float) else None
+    return metrics
+
+
+@app.command("scaling-sweep")
+def scaling_sweep(
+    mechanism: Annotated[
+        str,
+        typer.Option("--mechanism", "-m", help="Attention mechanism to scale (nanochat attention type)."),
+    ],
+    ladder: Annotated[
+        str,
+        typer.Option("--ladder", help="Preset rung ladder: smoke (CPU plumbing), small, or full."),
+    ] = "small",
+    device: Annotated[
+        str,
+        typer.Option("--device", help="Device passed through to nanochat.train."),
+    ] = "cpu",
+    seeds: Annotated[
+        int,
+        typer.Option("--seeds", help="Number of seeds per rung (seeds are 0..N-1).", min=1),
+    ] = 1,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch-size", help="Batch size for every rung.", min=1),
+    ] = 8,
+    sequence_len: Annotated[
+        int,
+        typer.Option("--sequence-len", help="Sequence length for every rung.", min=8),
+    ] = 256,
+    token_multiplier: Annotated[
+        float,
+        typer.Option(
+            "--token-multiplier",
+            help=(
+                "Research ladders: tokens ~= multiplier x params (Chinchilla-style), "
+                "expressed as a derived per-rung --target-flops. Ignored by smoke rungs "
+                "(they pin explicit max-steps)."
+            ),
+            min=0.000001,
+        ),
+    ] = 20.0,
+    learning_rate: Annotated[
+        float,
+        typer.Option("--learning-rate", help="Base learning rate.", min=1e-8),
+    ] = 6e-4,
+    optimizer_type: Annotated[
+        str,
+        typer.Option("--optimizer-type", help="nanochat optimizer type (passed through)."),
+    ] = "adamw",
+    warmup_steps: Annotated[
+        int,
+        typer.Option("--warmup-steps", help="Warmup steps.", min=0),
+    ] = 0,
+    val_interval: Annotated[
+        int,
+        typer.Option(
+            "--val-interval",
+            help="Validation cadence in steps; 0 disables (pass >0 so runs record results.val_ce_final).",
+            min=0,
+        ),
+    ] = 0,
+    val_batches: Annotated[
+        int,
+        typer.Option("--val-batches", help="Batches per validation evaluation.", min=1),
+    ] = 10,
+    checkpoint_interval: Annotated[
+        int,
+        typer.Option(
+            "--checkpoint-interval",
+            help=(
+                "Steps between D1 checkpoints (enables MID-RUNG resume on retry). "
+                "0 disables checkpointing."
+            ),
+            min=0,
+        ),
+    ] = 500,
+    checkpoint_keep: Annotated[
+        int,
+        typer.Option("--checkpoint-keep", help="Retain only the newest K checkpoints per run (0 keeps all).", min=0),
+    ] = 1,
+    data_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--data-dir",
+            help=("Parquet corpus dir (sorted files, LAST file = val split). Default: the FineWeb cache. "
+                  "Point at an `mgr gen-tasks` output for fast CPU smoke runs."),
+        ),
+    ] = None,
+    auto_download_data: Annotated[
+        bool,
+        typer.Option("--auto-download-data/--no-auto-download-data", help="Auto-download minimal dataset shards if missing."),
+    ] = True,
+    min_parquet_files: Annotated[
+        int,
+        typer.Option("--min-parquet-files", help="Minimum number of parquet shards required (>=2 recommended).", min=2),
+    ] = 2,
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option("--artifacts-dir", help="Base artifacts directory."),
+    ] = Path("artifacts"),
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS. Reuse to RESUME."),
+    ] = None,
+    timeout_s: Annotated[
+        float,
+        typer.Option("--timeout-s", help="Per-training-run timeout in seconds.", min=1.0),
+    ] = 3600.0,
+    resume_sweep: Annotated[
+        bool,
+        typer.Option(
+            "--resume-sweep/--fresh-sweep",
+            help="With an existing manifest under --run-id: reuse per-(rung, seed) statuses (skip done work).",
+        ),
+    ] = True,
+    resume_train: Annotated[
+        bool,
+        typer.Option(
+            "--resume-train/--no-resume-train",
+            help="Continue interrupted seeds from their newest D1 checkpoint when one exists.",
+        ),
+    ] = True,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Print the feasibility table and planned commands; launch NOTHING, write NOTHING."),
+    ] = False,
+):
+    """Train one attention mechanism across a resumable model-size ladder.
+
+    Artifacts land under artifacts/scaling/<mechanism>/<run_id>/ :
+      manifest.json          sweep-level state machine (resume contract)
+      report.md              human-readable ladder + run tables
+      rung_<i>/seed_<k>/     nanochat train dir (summary.json, metrics.jsonl, logs/)
+    """
+    from nanochat.dataset import dataset_fingerprint
+    from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
+
+    if mechanism not in SUPPORTED_ATTENTION_TYPES:
+        console.print(
+            f"[bold red]unknown mechanism {mechanism!r}; expected one of: {', '.join(SUPPORTED_ATTENTION_TYPES)}[/bold red]"
+        )
+        raise typer.Exit(code=2)
+    if ladder not in SCALING_LADDERS:
+        console.print(f"[bold red]unknown ladder {ladder!r}; expected one of: {', '.join(SCALING_LADDERS)}[/bold red]")
+        raise typer.Exit(code=2)
+
+    seed_list = list(range(int(seeds)))
+    rows = _scaling_feasibility_rows(
+        mechanism,
+        ladder,
+        batch_size=batch_size,
+        sequence_len=sequence_len,
+        token_multiplier=token_multiplier,
+    )
+
+    # ---- feasibility table (always printed; the upfront validation gate) ----
+    table = Table(title=f"scaling ladder [{ladder}] × {mechanism}", box=box.SIMPLE_HEAVY)
+    for col in ("rung", "shape", "params", "flops/token", "tokens", "steps", "target FLOPs", "feasible"):
+        table.add_column(col)
+    for r in rows:
+        shape = f"L{r['n_layer']} E{r['n_embd']} H{r['n_head']}"
+        fmt = lambda v: ("—" if v is None else f"{v:,}")  # noqa: E731
+        feas = "[green]yes[/green]" if r["feasible"] else f"[red]{r['reason']}[/red]"
+        note = f"\n[dim]{r['notes']}[/dim]" if r["notes"] and r["feasible"] else ""
+        table.add_row(
+            r["name"],
+            shape,
+            fmt(r["param_count"]),
+            fmt(r["flops_per_token_est"]),
+            fmt(r["token_budget"]),
+            fmt(r["planned_max_steps"]),
+            fmt(r["target_flops_est"]),
+            feas + note,
+        )
+    console.print(table)
+
+    suite_run_id = run_id or _default_run_id()
+    suite_dir = artifacts_dir / "scaling" / mechanism / suite_run_id
+
+    def _cmd_preview(row: dict[str, Any], seed: int) -> str:
+        return shlex.join(
+            _scaling_train_command(
+                row,
+                mechanism=mechanism,
+                suite_run_id=suite_run_id,
+                seed=seed,
+                device=device,
+                batch_size=batch_size,
+                sequence_len=sequence_len,
+                learning_rate=learning_rate,
+                optimizer_type=optimizer_type,
+                warmup_steps=warmup_steps,
+                val_interval=val_interval,
+                val_batches=val_batches,
+                artifacts_dir=artifacts_dir,
+                checkpoint_interval=checkpoint_interval,
+                checkpoint_keep=checkpoint_keep,
+                data_dir=data_dir,
+                auto_download_data=auto_download_data,
+                min_parquet_files=min_parquet_files,
+                continue_from_checkpoint=False,
+            )
+        )
+
+    if dry_run:
+        console.print("[bold yellow]dry run:[/bold yellow] suite dir would be " + str(suite_dir))
+        first = next((r for r in rows if r["feasible"]), None)
+        if first is not None:
+            console.print(f"[dim]first command would be:[/dim]\n{_cmd_preview(first, seed_list[0])}")
+        return
+
+    # ---- manifest: fresh or resumed ----------------------------------------
+    dataset_fp = dataset_fingerprint(str(data_dir) if data_dir is not None else None)
+    sweep_config: dict[str, Any] = {
+        "device": device,
+        "batch_size": int(batch_size),
+        "sequence_len": int(sequence_len),
+        "token_multiplier": float(token_multiplier),
+        "learning_rate": float(learning_rate),
+        "optimizer_type": str(optimizer_type),
+        "warmup_steps": int(warmup_steps),
+        "val_interval": int(val_interval),
+        "checkpoint_interval": int(checkpoint_interval),
+        "checkpoint_keep": int(checkpoint_keep),
+    }
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = suite_dir / "manifest.json"
+    resume_warnings: list[str] = []
+    if manifest_path.exists() and resume_sweep:
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            console.print(
+                f"[bold red]manifest at {manifest_path} is corrupt ({exc}); "
+                "start a new --run-id or delete the file.[/bold red]"
+            )
+            raise typer.Exit(code=2) from exc
+        manifest, resume_warnings = _scaling_load_manifest_for_resume(
+            existing,
+            mechanism=mechanism,
+            ladder_name=ladder,
+            sweep_config=sweep_config,
+            dataset_fp=dataset_fp,
+        )
+        # Structural drift (ladder redefined in-code) invalidates old indexes.
+        if [r["name"] for r in manifest["rungs"]] != [r["name"] for r in rows]:
+            console.print("[bold red]ladder definition changed since the manifest was written; start a new --run-id.[/bold red]")
+            raise typer.Exit(code=2)
+        prior_runs = {(int(r["index"]), int(run["seed"])): run for r in manifest["rungs"] for run in r["runs"]}
+        manifest["rungs"] = [_scaling_manifest_rung(row, seed_list, prior_runs) for row in rows]
+    else:
+        if manifest_path.exists():
+            console.print("[yellow]existing manifest found but --fresh-sweep given; ignoring stored statuses.[/yellow]")
+        manifest = _scaling_new_manifest(
+            mechanism=mechanism,
+            ladder_name=ladder,
+            rows=rows,
+            seeds=seed_list,
+            sweep_config=sweep_config,
+            dataset_fp=dataset_fp,
+        )
+    for warning in resume_warnings:
+        console.print(f"[bold yellow]warning:[/bold yellow] {warning}")
+
+    def _save() -> None:
+        manifest["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        _scaling_write_json_atomic(manifest_path, manifest)
+
+    _save()
+    (suite_dir / "report.md").write_text(_scaling_report_md(manifest), encoding="utf-8")
+    logs_root = suite_dir / "logs"
+    logs_root.mkdir(parents=True, exist_ok=True)
+
+    # ---- execute pending work ----------------------------------------------
+    any_failed = False
+    for rung in manifest["rungs"]:
+        if rung["status"] == "infeasible":
+            continue
+        for run in rung["runs"]:
+            if run["status"] == "done":
+                continue
+            seed = int(run["seed"])
+            seed_dir = _scaling_seed_dir(artifacts_dir, mechanism, suite_run_id, rung, seed)
+            ckpt_dir = seed_dir / "checkpoints"
+            continue_from = (
+                resume_train
+                and int(checkpoint_interval) > 0
+                and run["status"] in {"failed", "running"}
+                and ckpt_dir.is_dir()
+                and any(ckpt_dir.glob("*.pt"))
+            )
+            row = next(r for r in rows if r["index"] == rung["index"])
+            cmd = _scaling_train_command(
+                row,
+                mechanism=mechanism,
+                suite_run_id=suite_run_id,
+                seed=seed,
+                device=device,
+                batch_size=batch_size,
+                sequence_len=sequence_len,
+                learning_rate=learning_rate,
+                optimizer_type=optimizer_type,
+                warmup_steps=warmup_steps,
+                val_interval=val_interval,
+                val_batches=val_batches,
+                artifacts_dir=artifacts_dir,
+                checkpoint_interval=checkpoint_interval,
+                checkpoint_keep=checkpoint_keep,
+                data_dir=data_dir,
+                auto_download_data=auto_download_data,
+                min_parquet_files=min_parquet_files,
+                continue_from_checkpoint=continue_from,
+            )
+            label = f"{rung['name']}/seed_{seed}"
+            suffix = " [cyan](D1 resume)[/cyan]" if continue_from else ""
+            console.print(f"[bold cyan]▶ training {label}[/bold cyan]{suffix}")
+            run["status"] = "running"
+            _save()
+
+            t0 = time.perf_counter()
+            returncode, stdout, stderr = _scaling_launch_train(cmd, timeout_s=timeout_s)
+            wall = time.perf_counter() - t0
+
+            (logs_root / f"{rung['name']}_seed{seed}.stdout.txt").write_text(stdout, encoding="utf-8")
+            (logs_root / f"{rung['name']}_seed{seed}.stderr.txt").write_text(stderr, encoding="utf-8")
+            summary_path = seed_dir / "summary.json"
+            ok = returncode == 0 and summary_path.exists()
+            run["status"] = "done" if ok else "failed"
+            run["wall_seconds"] = round(wall, 2)
+            run["summary_path"] = str(summary_path) if ok else None
+            run["metrics"] = _scaling_extract_metrics(summary_path if ok else None)
+            run["returncode"] = returncode
+            if not ok:
+                any_failed = True
+                tail = "\n".join(stderr.splitlines()[-5:])
+                console.print(f"[bold red]✗ {label} failed (rc={returncode})[/bold red]\n[dim]{tail}[/dim]")
+            else:
+                metrics = run.get("metrics") or {}
+                console.print(
+                    f"[green]✓ {label} done[/green] "
+                    f"loss={metrics.get('final_loss')} val_ce={metrics.get('val_ce_final')} "
+                    f"({wall:.1f}s)"
+                )
+            _save()
+            (suite_dir / "report.md").write_text(_scaling_report_md(manifest), encoding="utf-8")
+        rung["status"] = _scaling_rung_status(rung["runs"], feasible=bool(rung["feasible"]))
+        _save()
+
+    # ---- wrap up ------------------------------------------------------------
+    (suite_dir / "report.md").write_text(_scaling_report_md(manifest), encoding="utf-8")
+    statuses = [rung["status"] for rung in manifest["rungs"]]
+    summary_panel = Panel(
+        "\n".join(
+            [
+                f"mechanism: [bold]{mechanism}[/bold]  ladder: [bold]{ladder}[/bold]  run_id: [bold]{suite_run_id}[/bold]",
+                f"rungs: {statuses.count('done')}/{len(statuses)} done, {statuses.count('failed')} failed, "
+                f"{statuses.count('infeasible')} infeasible",
+                f"artifacts: {suite_dir}",
+            ]
+        ),
+        title="scaling sweep complete",
+        box=box.ROUNDED,
+    )
+    console.print(summary_panel)
+    no_feasible_work = not any(r["feasible"] for r in rows)
+    if any_failed or (no_feasible_work and statuses.count("done") == 0):
+        raise typer.Exit(code=1)
+
+
 @app.command("per-head-metrics")
 def per_head_metrics(
     device: Annotated[

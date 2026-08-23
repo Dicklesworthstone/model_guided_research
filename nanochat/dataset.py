@@ -8,9 +8,12 @@ For details of how the dataset was prepared, see `repackage_data_reference.py`.
 """
 
 import argparse
+import hashlib
+import json
 import os
 import time
 from multiprocessing import Pool
+from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet as pq
@@ -45,6 +48,46 @@ def list_parquet_files(data_dir=None):
     parquet_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".parquet") and not f.endswith(".tmp")])
     parquet_paths = [os.path.join(data_dir, f) for f in parquet_files]
     return parquet_paths
+
+
+def dataset_fingerprint(data_dir=None):
+    """Fingerprint the parquet corpus a training run will actually read.
+
+    Mirrors ``list_parquet_files`` resolution (data_dir=None -> the FineWeb
+    cache; sorted; the LAST file is the val split). We hash file METADATA
+    (name, size, mtime_ns) rather than 100s of MB of content -- enough to
+    detect a corpus that changed between sweep generations without the I/O
+    cost (same scheme as scripts/cmaes_phase1.py, bead wiz).
+
+    Never raises: an unresolvable corpus returns {"resolved": False, ...} so
+    callers can record the failure in their manifests and continue.
+    """
+
+    try:
+        paths = list_parquet_files(data_dir)
+    except Exception as exc:  # noqa: BLE001 - recording beats crashing the caller
+        return {"resolved": False, "error": f"{type(exc).__name__}: {exc}", "data_dir": data_dir}
+    files = []
+    hasher = hashlib.sha256()
+    for p in paths:
+        pp = Path(p)
+        try:
+            st = pp.stat()
+            entry = {"name": pp.name, "size_bytes": int(st.st_size), "mtime_ns": int(st.st_mtime_ns)}
+        except OSError as exc:
+            entry = {"name": pp.name, "error": str(exc)}
+        files.append(entry)
+        hasher.update(json.dumps(entry, sort_keys=True).encode("utf-8"))
+    return {
+        "resolved": True,
+        "data_dir": data_dir,
+        "n_files": len(files),
+        "train_files": max(0, len(files) - 1),
+        "val_files": 1 if files else 0,
+        "files": files,
+        "digest": hasher.hexdigest(),
+        "method": "metadata-sha256(name,size,mtime_ns)",
+    }
 
 
 def parquets_iter_batched(split, start=0, step=1):
