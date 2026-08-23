@@ -12,17 +12,21 @@ goldens).
 - **Not implemented.** No `torch.utils.checkpoint` / `checkpoint_sequential`
   in either `nanochat/` or `bio_inspired_nanochat/` (grep-confirmed). Every
   block keeps its full forward activations for backward.
-- **Reversible's memory win is NOT active.** `ReversibleFunction`
-  (`nanochat/reversible_block_torch.py:196`) — the custom autograd Function
-  that would recompute inputs in backward and save O(1) activations — is
-  **defined but never called**. `ReversibleBlock.forward`
-  (`reversible_block_torch.py:140`) runs the **eager** coupling
-  (`y1 = x1 + F(x2); y2 = x2 ± G(y1)`), so the reversible arm pays the same
-  O(L) activation memory as standard. (This is also stated in the
-  `estimate_flops` docstring, `gpt.py:683`.)
+- **Reversible's memory win is ACTIVE (bead a6k3).** `ReversibleBlock.forward`
+  routes grad-enabled, no-KV-cache forwards through `ReversibleFunction`
+  (`nanochat/reversible_block_torch.py`), whose backward reconstructs
+  `x2 = y2 - G(y1)` and re-runs G/F WITH grad — no F/G intermediate survives
+  the step (only the block output is persisted; pinned by saved-tensor
+  accounting in `tests/test_mathematical_properties.py::
+  TestAdditiveReversibleWiring`). Decode/generation and no-grad eval stay
+  eager; symplectic stays eager (its kicks are double-backward and do not
+  compose with detach-and-recompute). `estimate_flops` charges the recompute
+  (9 forward-equivalent units per block pair, 16 H Q T attention matmuls) —
+  the same discipline as the 7lba symplectic correction.
 
-Consequence: **both** standard and reversible arms are currently O(L) in
-activation memory, and activation checkpointing would help both.
+Consequence: standard arms remain O(L) in activation memory; reversible
+additive arms now persist only their block outputs (a6k3), so generic
+activation checkpointing mainly helps standard/symplectic arms.
 
 ## The tradeoff in one line
 
@@ -114,9 +118,8 @@ Why these choices:
 
 - **Implement `--activation-checkpointing`** (`gpt.py` block loop + `train.py`
   flag), default `none`. Low-risk, mechanism-agnostic. → filed.
-- **Wire `ReversibleFunction` into `ReversibleBlock.forward`** for true O(1)
-  reversible memory (the headline reversible benefit, currently dormant). →
-  filed.
+- ~~**Wire `ReversibleFunction` into `ReversibleBlock.forward`**~~ **DONE
+  (bead a6k3)** — additive training recomputes by default now; see Current
+  state above.
 - If either is enabled under `--target-flops`, update `estimate_flops` to count
   the recompute forward (same discipline as the 7lba symplectic correction).
-</content>
