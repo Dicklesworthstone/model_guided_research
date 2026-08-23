@@ -280,6 +280,87 @@ def _extract_loss_series(summary: dict[str, Any]) -> list[float]:
     return out
 
 
+def _certify_comparisons(
+    baseline_obj: dict[str, Any],
+    candidate_obj: dict[str, Any],
+    *,
+    degrade_factor: float,
+) -> list[dict[str, Any]]:
+    """Build regression rows from two `mgr certify` summaries (bead 5ki.3).
+
+    A certificate check regresses when it flips green -> red (pass ->
+    fail/error) or when a still-passing measured invariant degrades by more
+    than `degrade_factor` relative to the baseline snapshot (e.g. reversible
+    round-trip error growing 10x while still under tolerance). Direction
+    follows the check's comparator: 'le' tolerances degrade upward, 'ge'
+    floors degrade downward. Tightening-only policy: loosening a tolerance in
+    cli.py requires an explicit justification note in the bead/commit.
+    """
+    base_checks: dict[tuple[str, str], dict[str, Any]] = {
+        (str(c.get("mechanism")), str(c.get("check"))): c
+        for c in baseline_obj.get("checks", [])
+        if isinstance(c, dict)
+    }
+    cand_checks: dict[tuple[str, str], dict[str, Any]] = {
+        (str(c.get("mechanism")), str(c.get("check"))): c
+        for c in candidate_obj.get("checks", [])
+        if isinstance(c, dict)
+    }
+    keys = sorted(set(base_checks) | set(cand_checks))
+
+    comparisons: list[dict[str, Any]] = []
+    for mechanism, check_name in keys:
+        key = f"cert:{mechanism}.{check_name}"
+        b = base_checks.get((mechanism, check_name))
+        c = cand_checks.get((mechanism, check_name))
+        if b is None or c is None:
+            comparisons.append(
+                {
+                    "metric": key,
+                    "label": key,
+                    "direction": "lower",
+                    "baseline": _as_float(b.get("measured")) if b else None,
+                    "candidate": _as_float(c.get("measured")) if c else None,
+                    "delta": None,
+                    "delta_rel": None,
+                    "status": "missing",
+                }
+            )
+            continue
+
+        comparator = str(b.get("comparator") or c.get("comparator") or "le")
+        direction = "lower" if comparator == "le" else "higher"
+        b_val = _as_float(b.get("measured"))
+        c_val = _as_float(c.get("measured"))
+        b_pass = b.get("status") == "pass"
+        c_pass = c.get("status") == "pass"
+        delta = float(c_val - b_val) if (b_val is not None and c_val is not None) else None
+        delta_rel = float(delta / b_val) if (delta is not None and b_val) else None
+        status = "ok"
+
+        if b_pass and not c_pass:
+            status = "regression"
+        elif b_pass and c_pass and b_val is not None and c_val is not None and b_val > 0:
+            worsened = c_val > b_val if comparator == "le" else c_val < b_val
+            ratio = (c_val / b_val) if comparator == "le" else (b_val / c_val if c_val else None)
+            if worsened and ratio is not None and ratio > degrade_factor:
+                status = "regression"
+
+        comparisons.append(
+            {
+                "metric": f"cert:{mechanism}.{check_name}",
+                "label": key,
+                "direction": direction,
+                "baseline": b_val,
+                "candidate": c_val,
+                "delta": delta,
+                "delta_rel": delta_rel,
+                "status": status,
+            }
+        )
+    return comparisons
+
+
 def _summarize_provenance(summary: dict[str, Any]) -> dict[str, Any]:
     meta = summary.get("meta") if isinstance(summary.get("meta"), dict) else {}
     if not isinstance(meta, dict):
@@ -3965,6 +4046,18 @@ def regressions(
             help="Also treat missing metrics as failures when --fail-on-regression is enabled.",
         ),
     ] = False,
+    cert_degrade_factor: Annotated[
+        float,
+        typer.Option(
+            "--cert-degrade-factor",
+            help=(
+                "Certificate mode: flag a still-passing invariant as a regression when its "
+                "measured value degrades by more than this factor vs the baseline snapshot "
+                "(e.g. reversible round-trip error growing 10x while still under tolerance)."
+            ),
+            min=1.0,
+        ),
+    ] = 10.0,
 ):
     """Compare two artifact snapshots and highlight regressions/improvements.
 
@@ -3972,6 +4065,11 @@ def regressions(
     - nanochat.train run summaries (results.losses, tokens_per_second, tflops_per_second_est, peak_memory_allocated_gb)
     - bench suite summaries (top-level runs[]; select a sub-run via --*-variant=attention_type)
     - flex perf summaries (results.tokens_per_s / results.peak_mem_mb; select via --*-variant=sdpa|flex)
+    - `mgr certify` certificate summaries (kind == "certify"): a green->red
+      check flip is a regression, and a still-passing measured invariant that
+      degraded by more than --cert-degrade-factor vs baseline is flagged.
+      Tolerances follow a tightening-only policy: loosening one requires an
+      explicit justification note in the bead/commit.
     """
     baseline_path = _resolve_summary_path(baseline, artifacts_dir=artifacts_dir)
     candidate_path = _resolve_summary_path(candidate, artifacts_dir=artifacts_dir)
@@ -3983,19 +4081,58 @@ def regressions(
 
     base_meta = _summarize_provenance(base_obj)
     cand_meta = _summarize_provenance(cand_obj)
+    if (base_obj.get("kind") == "certify") != (cand_obj.get("kind") == "certify"):
+        raise typer.BadParameter(
+            "Snapshot kind mismatch: comparing a 'certify' certificate against a "
+            "non-certificate snapshot is not meaningful."
+        )
 
-    metrics = [
-        ("final_loss", "Final loss", "lower"),
-        ("tokens_per_second", "Tokens/s", "higher"),
-        ("tflops_per_second_est", "TFLOP/s (est)", "higher"),
-        ("peak_memory_allocated_gb", "Peak mem (GB)", "lower"),
-    ]
+    if base_obj.get("kind") == "certify":
+        comparisons: list[dict[str, Any]] = _certify_comparisons(
+            base_obj, cand_obj, degrade_factor=cert_degrade_factor
+        )
+    else:
+        metrics = [
+            ("final_loss", "Final loss", "lower"),
+            ("tokens_per_second", "Tokens/s", "higher"),
+            ("tflops_per_second_est", "TFLOP/s (est)", "higher"),
+            ("peak_memory_allocated_gb", "Peak mem (GB)", "lower"),
+        ]
 
-    comparisons: list[dict[str, Any]] = []
-    for key, label, direction in metrics:
-        b = _extract_metric(base_obj, metric=key, variant=baseline_variant)
-        c = _extract_metric(cand_obj, metric=key, variant=candidate_variant)
-        if b is None or c is None:
+        comparisons = []
+        for key, label, direction in metrics:
+            b = _extract_metric(base_obj, metric=key, variant=baseline_variant)
+            c = _extract_metric(cand_obj, metric=key, variant=candidate_variant)
+            if b is None or c is None:
+                comparisons.append(
+                    {
+                        "metric": key,
+                        "label": label,
+                        "direction": direction,
+                        "baseline": b,
+                        "candidate": c,
+                        "delta": None,
+                        "delta_rel": None,
+                        "status": "missing",
+                    }
+                )
+                continue
+
+            delta = float(c - b)
+            delta_rel = float(delta / b) if b != 0 else None
+
+            status = "ok"
+            if direction == "lower":
+                if c > b + loss_abs or (delta_rel is not None and delta_rel > loss_rel):
+                    status = "regression"
+            else:
+                thr = tflops_rel if key.startswith("tflops") else throughput_rel
+                if c < b * (1.0 - thr):
+                    status = "regression"
+            if direction == "lower" and key.startswith("peak_memory"):
+                if c > b * (1.0 + memory_rel):
+                    status = "regression"
+
             comparisons.append(
                 {
                     "metric": key,
@@ -4003,40 +4140,12 @@ def regressions(
                     "direction": direction,
                     "baseline": b,
                     "candidate": c,
-                    "delta": None,
-                    "delta_rel": None,
-                    "status": "missing",
+                    "delta": delta,
+                    "delta_rel": delta_rel,
+                    "status": status,
                 }
             )
-            continue
 
-        delta = float(c - b)
-        delta_rel = float(delta / b) if b != 0 else None
-
-        status = "ok"
-        if direction == "lower":
-            if c > b + loss_abs or (delta_rel is not None and delta_rel > loss_rel):
-                status = "regression"
-        else:
-            thr = tflops_rel if key.startswith("tflops") else throughput_rel
-            if c < b * (1.0 - thr):
-                status = "regression"
-        if direction == "lower" and key.startswith("peak_memory"):
-            if c > b * (1.0 + memory_rel):
-                status = "regression"
-
-        comparisons.append(
-            {
-                "metric": key,
-                "label": label,
-                "direction": direction,
-                "baseline": b,
-                "candidate": c,
-                "delta": delta,
-                "delta_rel": delta_rel,
-                "status": status,
-            }
-        )
 
     # Rich output
     header = Table.grid(padding=(0, 2))
@@ -4098,6 +4207,7 @@ def regressions(
         "throughput_rel": float(throughput_rel),
         "tflops_rel": float(tflops_rel),
         "memory_rel": float(memory_rel),
+        "cert_degrade_factor": float(cert_degrade_factor),
     }
 
     report_run_id = run_id or _default_run_id()
@@ -4764,8 +4874,17 @@ def _run_certify_checks(
             x = torch.randn(1, T, cfg.n_embd, device=device)
             w = torch.randn_like(x)
 
+            # TRUE naive reference: run the coupling math directly instead of
+            # sb(...), which since a6k3 routes through ReversibleFunction and
+            # therefore records no graph for the coupling parameters.
+            def naive_forward(mod, x_in):
+                x1, x2 = torch.chunk(x_in, 2, dim=-1)
+                y1 = x1 + mod.f_block(x2, cos_sin, None)
+                y2 = x2 + mod.g_block(y1)
+                return torch.cat([y1, y2], dim=-1)
+
             xa = x.clone().requires_grad_(True)
-            loss_a = (sb_ref(xa, cos_sin, None) * w).sum()
+            loss_a = (naive_forward(sb_ref, xa) * w).sum()
             grads_a = torch.autograd.grad(loss_a, [xa, *sb_ref.parameters()])
 
             xb = x.clone().requires_grad_(True)

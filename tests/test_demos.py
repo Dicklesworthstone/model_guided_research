@@ -1103,6 +1103,131 @@ def test_certify_cli_exit_codes(tmp_path):
     require(result_bad.exit_code != 0, "certify must exit nonzero for an unknown mechanism")
 
 
+def _cert_summary(tmp_path, name, checks):
+    import json as json_mod
+
+    path = tmp_path / f"{name}.json"
+    passed = sum(1 for c in checks if c["status"] == "pass")
+    payload = {
+        "schema_version": 1,
+        "kind": "certify",
+        "run_id": name,
+        "seed": 42,
+        "device": "cpu",
+        "dtype": "fp32",
+        "mechanisms": sorted({c["mechanism"] for c in checks}),
+        "checks": checks,
+        "counts": {
+            "pass": passed,
+            "fail": sum(1 for c in checks if c["status"] == "fail"),
+            "error": sum(1 for c in checks if c["status"] == "error"),
+        },
+        "duration_s": 0.1,
+    }
+    path.write_text(json_mod.dumps(payload))
+    return path
+
+
+def _check(mechanism, check, *, status, measured, tolerance=1e-4, comparator="le"):
+    return {
+        "mechanism": mechanism,
+        "check": check,
+        "family": "classical",
+        "status": status,
+        "measured": measured,
+        "tolerance": tolerance,
+        "comparator": comparator,
+        "duration_ms": 1.0,
+        "detail": "",
+    }
+
+
+def test_regressions_flags_certificate_green_to_red_flip(tmp_path):
+    """5ki.3: a certificate check flipping pass -> fail between snapshots is
+    a regression; --fail-on-regression must turn it into exit 1."""
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    base = _cert_summary(
+        tmp_path, "flip-base", [_check("reversible", "round_trip_error", status="pass", measured=1e-7)]
+    )
+    cand_bad = _cert_summary(
+        tmp_path, "flip-cand-bad", [_check("reversible", "round_trip_error", status="fail", measured=1e-2)]
+    )
+    cand_good = _cert_summary(
+        tmp_path, "flip-cand-good", [_check("reversible", "round_trip_error", status="pass", measured=2e-7)]
+    )
+
+    runner = CliRunner()
+    bad = runner.invoke(
+        mgr_cli.app,
+        ["regressions", "--baseline", str(base), "--candidate", str(cand_bad), "--fail-on-regression"],
+    )
+    require(bad.exit_code == 1, f"green->red flip must exit 1, got {bad.exit_code}")
+    require("round_trip_error" in bad.output, "failing metric name should appear in the guardrail output")
+
+    good = runner.invoke(
+        mgr_cli.app,
+        ["regressions", "--baseline", str(base), "--candidate", str(cand_good)],
+    )
+    require(good.exit_code == 0, f"still-green candidate must exit 0, got {good.exit_code}: {good.output}")
+
+
+def test_regressions_flags_still_passing_degradation_with_factor(tmp_path):
+    """5ki.3: an invariant that stays under tolerance but degrades by more
+    than --cert-degrade-factor is flagged; raising the factor clears it."""
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    base = _cert_summary(
+        tmp_path, "deg-base", [_check("reversible", "round_trip_error", status="pass", measured=1e-7)]
+    )
+    cand = _cert_summary(
+        tmp_path, "deg-cand", [_check("reversible", "round_trip_error", status="pass", measured=8e-5)]
+    )
+
+    runner = CliRunner()
+    flagged = runner.invoke(
+        mgr_cli.app,
+        [
+            "regressions", "--baseline", str(base), "--candidate", str(cand),
+            "--cert-degrade-factor", "10", "--fail-on-regression",
+        ],
+    )
+    require(flagged.exit_code == 1, f"800x degradation must be flagged, got exit {flagged.exit_code}")
+
+    cleared = runner.invoke(
+        mgr_cli.app,
+        [
+            "regressions", "--baseline", str(base), "--candidate", str(cand),
+            "--cert-degrade-factor", "10000", "--fail-on-regression",
+        ],
+    )
+    require(cleared.exit_code == 0, f"degradation under the factor must pass, got {cleared.exit_code}")
+
+
+def test_regressions_rejects_certificate_kind_mismatch(tmp_path):
+    """5ki.3: comparing a certificate against a non-certificate snapshot is a
+    hard parameter error, never silent nonsense."""
+    import json as json_mod
+
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    cert = _cert_summary(
+        tmp_path, "mix-cert", [_check("standard", "causality", status="pass", measured=0.0)]
+    )
+    other = tmp_path / "plain.json"
+    other.write_text(json_mod.dumps({"results": {"losses": [1.0, 2.0]}}))
+
+    runner = CliRunner()
+    result = runner.invoke(mgr_cli.app, ["regressions", "--baseline", str(cert), "--candidate", str(other)])
+    require(result.exit_code != 0, "kind mismatch must exit nonzero")
+
+
 def test_certify_gauge_forward_runs():
     """Regression for br-hn5: gauge block forward must run (RoPE layout bug found by certify)."""
     import torch

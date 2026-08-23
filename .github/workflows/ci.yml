@@ -103,10 +103,45 @@ jobs:
             **/*.log
           retention-days: 7
 
+  certificates:
+    name: Certificates (mgr certify)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run mechanism certificates (separate job so a cert failure is
+          distinguishable from a unit-test failure in the PR UI)
+        run: |
+          uv run mgr certify --device cpu --dtype fp32 --seed 42 \
+            --artifacts-dir artifacts/ci-cert
+        env:
+          JAX_PLATFORMS: cpu
+
+      - name: Upload certificate artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: certificate-results
+          path: artifacts/ci-cert/
+          retention-days: 14
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, certificates]
     if: always()
     steps:
       - name: Check all jobs passed
@@ -119,4 +154,7 @@ jobs:
             echo "Test job failed"
             exit 1
           fi
-          echo "All required checks passed!"
+          if [[ "${{ needs.certificates.result }}" != "success" ]]; then
+            echo "Certificates job failed"
+            exit 1
+          fi
