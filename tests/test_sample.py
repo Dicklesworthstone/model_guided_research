@@ -72,7 +72,7 @@ def test_sample_stream_stops_at_separator():
             return self.BOS
 
     class _StopModel(_StubModel):
-        def generate(self, tokens, max_tokens, temperature=0.0, top_k=None, seed=0):
+        def generate(self, tokens, max_tokens, temperature=0.0, seed=0, *, top_k=None):
             yield ord("h")
             yield ord("i")
             yield _StopTok.BOS

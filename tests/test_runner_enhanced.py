@@ -678,7 +678,7 @@ def run_jax_diagnostics():
             table.add_row(f"Device {i}", device_info)
 
         # Platform info
-        table.add_row("Platform", str(jax.lib.xla_bridge.get_backend().platform))
+        table.add_row("Platform", jax.default_backend())
 
         # Test operations
         try:

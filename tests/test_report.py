@@ -152,9 +152,11 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     _eval_summary(arts, "e-std-0", mechanism="standard", task="hier", em=0.50, flops=1e14)
     _eval_summary(arts, "e-std-1", mechanism="standard", task="hier", em=0.51, flops=1e14)
     stale_cert = _cert_summary(arts, "trop-old", mechanism="tropical")
-    os.utime(stale_cert, (time_mod.time() - 10 * 86400,) * 2)  # cert predates source
+    stale_time = time_mod.time() - 10 * 86400
+    os.utime(stale_cert, (stale_time, stale_time))  # cert predates source
     fresh_cert = _cert_summary(arts, "ultra-new", mechanism="ultrametric")
-    os.utime(fresh_cert, (time_mod.time() + 3600,) * 2)  # newer than any source file
+    fresh_time = time_mod.time() + 3600
+    os.utime(fresh_cert, (fresh_time, fresh_time))  # newer than any source file
 
     registry = tmp_path / "registry.yaml"
     blocked = _hyp_status()

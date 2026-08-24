@@ -56,6 +56,7 @@ def _registry(*entries):
 
 def test_seeded_registry_validates_green():
     data, load_errors = cli._load_hypothesis_registry(cli._hypotheses_registry_path())
+    assert data is not None, load_errors
     errors, warnings, summary = _validate(data)
     assert load_errors == [] and errors == [], f"seeded registry must be green: {errors}"
     assert summary["entries"] >= 20, "the seeding (README + docs claims) is the bulk of the bead"
@@ -67,8 +68,10 @@ def test_seeded_registry_validates_green():
 
 
 def test_seeded_registry_theorem_refs_resolve():
-    data, _ = cli._load_hypothesis_registry(cli._hypotheses_registry_path())
-    th_data, _ = cli._load_theorem_registry(cli._theorems_registry_path())
+    data, load_errors = cli._load_hypothesis_registry(cli._hypotheses_registry_path())
+    th_data, theorem_load_errors = cli._load_theorem_registry(cli._theorems_registry_path())
+    assert data is not None, load_errors
+    assert th_data is not None, theorem_load_errors
     theorem_ids = {t["id"] for t in th_data["theorems"]}
     refs = [r for h in data["hypotheses"] for r in (h.get("theorem_refs") or [])]
     assert refs, "seeded registry should cross-link at least some theorems"

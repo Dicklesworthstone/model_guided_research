@@ -249,6 +249,7 @@ class TestRunner:
 
     def _display_summary(self):
         """Display a beautiful summary table."""
+        assert self.start_time is not None
         elapsed = time.time() - self.start_time
 
         # Count successes

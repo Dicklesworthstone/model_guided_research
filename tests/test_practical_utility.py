@@ -963,7 +963,7 @@ class TestSurrealNumbersUtility:
                     "depth": z_need(depth, mu_dep, sd_dep),
                     "width": z_need(width, mu_w, sd_w),
                 }
-                pred_z = max(scores, key=scores.get)
+                pred_z = max(scores, key=lambda name: scores[name])
                 # In interquartile bins (ambiguous), allow z-score decision
                 if in_mid(data, bins_d) and in_mid(depth, bins_dep) and in_mid(width, bins_w):
                     return pred_z

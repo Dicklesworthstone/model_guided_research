@@ -158,7 +158,7 @@ class TestIFSFractalMemory:
         # Verify it's a fixed point
         cfg = store.cfg
         c_w = ifs._compute_c_w(path, cfg)
-        idx = ifs._path_to_index(path.reshape(1, -1), cfg.m_pow)[0]
+        idx = ifs._path_to_index(path.reshape(1, -1), store.m_pow)[0]
         u_w = store.state.u_leaf[idx]
 
         # Compute F_w(read_value)
