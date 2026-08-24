@@ -21,7 +21,6 @@
 # ---------------------------------------------------------------------
 
 import importlib
-import importlib.util
 import json
 import os
 import time
@@ -38,10 +37,13 @@ import matplotlib.pyplot as plt
 
 
 def _maybe_import(module: str, attr: str | None = None) -> Any:
-    spec = importlib.util.find_spec(module)
-    if spec is None:
-        return None
-    mod = importlib.import_module(module)
+    try:
+        mod = importlib.import_module(module)
+    except ModuleNotFoundError as exc:
+        missing = exc.name
+        if missing == module or (missing is not None and module.startswith(f"{missing}.")):
+            return None
+        raise
     return getattr(mod, attr) if attr else mod
 
 

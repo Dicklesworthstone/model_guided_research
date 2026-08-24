@@ -1194,6 +1194,25 @@ def test_execution_execute_code_allows_disabling_memory_limit():
     require(result.stdout.strip() == "hello", f"unexpected stdout: {result.stdout!r}")
 
 
+def test_neuroviz_optional_import_handles_missing_parent(monkeypatch: pytest.MonkeyPatch):
+    import types
+
+    from nanochat import neuroviz
+
+    require(
+        neuroviz._maybe_import("model_guided_research_missing_parent.child") is None,
+        "a missing optional parent package must be treated as unavailable",
+    )
+
+    def fail_with_transitive_dependency(_module: str):
+        raise ModuleNotFoundError("missing transitive dependency", name="unrelated_dependency")
+
+    fake_importlib = types.SimpleNamespace(import_module=fail_with_transitive_dependency)
+    monkeypatch.setattr(neuroviz, "importlib", fake_importlib)
+    with pytest.raises(ModuleNotFoundError, match="transitive dependency"):
+        neuroviz._maybe_import("optional_backend")
+
+
 def test_nanochat_synaptic_modules_import():
     # These modules are optional/experimental, but should import cleanly.
     import nanochat.gpt_synaptic  # noqa: F401
