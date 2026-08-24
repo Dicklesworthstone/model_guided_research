@@ -136,7 +136,7 @@ ignore_missing_imports = true
 [tool.mgr.quality]
 # Exact full-repository `ty check` diagnostic count. Lower this in the same
 # change that fixes diagnostics; remove the ratchet when the count reaches zero.
-ty-diagnostic-baseline = 235
+ty-diagnostic-baseline = 218
 
 # uv specific configuration
 [tool.uv]
