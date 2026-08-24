@@ -26,7 +26,7 @@ import os
 import platform
 import socket
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import pytest
 import torch
@@ -46,7 +46,29 @@ LEARNING_RATE = 1e-3
 # House tiny-model convention (mirrors tests/test_demos.py): GQA exercised
 # via n_kv_head < n_head; head_dim = 16 satisfies quaternion (%4) and
 # octonion (%8) divisibility. Gauge forbids GQA, so it pins n_kv_head=n_head.
-BASE_CONFIG: dict[str, Any] = {
+class _BaseConfig(TypedDict):
+    sequence_len: int
+    vocab_size: int
+    n_layer: int
+    n_head: int
+    n_kv_head: int
+    n_embd: int
+
+
+class _ConfigOverride(TypedDict, total=False):
+    sequence_len: int
+    vocab_size: int
+    n_layer: int
+    n_head: int
+    n_kv_head: int
+    n_embd: int
+
+
+class _ConfigKwargs(_BaseConfig):
+    attention_type: str
+
+
+BASE_CONFIG: _BaseConfig = {
     "sequence_len": 64,
     "vocab_size": 128,
     "n_layer": 2,
@@ -55,7 +77,7 @@ BASE_CONFIG: dict[str, Any] = {
     "n_embd": 64,
 }
 
-MECHANISM_CONFIG_OVERRIDES: dict[str, dict[str, Any]] = {
+MECHANISM_CONFIG_OVERRIDES: dict[str, _ConfigOverride] = {
     "standard": {},
     "hyperbolic": {},
     "tropical": {},
@@ -74,7 +96,11 @@ MECHANISMS = sorted(MECHANISM_CONFIG_OVERRIDES)
 
 
 def _config_for(attention_type: str) -> GPTConfig:
-    kwargs = {**BASE_CONFIG, **MECHANISM_CONFIG_OVERRIDES[attention_type], "attention_type": attention_type}
+    kwargs: _ConfigKwargs = {
+        **BASE_CONFIG,
+        **MECHANISM_CONFIG_OVERRIDES[attention_type],
+        "attention_type": attention_type,
+    }
     return GPTConfig(**kwargs)
 
 
