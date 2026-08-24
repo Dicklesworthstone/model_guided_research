@@ -30,7 +30,9 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 import numpy as np
+from rich.console import Console
 
+_console = Console()
 
 def p_pow(p, K):
     a = np.ones(K, dtype=np.int64)
@@ -785,10 +787,11 @@ def run_task_A(*, packed: bool = False):
     t2 = time.time()
     acc_test = model.eval_acc(qst, yst)
     t3 = time.time()
-    print(
-        f"Task A: train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} test_acc={acc_test:.4f} created_nodes={created}"
+    _console.print(
+        f"[cyan]Task A:[/cyan] train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} "
+        f"test_acc={acc_test:.4f} created_nodes={created}"
     )
-    print(f"Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}")
+    _console.print(f"[dim]Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}[/dim]")
 
 
 def run_task_B(*, packed: bool = False):
@@ -806,10 +809,11 @@ def run_task_B(*, packed: bool = False):
         node_count = sum(int(h._size[d]) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
     else:
         node_count = sum(len(h.levels[d].residues) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
-    print(
-        f"Task B: train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} test_acc={acc_test:.4f} created_nodes={created} total_nodes={node_count}"
+    _console.print(
+        f"[cyan]Task B:[/cyan] train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} "
+        f"test_acc={acc_test:.4f} created_nodes={created} total_nodes={node_count}"
     )
-    print(f"Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}")
+    _console.print(f"[dim]Timing(s): eval_pre={t1 - t0:.3f} train={t2 - t1:.3f} eval_test={t3 - t2:.3f}[/dim]")
 
 
 def compare_packed_vs_reference(
@@ -862,7 +866,9 @@ def smoke_demo_small():
     acc0 = model.eval_acc(qs, ys)
     acc_train, created = model.train_epoch(qs, ys, shuffle=True)
     acc_test = model.eval_acc(qst, yst)
-    print(f"Small A: pre={acc0:.3f} post={acc_train:.3f} test={acc_test:.3f} created={created}")
+    _console.print(
+        f"[cyan]Small A:[/cyan] pre={acc0:.3f} post={acc_train:.3f} test={acc_test:.3f} created={created}"
+    )
 
 
 def demo():
@@ -899,14 +905,13 @@ def demo():
             )
             _Console().print(tab)
         except Exception as err:
-            print(f"[ultrametric] Packed/reference table skipped: {err}")
+            _console.print(f"[yellow]Packed/reference table skipped: {err}[/yellow]")
     except Exception as err:
-        print(f"[ultrametric] Packed/reference sanity check failed: {err}")
+        _console.print(f"[bold red]Packed/reference sanity check failed: {err}[/bold red]")
     # Optional packed timing benchmark to n=4096
     try:
         import time as _time
 
-        print("\n[Packed LCP Timing]")
         Ns = [64, 256, 1024, 4096]
         insert_ms, query_ms, head_vars = [], [], []
         # Optional compare packed vs dict mode
