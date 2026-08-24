@@ -184,6 +184,114 @@ def test_surreal_dataset_uses_raw_jax_keys_after_wrapper_split():
     require(all(bool(jnp.isfinite(leaf).all()) for leaf in leaves), "surreal training step produced non-finite values")
 
 
+def test_matrix_demo_uses_bounded_workload_and_exports_without_bch(monkeypatch, capsys):
+    """Regressions for pyla/sjia: bounded defaults and unambiguous BCH diagnostics."""
+    import jax.numpy as jnp
+
+    import matrix_exponential_gauge_learning as gauge
+
+    constructed = []
+
+    class FakeGaugeTransformer:
+        def __init__(self, cfg, depth, vocab_size=None):
+            self.cfg = cfg
+            self.depth = depth
+            constructed.append((cfg, depth, vocab_size))
+
+        def init(self, _key, _x, train=False, return_debug=True):
+            return {"params": {}}
+
+        def apply(self, _variables, x, train=False, return_debug=True):
+            batch, sequence, _channels = x.shape
+            debug = {
+                "offsets": jnp.asarray(self.cfg.offsets, dtype=jnp.int32),
+                "uniformization_K": jnp.full((batch, self.cfg.n_heads), 3, dtype=jnp.int32),
+                "Q_bands": jnp.zeros((batch, sequence, self.cfg.n_heads, len(self.cfg.offsets))),
+                "curvature_proxy": jnp.ones((batch, sequence - 1, self.cfg.n_heads)),
+                "comm_norms": {"so_spd": 0.1, "so_sp": 0.2, "spd_sp": 0.3},
+            }
+            return x, [debug for _ in range(self.depth)]
+
+    for name in (
+        "GAUGE_ALT_STRUCT",
+        "GAUGE_SAMPLE_SCHEDULE",
+        "GAUGE_SAMPLE_TRAIN",
+        "GAUGE_UNIF_CAP_K",
+        "GAUGE_UNIF_SAMPLE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GAUGE_STRUCTURED", "1")
+    monkeypatch.setenv("GAUGE_BCH_FUSION", "0")
+    monkeypatch.setattr(gauge, "GaugeTransformer", FakeGaugeTransformer)
+    monkeypatch.setattr(gauge, "last_diagnostics", None, raising=False)
+
+    gauge.demo()
+
+    primary_cfg, primary_depth, primary_vocab = constructed[0]
+    require(primary_cfg.d_model == 32, f"unbounded demo width: {primary_cfg.d_model}")
+    require(primary_cfg.n_heads == 4, f"unexpected demo head count: {primary_cfg.n_heads}")
+    require(primary_cfg.d_head == 8, f"unexpected demo head width: {primary_cfg.d_head}")
+    require(primary_depth == 2, f"unbounded demo depth: {primary_depth}")
+    require(primary_vocab is None, "demo unexpectedly constructed a vocabulary readout")
+    require(gauge.last_diagnostics is not None, "matrix demo did not publish diagnostics")
+    require(gauge.last_diagnostics["bch_fusion"] is None, "disabled BCH fusion exported stale rows")
+    require("||[skew, sym]||" in capsys.readouterr().out, "Rich stripped the bracketed commutator label")
+
+
+def test_reversible_tiny_train_step_keeps_optimizer_tree_in_sync():
+    """Regression for q7th: Adam state and updated model use the same 18 arrays per block."""
+    import jax.numpy as jnp
+    import optax
+
+    import reversible_computation_and_measure_preserving_learning as reversible
+
+    model = reversible.make_model(jax.random.PRNGKey(0), L=1, d=8, d_a=4, hidden=8, bins=9, Bbits=4)
+    optimizer = optax.adam(1e-3)
+    initial_params = reversible.model_trainable_arrays(model)
+    optimizer_state = optimizer.init(initial_params)
+    x = jax.random.normal(jax.random.PRNGKey(1), (2, 3, 8))
+    labels = jax.nn.one_hot(jnp.zeros((2, 3), dtype=jnp.int32), 4)
+
+    updated, _optimizer_state, loss = reversible.tiny_train_step(
+        model,
+        x,
+        labels,
+        optimizer,
+        optimizer_state,
+    )
+
+    require(len(initial_params) == 18, f"unexpected initial parameter arity: {len(initial_params)}")
+    require(len(reversible.model_trainable_arrays(updated)) == 18, "training changed the parameter-tree arity")
+    require(bool(jnp.isfinite(loss)), f"reversible training produced non-finite loss: {loss}")
+
+
+def test_reversible_rank_two_cayley_is_orthogonal_and_exactly_invertible():
+    """Regression for lt7q: every configured composition is an exact Cayley map."""
+    import jax.numpy as jnp
+
+    import reversible_computation_and_measure_preserving_learning as reversible
+
+    u2 = jax.random.normal(jax.random.PRNGKey(2), (4, 8))
+    x = jax.random.normal(jax.random.PRNGKey(3), (4, 8))
+    reversible.set_reversible_cayley(True)
+    try:
+        for steps in (1, 2, 4):
+            reversible.set_reversible_cayley_iters(steps)
+            y = reversible._cayley_primal(u2, x)
+            recovered = reversible._cayley_inverse(u2, y)
+            norm_error = jnp.max(jnp.abs(jnp.linalg.norm(y, axis=-1) - jnp.linalg.norm(x, axis=-1)))
+            round_trip_error = jnp.max(jnp.abs(recovered - x))
+            require(norm_error < 1e-5, f"{steps} Cayley steps changed norms by {norm_error:.3e}")
+            require(round_trip_error < 1e-5, f"{steps} Cayley steps failed inversion by {round_trip_error:.3e}")
+    finally:
+        reversible.set_reversible_cayley_iters(1)
+        reversible.set_reversible_cayley(False)
+
+    verdict, error = reversible.round_trip_metrics(jnp.zeros(4), jnp.full(4, 2e-6))
+    require(verdict, "shared reversibility tolerance rejected sub-threshold numerical drift")
+    require(error == pytest.approx(2e-6), f"unexpected round-trip error: {error}")
+
+
 def test_documentation_exists():
     """Test that markdown documentation exists for each module."""
     doc_dir = Path("markdown_documentation")

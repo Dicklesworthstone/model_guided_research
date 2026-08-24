@@ -47,6 +47,7 @@ from flax import linen as nn
 from jax import Array, lax
 from rich import box
 from rich.table import Table
+from rich.text import Text
 
 from config import get_config
 from utils import console
@@ -75,7 +76,7 @@ def _print_table(
         for heading, justify in columns:
             table.add_column(heading, justify=justify)
         for row in rows:
-            table.add_row(*row)
+            table.add_row(*(Text(cell) for cell in row))
         console.print(table)
         return
 
@@ -871,11 +872,15 @@ def eval_step(state: TrainState, batch_x: jnp.ndarray, batch_y: jnp.ndarray | No
 def demo():
     """Run the matrix exponential gauge learning demonstration."""
     key = jax.random.PRNGKey(0)
-    B, N, D = 1, 32, 64  # Reduced dimensions for faster testing
-    H, dh = 4, 16
+    # Keep the public CPU demo bounded while retaining multiple heads, blocks,
+    # and logarithmically spaced transport offsets. Larger research workloads
+    # use the same model/configuration surface outside this demonstration.
+    B, N, D = 1, 16, 32
+    H, dh = 4, 8
+    depth = 2
     assert D == H * dh
 
-    # Multiscale symmetric offsets up to 64 (within N)
+    # Multiscale symmetric offsets bounded by the sequence length.
     max_pow = int(math.floor(math.log2(N - 1)))
     pos_offs = [2**i for i in range(0, max_pow + 1)]
     neg_offs = [-o for o in pos_offs]
@@ -900,7 +905,7 @@ def demo():
         use_structured_blocks=use_structured if use_structured else False,
     )
 
-    model = GaugeTransformer(cfg, depth=4, vocab_size=None)
+    model = GaugeTransformer(cfg, depth=depth, vocab_size=None)
     x = jax.random.normal(key, (B, N, D))
     variables = model.init(key, x, train=False, return_debug=True)
     y, dbg = model.apply(variables, x, train=False, return_debug=True)
@@ -1164,7 +1169,7 @@ def demo():
     from flax.core import freeze, unfreeze
 
     vars_comm = unfreeze(variables)
-    for bi in range(len(model.blocks)):
+    for bi in range(depth):
         if bi % 2 == 0:
             blk_key = f"gt_block_{bi}"
             if blk_key in vars_comm.get("params", {}):
@@ -1221,7 +1226,7 @@ def demo():
         from flax.core import unfreeze as _unfreeze
 
         vars_alt = _unfreeze(variables)
-        for bi in range(len(model.blocks)):
+        for bi in range(depth):
             if bi % 2 == 1:
                 blk_key = f"gt_block_{bi}"
                 if blk_key in vars_alt.get("params", {}):

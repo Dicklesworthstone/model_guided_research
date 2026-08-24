@@ -281,7 +281,6 @@ def symplectic_leapfrog_step(qp: Array, grad_H_q, grad_H_p, step: float = 0.1) -
 USE_CAYLEY_HYBRID: bool = False
 CAYLEY_O1_GRAD: bool = True  # O(1) memory custom JVP by default for Cayley step
 CAYLEY_ITERS: int = 1
-CAYLEY_INV_ITERS: int = 1
 USE_SYMPLECTIC_HYBRID: bool = False
 USE_GIVENS_MIX: bool = False
 USE_GENERATING_SYMPLECTIC: bool = False
@@ -306,11 +305,6 @@ def set_reversible_cayley_o1(enabled: bool) -> None:
 def set_reversible_cayley_iters(n_iters: int) -> None:
     global CAYLEY_ITERS
     CAYLEY_ITERS = max(1, int(n_iters))
-
-
-def set_reversible_cayley_inv_iters(n_iters: int) -> None:
-    global CAYLEY_INV_ITERS
-    CAYLEY_INV_ITERS = max(1, int(n_iters))
 
 
 def set_reversible_symplectic(enabled: bool) -> None:
@@ -366,12 +360,12 @@ def _gen_symp_step_bwd(res, ct_y):
 _gen_symp_step.defvjp(_gen_symp_step_fwd, _gen_symp_step_bwd)
 
 
-def _cayley_primal(u2: Array, u1: Array) -> Array:
-    """Apply an orthogonal Cayley transform to u1 parameterized by u2 via a small skew S(u2).
+def _rank_two_cayley_step(u2: Array, x: Array, *, inverse: bool = False) -> Array:
+    """Apply an exact Cayley transform for ``S = uv^T - vu^T``.
 
-    Uses a fixed-point iteration to approximate (I - S)^{-1}(I + S) u1 with S built
-    from two orthonormal directions derived from u2. This is linear in u1 and depends
-    on u2 only through S (no side effects).
+    Since ``S`` has rank at most two and ``S^3 = -(1 - <u,v>^2) S``, the
+    rational Cayley map reduces to two applications of ``S``. This avoids a
+    dense solve while preserving orthogonality and giving an exact inverse.
     """
     u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
     v = jnp.roll(u, 1, axis=-1)
@@ -382,11 +376,36 @@ def _cayley_primal(u2: Array, u1: Array) -> Array:
         b = jnp.sum(u * x, axis=-1, keepdims=True)
         return u * a - v * b
 
-    rhs = u1 + S_apply(u1)
-    y = rhs
+    sx = S_apply(x)
+    s2x = S_apply(sx)
+    overlap = jnp.sum(u * v, axis=-1, keepdims=True)
+    rank_two_norm_sq = jnp.maximum(0.0, 1.0 - overlap * overlap)
+    scale = 2.0 / (1.0 + rank_two_norm_sq)
+    signed_sx = -sx if inverse else sx
+    return cast(Array, x + scale * (signed_sx + s2x))
+
+
+def _cayley_primal(u2: Array, u1: Array) -> Array:
+    """Compose exact rank-two Cayley steps without storing activations."""
+    y = u1
     for _ in range(CAYLEY_ITERS):
-        y = rhs + S_apply(y)
-    return cast(Array, y)
+        y = _rank_two_cayley_step(u2, y)
+    return y
+
+
+def _cayley_inverse(u2: Array, y: Array) -> Array:
+    """Invert the configured number of exact rank-two Cayley steps."""
+    x = y
+    for _ in range(CAYLEY_ITERS):
+        x = _rank_two_cayley_step(u2, x, inverse=True)
+    return x
+
+
+def _relative_norm_error(x: Array, y: Array) -> Array:
+    """Mean relative norm drift across all leading dimensions."""
+    norm_x = jnp.linalg.norm(x, axis=-1)
+    norm_y = jnp.linalg.norm(y, axis=-1)
+    return jnp.mean(jnp.abs(norm_y - norm_x) / (norm_x + 1e-12))
 
 
 @custom_jvp
@@ -497,27 +516,7 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
     u2 = y2
     u1 = y1 - affine_nonlinear(u2, p.h_w1, p.h_b1, p.h_w2, p.h_b2)
     if USE_CAYLEY_HYBRID:
-        # Improved inverse via damped Richardson iterations on (I + S) x = (I - S) y
-        def cayley_inverse(u2_loc: Array, y_loc: Array, iters: int, alpha: float = 0.5) -> Array:
-            u = u2_loc / (jnp.linalg.norm(u2_loc, axis=-1, keepdims=True) + 1e-12)
-            v = jnp.roll(u, 1, axis=-1)
-            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-            def S_apply(x):
-                a = jnp.sum(v * x, axis=-1, keepdims=True)
-                b = jnp.sum(u * x, axis=-1, keepdims=True)
-                return u * a - v * b
-
-            rhs = y_loc - S_apply(y_loc)
-            x_est = rhs
-            # Allow separate inverse iteration count via CAYLEY_INV_ITERS
-            nsteps = max(2, 2 * int(iters))
-            for _ in range(nsteps):
-                # x <- x + α (rhs - (I+S) x)
-                x_est = x_est + alpha * (rhs - (x_est + S_apply(x_est)))
-            return cast(Array, x_est)
-
-        u1 = cayley_inverse(u2, u1, CAYLEY_INV_ITERS if "CAYLEY_INV_ITERS" in globals() else CAYLEY_ITERS)
+        u1 = _cayley_inverse(u2, u1)
     if USE_SYMPLECTIC_HYBRID:
         from jax import custom_jvp as _cjvp
 
@@ -856,6 +855,26 @@ def forward(x: Array, tape: BitTape, res: Reservoir, audit_mode: bool = True):
     raise NotImplementedError("Use model_forward with a Model instance.")
 
 
+REVERSIBILITY_ATOL = 1e-5
+REVERSIBILITY_RTOL = 1e-5
+
+
+def round_trip_metrics(expected: Array, actual: Array) -> tuple[bool, float]:
+    """Evaluate reversible reconstruction with one shared numerical policy."""
+    expected_np = np.asarray(expected)
+    actual_np = np.asarray(actual)
+    max_abs_error = float(np.max(np.abs(expected_np - actual_np)))
+    ok = bool(
+        np.allclose(
+            expected_np,
+            actual_np,
+            atol=REVERSIBILITY_ATOL,
+            rtol=REVERSIBILITY_RTOL,
+        )
+    )
+    return ok, max_abs_error
+
+
 def cycle_test():
     k = key(0)
     B = 8
@@ -872,10 +891,36 @@ def cycle_test():
     res = Reservoir(123)
     y, ledger = model_forward(x, m, tape, res, audit_mode=True)
     x_rec = model_inverse(y, m, tape, res)
-    e1 = jnp.max(jnp.abs(x - x_rec)).item()
-    # Allow for tiny floating-point noise from host<->device transfers
-    ok = np.allclose(np.asarray(x), np.asarray(x_rec), atol=1e-5, rtol=1e-5)
+    ok, e1 = round_trip_metrics(x, x_rec)
     return ok, e1, ledger, tape.size_u32(), res.size_u32()
+
+
+def model_trainable_arrays(m: Model) -> list[Array]:
+    """Return the flat, stable parameter list consumed by ``tiny_train_step``."""
+    params: list[Array] = []
+    for block in m.blocks:
+        coupling = block.coup
+        params.extend(
+            [
+                coupling.g_w1,
+                coupling.g_b1,
+                coupling.g_w2,
+                coupling.g_b2,
+                coupling.h_w1,
+                coupling.h_b1,
+                coupling.h_w2,
+                coupling.h_b2,
+                coupling.mix,
+            ]
+        )
+        for name in ("gen_a", "gen_b", "gen_c"):
+            generator = getattr(coupling, name)
+            if generator is None:
+                raise ValueError(f"Coupling parameter {name} must be initialized before training")
+            params.append(generator)
+        valve = block.valve.params
+        params.extend([valve.w1, valve.b1, valve.w2, valve.b2, valve.w3, valve.b3])
+    return params
 
 
 def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: int = 0):
@@ -903,25 +948,7 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
         eye = jnp.eye(A.shape[-1], dtype=A.dtype)
         return cast(Array, jnp.linalg.solve(eye - A, eye + A))
 
-    params = []
-    for b in m.blocks:
-        params += [
-            b.coup.g_w1,
-            b.coup.g_b1,
-            b.coup.g_w2,
-            b.coup.g_b2,
-            b.coup.h_w1,
-            b.coup.h_b1,
-            b.coup.h_w2,
-            b.coup.h_b2,
-            b.coup.mix,
-            b.coup.gen_a,
-            b.coup.gen_b,
-            b.coup.gen_c,
-        ]
-        vp = b.valve.params
-        params += [vp.w1, vp.b1, vp.w2, vp.b2, vp.w3, vp.b3]
-    params_tree = jax.tree_util.tree_flatten(params)[0]
+    params_tree = model_trainable_arrays(m)
     loss, grads = jax.value_and_grad(loss_fn)(params_tree)
     updates, opt_state = opt.update(grads, opt_state, params_tree)
     params_tree = optax.apply_updates(params_tree, updates)
@@ -950,7 +977,7 @@ def diagnostics_print():
     if config.use_rich_output:
         cycle_metrics = {
             "Cycle OK": ok,
-            "Max Abs Error": emax,
+            "Max Abs Error": f"{emax:.3e}",
             "Tape U32 Words": tape_u32,
             "Reservoir U32 Words After": res_u32,
         }
@@ -1124,23 +1151,8 @@ def demo():
     x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
     idx_tar = jax.random.randint(k, (bs, T), 0, dummy_logits_dim)
     y_tar = jax.nn.one_hot(idx_tar, dummy_logits_dim)
-    # Initialize optimizer state with full parameter list used by tiny_train_step
-    _params = []
-    for b in m.blocks:
-        _params += [
-            b.coup.g_w1,
-            b.coup.g_b1,
-            b.coup.g_w2,
-            b.coup.g_b2,
-            b.coup.h_w1,
-            b.coup.h_b1,
-            b.coup.h_w2,
-            b.coup.h_b2,
-            b.coup.mix,
-        ]
-        vp = b.valve.params
-        _params += [vp.w1, vp.b1, vp.w2, vp.b2, vp.w3, vp.b3]
-    _params_tree = jax.tree_util.tree_flatten(_params)[0]
+    # Initialize the optimizer with the exact parameter structure used by each step.
+    _params_tree = model_trainable_arrays(m)
     opt_state = opt.init(_params_tree)
 
     conditional_print("\n[bold]Training Progress:[/bold]", level=1)
@@ -1153,7 +1165,7 @@ def demo():
     y, ledger = model_forward(x, m, tape, res, audit_mode=True)
     x_rec = model_inverse(y, m, tape, res)
 
-    final_ok = np.allclose(np.asarray(x), np.asarray(x_rec))
+    final_ok, final_error = round_trip_metrics(x, x_rec)
 
     # Optional per-layer Cayley orthogonality checks
     import os as _os
@@ -1163,38 +1175,16 @@ def demo():
         # Probe with a small random batch
         probe = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
         for i, _b in enumerate(m.blocks):
-            # Build S from a random u2 probe and compute Cayley Q on one slice
             u2 = probe
-            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
-            v = jnp.roll(u, 1, axis=-1)
-            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-            # Approximate Q via first-order (I+S) (note: demo-only; forward uses solve approximation)
-            def S_apply(xv, u=u, v=v):
-                a = jnp.sum(v * xv, axis=-1, keepdims=True)
-                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
-                return u * a - v * b_
-
-            # Build Qy ≈ y + S(y)
             yv = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
-            Qy = yv + S_apply(yv)
-            jnp.eye(d_a)
-
-            # Compute err per slice
-            # Use a proxy by sampling vectors rather than forming Q explicitly
-            # err ≈ ||(Q^T Q y - y)|| / ||y|| averaged
-            def err_vec(y_, Qy=Qy):
-                QtQy = Qy  # proxy since Q is near-orthogonal for small S
-                return jnp.linalg.norm(QtQy - y_) / (jnp.linalg.norm(y_) + 1e-12)
-
-            err = float(jnp.mean(jax.vmap(err_vec)(yv)))
+            err = float(_relative_norm_error(yv, _cayley_primal(u2, yv)))
             cayley_rows.append((str(i), f"{err:.2e}"))
         if config.use_rich_output:
             from rich.table import Table as _Table
 
             t = _Table(title="Reversible Cayley Layer Checks", show_header=True, header_style="bold magenta")
             t.add_column("Layer", style="cyan")
-            t.add_column("||Q^T Q − I||_F", justify="right")
+            t.add_column("Relative norm error", justify="right")
             for layer, error in cayley_rows:
                 t.add_row(layer, error)
             console.print(t)
@@ -1230,19 +1220,8 @@ def demo():
             mv = givens_mix(vx, b.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, b.coup.mix)
             mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
             u2 = jax.random.normal(key(322), (2, d_a), dtype=jnp.float32)
-            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
-            v = jnp.roll(u, 1, axis=-1)
-            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-            def _S(xv, u=u, v=v):
-                a = jnp.sum(v * xv, axis=-1, keepdims=True)
-                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
-                return u * a - v * b_
-
             yv = jax.random.normal(key(323), (2, d_a), dtype=jnp.float32)
-            cayley_err = float(
-                jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
-            )
+            cayley_err = float(_relative_norm_error(yv, _cayley_primal(u2, yv)))
             det_err = 0.0
             if d <= 128:
                 eye_d = jnp.eye(d, dtype=jnp.float32)
@@ -1266,14 +1245,14 @@ def demo():
     else:
         print("invertibility_summary", dict(inv_rows))
 
-    # Per-layer property checkers table (mix norm proxy, Cayley proxy, symplectic proxy)
+    # Per-layer property checkers table (mix/Cayley norm error, symplectic proxy)
     if config.use_rich_output:
         from rich.table import Table as _Table
 
         tbl = _Table(title="Per-layer Property Checks", show_header=True, header_style="bold magenta")
         tbl.add_column("Layer")
         tbl.add_column("mix_norm_err", justify="right")
-        tbl.add_column("cayley_proxy", justify="right")
+        tbl.add_column("cayley_norm_err", justify="right")
         tbl.add_column("symp_proxy", justify="right")
         tbl.add_column("det_err", justify="right")
         tbl.add_column("ok", justify="center")
@@ -1293,20 +1272,9 @@ def demo():
             else:
                 mv = orth_mix(vx, b.coup.mix)
             mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
-            # Cayley proxy (reusing approach above)
             u2 = jax.random.normal(k_local, (2, d_a), dtype=jnp.float32)
-            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
-            v = jnp.roll(u, 1, axis=-1)
-            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-            def S_apply(xv, u=u, v=v):
-                a = jnp.sum(v * xv, axis=-1, keepdims=True)
-                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
-                return u * a - v * b_
-
             yv = jax.random.normal(k_local, (2, d_a), dtype=jnp.float32)
-            Qy = yv + S_apply(yv)
-            cayley_err = float(jnp.mean(jnp.linalg.norm(Qy - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12)))
+            cayley_err = float(_relative_norm_error(yv, _cayley_primal(u2, yv)))
             # Symplectic proxy (constant per demo if enabled)
             symp_err = 0.0
             if USE_SYMPLECTIC_HYBRID:
@@ -1359,6 +1327,7 @@ def demo():
         # Re-run quick sweep to collect arrays
         import time as _time
 
+        configured_cayley_steps = CAYLEY_ITERS
         tm_by_iter = []
         mem_by_iter = []
         for iters in [1, 2, 3, 4]:
@@ -1367,8 +1336,9 @@ def demo():
             _ = model_forward(x, m, BitTape(), Reservoir(555), audit_mode=True)
             tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
             mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
-        trend = _Table(title="Cayley Iteration Trend", show_header=True, header_style="bold magenta")
-        trend.add_column("Iterations", style="cyan")
+        set_reversible_cayley_iters(configured_cayley_steps)
+        trend = _Table(title="Cayley Composition Trend", show_header=True, header_style="bold magenta")
+        trend.add_column("Steps", style="cyan")
         trend.add_column("Time trend", justify="center")
         trend.add_row("1 → 4", spark(tm_by_iter))
         console.print(trend)
@@ -1382,19 +1352,8 @@ def demo():
             mv = givens_mix(vx, blk.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, blk.coup.mix)
             mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
             u2 = jax.random.normal(k_loc2, (2, d_a), dtype=jnp.float32)
-            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
-            v = jnp.roll(u, 1, axis=-1)
-            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-            def S_apply2(xv, u=u, v=v):
-                a = jnp.sum(v * xv, axis=-1, keepdims=True)
-                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
-                return u * a - v * b_
-
             yv = jax.random.normal(k_loc2, (2, d_a), dtype=jnp.float32)
-            cayley_err = float(
-                jnp.mean(jnp.linalg.norm((yv + S_apply2(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
-            )
+            cayley_err = float(_relative_norm_error(yv, _cayley_primal(u2, yv)))
             det_err = 0.0
             if d <= 128:
                 eye_d = jnp.eye(d, dtype=jnp.float32)
@@ -1416,7 +1375,7 @@ def demo():
                 {
                     "layer": int(li),
                     "mix_norm_err": mix_err,
-                    "cayley_proxy": cayley_err,
+                    "cayley_norm_err": cayley_err,
                     "det_err": det_err,
                     "ok": bool(ok),
                 }
@@ -1444,7 +1403,7 @@ def demo():
                 )
         diag_merge = {
             "property_checks": prop_rows,
-            "property_thresholds": {"mix": 1e-3, "cayley": 1e-3, "symp": 1e-6, "det": 1e-3},
+            "property_thresholds": {"mix": 1e-3, "cayley_norm": 1e-3, "symp": 1e-6, "det": 1e-3},
             "strict_givens": bool(USE_GIVENS_MIX),
         }
         ok_count_export = int(sum(1 for r in prop_rows if r.get("ok", False)))
@@ -1470,18 +1429,17 @@ def demo():
     except Exception as err:
         report_failure(f"Failed to merge diagnostics: {err}")
 
-    # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
+    # Optional Pareto sweep over exact Cayley compositions and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
         import time
         import tracemalloc
 
         from rich.table import Table as _Table
 
-        t = _Table(
-            title="Cayley Iterations/Depth Pareto (lower is better)", show_header=True, header_style="bold magenta"
-        )
+        configured_cayley_steps = CAYLEY_ITERS
+        t = _Table(title="Cayley Compositions/Depth Pareto", show_header=True, header_style="bold magenta")
         t.add_column("layers")
-        t.add_column("iters")
+        t.add_column("steps")
         t.add_column("time_ms", justify="right")
         t.add_column("peak_mem_MB", justify="right")
         # Collect arrays for sparklines
@@ -1533,18 +1491,18 @@ def demo():
             trends = _Table(title="Cayley Pareto Trends", show_header=True, header_style="bold magenta")
             trends.add_column("Sweep", style="cyan")
             trends.add_column("Trend", justify="center")
-            trends.add_row(f"Iterations → time (L={depth_for_iter})", spark(tm_by_iter[depth_for_iter]))
-            trends.add_row(f"Iterations → memory (L={depth_for_iter})", spark(mem_by_iter[depth_for_iter]))
-            trends.add_row(f"Depth → time (iterations={iter_for_depth})", spark(tm_by_depth[iter_for_depth]))
-            trends.add_row(f"Depth → memory (iterations={iter_for_depth})", spark(mem_by_depth[iter_for_depth]))
+            trends.add_row(f"Compositions → time (L={depth_for_iter})", spark(tm_by_iter[depth_for_iter]))
+            trends.add_row(f"Compositions → memory (L={depth_for_iter})", spark(mem_by_iter[depth_for_iter]))
+            trends.add_row(f"Depth → time (steps={iter_for_depth})", spark(tm_by_depth[iter_for_depth]))
+            trends.add_row(f"Depth → memory (steps={iter_for_depth})", spark(mem_by_depth[iter_for_depth]))
             trends.add_row("Inverse time", spark(inv_times))
             console.print(trends)
         else:
             print(
                 "cayley_pareto",
                 {
-                    "time_by_iterations": tm_by_iter,
-                    "memory_by_iterations": mem_by_iter,
+                    "time_by_compositions": tm_by_iter,
+                    "memory_by_compositions": mem_by_iter,
                     "time_by_depth": tm_by_depth,
                     "memory_by_depth": mem_by_depth,
                 },
@@ -1553,21 +1511,22 @@ def demo():
         try:
             last_diagnostics = {
                 "pareto": {
-                    "tm_by_iter": {int(k): [float(x) for x in v] for k, v in tm_by_iter.items()},
-                    "mem_by_iter": {int(k): [float(x) for x in v] for k, v in mem_by_iter.items()},
+                    "time_by_compositions": {int(k): [float(x) for x in v] for k, v in tm_by_iter.items()},
+                    "memory_by_compositions": {int(k): [float(x) for x in v] for k, v in mem_by_iter.items()},
                     "tm_by_depth": {int(k): [float(x) for x in v] for k, v in tm_by_depth.items()},
                     "mem_by_depth": {int(k): [float(x) for x in v] for k, v in mem_by_depth.items()},
                 }
             }
         except Exception as err:
             report_failure(f"Failed to record Pareto diagnostics: {err}")
+        set_reversible_cayley_iters(configured_cayley_steps)
     if config.use_rich_output:
         if final_ok:
-            console.print("\n[bold green]✓ Final cycle check: PASSED[/bold green]")
+            console.print(f"\n[bold green]✓ Final cycle check: PASSED[/bold green] [dim](max error {final_error:.3e})[/dim]")
         else:
-            console.print("\n[bold red]✗ Final cycle check: FAILED[/bold red]")
+            console.print(f"\n[bold red]✗ Final cycle check: FAILED[/bold red] (max error {final_error:.3e})")
     else:
-        print("final_cycle_ok", final_ok)
+        print("final_cycle_ok", final_ok, "max_abs_err", f"{final_error:.3e}")
 
 
 if __name__ == "__main__":

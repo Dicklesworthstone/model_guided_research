@@ -529,16 +529,17 @@ def run(
     ] = True,
     rev_cayley_iters: Annotated[
         int,
-        typer.Option("--rev-cayley-iters", help="Cayley fixed-point iterations (trade compute for accuracy)", min=1),
+        typer.Option(
+            "--rev-cayley-iters",
+            help="Number of exact Cayley composition steps (trade compute for expressivity)",
+            min=1,
+        ),
     ] = 1,
     rev_symplectic: Annotated[
         bool, typer.Option("--rev-symplectic", help="Demonstrate symplectic Cayley property check (S^T J S ≈ J)")
     ] = False,
-    rev_inv_iters: Annotated[
-        int, typer.Option("--rev-inv-iters", help="Inverse fixed-point iteration count for Cayley inverse", min=1)
-    ] = 1,
     rev_pareto: Annotated[
-        bool, typer.Option("--rev-pareto", help="Run a small Cayley-iterations Pareto sweep (time vs memory)")
+        bool, typer.Option("--rev-pareto", help="Run a small Cayley-composition Pareto sweep (time vs memory)")
     ] = False,
     rev_symp_hybrid: Annotated[
         bool, typer.Option("--rev-symplectic-hybrid", help="Enable a symplectic leapfrog step inside coupling (hybrid)")
@@ -719,9 +720,7 @@ def run(
                 console.print(t)
                 artifacts["certificates"]["simplicial_hodge_coeffs"] = [float(c) for c in coeff]
 
-            if (demo_name == "reversible") and (
-                rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid or (rev_inv_iters != 1)
-            ):
+            if (demo_name == "reversible") and (rev_cayley or rev_symplectic or rev_pareto or rev_symp_hybrid):
                 import numpy as _np
 
                 from matrix_exponential_gauge_learning import cayley_orthogonal_from_skew, symplectic_cayley
@@ -776,13 +775,6 @@ def run(
                     import os as _os
 
                     _os.environ["REV_PARETO"] = "1"
-                if rev_inv_iters and rev_inv_iters != 1:
-                    try:
-                        import os as _os
-
-                        _os.environ["REV_INV_ITERS"] = str(int(rev_inv_iters))
-                    except Exception:
-                        pass
                 if rev_symp_hybrid:
                     try:
                         from reversible_computation_and_measure_preserving_learning import set_reversible_symplectic
@@ -840,7 +832,6 @@ def run(
                     "rev_generating": bool(rev_generating),
                     "rev_gen_vjp": bool(rev_gen_vjp),
                     "rev_pareto": bool(rev_pareto),
-                    "rev_inv_iters": rev_inv_iters,
                     "rev_symp_hybrid": bool(rev_symp_hybrid),
                     "gauge_structured": bool(gauge_structured),
                     "gauge_bch_compact": bool(gauge_bch_compact),
