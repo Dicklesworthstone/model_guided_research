@@ -15,7 +15,7 @@ import time
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -994,7 +994,14 @@ def train(args) -> None:
         )
 
     # Model
-    raw_model = GPT(config) if model_type == "gpt" else GPTSynaptic(config)
+    if model_type == "gpt":
+        if not isinstance(config, GPTConfig):
+            raise TypeError("GPT training requires GPTConfig")
+        raw_model: GPT | GPTSynaptic = GPT(config)
+    else:
+        if not isinstance(config, GPTSynapticConfig):
+            raise TypeError("synaptic training requires GPTSynapticConfig")
+        raw_model = GPTSynaptic(config)
     raw_model.to(device)
     raw_model.init_weights()
     if resume_meta is not None:
@@ -1035,7 +1042,7 @@ def train(args) -> None:
                 f"(backend={compile_kwargs['backend']!r}, mode={compile_kwargs['mode']!r}, "
                 f"fullgraph={compile_kwargs['fullgraph']}, dynamic={compile_kwargs['dynamic']})"
             )
-        model = torch.compile(model, **compile_kwargs)
+        model = cast(torch.nn.Module, torch.compile(model, **compile_kwargs))
         compiled_model = True
 
     if ddp:
@@ -1302,8 +1309,9 @@ def train(args) -> None:
                 dash_flags["tied"] = getattr(config, "reversible_tied", False)
             if "tropical" in attention_schedule and getattr(args, "semiring_beta", None) is not None:
                 dash_flags["beta"] = str(args.semiring_beta)
-            if getattr(config, "parameterization", "current") != "current":
-                dash_flags["param"] = str(config.parameterization)
+            parameterization = getattr(config, "parameterization", "current")
+            if parameterization != "current":
+                dash_flags["param"] = str(parameterization)
             if isinstance(config, GPTConfig) and config.activation_ckpt != "none":
                 dash_flags["ckpt"] = (
                     f"{config.activation_ckpt}@{config.activation_ckpt_every_k}"
@@ -1881,7 +1889,10 @@ def train(args) -> None:
             if prof_handle is not None and ddp_rank == 0:
                 prof_summary = summarize_profile(prof_handle)
                 render_profile_table(prof_summary, title=f"Training profile (last {prof_steps} steps)", console=console)
-                trace_path = Path(prof_cfg.trace_dir) / f"{resolved_run_id}_steps.json"
+                trace_dir = prof_cfg.trace_dir
+                if trace_dir is None:
+                    raise RuntimeError("enabled profiler is missing its trace directory")
+                trace_path = trace_dir / f"{resolved_run_id}_steps.json"
                 trace_path.parent.mkdir(parents=True, exist_ok=True)
                 prof_handle.export_chrome_trace(str(trace_path))
                 console.print(f"[bold cyan]profile[/bold cyan] chrome trace -> {trace_path}")
@@ -2052,7 +2063,7 @@ def train(args) -> None:
                 and "tropical" in attention_schedule
                 else None
             ),
-            "synaptic_config": (asdict(config.syn_cfg) if model_type == "synaptic" else None),
+            "synaptic_config": (asdict(config.syn_cfg) if isinstance(config, GPTSynapticConfig) else None),
             "val_interval": val_interval,
             "val_batches": val_batches if val_interval > 0 else None,
         },
@@ -2104,10 +2115,11 @@ def train(args) -> None:
             "compile flex_attention",
             "enabled" if bool(getattr(config, "compile_flex_attention", False)) else "disabled",
         )
-    if getattr(config, "ca_init_rule", None):
+    ca_init_rule = getattr(config, "ca_init_rule", None)
+    if ca_init_rule:
         report_table.add_row(
             "CA init",
-            f"{config.ca_init_rule} (alpha={getattr(config, 'ca_init_alpha', None)}, seed={getattr(config, 'ca_init_seed', None)})",
+            f"{ca_init_rule} (alpha={getattr(config, 'ca_init_alpha', None)}, seed={getattr(config, 'ca_init_seed', None)})",
         )
     if compiled_model or bool(getattr(config, "compile_flex_attention", False)):
         report_table.add_row("compile backend", repr(compile_backend))

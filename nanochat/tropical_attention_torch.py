@@ -353,6 +353,11 @@ def set_semiring_beta(model: nn.Module, beta: float | None) -> int:
 
 
 class TropicalCausalSelfAttention(AttentionCore):
+    tropical_gamma_head_mean: torch.Tensor
+    tropical_gamma_head_min: torch.Tensor
+    tropical_gamma_min: torch.Tensor
+    tropical_route_coverage: torch.Tensor
+
     def __init__(self, config, layer_idx):
         super().__init__(config, layer_idx)
         self.tropical_gauge_fix = bool(getattr(config, "tropical_gauge_fix", True))

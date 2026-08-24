@@ -302,20 +302,37 @@ class GPTSynaptic(nn.Module):
                     params=other_params, lr=embedding_lr * dmodel_lr_scale
                 ),  # Use embedding LR scale for other params? Or maybe just matrix_lr? Usually AdamW params get higher LR.
             ]
-            adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
-            AdamWFactory = DistAdamW if ddp else torch.optim.AdamW
             adam_params = embedding_params + lm_head_params + other_params
-            if (
+            use_fused_adamw = (
                 (not ddp)
                 and any(p.is_cuda for p in adam_params)
                 and ("fused" in inspect.signature(torch.optim.AdamW).parameters)
-            ):
-                adamw_kwargs["fused"] = True
-            adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
-
-            muon_kwargs = dict(lr=matrix_lr, momentum=0.95)
-            MuonFactory = DistMuon if ddp else Muon
-            muon_optimizer = MuonFactory(matrix_params, **muon_kwargs)
+            )
+            if ddp:
+                adamw_optimizer = DistAdamW(
+                    adam_groups,
+                    betas=(0.8, 0.95),
+                    eps=1e-10,
+                    weight_decay=weight_decay,
+                )
+                muon_optimizer = DistMuon(matrix_params, lr=matrix_lr, momentum=0.95)
+            else:
+                if use_fused_adamw:
+                    adamw_optimizer = torch.optim.AdamW(
+                        adam_groups,
+                        betas=(0.8, 0.95),
+                        eps=1e-10,
+                        weight_decay=weight_decay,
+                        fused=True,
+                    )
+                else:
+                    adamw_optimizer = torch.optim.AdamW(
+                        adam_groups,
+                        betas=(0.8, 0.95),
+                        eps=1e-10,
+                        weight_decay=weight_decay,
+                    )
+                muon_optimizer = Muon(matrix_params, lr=matrix_lr, momentum=0.95)
             optimizers = [adamw_optimizer, muon_optimizer]
             for opt in optimizers:
                 for group in opt.param_groups:
