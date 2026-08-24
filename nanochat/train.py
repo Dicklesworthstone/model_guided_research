@@ -1138,6 +1138,7 @@ def train(args) -> None:
         device=device.type,
         resume_state_dict=loader_resume_state,
         data_dir=data_dir,
+        prefetch_chunks=int(getattr(args, "dataloader_prefetch", 0)),
     )
     if resume_meta is not None and resume_data_mode == "exact" and batches_consumed > 0:
         # Exact resume: replay the deterministic stream from the beginning and
@@ -2603,6 +2604,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--activation-ckpt-every-k", type=int, default=1, help="Block stride for every-k mode.")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"])
+    parser.add_argument(
+        "--dataloader-prefetch",
+        type=int,
+        default=0,
+        help="Tokenizer-chunk depth for the dataloader's background prefetch thread "
+        "(bead atkp; hides encode refill stalls behind GPU steps). 0 = synchronous loading.",
+    )
     parser.add_argument("--profile", action="store_true", help="Profile the last --profile-steps training steps (b1l torch.profiler hooks): aggregate op table + chrome trace under <run-dir>/profile/. Debug tool; zero overhead when off.")
     parser.add_argument("--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on.")
     # Checkpoint/resume (bead rz8.1).

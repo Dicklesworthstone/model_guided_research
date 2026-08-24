@@ -1,3 +1,4 @@
+import threading
 from collections import deque
 
 import pyarrow.parquet as pq
@@ -9,7 +10,15 @@ from nanochat.torch_imports import torch
 
 
 def tokenizing_distributed_data_loader_with_state(
-    B, T, split, tokenizer_threads=4, tokenizer_batch_size=128, device="cuda", resume_state_dict=None, data_dir=None
+    B,
+    T,
+    split,
+    tokenizer_threads=4,
+    tokenizer_batch_size=128,
+    device="cuda",
+    resume_state_dict=None,
+    data_dir=None,
+    prefetch_chunks=0,
 ):
     """
     Stream pretraining text from parquet files, tokenize, yield training batches.
@@ -22,6 +31,15 @@ def tokenizing_distributed_data_loader_with_state(
     The state_dict that is returned can be later passed into this function via `resume_state_dict` to approximately resume.
 
     Perfect state resumption is possible but would be a lot more bloated, probably not worth it atm.
+
+    Prefetch (bead atkp): with ``prefetch_chunks > 0`` a daemon thread runs the
+    document iterator + tokenizer encode ahead of the consumer, hiding the
+    ~200ms synchronous refill stalls behind training steps. The thread only
+    ever APPENDS fully-tokenized (chunk, position) items to a bounded queue;
+    the recorded state is the position of the last chunk POURED into the
+    yielded batch — identical to the synchronous path's semantics, so exact
+    resume replay stays correct. Default 0 = the original synchronous loop,
+    byte-for-byte unchanged.
     """
     if split not in ["train", "val"]:
         raise ValueError("split must be 'train' or 'val'")
@@ -74,30 +92,69 @@ def tokenizing_distributed_data_loader_with_state(
     bos_token = tokenizer.get_bos_token_id()
     # scratch buffer holds the tokens for one iteration
     token_buffer = deque()  # we stream tokens on the right and pop from the left
-    while True:
-        # Accumulate enough tokens for one iteration before yielding.
-        while len(token_buffer) < needed_tokens:
-            doc_batch, (pq_idx, rg_idx) = next(batches)
-            token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
-            for tokens in token_lists:
-                token_buffer.extend(tokens)
-        # Move tokens from the deque into the scratch buffer
-        tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
+
+    def _emit(tokens, state_dict):
         # CUDA supports memory pinning for asynchronous transfers between CPU and GPU
         device_type = torch.device(device).type
         use_cuda_optimizations = device_type == "cuda"
-        scratch = torch.tensor(tokens, dtype=torch.long, pin_memory=use_cuda_optimizations)  # in PyTorch, long=int64
-        # Create the inputs/targets as 1D tensors
-        inputs_cpu = scratch[:-1]
+        scratch = torch.tensor(tokens, dtype=torch.long, pin_memory=use_cuda_optimizations)  # long=int64
+        inputs_cpu = scratch[:-1]  # drop the last token: it is only the target of the previous step
         targets_cpu = scratch[1:]
-        # Reshape to 2D and move to GPU async
         inputs = inputs_cpu.view(B, T).to(device=device, non_blocking=use_cuda_optimizations)
         targets = targets_cpu.view(B, T).to(device=device, non_blocking=use_cuda_optimizations)
-        state_dict = {
-            "pq_idx": pq_idx,
-            "rg_idx": rg_idx,
-        }  # we need this in case we wish to approximately resume training
-        yield inputs, targets, state_dict
+        return inputs, targets, state_dict
+    if prefetch_chunks and prefetch_chunks > 0:
+        # Prefetch mode (bead atkp): a daemon thread tokenizes ahead of the
+        # consumer into a bounded pending-queue of (token_list, position)
+        # chunks. The recorded state is the position of the last chunk POURED
+        # into the yielded batch — consumer-accurate, so exact-resume replay
+        # semantics are identical to the synchronous path.
+        buf_cond = threading.Condition()
+        pending: deque = deque()  # (token_list, (pq_idx, rg_idx)) not yet poured
+        latest_pos = {"pq_idx": 0, "rg_idx": 0}
+
+        def _refill():
+            while True:
+                doc_batch, pos = next(batches)
+                token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
+                with buf_cond:
+                    while len(pending) >= prefetch_chunks:
+                        buf_cond.wait(timeout=0.05)
+                    for tl in token_lists:
+                        pending.append((tl, pos))
+                    buf_cond.notify_all()
+
+        threading.Thread(target=_refill, daemon=True, name="dataloader-prefetch").start()
+
+        while True:
+            with buf_cond:
+                while len(token_buffer) < needed_tokens:
+                    if pending:
+                        tl, pos = pending.popleft()
+                        token_buffer.extend(tl)
+                        latest_pos["pq_idx"], latest_pos["rg_idx"] = pos
+                        buf_cond.notify_all()
+                    else:
+                        buf_cond.wait(timeout=0.02)
+                tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
+                state_dict = {"pq_idx": latest_pos["pq_idx"], "rg_idx": latest_pos["rg_idx"]}
+                buf_cond.notify_all()
+            yield _emit(tokens, state_dict)
+    else:
+        while True:
+            # Accumulate enough tokens for one iteration before yielding.
+            while len(token_buffer) < needed_tokens:
+                doc_batch, (pq_idx, rg_idx) = next(batches)
+                token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
+                for tokens in token_lists:
+                    token_buffer.extend(tokens)
+            # Move tokens from the deque into the scratch buffer
+            tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
+            state_dict = {
+                "pq_idx": pq_idx,
+                "rg_idx": rg_idx,
+            }  # we need this in case we wish to approximately resume training
+            yield _emit(tokens, state_dict)
 
 
 def tokenizing_distributed_data_loader(*args, **kwargs):
