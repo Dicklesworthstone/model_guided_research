@@ -5569,7 +5569,7 @@ def _run_certify_checks(
             probs = t_func.softmax(route, dim=-1)
             sums_err = (probs.sum(dim=-1) - 1.0).abs().max()
             neg_err = (-probs).clamp_min(0.0).max()
-            return float(torch.maximum(sums_err, neg_err))
+            return float(torch.maximum(sums_err, neg_err).detach())
 
         add_check(
             "fractal",

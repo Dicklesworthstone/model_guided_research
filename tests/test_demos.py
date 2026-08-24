@@ -64,6 +64,24 @@ def test_jax_available():
     require(float(y) == 6.0, "Basic JAX operation failed")
 
 
+def test_tropical_pivot_dataset_and_route_training_are_jax_trace_safe():
+    """Regression for faif: vmap and lax.scan must not concretize traced values."""
+    import jax.numpy as jnp
+
+    from tropical_geometry_and_idempotent_algebra import Config, init_params, pivot_crowd_dataset, train_step
+
+    cfg = Config(d=4, dk=2, H=2, C=2, L=4)
+    data_key, params_key = jax.random.split(jax.random.PRNGKey(0))
+    X, labels = pivot_crowd_dataset(data_key, n=3, L=cfg.L, cfg=cfg)
+    updated, step_sizes = train_step(init_params(params_key, cfg), X, labels, cfg)
+
+    require(X.shape == (3, cfg.d, cfg.L), f"unexpected dataset shape: {X.shape}")
+    require(labels.shape == (3,), f"unexpected label shape: {labels.shape}")
+    require(step_sizes.shape == (3,), f"unexpected scan output shape: {step_sizes.shape}")
+    leaves = (*jax.tree_util.tree_leaves(updated), step_sizes)
+    require(all(bool(jnp.isfinite(leaf).all()) for leaf in leaves), "tropical training produced non-finite values")
+
+
 def test_documentation_exists():
     """Test that markdown documentation exists for each module."""
     doc_dir = Path("markdown_documentation")
