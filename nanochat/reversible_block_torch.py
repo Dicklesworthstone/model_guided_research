@@ -29,6 +29,8 @@ detach-and-recompute trick. The kick inverse is the negative kick, exact to
 machine epsilon.
 """
 
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F_torch
@@ -237,7 +239,10 @@ class ReversibleFunction(torch.autograd.Function):
         return y
 
     @staticmethod
-    def backward(ctx, grad_y):
+    def backward(ctx: Any, *grad_outputs: Any) -> Any:
+        if len(grad_outputs) != 1:
+            raise RuntimeError(f"ReversibleFunction expected one output gradient, got {len(grad_outputs)}")
+        grad_y = grad_outputs[0]
         y = ctx.saved_tensors[0]
         cos_sin = ctx.cos_sin
         kv_cache = ctx.kv_cache
@@ -274,7 +279,10 @@ class ReversibleFunction(torch.autograd.Function):
 
             # Grads w.r.t params_G are accumulated.
             # Grads w.r.t y1 are in y1_detached.grad
-            dy1_total = dy1 + y1_detached.grad
+            y1_grad = y1_detached.grad
+            if y1_grad is None:
+                raise RuntimeError("Reversible G recomputation did not produce an input gradient")
+            dy1_total = dy1 + y1_grad
 
             # Recompute F
             x2_detached = x2.detach()
@@ -284,7 +292,10 @@ class ReversibleFunction(torch.autograd.Function):
             f_out.backward(dy1_total, retain_graph=True)
 
             # Grads w.r.t params_F accumulated.
-            dx2_total = dy2 + x2_detached.grad  # (dy2 comes from identity path x2->y2)
+            x2_grad = x2_detached.grad
+            if x2_grad is None:
+                raise RuntimeError("Reversible F recomputation did not produce an input gradient")
+            dx2_total = dy2 + x2_grad  # (dy2 comes from identity path x2->y2)
             dx1_total = dy1_total  # x1 -> y1 is identity
 
         return torch.cat([dx1_total, dx2_total], dim=-1), None, None, None, None

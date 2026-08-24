@@ -50,7 +50,9 @@ _BLADES: tuple[tuple[int, ...], ...] = (
     (1, 2, 3),
 )
 _METRIC = {1: 1.0, 2: 1.0, 3: 1.0}
-_BLADE_INDEX = {blade: i for i, blade in enumerate(_BLADES)}
+_BLADE_INDEX: dict[tuple[int, ...], int] = {
+    blade: i for i, blade in enumerate(_BLADES)
+}
 
 #: Grade of each canonical blade (for reversion signs).
 _GRADES = (0, 1, 1, 1, 2, 2, 2, 3)

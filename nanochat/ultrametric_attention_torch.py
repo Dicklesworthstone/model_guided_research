@@ -562,8 +562,11 @@ def perf_sanity_ultrametric_trie_decode(
 
                 if mode == "trie":
                     state = attn._get_trie_state(kv, B=B, H=n_head, device=device)
-                    k_view = kv.kv_cache[0, 0, :, :, : kv.pos]
-                    v_view = kv.kv_cache[0, 1, :, :, : kv.pos]
+                    cache = kv.kv_cache
+                    if cache is None:
+                        raise RuntimeError("KVCache insert_kv did not initialize the cache tensor")
+                    k_view = cache[0, 0, :, :, : kv.pos]
+                    v_view = cache[0, 1, :, :, : kv.pos]
                     attn._update_trie_from_kv(state, k_view, v_view)
 
                 t0 = time.perf_counter()

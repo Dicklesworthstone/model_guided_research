@@ -152,7 +152,7 @@ def main():
     print("Initializing model...")
     # Check backend
     try:
-        backend = jax.lib.xla_bridge.get_backend().platform
+        backend = jax.default_backend()
         print(f"JAX is using backend: {backend.upper()}")
         if backend == "cpu":
             print("WARNING: JAX IS RUNNING ON CPU! CUDA/TPU WAS NOT DETECTED OR FAILED TO INITIALIZE.")

@@ -216,6 +216,8 @@ def download_single_file(index):
                         if chunk:
                             f.write(chunk)
                             if progress_ctx is not None:
+                                if task_id is None:
+                                    raise RuntimeError("Rich progress task was not initialized")
                                 progress_ctx.advance(task_id, len(chunk))
             finally:
                 if progress_ctx is not None:

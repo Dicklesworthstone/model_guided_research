@@ -454,7 +454,7 @@ def _mat_mul(a: tuple[tuple[int, ...], ...], b: tuple[tuple[int, ...], ...]) -> 
 def _octahedral_elements() -> list[tuple[tuple[int, ...], ...]]:
     identity: tuple[tuple[int, ...], ...] = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
     seen = {identity}
-    frontier = [identity]
+    frontier: list[tuple[tuple[int, ...], ...]] = [identity]
     while frontier:
         cur = frontier.pop()
         for g in _ROT_GENERATORS.values():

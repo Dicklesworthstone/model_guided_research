@@ -42,6 +42,8 @@ import jax.numpy as jnp
 from rich.console import Console
 
 _console = Console()
+last_diagnostics: dict[str, object]
+
 
 @dataclass(frozen=True)
 class Config:
@@ -326,6 +328,7 @@ def pivot_crowd_dataset(k, n, L, cfg: Config):
 
 def run():
     global last_diagnostics
+    sparse_train_diagnostics: dict[str, object] | None = None
     key = jax.random.PRNGKey(0)
     cfg = Config(d=16, dk=4, H=2, C=2, L=16, residual=False, margin=1.0)
     params = init_params(key, cfg)
@@ -490,7 +493,7 @@ def run():
         except Exception as err:
             _Console().print(f"[yellow]Skipping sparse-train table: {err}[/yellow]")
         # Export
-        last_diagnostics["sparse_train"] = {
+        sparse_train_diagnostics = {
             "steps": steps,
             "k_grid": grid_rows,
             "acc_pre": acc_pre,
@@ -503,6 +506,8 @@ def run():
         "median_margin": float(jnp.median(cert)),
         "sparse_mix": mix_rows,
     }
+    if sparse_train_diagnostics is not None:
+        last_diagnostics["sparse_train"] = sparse_train_diagnostics
 
 
 # (adapter defined above)

@@ -40,13 +40,6 @@ from nanochat.gpt import GPT, GPTConfig
 from nanochat.tokenizer import get_tokenizer
 from nanochat.torch_imports import torch
 
-# Try to import GPTSynaptic for synaptic model support
-try:
-    from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
-except Exception:
-    GPTSynaptic = None
-    GPTSynapticConfig = None
-
 # Set up logging
 setup_default_logging()
 logger = logging.getLogger(__name__)
@@ -55,6 +48,15 @@ logger = logging.getLogger(__name__)
 def log0(message):
     if int(os.environ.get("RANK", 0)) == 0:
         logger.info(message)
+
+
+def _load_synaptic_model_types():
+    """Load optional synaptic model support only when a checkpoint needs it."""
+    try:
+        from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
+    except Exception as exc:
+        raise ImportError("gpt_synaptic not found but synapses=True in metadata") from exc
+    return GPTSynaptic, GPTSynapticConfig
 
 
 def _atomic_torch_save(obj, path):
@@ -220,12 +222,11 @@ def build_model(checkpoint_dir, step, device, phase):
 
     # Check if this is a synaptic model
     if meta_data.get("synapses", False):
-        if GPTSynaptic is None:
-            raise ImportError("gpt_synaptic not found but synapses=True in metadata")
+        synaptic_model_type, synaptic_config_type = _load_synaptic_model_types()
         from nanochat.synaptic import SynapticConfig
 
         syn_cfg = SynapticConfig()  # Use defaults; could load from meta_data if saved
-        model_config = GPTSynapticConfig(
+        model_config = synaptic_config_type(
             sequence_len=model_config_kwargs["sequence_len"],
             vocab_size=model_config_kwargs["vocab_size"],
             n_layer=model_config_kwargs["n_layer"],
@@ -235,7 +236,7 @@ def build_model(checkpoint_dir, step, device, phase):
             syn_cfg=syn_cfg,
         )
         with torch.device("meta"):
-            model = GPTSynaptic(model_config)
+            model = synaptic_model_type(model_config)
     else:
         model_config = GPTConfig(**model_config_kwargs)
         with torch.device("meta"):

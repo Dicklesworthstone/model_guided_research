@@ -223,7 +223,12 @@ def measure_activation_scale(
     idx = torch.randint(0, cfg.vocab_size, (batch_size, min(seq_len, cfg.sequence_len)), device=device)
     acts: dict[str, Any] = {}
     # hook the first block's output (post-residual activation)
-    handle = model.transformer.h[0].register_forward_hook(
+    blocks = model.transformer["h"]
+    if not isinstance(blocks, torch.nn.ModuleList):
+        raise TypeError(f"GPT transformer 'h' must be a ModuleList, got {type(blocks).__name__}")
+    if len(blocks) == 0:
+        raise RuntimeError("GPT transformer must contain at least one block")
+    handle = blocks[0].register_forward_hook(
         lambda mod, inp, out: acts.__setitem__("y", out.detach())
     )
     try:

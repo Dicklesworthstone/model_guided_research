@@ -9,7 +9,7 @@ approximated via a symmetric Lanczos iteration using Hessian-vector products.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -82,16 +82,8 @@ def lanczos_sym(
     return Q, T, g_norm
 
 
-@dataclass(frozen=True)
-class HossState:
+class HossState(NamedTuple):
     rng_key: jax.Array
-
-
-jax.tree_util.register_pytree_node(
-    HossState,
-    lambda node: ((node.rng_key,), None),
-    lambda _, children: HossState(rng_key=children[0]),
-)
 
 
 def hoss(
@@ -103,7 +95,7 @@ def hoss(
     min_curvature: float = 1e-6,
     gradient_norm_clip: float | None = 1.0,
     jitter: float = 1e-6,
-) -> optax.GradientTransformation:
+) -> optax.GradientTransformationExtraArgs:
     """HOSS optimizer.
 
     Notes:
@@ -117,7 +109,14 @@ def hoss(
         del params
         return HossState(rng_key=random.PRNGKey(0))
 
-    def update_fn(grads, state: HossState, params=None, **kwargs):
+    def update_fn(
+        updates: optax.Updates,
+        state: optax.OptState,
+        params: optax.Params | None = None,
+        **kwargs: Any,
+    ) -> tuple[optax.Updates, optax.OptState]:
+        if not isinstance(state, HossState):
+            raise TypeError(f"HOSS expected HossState, got {type(state).__name__}")
         if params is None:
             raise ValueError("HOSS optimizer requires `params` for HVP computation.")
         loss_fn = kwargs.get("loss_fn")
@@ -125,7 +124,7 @@ def hoss(
             raise ValueError("HOSS optimizer requires `loss_fn(params)` passed via `tx.update(..., loss_fn=...)`.")
 
         params_flat, unravel_params = ravel_pytree(params)
-        grads_flat, _ = ravel_pytree(grads)
+        grads_flat, _ = ravel_pytree(updates)
         params_flat_f32 = params_flat.astype(jnp.float32)
         grads_flat_f32 = grads_flat.astype(jnp.float32)
 
@@ -171,4 +170,4 @@ def hoss(
         updates = jax.tree_util.tree_map(lambda p, u: u.astype(p.dtype), params, updates_tree_f32)
         return updates, HossState(rng_key=rng_key)
 
-    return optax.GradientTransformation(init_fn, update_fn)
+    return optax.GradientTransformationExtraArgs(init_fn, update_fn)
