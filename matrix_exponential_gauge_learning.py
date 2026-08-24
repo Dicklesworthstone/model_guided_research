@@ -52,6 +52,8 @@ from rich.text import Text
 from config import get_config
 from utils import console
 
+last_diagnostics: dict[str, Any]
+
 # ---------------------------
 # Utilities: pairs & rotations
 # ---------------------------
@@ -148,7 +150,7 @@ def apply_givens_nd(x: jnp.ndarray, thetas: jnp.ndarray, pairs: jnp.ndarray) -> 
     return y  # type: ignore[no-any-return]
 
 
-def shift_along_axis(x: jnp.ndarray, delta: int, axis: int) -> jnp.ndarray:
+def shift_along_axis(x: jnp.ndarray, delta: int | Array, axis: int) -> jnp.ndarray:
     # Zero-padded shift along the given axis
     # Simple roll-based implementation that works with JAX tracing
     n = x.shape[axis]
@@ -251,7 +253,7 @@ def _skew_symmetric_from_rng(key: jax.Array, dim: int, *, scale: float = 1.0) ->
     """Create a random skew-symmetric matrix with controlled scale."""
     a = jax.random.normal(key, (dim, dim))
     skew = a - a.T
-    return cast(Array, skew * (scale / max(1.0, float(dim))))
+    return skew * (scale / max(1.0, float(dim)))
 
 
 def _bch_fuse_sequence(mats: Sequence[jnp.ndarray], *, order: int = 2) -> Array:
@@ -262,13 +264,13 @@ def _bch_fuse_sequence(mats: Sequence[jnp.ndarray], *, order: int = 2) -> Array:
         total = mats[0]
         for m in mats[1:]:
             total = total + m
-        return cast(Array, total)
+        return total
 
     fused = mats[0]
     for m in mats[1:]:
         comm = fused @ m - m @ fused
         fused = fused + m + 0.5 * comm
-    return cast(Array, fused)
+    return fused
 
 
 def _relative_frob(a: jnp.ndarray, b: jnp.ndarray) -> float:
@@ -325,8 +327,8 @@ def uniformization_expmv_banded(
             key = rng_keys[i]
             ki = jax.random.poisson(key, m[i])
 
-            def step_fun(t, acc):
-                key_t = jax.random.fold_in(key, int(t))
+            def step_fun(t, V):
+                key_t = jax.random.fold_in(key, t)
                 # Sample per-position offset indices according to bands/lam
                 probs = Q_bands[i] / (lam[i] + 1e-8)  # (N,O)
                 probs_row = probs.reshape(-1, probs.shape[-1])
@@ -335,14 +337,13 @@ def uniformization_expmv_banded(
                 idx = jnp.argmax(jnp.log(probs_row + 1e-12) + g, axis=-1)
                 idx = idx.reshape(probs.shape[0])
                 # Apply chosen shifts row-wise
-                V = acc
-                # Fold all rows with a single chosen delta: approximate by majority delta
-                # (Keeps demo simple; full per-row shifting would need scatter.)
-                vals, _ = jnp.unique(idx, return_counts=True)
-                delta = lax.cond(vals.size > 0, lambda v: v[0], lambda v: jnp.array(0, dtype=jnp.int32), vals)
-                return (t + 1, shift_along_axis(V, delta.item(), axis=0))
+                # Fold all rows with the smallest sampled offset index. This is
+                # the prior unique(idx)[0] rule without a data-dependent-size
+                # unique operation inside JAX's traced loop.
+                delta = jnp.min(idx)
+                return shift_along_axis(V, delta, axis=0)
 
-            _, outU = lax.fori_loop(0, jnp.int32(ki), step_fun, (jnp.int32(0), Ui))
+            outU = lax.fori_loop(0, jnp.int32(ki), step_fun, Ui)
             return outU
 
         Z = jax.vmap(one_chain, in_axes=(0, 0))(jnp.arange(BH, dtype=jnp.int32), U)
@@ -613,7 +614,7 @@ class GaugeAttentionBlock(nn.Module):
         U_new = jnp.concatenate(parts, axis=-1)
 
         # Simple commutator diagnostics on raw generators
-        comm = {}
+        comm: dict[str, float] = {}
 
         # Ensure shapes match for commutator checks (broadcast if needed)
         def safe_comm(X, Y):
@@ -646,10 +647,7 @@ class GaugeAttentionBlock(nn.Module):
         B, N, D = x.shape
         H, dh = self.cfg.n_heads, self.cfg.d_head
 
-        if self.cfg.use_layernorm:
-            x_in = self.ln1(x)
-        else:
-            x_in = x
+        x_in = self.ln1(x) if self.ln1 is not None else x
 
         # Projections to heads
         q = self.q_proj(x_in)  # (B,N,H,dh)
@@ -754,10 +752,7 @@ class GaugeAttentionBlock(nn.Module):
         y = upper_band_expm(W_nilp, y, order=self.cfg.nilpotent_order)
 
         # Residual MLP
-        if self.cfg.use_layernorm:
-            y_in = self.ln2(y)
-        else:
-            y_in = y
+        y_in = self.ln2(y) if self.ln2 is not None else y
         h = nn.gelu(self.mlp_hidden_layer(y_in))
         if self.cfg.dropout_rate > 0.0:
             h = nn.Dropout(self.cfg.dropout_rate)(h, deterministic=not train)
@@ -802,7 +797,7 @@ class GaugeTransformer(nn.Module):
         self.readout = nn.Dense(self.vocab_size, name="head") if self.vocab_size is not None else None
 
     def __call__(self, x: jnp.ndarray, train: bool = True, return_debug: bool = False):
-        dbg_all: list[Any] | None = [] if return_debug else None
+        dbg_all: list[dict[str, Any]] | None = [] if return_debug else None
         y = x
         for blk in self.blocks:
             if not return_debug:
@@ -908,7 +903,10 @@ def demo():
     model = GaugeTransformer(cfg, depth=depth, vocab_size=None)
     x = jax.random.normal(key, (B, N, D))
     variables = model.init(key, x, train=False, return_debug=True)
-    y, dbg = model.apply(variables, x, train=False, return_debug=True)
+    y, dbg = cast(
+        tuple[Array, list[dict[str, Any]]],
+        model.apply(variables, x, train=False, return_debug=True),
+    )
 
     forward_rows = [
         ("Output shape", str(y.shape)),
@@ -949,7 +947,7 @@ def demo():
         outs = []
         for r in range(reps):
             os.environ["GAUGE_UNIF_REP_SEED"] = str(r)
-            yr, _ = model.apply(variables, x, train=False, return_debug=False)
+            yr = cast(Array, model.apply(variables, x, train=False, return_debug=False))
             outs.append(yr)
         del os.environ["GAUGE_UNIF_REP_SEED"]
         Ystack = jnp.stack(outs, axis=0)
@@ -962,13 +960,13 @@ def demo():
 
     # Optional sampling schedule comparison: compare deterministic vs sampled outputs
     if os.environ.get("GAUGE_SAMPLE_SCHEDULE", "0") == "1":
-        y_det, _ = model.apply(variables, x, train=False, return_debug=False)
+        y_det = cast(Array, model.apply(variables, x, train=False, return_debug=False))
         os.environ.setdefault("GAUGE_UNIF_SAMPLE", "1")
         os.environ.setdefault("GAUGE_UNIF_REPS", "3")
         outs = []
         for r in range(int(os.environ.get("GAUGE_UNIF_REPS", "3"))):
             os.environ["GAUGE_UNIF_REP_SEED"] = str(r + 77)
-            ys, _ = model.apply(variables, x, train=False, return_debug=False)
+            ys = cast(Array, model.apply(variables, x, train=False, return_debug=False))
             outs.append(ys)
         try:
             del os.environ["GAUGE_UNIF_REP_SEED"]
@@ -1054,7 +1052,10 @@ def demo():
     )
     model_alt = GaugeTransformer(cfg_alt, depth=1, vocab_size=None)
     vars_alt = model_alt.init(key, x, train=False, return_debug=True)
-    _, dbg_alt = model_alt.apply(vars_alt, x, train=False, return_debug=True)
+    _, dbg_alt = cast(
+        tuple[Array, list[dict[str, Any]]],
+        model_alt.apply(vars_alt, x, train=False, return_debug=True),
+    )
     curv_mean = float(jnp.mean(dbg[0]["curvature_proxy"]))
     curv_mean_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
     _print_table(
@@ -1186,7 +1187,10 @@ def demo():
                         else:
                             pblk[name] = W
     variables_comm = freeze(vars_comm)
-    y_comm, dbg_comm = model.apply(variables_comm, x, train=False, return_debug=True)
+    y_comm, dbg_comm = cast(
+        tuple[Array, list[dict[str, Any]]],
+        model.apply(variables_comm, x, train=False, return_debug=True),
+    )
     curv_mean_comm = float(jnp.mean(dbg_comm[0]["curvature_proxy"]))
     curv_mean_def = float(jnp.mean(dbg[0]["curvature_proxy"]))
     _print_table(
@@ -1235,7 +1239,10 @@ def demo():
                         if name in pblk:
                             pblk[name] = jnp.zeros_like(pblk[name])
         variables_alt = _freeze(vars_alt)
-        _, dbg_alt = model.apply(variables_alt, x, train=False, return_debug=True)
+        _, dbg_alt = cast(
+            tuple[Array, list[dict[str, Any]]],
+            model.apply(variables_alt, x, train=False, return_debug=True),
+        )
         curv_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
         _print_table(
             "Curvature means comparison",
@@ -1301,7 +1308,10 @@ def demo():
     if cap_val:
         # Uncapped run
         val = os.environ.pop("GAUGE_UNIF_CAP_K")
-        _, dbg_uncap = model.apply(variables, x, train=False, return_debug=True)
+        _, dbg_uncap = cast(
+            tuple[Array, list[dict[str, Any]]],
+            model.apply(variables, x, train=False, return_debug=True),
+        )
         os.environ["GAUGE_UNIF_CAP_K"] = val
         K_uncap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg_uncap]
         K_cap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg]

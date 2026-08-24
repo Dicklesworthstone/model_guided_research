@@ -33,6 +33,8 @@ import numpy as np
 from rich.console import Console
 
 _console = Console()
+last_diagnostics: dict[str, object]
+
 
 def p_pow(p, K):
     a = np.ones(K, dtype=np.int64)
@@ -579,7 +581,9 @@ class UltrametricAttention:
                 if sim > best_sim:
                     best_sim = sim
                     best_j = j
-            picks.append(int(best_j))
+            if best_j is None:
+                raise RuntimeError("Ultrametric attention found no candidate in a non-empty index")
+            picks.append(best_j)
             sims.append(best_sim)
         # Aggregate across heads
         if ULTRA_FUSE:
@@ -806,9 +810,17 @@ def run_task_B(*, packed: bool = False):
     acc_test = model.eval_acc(qst, yst)
     t3 = time.time()
     if packed:
-        node_count = sum(int(h._size[d]) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
+        node_count = 0
+        for head in model.heads:
+            if not isinstance(head, PackedHeadTrie):
+                raise RuntimeError("Packed LCP model contains a dictionary-backed head")
+            node_count += sum(int(head._size[d]) for d in range(K))
     else:
-        node_count = sum(len(h.levels[d].residues) for h in model.heads for d in range(K))  # type: ignore[attr-defined]
+        node_count = 0
+        for head in model.heads:
+            if not isinstance(head, HeadTrie):
+                raise RuntimeError("Dictionary-backed LCP model contains a packed head")
+            node_count += sum(len(head.levels[d].residues) for d in range(K))
     _console.print(
         f"[cyan]Task B:[/cyan] train_acc_pre={acc0:.4f} train_acc_post={acc_train:.4f} "
         f"test_acc={acc_test:.4f} created_nodes={created} total_nodes={node_count}"
@@ -873,9 +885,13 @@ def smoke_demo_small():
 
 def demo():
     """Run all ultrametric demonstrations."""
+    global last_diagnostics
+
     random.seed(0)
     np.random.seed(0)
     use_packed = bool(int(os.environ.get("ULTRA_PACKED", "0")))
+    best_p: int | None = None
+    best_acc = -1.0
     smoke_demo_small()
     run_task_A(packed=use_packed)
     run_task_B(packed=use_packed)
@@ -1024,8 +1040,6 @@ def demo():
                 print(f"[ultrametric] Skipping rank/test table: {err}")
         # p-tuner (optional): try p∈{3,5,7} on a tiny Task A split and choose best by eval acc
         if bool(int(os.environ.get("ULTRA_TUNE_P", "0"))):
-            best_p = None
-            best_acc = -1.0
             for p_try in [3, 5, 7]:
                 qs, ys, qst, yst = taskA_dataset(2000, 400, p_try, 8, 8, seed=13)
                 modelT = LCPTreeAttention(p=p_try, K=8, H=2, m=8, r=4, superdiag=True, seeds=[1, 2])
@@ -1074,7 +1088,6 @@ def demo():
             print(f"[ultrametric] Variance analysis failed: {err}")
 
         # Export diagnostics
-        global last_diagnostics
         last_diagnostics = {
             "last_head_variance": float(var_heads) if "var_heads" in locals() else None,
             "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
@@ -1100,7 +1113,7 @@ def demo():
                 "rank": int(U2.rank_prefix(0, d_demo, code_demo)) if ("U2" in locals()) else None,
                 "has": bool(U2.has_prefix(0, d_demo, code_demo)) if ("U2" in locals()) else None,
             },
-            "tuner": {"p": int(best_p), "acc": float(best_acc)} if ("best_p" in locals()) else None,
+            "tuner": {"p": best_p, "acc": float(best_acc)} if best_p is not None else None,
             "rank_samples": [
                 {
                     "depth": int(max(1, d_demo - 1)),
@@ -1439,7 +1452,12 @@ def run_valued_attention_section() -> dict:
         n_q = 64
         q_ints = [int(rng.integers(0, pbt**Kbt)) for _ in range(n_q)]
         t0 = _time.perf_counter()
-        outs_bt = [bt.attend(q) for q in q_ints]
+        outs_bt: list[np.ndarray] = []
+        for q in q_ints:
+            out = bt.attend(q)
+            if out is None:
+                raise RuntimeError("Ball-tree attention is empty after inserting benchmark keys")
+            outs_bt.append(out)
         t_bt = (_time.perf_counter() - t0) / n_q
         t0 = _time.perf_counter()
         outs_bf = [bt.attend_bruteforce(q, keys, values) for q in q_ints]
@@ -1515,6 +1533,16 @@ def run_valued_attention_section() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _dict_backed_heads(model: "LCPTreeAttention") -> list[HeadTrie]:
+    """Return reference heads, rejecting a model whose runtime layout disagrees."""
+    heads: list[HeadTrie] = []
+    for head in model.heads:
+        if not isinstance(head, HeadTrie):
+            raise ValueError("Hensel lifting requires dictionary-backed HeadTrie instances")
+        heads.append(head)
+    return heads
+
+
 def hensel_lift_model(src: "LCPTreeAttention", K_new: int) -> "LCPTreeAttention":
     """Lift a K=j LCPTreeAttention to K_new > j, freezing the stage-j residue.
 
@@ -1526,10 +1554,20 @@ def hensel_lift_model(src: "LCPTreeAttention", K_new: int) -> "LCPTreeAttention"
         raise ValueError(f"K_new must exceed the source depth, got {K_new} <= {src.K}")
     if src.packed:
         raise ValueError("hensel_lift_model supports the dict-backed HeadTrie reference")
-    lifted = LCPTreeAttention(p=src.p, K=K_new, H=src.H, m=src.m, r=src.heads[0].r,
-                              superdiag=False, seeds=None, packed=False)
+    src_heads = _dict_backed_heads(src)
+    lifted = LCPTreeAttention(
+        p=src.p,
+        K=K_new,
+        H=src.H,
+        m=src.m,
+        r=src_heads[0].r,
+        superdiag=False,
+        seeds=None,
+        packed=False,
+    )
+    lifted_heads = _dict_backed_heads(lifted)
     for h in range(src.H):
-        src_head, new_head = src.heads[h], lifted.heads[h]
+        src_head, new_head = src_heads[h], lifted_heads[h]
         new_head.U = list(src_head.U) + list(new_head.U[src.K:])  # reuse stage maps verbatim
         for d in range(src.K):
             L = src_head.levels[d]
@@ -1541,7 +1579,7 @@ def hensel_lift_model(src: "LCPTreeAttention", K_new: int) -> "LCPTreeAttention"
 def _frozen_snapshot(model: "LCPTreeAttention", upto_K: int) -> list[list[tuple]]:
     """Bit-exact snapshot of every node's (residue, S, R) at depths < upto_K."""
     snap = []
-    for head in model.heads:
+    for head in _dict_backed_heads(model):
         levels = []
         for d in range(upto_K):
             L = head.levels[d]
@@ -1553,7 +1591,7 @@ def _frozen_snapshot(model: "LCPTreeAttention", upto_K: int) -> list[list[tuple]
 
 def _assert_residues_preserved(model: "LCPTreeAttention", snap: list[list[tuple]], upto_K: int) -> None:
     """A single violated residue fails the run loudly (the bead's contract)."""
-    for h, head in enumerate(model.heads):
+    for h, head in enumerate(_dict_backed_heads(model)):
         for d in range(upto_K):
             residues, S, R = snap[h][d]
             L = head.levels[d]

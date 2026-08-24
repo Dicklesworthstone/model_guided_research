@@ -52,6 +52,7 @@ import optax
 from jax import custom_jvp, custom_vjp
 
 key = jax.random.PRNGKey
+last_diagnostics: dict[str, object]
 
 
 def split_key(k):
@@ -930,7 +931,15 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
         for _b in m.blocks:
             cp = CouplingParams(*(params_flat[i : i + 12]))
             i += 12
-            vp = ValveParams(*(params_flat[i : i + 6]), m.blocks[0].valve.params.centers)
+            vp = ValveParams(
+                params_flat[i],
+                params_flat[i + 1],
+                params_flat[i + 2],
+                params_flat[i + 3],
+                params_flat[i + 4],
+                params_flat[i + 5],
+                m.blocks[0].valve.params.centers,
+            )
             i += 6
             blocks.append(Block(cp, MeteredValve(m.d, m.d_a, m.d_b, m.blocks[0].valve.bins, m.blocks[0].valve.B, 1, 0)))
             blocks[-1].valve.params = vp
@@ -951,7 +960,7 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
     params_tree = model_trainable_arrays(m)
     loss, grads = jax.value_and_grad(loss_fn)(params_tree)
     updates, opt_state = opt.update(grads, opt_state, params_tree)
-    params_tree = optax.apply_updates(params_tree, updates)
+    params_tree = cast(list[Array], optax.apply_updates(params_tree, updates))
     i = 0
     new_blocks = []
     for b in m.blocks:
@@ -1401,7 +1410,7 @@ def demo():
                         "c": float(jnp.linalg.norm(0.02 * base)),
                     }
                 )
-        diag_merge = {
+        diag_merge: dict[str, object] = {
             "property_checks": prop_rows,
             "property_thresholds": {"mix": 1e-3, "cayley_norm": 1e-3, "symp": 1e-6, "det": 1e-3},
             "strict_givens": bool(USE_GIVENS_MIX),
