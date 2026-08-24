@@ -16,16 +16,21 @@ Minimize a scalar score computed from a short, fixed-budget training run:
 
 - Run `python -m nanochat.train` with `--model-type synaptic`.
 - Budget via `--target-flops` (uses `model.estimate_flops()`).
-- Score = mean of the last `N` training losses (default `N=3`) from `summary.json`.
+- Default score = `results.val_ce_final` from a fixed validation stream.
+- Set the validation contract explicitly with `--val-interval` and
+  `--val-batches`; both are recorded in `run.json` and restored on resume.
+- Missing or non-finite validation telemetry fails the candidate. The harness
+  never falls back silently to training loss.
+- `--objective-metric train_tail` retains the mean of the last `N` training
+  losses for plumbing smokes only (`--score-tail`, default `N=3`).
 
-Phase 1 uses **train loss** only (no validation pass) to keep the pilot lightweight.
-
-> **Search no-go:** the preregistered cheap-proxy calibration in
-> `docs/cmaes_plan_mgr.md` found that this training-loss score is reproducible
-> but too flat to rank candidates (`reference std=0.000427`, proxy/reference
-> Spearman `rho=0.486`). Keep this path for plumbing smokes only. Do not spend a
-> Phase-1 or Phase-2 search budget until the validation-objective successor
-> (`model_guided_research-2c8j`) lands and passes the documented proxy gate.
+> **Search no-go at the 1e9-FLOP rung:** the validation objective fixes the
+> flat-reference problem (`reference std=0.002272`), but the preregistered
+> independent cohort in `docs/cmaes_plan_mgr.md` had inverse proxy/reference
+> rank transfer (Spearman `rho=-0.600`) and zero top-two overlap. Keep
+> `train_tail` for plumbing smokes, and do not spend CMA-ES generations using
+> the 1e9-FLOP validation proxy. A different proxy rung needs its own
+> pre-evidence calibration.
 
 ---
 
@@ -59,6 +64,9 @@ Fixed baseline for cheap evaluations:
 - `--n-layer 4 --n-head 4 --n-kv-head 4 --n-embd 128`
 - `--sequence-len 256 --batch-size 8`
 - `--target-flops 1e10` (adjust up/down for speed)
+- `--objective-metric val_ce` (default)
+- `--val-interval <endpoint-step> --val-batches 2` for one fixed endpoint
+  validation after the budget-to-step conversion is known
 - `--optimizer-type adamw` (note: synaptic uses AdamW+Muon internally)
 - `--device cpu` for dry-run acceptance when GPU unavailable
 
@@ -83,6 +91,9 @@ Run-level:
 - `progress.csv` – per-candidate results (gen, cand, score, status, summary path)
 - `best.json` – best-so-far decoded params + score
 - `summary.md` – short human-readable summary + Go/No-Go note
+- `state/optimizer_state.json` – strict, non-executable CMA state including
+  the exact NumPy RNG state
+- `state/search_state.json` – generation, budget, crash, and best-score ledger
 
 Per-candidate:
 
@@ -118,12 +129,26 @@ uv run python scripts/cmaes_phase1.py \
   --generations 2 \
   --population-size 4 \
   --target-flops 1e10 \
+  --objective-metric val_ce \
+  --val-interval 1 \
+  --val-batches 2 \
   --search-seed 0 \
   --eval-seeds 123
 ```
+
+`--val-interval 1` is the safe smoke default because it guarantees telemetry,
+but it validates every training step. For a calibrated search, first resolve
+the fixed budget to a step count and set the cadence to that endpoint, as in
+the 22-step and 87-step calibration arms documented in
+`docs/cmaes_plan_mgr.md`.
 
 > Robustness flags (beads `2mj`/`a3u`/`q8f`/`wiz`): `--eval-seeds 0 1 2`
 > (+ `--seed-agg mean_std`) for multi-seed averaging; `--max-evals` /
 > `--max-wall-seconds` / `--patience` / `--max-crash-rate` for the budget guard;
 > `--resume` to continue a preempted run; `--data-dir` to pin the corpus.
+> The objective metric and validation cadence/batch count are immutable run
+> identity. Legacy `run.json` files without `objective.metric` are rejected on
+> resume instead of being guessed. Optimizer checkpoints use strict JSON and
+> preserve the exact NumPy RNG state; legacy pickle checkpoints are rejected
+> rather than executed or resumed nondeterministically.
 > Analyze any run with `scripts/cmaes_analyze.py --run-id <id>` (bead `0wn`).

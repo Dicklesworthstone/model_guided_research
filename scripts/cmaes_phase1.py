@@ -19,9 +19,12 @@ Beyond the original pilot (bead model_guided_research-68v) this harness adds:
   fingerprinted (path/size/mtime) into ``run.json``; on resume a drift in the
   fingerprint is surfaced as a loud warning so candidates are never silently
   compared across different data.
+* **Validation objective** (bead 2c8j): validation CE is the default fitness;
+  the metric and cadence are immutable run identity, and missing validation
+  telemetry fails a candidate instead of silently falling back to train loss.
 
 The objective shells out to ``python -m nanochat.train`` (the real training
-path) at a fixed FLOPs budget and scores the mean of the last N losses.
+path) at a fixed FLOPs budget and scores the configured objective metric.
 
 Example
 -------
@@ -38,7 +41,6 @@ import hashlib
 import json
 import math
 import os
-import pickle
 import shlex
 import subprocess
 import sys
@@ -60,9 +62,13 @@ console = Console()
 
 PENALTY_SCORE = 1e9
 STATE_SCHEMA = "mgr.cmaes.phase1.state.v1"
+OPTIMIZER_STATE_SCHEMA = "mgr.cmaes.optimizer.v1"
+OPTIMIZER_STATE_FILENAME = "optimizer_state.json"
+LEGACY_OPTIMIZER_STATE_FILENAME = "cma_state.pkl"
 
 
 Kind = Literal["linear", "log10"]
+ObjectiveMetric = Literal["train_tail", "val_ce"]
 
 
 @dataclass(frozen=True)
@@ -139,6 +145,44 @@ def _mean_tail(values: list[float], *, tail: int) -> float:
     tail = max(1, int(tail))
     window = values[-tail:]
     return float(sum(window) / len(window))
+
+
+def _score_summary(
+    summary: dict[str, Any], *, metric: ObjectiveMetric, score_tail: int
+) -> tuple[float, list[float]]:
+    """Extract one finite objective score and the training-loss diagnostics."""
+    results = summary.get("results")
+    if not isinstance(results, dict):
+        raise ValueError("training summary is missing the results object")
+
+    raw_losses = results.get("losses")
+    if not isinstance(raw_losses, list):
+        raise ValueError("training summary results.losses must be a list")
+    losses = [float(value) for value in raw_losses]
+
+    if metric == "train_tail":
+        score = _mean_tail(losses, tail=score_tail)
+    elif metric == "val_ce":
+        raw_score = results.get("val_ce_final")
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            raise ValueError(
+                "validation objective requires finite results.val_ce_final; "
+                "set --val-interval so at least one validation runs"
+            )
+        score = float(raw_score)
+    else:
+        raise ValueError(f"Unknown objective metric: {metric}")
+
+    if not math.isfinite(score):
+        raise ValueError(f"objective metric {metric} is not finite: {score}")
+    return score, losses
+
+
+def _subprocess_text(value: str | bytes | None) -> str:
+    """Normalize TimeoutExpired output, which may be bytes even with text=True."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
 
 
 def _write_json(path: Path, obj: dict[str, Any]) -> None:
@@ -251,6 +295,8 @@ def _train_eval(
         "--target-flops", str(args.target_flops),
         "--warmup-steps", str(args.warmup_steps),
         "--log-interval", str(args.log_interval),
+        "--val-interval", str(args.val_interval),
+        "--val-batches", str(args.val_batches),
         "--artifacts-dir", str(artifacts_dir),
         "--artifacts-kind", "cmaes",
         "--artifacts-topic", f"phase1/{search_run_id}/eval/gen_{gen:04d}/cand_{cand:04d}",
@@ -273,26 +319,33 @@ def _train_eval(
         returncode = int(proc.returncode)
     except subprocess.TimeoutExpired as exc:
         timed_out = True
-        proc_stdout = exc.stdout or ""
-        proc_stderr = exc.stderr or ""
+        proc_stdout = _subprocess_text(exc.stdout)
+        proc_stderr = _subprocess_text(exc.stderr)
         returncode = 124
     duration_s = time.perf_counter() - t0
 
     train_dir = candidate_dir / eval_id
-    _write_text(candidate_dir / f"{eval_id}.stdout.txt", proc_stdout)
-    _write_text(candidate_dir / f"{eval_id}.stderr.txt", proc_stderr)
-
     summary_path = train_dir / "summary.json"
     status = "timeout" if timed_out else ("ok" if returncode == 0 and summary_path.exists() else "error")
     score = float(PENALTY_SCORE)
     losses: list[float] = []
     if status == "ok":
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        losses = [float(x) for x in summary.get("results", {}).get("losses", [])]
-        score = _mean_tail(losses, tail=int(args.score_tail))
-        if not math.isfinite(score):
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            score, losses = _score_summary(
+                summary,
+                metric=args.objective_metric,
+                score_tail=int(args.score_tail),
+            )
+        except (OSError, TypeError, ValueError) as exc:
             status = "error"
             score = float(PENALTY_SCORE)
+            objective_error = f"CMA-ES objective error: {type(exc).__name__}: {exc}"
+            proc_stderr = f"{proc_stderr.rstrip()}\n{objective_error}\n"
+            console.print(f"[bold red]{objective_error}[/bold red]")
+
+    _write_text(candidate_dir / f"{eval_id}.stdout.txt", proc_stdout)
+    _write_text(candidate_dir / f"{eval_id}.stderr.txt", proc_stderr)
 
     return CellEval(
         seed=eval_seed,
@@ -344,13 +397,145 @@ class SearchState:
 
 
 def _save_checkpoint(state_dir: Path, opt: CMA, state: SearchState) -> None:
-    _atomic_write_bytes(state_dir / "cma_state.pkl", pickle.dumps(opt))
+    attrs: dict[str, dict[str, Any]] = {}
+    for name, value in opt.__dict__.items():
+        if name == "_rng":
+            continue
+        if isinstance(value, np.ndarray):
+            attrs[name] = {
+                "kind": "ndarray",
+                "dtype": value.dtype.str,
+                "value": value.tolist(),
+            }
+            continue
+        if isinstance(value, np.generic):
+            value = value.item()
+        if value is None or isinstance(value, (bool, int, float, str)):
+            attrs[name] = {"kind": "scalar", "value": value}
+            continue
+        raise TypeError(f"Unsupported CMA checkpoint attribute {name}: {type(value).__name__}")
+
+    rng = getattr(opt, "_rng", None)
+    if not isinstance(rng, np.random.RandomState):
+        raise TypeError("CMA checkpoint requires a numpy RandomState")
+    rng_name, rng_keys, rng_pos, rng_has_gauss, rng_cached_gaussian = rng.get_state()
+    optimizer_state = {
+        "schema_version": OPTIMIZER_STATE_SCHEMA,
+        "attrs": attrs,
+        "rng": {
+            "bit_generator": rng_name,
+            "keys": rng_keys.tolist(),
+            "pos": int(rng_pos),
+            "has_gauss": int(rng_has_gauss),
+            "cached_gaussian": float(rng_cached_gaussian),
+        },
+    }
+    _atomic_write_json(state_dir / OPTIMIZER_STATE_FILENAME, optimizer_state)
     _atomic_write_json(state_dir / "search_state.json", state.to_json())
 
 
+def _decode_cma_attribute(name: str, payload: object) -> object:
+    if not isinstance(payload, dict):
+        raise ValueError(f"CMA checkpoint attribute {name} must be an object")
+    kind = payload.get("kind")
+    if kind == "scalar":
+        value = payload.get("value")
+        if value is not None and not isinstance(value, (bool, int, float, str)):
+            raise ValueError(f"CMA checkpoint scalar {name} has invalid type")
+        return value
+    if kind == "ndarray":
+        dtype_name = payload.get("dtype")
+        values = payload.get("value")
+        if not isinstance(dtype_name, str) or not isinstance(values, list):
+            raise ValueError(f"CMA checkpoint array {name} is malformed")
+        try:
+            dtype = np.dtype(dtype_name)
+            if dtype.hasobject:
+                raise ValueError("object dtype is forbidden")
+            return np.asarray(values, dtype=dtype)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"CMA checkpoint array {name} is invalid: {exc}") from exc
+    raise ValueError(f"CMA checkpoint attribute {name} has unknown kind {kind!r}")
+
+
+def _load_optimizer_state(path: Path) -> CMA:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or raw.get("schema_version") != OPTIMIZER_STATE_SCHEMA:
+        raise ValueError(f"Unsupported CMA optimizer checkpoint schema in {path}")
+    raw_attrs = raw.get("attrs")
+    if not isinstance(raw_attrs, dict):
+        raise ValueError("CMA optimizer checkpoint attrs must be an object")
+    attrs = {name: _decode_cma_attribute(name, payload) for name, payload in raw_attrs.items()}
+
+    required_constructor_attrs = {
+        "_mean", "_sigma", "_bounds", "_n_max_resampling", "_popsize", "_C", "_lr_adapt",
+    }
+    missing = required_constructor_attrs - attrs.keys()
+    if missing:
+        raise ValueError(f"CMA optimizer checkpoint is missing attributes: {sorted(missing)}")
+    mean = attrs["_mean"]
+    covariance = attrs["_C"]
+    bounds = attrs["_bounds"]
+    if not isinstance(mean, np.ndarray) or not isinstance(covariance, np.ndarray):
+        raise ValueError("CMA optimizer checkpoint mean and covariance must be arrays")
+    if bounds is not None and not isinstance(bounds, np.ndarray):
+        raise ValueError("CMA optimizer checkpoint bounds must be an array or null")
+    sigma = attrs["_sigma"]
+    n_max_resampling = attrs["_n_max_resampling"]
+    population_size = attrs["_popsize"]
+    lr_adapt = attrs["_lr_adapt"]
+    if isinstance(sigma, bool) or not isinstance(sigma, (int, float)):
+        raise ValueError("CMA optimizer checkpoint sigma must be numeric")
+    if isinstance(n_max_resampling, bool) or not isinstance(n_max_resampling, int):
+        raise ValueError("CMA optimizer checkpoint n_max_resampling must be an integer")
+    if isinstance(population_size, bool) or not isinstance(population_size, int):
+        raise ValueError("CMA optimizer checkpoint population size must be an integer")
+    if not isinstance(lr_adapt, bool):
+        raise ValueError("CMA optimizer checkpoint lr_adapt must be boolean")
+    prototype = CMA(
+        mean=mean,
+        sigma=float(sigma),
+        bounds=bounds,
+        n_max_resampling=n_max_resampling,
+        population_size=population_size,
+        cov=covariance,
+        seed=0,
+        lr_adapt=lr_adapt,
+    )
+    expected_attrs = set(prototype.__dict__) - {"_rng"}
+    if attrs.keys() != expected_attrs:
+        missing = sorted(expected_attrs - attrs.keys())
+        extra = sorted(attrs.keys() - expected_attrs)
+        raise ValueError(f"CMA optimizer checkpoint attribute mismatch: missing={missing}, extra={extra}")
+    prototype.__dict__.update(attrs)
+
+    rng_raw = raw.get("rng")
+    if not isinstance(rng_raw, dict) or rng_raw.get("bit_generator") != "MT19937":
+        raise ValueError("CMA optimizer checkpoint requires an MT19937 RNG state")
+    rng_keys = np.asarray(rng_raw.get("keys"), dtype=np.uint32)
+    if rng_keys.shape != (624,):
+        raise ValueError(f"CMA optimizer checkpoint RNG keys have shape {rng_keys.shape}, expected (624,)")
+    rng_pos = int(rng_raw.get("pos", -1))
+    rng_has_gauss = int(rng_raw.get("has_gauss", -1))
+    rng_cached_gaussian = float(rng_raw.get("cached_gaussian", float("nan")))
+    if not 0 <= rng_pos <= 624 or rng_has_gauss not in (0, 1) or not math.isfinite(rng_cached_gaussian):
+        raise ValueError("CMA optimizer checkpoint RNG metadata is invalid")
+    rng = np.random.RandomState()
+    rng.set_state(("MT19937", rng_keys, rng_pos, rng_has_gauss, rng_cached_gaussian))
+    prototype.__dict__["_rng"] = rng
+    return prototype
+
+
 def _load_checkpoint(state_dir: Path) -> tuple[CMA, SearchState]:
-    opt = pickle.loads((state_dir / "cma_state.pkl").read_bytes())
+    optimizer_path = state_dir / OPTIMIZER_STATE_FILENAME
+    if not optimizer_path.exists() and (state_dir / LEGACY_OPTIMIZER_STATE_FILENAME).exists():
+        raise ValueError(
+            "legacy pickle CMA checkpoint cannot be resumed safely or reproducibly; start a new run"
+        )
+    opt = _load_optimizer_state(optimizer_path)
     raw = json.loads((state_dir / "search_state.json").read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or raw.get("schema_version") != STATE_SCHEMA:
+        raise ValueError(f"Unsupported CMA search checkpoint schema in {state_dir / 'search_state.json'}")
     state = SearchState(
         generation=int(raw["generation"]),
         eval_count=int(raw["eval_count"]),
@@ -388,6 +573,11 @@ def _restore_args_from_run_json(args: argparse.Namespace, prev: dict[str, Any], 
     cma = prev.get("cmaes", {})
     budget = prev.get("budget", {})
     ta = obj.get("train_args", {})
+    if "metric" not in obj:
+        raise ValueError(
+            "run.json lacks objective.metric and cannot be resumed safely; "
+            "start a new validation-objective run"
+        )
 
     # always-restore (search identity): changing these mid-run is incoherent
     args.population_size = int(cma.get("population_size", args.population_size))
@@ -397,13 +587,15 @@ def _restore_args_from_run_json(args: argparse.Namespace, prev: dict[str, Any], 
     args.eval_seeds = list(obj.get("eval_seeds", args.eval_seeds))
     args.seed_agg = str(obj.get("seed_agg", args.seed_agg))
     args.seed_agg_lambda = float(obj.get("seed_agg_lambda", args.seed_agg_lambda))
+    args.objective_metric = str(obj["metric"])
     args.score_tail = int(obj.get("score_tail", args.score_tail))
     args.device = str(obj.get("device", args.device))
     ds_dir = (prev.get("dataset") or {}).get("data_dir")
     if "--data-dir" not in " ".join(argv):
         args.data_dir = ds_dir
     for k in ("batch_size", "sequence_len", "vocab_size", "n_layer", "n_head",
-              "n_kv_head", "n_embd", "learning_rate", "warmup_steps", "log_interval"):
+              "n_kv_head", "n_embd", "learning_rate", "warmup_steps", "log_interval",
+              "val_interval", "val_batches"):
         if k in ta:
             setattr(args, k, ta[k])
 
@@ -453,7 +645,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-flops", type=float, default=1e10)
     parser.add_argument("--warmup-steps", type=int, default=1)
     parser.add_argument("--log-interval", type=int, default=1)
-    parser.add_argument("--score-tail", type=int, default=3, help="Mean of last N losses used as score.")
+    parser.add_argument(
+        "--objective-metric",
+        choices=["val_ce", "train_tail"],
+        default="val_ce",
+        help="Fitness metric. val_ce is required for searches; train_tail is smoke/debug only.",
+    )
+    parser.add_argument("--score-tail", type=int, default=3, help="Mean of last N losses for train_tail.")
+    parser.add_argument("--val-interval", type=int, default=1, help="Validation cadence in training steps.")
+    parser.add_argument("--val-batches", type=int, default=2, help="Fixed validation batches per evaluation.")
     parser.add_argument("--timeout-s", type=float, default=600.0)
 
     parser.add_argument("--batch-size", type=int, default=8)
@@ -475,6 +675,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate_objective_args(args: argparse.Namespace) -> None:
+    if args.objective_metric not in ("val_ce", "train_tail"):
+        raise ValueError("--objective-metric must be val_ce or train_tail")
+    if args.val_interval < 0:
+        raise ValueError("--val-interval must be >= 0")
+    if args.val_batches < 1:
+        raise ValueError("--val-batches must be >= 1")
+    if args.objective_metric == "val_ce" and args.val_interval < 1:
+        raise ValueError("--objective-metric val_ce requires --val-interval >= 1")
+
+
 def main() -> int:
     args = _build_parser().parse_args()
 
@@ -488,6 +699,7 @@ def main() -> int:
         raise ValueError("--target-flops must be > 0")
     if not args.eval_seeds:
         raise ValueError("--eval-seeds must list at least one seed")
+    _validate_objective_args(args)
 
     run_id = args.run_id or _default_run_id()
     artifacts_dir = Path(args.artifacts_dir)
@@ -505,11 +717,14 @@ def main() -> int:
         "per_seed_scores", "duration_s", "best_summary_path",
     ]
     if args.resume:
-        if not (state_dir / "cma_state.pkl").exists():
+        if not (state_dir / OPTIMIZER_STATE_FILENAME).exists() and not (
+            state_dir / LEGACY_OPTIMIZER_STATE_FILENAME
+        ).exists():
             raise FileNotFoundError(f"--resume given but no checkpoint at {state_dir}")
         opt, state = _load_checkpoint(state_dir)
         prev = json.loads((run_dir / "run.json").read_text(encoding="utf-8")) if (run_dir / "run.json").exists() else {}
         _restore_args_from_run_json(args, prev, sys.argv)
+        _validate_objective_args(args)
         # recompute the fingerprint now that data_dir is restored, so the drift
         # check compares the same corpus the original run pinned.
         fingerprint = _dataset_fingerprint(args.data_dir)
@@ -543,6 +758,7 @@ def main() -> int:
             },
             "objective": {
                 "model_type": "synaptic", "device": str(args.device),
+                "metric": str(args.objective_metric),
                 "target_flops": float(args.target_flops),
                 "eval_seeds": list(args.eval_seeds), "seed_agg": str(args.seed_agg),
                 "seed_agg_lambda": float(args.seed_agg_lambda), "score_tail": int(args.score_tail),
@@ -552,6 +768,7 @@ def main() -> int:
                     "n_head": int(args.n_head), "n_kv_head": int(args.n_kv_head),
                     "n_embd": int(args.n_embd), "learning_rate": float(args.learning_rate),
                     "warmup_steps": int(args.warmup_steps), "log_interval": int(args.log_interval),
+                    "val_interval": int(args.val_interval), "val_batches": int(args.val_batches),
                 },
             },
             "budget": {
@@ -690,6 +907,7 @@ def _finalize(run_dir: Path, run_id: str, args: argparse.Namespace, state: Searc
     summary_md = f"""# CMA-ES Phase 1 — `{run_id}`
 
 - Best score: `{float(state.best["score"]):.6f}` (gen `{state.best["gen"]}`, cand `{state.best["cand"]}`)
+- Objective metric: `{args.objective_metric}`
 - Eval seeds: `{state.best.get("eval_seeds")}` · aggregation: `{state.best.get("seed_agg")}`
 - Per-seed scores at best: `{state.best.get("per_seed_scores")}`
 - Best train summary: `{state.best.get("train_summary_path")}`

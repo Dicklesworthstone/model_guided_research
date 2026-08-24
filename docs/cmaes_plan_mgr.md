@@ -232,6 +232,50 @@ generations with this proxy. The next calibration must first replace the score
 with a fixed validation metric (validation CE or BPB), verify that the
 reference cohort has signal, and then apply the same gate above.
 
+#### Validation-CE calibration result (bead `model_guided_research-2c8j`)
+
+The successor harness defaults to `results.val_ce_final`, records
+`objective.metric`, `val_interval`, and `val_batches` in `run.json`, restores
+them as immutable resume identity, and treats missing/non-finite validation
+telemetry as a failed candidate rather than falling back to train loss.
+
+Before evidence, an independent cohort was frozen with `search_seed=23`,
+`eval_seed=321`, the same six-candidate/CPU/model coordinates as the first
+calibration, and the same dataset fingerprint
+`9ed31c98e6496157db24586949e5d15c9e46a5c6253d24dfc817b486fb8dc415`.
+Each candidate received exactly one two-batch endpoint validation: step 22 for
+the 1e9-FLOP proxy and step 87 for the 4e9-FLOP reference. The complete local
+artifacts are retained at `/data/tmp/mgr-cma-valce-OBhfM6`.
+
+| candidate | proxy val CE | reference val CE | proxy seconds | reference seconds |
+|---:|---:|---:|---:|---:|
+| 0 | 10.494027 | 8.381545 | 9.81 | 30.47 |
+| 1 | 10.494459 | 8.376032 | 7.67 | 33.68 |
+| 2 | 10.493962 | 8.380633 | 20.99 | 20.75 |
+| 3 | 10.494921 | 8.376671 | 8.86 | 46.51 |
+| 4 | 10.494877 | 8.376869 | 15.55 | 16.66 |
+| 5 | 10.494871 | 8.378277 | 13.16 | 23.76 |
+
+All twelve evaluations completed with finite scores; candidate JSON objects
+matched exactly across arms; both run specs recorded the expected dataset
+digest; and every summary contained exactly one validation measurement at its
+registered endpoint. The frozen gates resolved as follows:
+
+- reference-score sample standard deviation: `0.002272` (**passes** the
+  `1e-3` signal floor),
+- Spearman rank correlation: `-0.600` (**fails** `0.80`),
+- proxy top two `{2, 0}` versus reference top two `{1, 3}`: overlap `0/2`
+  (**fails** complete retention), and
+- median duration `11.48 s` versus `27.11 s`, ratio `42.3%` (**passes** the
+  `50%` cost ceiling).
+
+**Verdict: the validation objective is operational, but reject the 1e9-FLOP
+validation proxy.** It is cheap and the 4e9-FLOP reference has detectable
+candidate signal, yet the early ranking points in the wrong direction. Per the
+preregistered stopping rule, do not tune thresholds, seeds, or cadence on this
+cohort and do not launch CMA-ES generations at this rung. Any intermediate
+proxy budget must be justified and calibrated as a new pre-evidence cohort.
+
 ---
 
 ## Seed Discipline (Critical)
@@ -302,7 +346,7 @@ We need resumability for:
 At minimum, per generation:
 - CMA-ES state:
   - `mean`, `sigma`, `cov` (or equivalent internal representation),
-  - `rng_state`,
+  - exact `rng_state` (the next sampled population must match after resume),
   - `generation`, `best_score`, `best_x`,
   - `population_size`, `param_space_hash`.
 - A ledger of completed evaluations:
@@ -326,7 +370,7 @@ Suggested structure:
 
 - `run.json` — immutable run spec (objective, budget, param space, seeds, git hash, environment summary)
 - `state/`
-  - `cma_state.json` or `cma_state.npz`
+  - `optimizer_state.json` (strict non-executable schema; no pickle)
   - `ledger.jsonl` (append-only evaluation summaries; do not edit manually in code reviews)
 - `eval/`
   - `gen_0000/`

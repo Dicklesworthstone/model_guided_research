@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 import torch
 from cmaes import CMA
 
@@ -276,6 +278,53 @@ def _cell(seed: int, status: str, score: float):
                        command="", returncode=0, train_summary_path=None, losses_tail=[score])
 
 
+def test_cmaes_objective_score_extraction() -> None:
+    cm = _cm()
+    summary = {
+        "results": {
+            "losses": [4.0, 3.0, 2.0, 1.0],
+            "val_ce_final": 1.25,
+        }
+    }
+    val_score, losses = cm._score_summary(summary, metric="val_ce", score_tail=3)
+    train_score, _ = cm._score_summary(summary, metric="train_tail", score_tail=3)
+    assert val_score == 1.25
+    assert train_score == 2.0
+    assert losses == [4.0, 3.0, 2.0, 1.0]
+
+
+def test_cmaes_validation_objective_rejects_missing_telemetry() -> None:
+    cm = _cm()
+    with pytest.raises(ValueError, match="results.val_ce_final"):
+        cm._score_summary(
+            {"results": {"losses": [3.0, 2.0], "val_ce_final": None}},
+            metric="val_ce",
+            score_tail=3,
+        )
+
+
+def test_cmaes_validation_objective_requires_cadence() -> None:
+    cm = _cm()
+    args = argparse.Namespace(objective_metric="val_ce", val_interval=0, val_batches=2)
+    with pytest.raises(ValueError, match="requires --val-interval"):
+        cm._validate_objective_args(args)
+
+
+def test_cmaes_objective_cli_parsing() -> None:
+    cm = _cm()
+    defaults = cm._build_parser().parse_args([])
+    assert defaults.objective_metric == "val_ce"
+    assert defaults.val_interval == 1
+    assert defaults.val_batches == 2
+
+    smoke = cm._build_parser().parse_args(
+        ["--objective-metric", "train_tail", "--val-interval", "0", "--val-batches", "5"]
+    )
+    assert smoke.objective_metric == "train_tail"
+    assert smoke.val_interval == 0
+    assert smoke.val_batches == 5
+
+
 def test_cmaes_seed_aggregation() -> None:
     cm = _cm()
     evals = [_cell(0, "ok", 2.0), _cell(1, "ok", 4.0)]
@@ -290,7 +339,6 @@ def test_cmaes_seed_aggregation() -> None:
 
 def test_cmaes_budget_guards() -> None:
     cm = _cm()
-    import argparse
     a = argparse.Namespace(max_evals=8, max_wall_seconds=100.0, patience=2,
                            max_crash_rate=0.5, population_size=4)
     assert cm._check_budget(cm.SearchState(1, 8, 0, 0.0, 0, None), a, 1.0) is not None  # max_evals
@@ -302,31 +350,68 @@ def test_cmaes_budget_guards() -> None:
 
 def test_cmaes_checkpoint_roundtrip(tmp_path: Path) -> None:
     cm = _cm()
-    opt = CMA(mean=np.zeros(10), sigma=0.3, seed=0, population_size=4)
+    bounds = np.array([[-1.0, 1.0]] * 10)
+    opt = CMA(mean=np.zeros(10), sigma=0.3, bounds=bounds, seed=0, population_size=4)
     opt.tell([(opt.ask(), 1.0) for _ in range(4)])
     state = cm.SearchState(generation=2, eval_count=8, crash_count=1,
                            wall_accum_s=42.0, no_improve_streak=1, best={"score": 1.23})
     cm._save_checkpoint(tmp_path, opt, state)
+    expected_next_population = [opt.ask() for _ in range(opt.population_size)]
     opt2, st = cm._load_checkpoint(tmp_path)
     assert opt2.generation == opt.generation
     assert (st.generation, st.eval_count, st.crash_count, st.no_improve_streak) == (2, 8, 1, 1)
     assert st.wall_accum_s == 42.0 and st.best == {"score": 1.23}
+    assert (tmp_path / cm.OPTIMIZER_STATE_FILENAME).exists()
+    assert not (tmp_path / cm.LEGACY_OPTIMIZER_STATE_FILENAME).exists()
+    actual_next_population = [opt2.ask() for _ in range(opt2.population_size)]
+    for expected, actual in zip(expected_next_population, actual_next_population, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_cmaes_checkpoint_rejects_legacy_pickle(tmp_path: Path) -> None:
+    cm = _cm()
+    (tmp_path / cm.LEGACY_OPTIMIZER_STATE_FILENAME).write_bytes(b"not executed")
+    with pytest.raises(ValueError, match="legacy pickle"):
+        cm._load_checkpoint(tmp_path)
+
+
+def test_cmaes_checkpoint_rejects_unknown_schema(tmp_path: Path) -> None:
+    cm = _cm()
+    (tmp_path / cm.OPTIMIZER_STATE_FILENAME).write_text(
+        json.dumps({"schema_version": "unknown"}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Unsupported CMA optimizer checkpoint schema"):
+        cm._load_checkpoint(tmp_path)
+
+
+def test_cmaes_checkpoint_rejects_unexpected_optimizer_attribute(tmp_path: Path) -> None:
+    cm = _cm()
+    opt = CMA(mean=np.zeros(10), sigma=0.3, seed=0, population_size=4)
+    state = cm.SearchState(0, 0, 0, 0.0, 0, None)
+    cm._save_checkpoint(tmp_path, opt, state)
+    optimizer_path = tmp_path / cm.OPTIMIZER_STATE_FILENAME
+    raw = json.loads(optimizer_path.read_text(encoding="utf-8"))
+    raw["attrs"]["_unexpected"] = {"kind": "scalar", "value": 1}
+    optimizer_path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="attribute mismatch"):
+        cm._load_checkpoint(tmp_path)
 
 
 def test_cmaes_resume_arg_restore() -> None:
     cm = _cm()
-    import argparse
     prev = {
         "cmaes": {"population_size": 6, "sigma": 0.4, "search_seed": 2},
-        "objective": {"target_flops": 5e9, "eval_seeds": [0, 1], "seed_agg": "mean_std",
+        "objective": {"metric": "val_ce", "target_flops": 5e9, "eval_seeds": [0, 1], "seed_agg": "mean_std",
                       "seed_agg_lambda": 2.0, "score_tail": 5, "device": "cpu",
-                      "train_args": {"n_layer": 6, "n_embd": 256, "batch_size": 16}},
+                      "train_args": {"n_layer": 6, "n_embd": 256, "batch_size": 16,
+                                     "val_interval": 20, "val_batches": 4}},
         "budget": {"generations": 10, "max_evals": 100, "max_wall_seconds": None,
                    "patience": 3, "max_crash_rate": 0.1},
         "dataset": {"data_dir": None},
     }
     a = argparse.Namespace(population_size=4, sigma=0.3, search_seed=0, target_flops=1e10,
                            eval_seeds=[123], seed_agg="mean", seed_agg_lambda=1.0, score_tail=3,
+                           objective_metric="train_tail", val_interval=0, val_batches=1,
                            device="cpu", data_dir=None, n_layer=4, n_embd=128, batch_size=8,
                            sequence_len=256, vocab_size=50304, n_head=4, n_kv_head=4,
                            learning_rate=6e-4, warmup_steps=1, log_interval=1,
@@ -336,8 +421,16 @@ def test_cmaes_resume_arg_restore() -> None:
     cm._restore_args_from_run_json(a, prev, ["scripts/cmaes_phase1.py", "--resume", "--max-evals", "999"])
     assert a.population_size == 6 and a.eval_seeds == [0, 1] and a.seed_agg == "mean_std"
     assert a.target_flops == 5e9 and a.n_layer == 6 and a.n_embd == 256 and a.batch_size == 16
+    assert a.objective_metric == "val_ce" and a.val_interval == 20 and a.val_batches == 4
     assert a.generations == 10 and a.patience == 3  # restored from run.json
     assert a.max_evals == 999  # explicit argv override preserved
+
+
+def test_cmaes_resume_rejects_metricless_run() -> None:
+    cm = _cm()
+    args = argparse.Namespace()
+    with pytest.raises(ValueError, match="lacks objective.metric"):
+        cm._restore_args_from_run_json(args, {"objective": {}}, ["scripts/cmaes_phase1.py", "--resume"])
 
 
 def test_cmaes_dataset_fingerprint(tmp_path: Path) -> None:
