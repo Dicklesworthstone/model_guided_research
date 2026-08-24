@@ -15,7 +15,7 @@ import inspect
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -41,13 +41,22 @@ from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, Tropi
 from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
 from utils import console
 
+create_block_mask: Callable[..., Any] | None
+flex_attention: Callable[..., Any] | None
 try:
-    from torch.nn.attention.flex_attention import create_block_mask, flex_attention
+    from torch.nn.attention.flex_attention import (
+        create_block_mask as _torch_create_block_mask,
+    )
+    from torch.nn.attention.flex_attention import (
+        flex_attention as _torch_flex_attention,
+    )
 except Exception:  # pragma: no cover - depends on torch build
     create_block_mask = None
     flex_attention = None
     _HAS_FLEX = False
 else:
+    create_block_mask = _torch_create_block_mask
+    flex_attention = _torch_flex_attention
     _HAS_FLEX = True
 
 _COMPILED_FLEX_ATTENTION: dict[tuple[str, str | None, bool, bool | None], Callable[..., Any]] = {}
@@ -338,12 +347,13 @@ class CausalSelfAttention(AttentionCore):
                 "GPTConfig.use_flex_attention=True but FlexAttention is unavailable "
                 "(requires torch>=2.5 and torch.nn.attention.flex_attention)."
             )
+        self.attn_entropy_head_mean: torch.Tensor
         self.register_buffer(
             "attn_entropy_head_mean",
             torch.full((self.n_head,), float("nan"), dtype=torch.float32),
             persistent=False,
         )
-        self._flex_attention = flex_attention
+        self._flex_attention: Callable[..., Any] | None = flex_attention
         if self.use_flex_attention and self.compile_flex_attention:
             self._flex_attention = _get_compiled_flex_attention(
                 backend=self.compile_backend,
@@ -385,7 +395,10 @@ class CausalSelfAttention(AttentionCore):
                 return kv_idx <= (prefix_len + q_idx)
 
             block_mask = create_block_mask(causal_mask, B, self.n_head, Tq, Tk, device=q.device)
-            return self._flex_attention(q, k, v, block_mask=block_mask, enable_gqa=enable_gqa)
+            flex_fn = self._flex_attention
+            if flex_fn is None:
+                raise RuntimeError("FlexAttention callable is unavailable at runtime.")
+            return flex_fn(q, k, v, block_mask=block_mask, enable_gqa=enable_gqa)
         return sdpa_causal_attend(q, k, v, kv_cache=kv_cache, enable_gqa=enable_gqa)
 
 
@@ -507,6 +520,8 @@ class GPT(nn.Module):
                 "h": blocks,
             }
         )
+        self._ca_init_generator: torch.Generator | None = None
+        self._ca_init_rule_number: int | None = None
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # To support meta device initialization, we init the rotary embeddings here, but it's fake
         # As for rotary_seq_len, these rotary embeddings are pretty small/cheap in memory,
@@ -517,6 +532,14 @@ class GPT(nn.Module):
         cos, sin = self._precompute_rotary_embeddings(self.rotary_seq_len, head_dim)
         self.register_buffer("cos", cos, persistent=False)  # persistent=False means it's not saved to the checkpoint
         self.register_buffer("sin", sin, persistent=False)
+
+    def _token_embedding(self) -> nn.Embedding:
+        """Return the embedding from the fixed ModuleDict schema."""
+        return cast(nn.Embedding, self.transformer["wte"])
+
+    def _blocks(self) -> nn.ModuleList:
+        """Return the block list from the fixed ModuleDict schema."""
+        return cast(nn.ModuleList, self.transformer["h"])
 
     def _validate_config(self) -> None:
         if self.config.sequence_len <= 0:
@@ -665,8 +688,8 @@ class GPT(nn.Module):
                 ca_rule = None
         ca_alpha = float(getattr(self.config, "ca_init_alpha", 1.0))
 
-        self._ca_init_generator: torch.Generator | None = None
-        self._ca_init_rule_number: int | None = None
+        self._ca_init_generator = None
+        self._ca_init_rule_number = None
         if ca_rule is not None and ca_alpha > 0.0:
             ca_seed = getattr(self.config, "ca_init_seed", None)
             if ca_seed is None:
@@ -683,7 +706,7 @@ class GPT(nn.Module):
         # zero out classifier weights
         torch.nn.init.zeros_(self.lm_head.weight)
 
-        def _zero_proj_weight(module: nn.Module) -> None:
+        def _zero_proj_weight(module: object) -> None:
             # SurrealLayer projections have no .weight Parameter (w is recomposed
             # from weight_s/weight_v every forward, and exp(s)*normalize(v) cannot
             # represent zero with stable gradients) - keep their construction init.
@@ -692,7 +715,7 @@ class GPT(nn.Module):
                 torch.nn.init.zeros_(weight)
 
         # zero out c_proj weights in all blocks (where present)
-        for block in self.transformer.h:
+        for block in self._blocks():
             if hasattr(block, "mlp") and hasattr(block.mlp, "c_proj"):
                 _zero_proj_weight(block.mlp.c_proj)
             if hasattr(block, "attn") and hasattr(block.attn, "c_proj"):
@@ -712,28 +735,33 @@ class GPT(nn.Module):
         cos, sin = self._precompute_rotary_embeddings(self.rotary_seq_len, head_dim)
         self.cos, self.sin = cos, sin
         # Cast the embeddings from fp32 to bf16: optim can tolerate it and it saves memory: both in the model and the activations
-        if self.transformer.wte.weight.device.type == "cuda":
-            self.transformer.wte.to(dtype=torch.bfloat16)
+        token_embedding = self._token_embedding()
+        if token_embedding.weight.device.type == "cuda":
+            token_embedding.to(dtype=torch.bfloat16)
 
     def _init_weights(self, module):
-        ca_rule_number = getattr(self, "_ca_init_rule_number", None)
-        ca_gen = getattr(self, "_ca_init_generator", None)
+        ca_rule_number = self._ca_init_rule_number
+        ca_gen = self._ca_init_generator
         ca_alpha = float(getattr(self.config, "ca_init_alpha", 1.0))
-        use_ca = ca_rule_number is not None and ca_gen is not None and ca_alpha > 0.0
-        pure_ca = use_ca and ca_alpha >= 1.0
+        ca_state = (
+            (ca_rule_number, ca_gen)
+            if ca_rule_number is not None and ca_gen is not None and ca_alpha > 0.0
+            else None
+        )
 
         if isinstance(module, nn.Linear):
             # https://arxiv.org/pdf/2310.17813
             fan_out = module.weight.size(0)
             fan_in = module.weight.size(1)
             std = 1.0 / math.sqrt(fan_in) * min(1.0, math.sqrt(fan_out / fan_in))
-            if pure_ca:
+            if ca_state is not None and ca_alpha >= 1.0:
+                rule_number, generator = ca_state
                 try:
                     ca_vals = _ca_values_for_weight(
-                        rule=int(ca_rule_number),
+                        rule=rule_number,
                         shape=tuple(module.weight.shape),
                         target_std=float(std),
-                        generator=ca_gen,
+                        generator=generator,
                     )
                 except Exception as exc:
                     raise RuntimeError(
@@ -744,14 +772,15 @@ class GPT(nn.Module):
                     module.weight.copy_(ca_vals.to(dtype=module.weight.dtype))
             else:
                 torch.nn.init.normal_(module.weight, mean=0.0, std=std)
-                if use_ca:
+                if ca_state is not None:
+                    rule_number, generator = ca_state
                     with torch.no_grad():
                         try:
                             ca_vals = _ca_values_for_weight(
-                                rule=int(ca_rule_number),
+                                rule=rule_number,
                                 shape=tuple(module.weight.shape),
                                 target_std=float(std),
-                                generator=ca_gen,
+                                generator=generator,
                             )
                         except Exception as exc:
                             raise RuntimeError(
@@ -769,13 +798,14 @@ class GPT(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             emb_std = 1.0
-            if pure_ca:
+            if ca_state is not None and ca_alpha >= 1.0:
+                rule_number, generator = ca_state
                 try:
                     ca_vals = _ca_values_for_weight(
-                        rule=int(ca_rule_number),
+                        rule=rule_number,
                         shape=tuple(module.weight.shape),
                         target_std=float(emb_std),
-                        generator=ca_gen,
+                        generator=generator,
                     )
                 except Exception as exc:
                     raise RuntimeError(
@@ -786,14 +816,15 @@ class GPT(nn.Module):
                     module.weight.copy_(ca_vals.to(dtype=module.weight.dtype))
             else:
                 torch.nn.init.normal_(module.weight, mean=0.0, std=emb_std)
-                if use_ca:
+                if ca_state is not None:
+                    rule_number, generator = ca_state
                     with torch.no_grad():
                         try:
                             ca_vals = _ca_values_for_weight(
-                                rule=int(ca_rule_number),
+                                rule=rule_number,
                                 shape=tuple(module.weight.shape),
                                 target_std=float(emb_std),
-                                generator=ca_gen,
+                                generator=generator,
                             )
                         except Exception as exc:
                             raise RuntimeError(
@@ -809,12 +840,18 @@ class GPT(nn.Module):
                             )
 
     # TODO: bump base theta more, e.g. 100K is more common more recently
-    def _precompute_rotary_embeddings(self, seq_len, head_dim, base=10000, device=None):
+    def _precompute_rotary_embeddings(
+        self,
+        seq_len: int,
+        head_dim: int,
+        base: float = 10000,
+        device: torch.device | str | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if head_dim % 2 != 0:
             raise ValueError("RoPE head_dim must be even")
         # autodetect the device from model embeddings
         if device is None:
-            device = self.transformer.wte.weight.device
+            device = self._token_embedding().weight.device
         # stride the channels
         channel_range = torch.arange(0, head_dim, 2, dtype=torch.float32, device=device)
         inv_freq = 1.0 / (base ** (channel_range / head_dim))
@@ -828,7 +865,7 @@ class GPT(nn.Module):
         return cos, sin
 
     def get_device(self):
-        return self.transformer.wte.weight.device
+        return self._token_embedding().weight.device
 
     def _estimate_flops_base(self):
         """Return the estimated FLOPs per token for the model. Ref: https://arxiv.org/abs/2204.02311
@@ -857,7 +894,7 @@ class GPT(nn.Module):
         STEPS (train --max-steps without --target-flops) rather than FLOPs.
         """
         nparams = sum(p.numel() for p in self.parameters())
-        nparams_embedding = self.transformer.wte.weight.numel()
+        nparams_embedding = self._token_embedding().weight.numel()
         l, h, q, t = (
             self.config.n_layer,
             self.config.n_head,
@@ -880,7 +917,7 @@ class GPT(nn.Module):
             seen_blocks: set[int] = set()
             symplectic_blocks: list[nn.Module] = []
             for idx in symplectic_layers:
-                block = self.transformer.h[idx]
+                block = self._blocks()[idx]
                 if id(block) in seen_blocks:
                     continue
                 seen_blocks.add(id(block))
@@ -906,7 +943,7 @@ class GPT(nn.Module):
             seen_blocks: set[int] = set()
             additive_blocks: list[nn.Module] = []
             for idx in additive_layers:
-                block = self.transformer.h[idx]
+                block = self._blocks()[idx]
                 if id(block) in seen_blocks:
                     continue
                 seen_blocks.add(id(block))
@@ -937,7 +974,7 @@ class GPT(nn.Module):
         h = self.config.n_head
         q = self.config.n_embd // h
         t = self.config.sequence_len
-        blocks = tuple(self.transformer["h"].children())
+        blocks = tuple(self._blocks())
         nparams_ckpt = sum(p.numel() for i in idxs for p in blocks[i].parameters())
         return flops + 2 * nparams_ckpt + 4 * h * q * t * len(idxs)
 
@@ -947,7 +984,7 @@ class GPT(nn.Module):
             return [HOSS([p for p in self.parameters() if p.requires_grad], lr=matrix_lr)]
 
         model_dim = self.config.n_embd
-        ddp, rank, local_rank, world_size = get_dist_info()
+        ddp, rank, _local_rank, _world_size = get_dist_info()
         # Separate out all parameters into 3 groups (matrix, embedding, lm_head).
         # Muon's Newton-Schulz orthogonalization requires ndim >= 2, but some
         # mechanisms carry sub-2D block parameters (simplicial mix_1/mix_2
@@ -958,7 +995,9 @@ class GPT(nn.Module):
         # scalar field rather than a matmul weight (the rmatrix rapidity table)
         # route to AdamW: Newton-Schulz orthogonalization of a rapidity profile
         # is meaningless.
-        named_block = [(n, p) for n, p in self.transformer.h.named_parameters() if p.requires_grad]
+        blocks = self._blocks()
+        token_embedding = self._token_embedding()
+        named_block = [(n, p) for n, p in blocks.named_parameters() if p.requires_grad]
 
         def _muon_exempt(name: str) -> bool:
             # Every rmatrix_* parameter is a positional scalar field (rapidity
@@ -968,10 +1007,12 @@ class GPT(nn.Module):
 
         matrix_params = [p for n, p in named_block if p.ndim >= 2 and not _muon_exempt(n)]
         lowdim_block_params = [p for n, p in named_block if p.ndim < 2 or _muon_exempt(n)]
-        embedding_params = [p for p in self.transformer.wte.parameters() if p.requires_grad]
+        embedding_params = [p for p in token_embedding.parameters() if p.requires_grad]
         lm_head_params = [p for p in self.lm_head.parameters() if p.requires_grad]
-        expected = len(list(self.transformer.h.parameters())) + len(list(self.transformer.wte.parameters())) + len(
-            list(self.lm_head.parameters())
+        expected = (
+            len(list(blocks.parameters()))
+            + len(list(token_embedding.parameters()))
+            + len(list(self.lm_head.parameters()))
         )
         if len(list(self.parameters())) != expected:
             raise RuntimeError("Parameter count mismatch between blocks, embeddings, and lm_head")
@@ -984,25 +1025,39 @@ class GPT(nn.Module):
                 style="cyan",
                 markup=False,
             )
-        adam_groups = [
+        adam_groups: list[dict[str, Any]] = [
             dict(params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale),
             dict(params=embedding_params, lr=embedding_lr * dmodel_lr_scale),
         ]
         if lowdim_block_params:
             adam_groups.append(dict(params=lowdim_block_params, lr=matrix_lr))
-        adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
-        AdamWFactory = DistAdamW if ddp else torch.optim.AdamW
-        if (
-            (not ddp)
-            and next(self.parameters()).is_cuda
-            and ("fused" in inspect.signature(torch.optim.AdamW).parameters)
-        ):
-            adamw_kwargs["fused"] = True
-        adamw_optimizer = AdamWFactory(adam_groups, **adamw_kwargs)
+        if ddp:
+            adamw_optimizer = DistAdamW(
+                adam_groups,
+                betas=(0.8, 0.95),
+                eps=1e-10,
+                weight_decay=weight_decay,
+            )
+        elif next(self.parameters()).is_cuda and ("fused" in inspect.signature(torch.optim.AdamW).parameters):
+            adamw_optimizer = torch.optim.AdamW(
+                adam_groups,
+                betas=(0.8, 0.95),
+                eps=1e-10,
+                weight_decay=weight_decay,
+                fused=True,
+            )
+        else:
+            adamw_optimizer = torch.optim.AdamW(
+                adam_groups,
+                betas=(0.8, 0.95),
+                eps=1e-10,
+                weight_decay=weight_decay,
+            )
         # Create the Muon optimizer for the linear layers
-        muon_kwargs = dict(lr=matrix_lr, momentum=0.95)
-        MuonFactory = DistMuon if ddp else Muon
-        muon_optimizer = MuonFactory(matrix_params, **muon_kwargs)
+        if ddp:
+            muon_optimizer = DistMuon(matrix_params, lr=matrix_lr, momentum=0.95)
+        else:
+            muon_optimizer = Muon(matrix_params, lr=matrix_lr, momentum=0.95)
         # Combine them the two optimizers into one list
         optimizers = [adamw_optimizer, muon_optimizer]
         for opt in optimizers:
@@ -1030,7 +1085,7 @@ class GPT(nn.Module):
         cos_sin = self.cos[:, T0 : T0 + T], self.sin[:, T0 : T0 + T]  # truncate cache to current sequence length
 
         # Forward the trunk of the Transformer
-        x = self.transformer.wte(idx)
+        x = self._token_embedding()(idx)
         x = norm(x)
         ckpt_mode = str(getattr(self.config, "activation_ckpt", "none"))
         ckpt_k = max(1, int(getattr(self.config, "activation_ckpt_every_k", 1)))
@@ -1040,7 +1095,7 @@ class GPT(nn.Module):
             and torch.is_grad_enabled()
             and ckpt_mode != "none"
         )
-        for i, block in enumerate(self.transformer["h"].children()):
+        for i, block in enumerate(self._blocks()):
             if use_ckpt and (ckpt_mode == "full" or i % ckpt_k == 0):
                 # use_reentrant=False: composes with kwargs/tensors-only args,
                 # DDP, and torch.compile; recompute is numerically identical

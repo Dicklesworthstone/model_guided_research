@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, cast
 import matplotlib
 import numpy as np
 
-from nanochat.torch_imports import Tensor, nn, torch
+from nanochat.torch_imports import nn, torch
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -93,7 +93,7 @@ def _reduce_camkii(expert: SynapticExpert) -> float:
     vals = []
     for fc in (expert.fc1, expert.fc2):
         if hasattr(fc, "post") and hasattr(fc.post, "camkii"):
-            t = cast(torch.Tensor, fc.post.camkii)
+            t = fc.post.camkii
             vals.append(float(t.item()))
     return float(np.mean(vals)) if vals else 0.0
 
@@ -102,7 +102,7 @@ def _reduce_mgate(expert: SynapticExpert) -> float:
     vals = []
     for fc in (expert.fc1, expert.fc2):
         if hasattr(fc, "post") and hasattr(fc.post, "m_gate"):
-            t = cast(torch.Tensor, fc.post.m_gate)
+            t = fc.post.m_gate
             vals.append(float(t.item()))
     return float(np.mean(vals)) if vals else 0.0
 
@@ -111,9 +111,9 @@ def _reduce_elig_norm(expert: SynapticExpert) -> float:
     vals = []
     for fc in (expert.fc1, expert.fc2):
         if hasattr(fc, "post"):
-            u = cast(torch.Tensor, fc.post.U)
-            v = cast(torch.Tensor, fc.post.V)
-            h = cast(torch.Tensor, fc.post.H_fast)
+            u = fc.post.U
+            v = fc.post.V
+            h = fc.post.H_fast
             vals.append(float(u.norm().item() + v.norm().item() + h.norm().item()))
     return float(np.mean(vals)) if vals else 0.0
 
@@ -366,9 +366,9 @@ class NeuroVizManager:
 
     @torch.no_grad()
     def _layer_metrics(self, moe: SynapticMoE) -> dict[str, np.ndarray]:
-        emb = _to_np(cast(torch.Tensor, moe.router_embeddings))  # (E, D)
-        fatigue = _to_np(cast(torch.Tensor, moe.fatigue))  # (E,)
-        energy = _to_np(cast(torch.Tensor, moe.energy))  # (E,)
+        emb = _to_np(moe.router_embeddings)  # (E, D)
+        fatigue = _to_np(moe.fatigue)  # (E,)
+        energy = _to_np(moe.energy)  # (E,)
         util = 1.0 - np.clip(fatigue, 0.0, 1.0)  # util proxy
         health = _weight_energy_util(energy, fatigue)
 
@@ -552,13 +552,13 @@ class NeuroVizManager:
             "energy_refill": pheno_np[:, 1],
             "camkii_gain": pheno_np[:, 2],
             "pp1_gain": pheno_np[:, 3],
-            "utilization": _to_np(cast(Tensor, moe.fatigue)),  # Use fatigue as proxy for util history
+            "utilization": _to_np(moe.fatigue),  # Use fatigue as proxy for util history
         }
         self._save_json(data, os.path.join(outdir, f"{name}_genetics_{step:09d}.json"))
 
     def _plot_metabolism(self, name: str, moe: SynapticMoE, step: int, outdir: str):
-        energy = _to_np(cast(Tensor, moe.energy))
-        fatigue = _to_np(cast(Tensor, moe.fatigue))
+        energy = _to_np(moe.energy)
+        fatigue = _to_np(moe.fatigue)
 
         # Sort by energy to show inequality
         sorted_idx = np.argsort(energy)
@@ -684,7 +684,7 @@ class NeuroVizManager:
         if not hasattr(expert.fc1.post, "H_fast"):
             return
 
-        H = cast(torch.Tensor, expert.fc1.post.H_fast).detach().float().cpu().numpy()
+        H = expert.fc1.post.H_fast.detach().float().cpu().numpy()
         # Slice 50x50
         H_sub = H[:50, :50]
 
@@ -760,9 +760,9 @@ class NeuroVizManager:
             f = e.fc1.w_fast.norm().item() + e.fc2.w_fast.norm().item()
             # Add Hebbian trace norm if available
             if hasattr(e.fc1.post, "H_fast"):
-                f += cast(torch.Tensor, e.fc1.post.H_fast).norm().item()
+                f += e.fc1.post.H_fast.norm().item()
             if hasattr(e.fc2.post, "H_fast"):
-                f += cast(torch.Tensor, e.fc2.post.H_fast).norm().item()
+                f += e.fc2.post.H_fast.norm().item()
 
             slow_norms.append(s)
             fast_norms.append(f)
