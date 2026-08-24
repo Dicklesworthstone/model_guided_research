@@ -488,7 +488,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert result.exit_code == 0, result.output
     text = registry.read_text()
     assert "HAND-WRITTEN HEADER COMMENT" in text, "ledger surgery must preserve comments"
-    data, _ = cli._load_hypothesis_registry(registry)
+    data, load_errors = cli._load_hypothesis_registry(registry)
+    assert data is not None, load_errors
     entry = data["hypotheses"][0]
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
@@ -502,7 +503,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
         "--artifacts-dir", str(tmp_path / "out2"), "--run-id", "x",
     ])
     assert result.exit_code == 0, result.output
-    data, _ = cli._load_hypothesis_registry(registry)
+    data, load_errors = cli._load_hypothesis_registry(registry)
+    assert data is not None, load_errors
     history = data["hypotheses"][0]["verdict_history"]
     assert len(history) == 2 and history[0] == first, "prior entries must never mutate"
 
@@ -1299,6 +1301,7 @@ def test_power_closed_form_two_sample():
     from scipy import stats as scipy_stats
 
     out = cli._adj_power([1.0, 2.0, 3.0], [0.0, 1.0, 2.0], 2.0, "absolute_delta", False)
+    assert out is not None
     se = math.sqrt(1.0 / 3 + 1.0 / 3)  # both sample variances are exactly 1
     expected = float(scipy_stats.norm.cdf(2.0 / se - 1.959963984540054))
     assert abs(out["power"] - expected) < 1e-12
@@ -1309,10 +1312,12 @@ def test_power_closed_form_two_sample():
     assert cli._adj_power([1.0, 2.0], [1.0, 2.0], 0.0, "absolute_delta", False) is None
     # zero spread in both arms: a deterministic observable has full power
     out0 = cli._adj_power([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], 0.5, "absolute_delta", False)
+    assert out0 is not None
     assert out0["power"] == 1.0 and out0["n_for_80pct"] == 3
 
     # single-arm Student case
     out1 = cli._adj_power([1.0, 2.0, 3.0], [], 2.0, "absolute_delta", True)
+    assert out1 is not None
     se1 = math.sqrt(1.0 / 3)
     expected1 = float(scipy_stats.norm.cdf(2.0 / se1 - 1.959963984540054))
     assert abs(out1["power"] - expected1) < 1e-12
@@ -1367,10 +1372,12 @@ def test_ratio_bootstrap_p_value_deterministic_and_bounded():
     cand, base = [2.0, 2.1, 1.9], [1.0, 1.05, 0.95]
     p1 = cli._adj_p_value(cand, base, 1.5, "ratio", ">=", False)
     p2 = cli._adj_p_value(cand, base, 1.5, "ratio", ">=", False)
+    assert p1 is not None and p2 is not None
     assert p1 == p2, "fixed seed must make the bootstrap p deterministic"
     assert p1 >= 1.0 / (cli._ADJ_BOOTSTRAP_N + 1)  # minimum resolvable p
     assert p1 < 0.025  # ratio ~2 vs threshold 1.5: clearly supported
     p_flip = cli._adj_p_value(cand, base, 1.5, "ratio", "<=", False)
+    assert p_flip is not None
     assert p_flip > 0.5  # the same evidence is terrible for a <= 1.5 claim
 
 
