@@ -322,6 +322,92 @@ preregistered stopping rule, no threshold, seed, cadence, outlier, or further
 rung was tuned after seeing this result, and no CMA generation campaign is
 authorized from these calibrations.
 
+### Small-to-large transfer study (bead `model_guided_research-1j5`)
+
+The transfer question is whether synaptic parameters selected on a cheap,
+small model remain good as depth and width increase, rather than merely
+overfitting the source scale. The two validation-CE cohorts above do **not**
+answer that question: both compare budgets at one model shape. They do,
+however, test a necessary precursor and currently impose a no-run decision.
+At the 4e9-FLOP source reference, candidate spread passed once (`std=0.002272`)
+and failed in the fresh cohort (`std=0.000715`); neither cheaper rung preserved
+the reference ranking. Optimizing this unstable source objective and then
+calling a target-scale miss "overfit to scale" would confound objective noise
+with transfer. Therefore no transfer pilot or CMA generations are authorized
+from the current evidence.
+
+The study below is the bounded protocol to use if a future, independently
+registered source objective clears that prerequisite. It deliberately tests
+rank transfer before paying for an optimizer campaign.
+
+#### Coordinates and rung selection
+
+- Source `S`: `n_layer=2`, `n_head=2`, `n_kv_head=2`, `n_embd=64`.
+- Intermediate `M`: `n_layer=4`, `n_head=4`, `n_kv_head=4`, `n_embd=128`.
+- Large `L`: `n_layer=8`, `n_head=8`, `n_kv_head=8`, `n_embd=256`.
+- All three preserve head dimension 32 and use the same tokenizer, dataset
+  fingerprint, sequence length, batch size, optimizer, learning rate,
+  validation examples, and 10-dimensional decoder from
+  `docs/cmaes_phase1.md`.
+- Select a separate off-floor training rung for each scale using only the
+  default synaptic configuration's validation curve. Freeze each rung,
+  endpoint validation cadence, validation batch count, and dataset receipt
+  before evaluating any candidate vector. Do not use candidate rankings to
+  move a rung.
+
+The source objective is qualified only after two fresh preregistered cohorts
+both have candidate-mean sample standard deviation above `1e-3`, median
+pairwise seed-rank Spearman correlation at least `0.80`, and finite results for
+every candidate and seed. This is the activation gate; the mixed result in the
+two existing single-seed cohorts does not pass it.
+
+#### Stage 1: rank-transfer screen
+
+Freeze 12 candidate vectors from one new search seed and three evaluation
+seeds before evidence. Evaluate the identical vectors and seeds at `S` and
+`M`, aggregate validation CE by candidate mean, and report the per-seed scores
+as well as the means. Advance to `L` only if every `S`→`M` gate passes:
+
+1. all 72 `S`/`M` evaluations are finite and share the frozen identities;
+2. both scales pass the signal and within-scale seed-rank gates above;
+3. cross-scale candidate-mean Spearman correlation is at least `0.80`;
+4. the source top three contain both members of the target top two; and
+5. source selection regret—the `M` score of the best `S` candidate minus the
+   best `M` score in the same cohort—is at most half the target cohort's
+   sample standard deviation.
+
+Apply the same frozen gates to `S`→`L`; do not tune them after the intermediate
+result. This screen measures scale transfer without pretending that a
+12-candidate cohort is an optimization run.
+
+#### Stage 2: optimizer confirmation
+
+Only after both scale screens pass, run five CMA generations with population
+eight and three evaluation seeds on the qualified `S` objective. Freeze the
+three source finalists before target evaluation. Evaluate those finalists and
+the default configuration on `M` and `L` with five new paired seeds. Transfer
+is supported only when at least two of three finalists beat the default at
+each target and the best source finalist remains in the target top two; report
+paired confidence intervals and target selection regret. A miss at either
+scale is a no-go for small-model optimization, not permission to choose a
+friendlier target or seed set.
+
+#### Cost and stopping rule
+
+Let `C_S`, `C_M`, and `C_L` be measured median candidate times at the frozen
+rungs. The rank screen costs `36(C_S + C_M)` and stops there on any failed
+intermediate gate; the large extension adds `36 C_L`. Optimizer confirmation
+costs `120 C_S + 20 C_M + 20 C_L` (40 source candidates × three seeds, then
+four target configurations × five seeds at each target). Rung-finding probes
+and their cost are reported separately. Convert these formulas to GPU-hours
+from clean serial timing probes and obtain the campaign budget before launch;
+do not substitute the contention-heavy CPU timings above.
+
+The study stops at the first failed gate. A new attempt requires a successor
+bead with a new scientific justification and fresh preregistration; changing
+thresholds, candidates, seeds, scale coordinates, or rungs after evidence is
+not part of this study.
+
 ---
 
 ## Seed Discipline (Critical)
