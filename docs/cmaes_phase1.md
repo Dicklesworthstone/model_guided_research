@@ -24,13 +24,14 @@ Minimize a scalar score computed from a short, fixed-budget training run:
 - `--objective-metric train_tail` retains the mean of the last `N` training
   losses for plumbing smokes only (`--score-tail`, default `N=3`).
 
-> **Search no-go at the 1e9-FLOP rung:** the validation objective fixes the
-> flat-reference problem (`reference std=0.002272`), but the preregistered
-> independent cohort in `docs/cmaes_plan_mgr.md` had inverse proxy/reference
-> rank transfer (Spearman `rho=-0.600`) and zero top-two overlap. Keep
-> `train_tail` for plumbing smokes, and do not spend CMA-ES generations using
-> the 1e9-FLOP validation proxy. A different proxy rung needs its own
-> pre-evidence calibration.
+> **Search no-go at 30 steps and below:** the validation objective is
+> operational, but neither preregistered cheap rung transferred candidate
+> rankings. The 22-step cohort had Spearman `rho=-0.600` and zero top-two
+> overlap; the fresh 30-step cohort had `rho=0.371`, top-two overlap `1/2`,
+> reference `std=0.000715`, and a `76.0%` median cost ratio. Keep `train_tail`
+> for plumbing smokes, and do not spend CMA-ES generations using a validation
+> proxy at or below 30 steps. See `docs/cmaes_plan_mgr.md` for both frozen
+> protocols and complete results.
 
 ---
 

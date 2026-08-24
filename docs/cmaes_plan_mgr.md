@@ -276,6 +276,52 @@ preregistered stopping rule, do not tune thresholds, seeds, or cadence on this
 cohort and do not launch CMA-ES generations at this rung. Any intermediate
 proxy budget must be justified and calibrated as a new pre-evidence cohort.
 
+#### Intermediate-rung calibration result (bead `model_guided_research-48x8`)
+
+The follow-up selected its rung from timing only. A fixed-overhead plus
+per-step fit to the prior 22/87-step medians predicted that 30 steps would cost
+`49.4%` of reference and 31 steps `50.3%`; therefore 30 was the largest integer
+rung predicted to meet the unchanged cost gate. Before any new score existed,
+the bead froze fresh `search_seed=31` and `eval_seed=777`, six candidates, the
+same model/data coordinates and fingerprint, and a one-shot stopping rule.
+The proxy used `1.35e9` FLOPs (30 steps, `val_interval=30`); the reference used
+`4e9` FLOPs (87 steps, `val_interval=87`). Each candidate again received one
+two-batch endpoint validation. Complete local artifacts are retained at
+`/data/tmp/mgr-cma-valce-mid-PbsdRT`.
+
+| candidate | proxy val CE | reference val CE | proxy seconds | reference seconds |
+|---:|---:|---:|---:|---:|
+| 0 | 10.173667 | 8.382177 | 141.15 | 45.91 |
+| 1 | 10.174432 | 8.382372 | 132.28 | 30.97 |
+| 2 | 10.173654 | 8.381881 | 31.90 | 27.96 |
+| 3 | 10.173263 | 8.381980 | 33.58 | 186.21 |
+| 4 | 10.172996 | 8.382508 | 26.52 | 62.74 |
+| 5 | 10.172129 | 8.380527 | 28.51 | 40.28 |
+
+All twelve evaluations completed with finite scores; candidate JSON objects
+matched exactly; both run specs recorded dataset digest
+`9ed31c98e6496157db24586949e5d15c9e46a5c6253d24dfc817b486fb8dc415`;
+and every summary contained exactly one validation at its registered endpoint.
+Host contention produced large timing outliers in both arms, so the frozen
+median gate was applied without exclusions:
+
+- reference-score sample standard deviation: `0.000715` (**fails** the
+  `1e-3` signal floor),
+- Spearman rank correlation: `0.371` (**fails** `0.80`),
+- proxy top two `{5, 4}` versus reference top two `{5, 2}`: overlap `1/2`
+  (**fails** complete retention), and
+- median duration `32.74 s` versus `43.10 s`, ratio `76.0%` (**fails** the
+  `50%` cost ceiling).
+
+**Verdict: reject the 30-step validation proxy and all cheaper rungs for this
+small-model coordinate.** The earlier independent cohort showed that the
+4e9-FLOP reference can have detectable spread; this fresh cohort shows that
+the spread itself is not robust across six-candidate, single-seed samples, and
+the intermediate proxy still does not preserve the top ranking. Per the
+preregistered stopping rule, no threshold, seed, cadence, outlier, or further
+rung was tuned after seeing this result, and no CMA generation campaign is
+authorized from these calibrations.
+
 ---
 
 ## Seed Discipline (Critical)
