@@ -43,7 +43,7 @@ from rich.console import Console
 
 _console = Console()
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
     d: int
     dk: int

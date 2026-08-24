@@ -271,6 +271,16 @@ def test_nanochat_hyperbolic_energy_reduction_and_telemetry():
     assert attn.hyperbolic_curvature_head.shape == (config.n_head,)
     assert attn.hyperbolic_radius_head_mean.shape == (config.n_head,)
 
+    v = torch.randn_like(q)
+    with torch.no_grad():
+        zero_radius = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        attn.radial_q.normal_(mean=0.0, std=0.5)
+        attn.radial_k.normal_(mean=0.0, std=0.5)
+        learned_radius = attn.attend(q, k, v, kv_cache=None, pos0=None)
+    assert float((learned_radius - zero_radius).abs().max()) > 1e-5, (
+        "learned radial projections must make finite curvature affect routing"
+    )
+
 
 def test_nanochat_braid_discrete_mode_records_schedule_and_matches_kv_cache():
     """Discrete braid mode should be KV-cache consistent and record a verifiable schedule."""

@@ -4888,7 +4888,6 @@ def _run_certify_checks(
     # ----- hyperbolic: Lorentz geometry + standard-attention reduction -----
     if "hyperbolic" in mechanisms:
         from nanochat.hyperbolic_attention_torch import (
-            energy_gromov_scores,
             lorentz_exp_o,
             lorentz_log_o,
             lorentz_project,
@@ -4914,17 +4913,22 @@ def _run_certify_checks(
             return float((recovered - tangent).abs().max())
 
         def hyperbolic_standard_reduction_measure() -> float:
+            import torch.nn.functional as t_func
+
+            block, _ = make_block("hyperbolic")
+            attn = block.attn.float()
             q, k, _ = _hyperbolic_inputs()
             q = rmsnorm(q)
             k = rmsnorm(k)
-            c_small = torch.full((1, 2, 1, 1), 1e-7, dtype=torch.float32, device=device)
-            scale = 1.0 / math.sqrt(q.size(-1))
-            hyp_scores = energy_gromov_scores(q, k, c_small) * scale
-            std_scores = (q @ k.transpose(-1, -2)) * scale
-            mask = causal_attn_mask(q.size(2), k.size(2), device=device)
-            hyp_weights = torch.softmax(hyp_scores.masked_fill(~mask, float("-inf")), dim=-1)
-            std_weights = torch.softmax(std_scores.masked_fill(~mask, float("-inf")), dim=-1)
-            return float((hyp_weights - std_weights).abs().max())
+            torch.manual_seed(seed + 14)
+            v = torch.randn_like(q)
+            with torch.no_grad():
+                attn.raw_curvature.fill_(-30.0)
+                attn.radial_q.normal_(mean=0.0, std=0.5)
+                attn.radial_k.normal_(mean=0.0, std=0.5)
+            hyp_output = attn.attend(q, k, v, kv_cache=None, pos0=None)
+            std_output = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+            return float((hyp_output - std_output).abs().max())
 
         add_check(
             "hyperbolic",
@@ -4948,7 +4952,7 @@ def _run_certify_checks(
             "reduction",
             hyperbolic_standard_reduction_measure,
             tolerance=2e-5,
-            detail="max causal-softmax weight error against scaled dot product at c=1e-7",
+            detail="max full attention-output error against standard SDPA in the minimum-curvature regime",
         )
 
     # ----- octonion: division-algebra laws + non-associativity witness (fp64) -----

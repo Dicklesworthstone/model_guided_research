@@ -12,6 +12,9 @@ Design:
 - Scores use the stable, arcosh-free energy Gromov product from the corrected
   8gk.6 derivation. It converges to the ordinary dot product as c -> 0; raw
   hyperbolic distance does not.
+- Zero-initialized per-head radial projections turn normalized Q/K directions
+  into learned chart radii. This is necessary because QK norm otherwise makes
+  every radius equal and reduces curvature to a softmax-constant correction.
 - Values aggregate in the origin tangent chart, which has the original D
   dimensions and reduces to the ordinary weighted mean as c -> 0.
 - Lorentz math runs in explicit fp32 islands under autocast. Stable asinh
@@ -132,6 +135,8 @@ class HyperbolicCausalSelfAttention(AttentionCore):
         super().__init__(config, layer_idx)
         raw_init = math.log(math.expm1(CURVATURE_INIT - CURVATURE_MIN))
         self.raw_curvature = torch.nn.Parameter(torch.full((self.n_head,), raw_init))
+        self.radial_q = torch.nn.Parameter(torch.zeros(self.n_head, self.head_dim))
+        self.radial_k = torch.nn.Parameter(torch.zeros(self.n_head, self.head_dim))
         self.register_buffer(
             "hyperbolic_curvature_head",
             torch.full((self.n_head,), float("nan"), dtype=torch.float32),
@@ -156,7 +161,16 @@ class HyperbolicCausalSelfAttention(AttentionCore):
         q_f = q.float()
         k_f = k.float()
         v_f = v.float()
-        scores = energy_gromov_scores(q_f, k_f, c) * (1.0 / math.sqrt(D))
+        radial_scale = c / (1.0 + c)
+        q_signal = torch.tanh(
+            torch.einsum("bhtd,hd->bht", q_f, self.radial_q.float()).unsqueeze(-1) / math.sqrt(D)
+        )
+        k_signal = torch.tanh(
+            torch.einsum("bhtd,hd->bht", k_f, self.radial_k.float()).unsqueeze(-1) / math.sqrt(D)
+        )
+        q_chart = q_f * torch.exp(radial_scale * q_signal)
+        k_chart = k_f * torch.exp(radial_scale * k_signal)
+        scores = energy_gromov_scores(q_chart, k_chart, c) * (1.0 / math.sqrt(D))
         need_mask = kv_cache is None or Tq > 1
         if need_mask:
             mask = causal_attn_mask(Tq, Tk, device=q.device)
@@ -168,8 +182,8 @@ class HyperbolicCausalSelfAttention(AttentionCore):
         y = weights @ v_tangents
 
         with torch.no_grad():
-            q_radius = lorentz_radius(lorentz_project(q_f, c), c).mean(dim=(0, 2, 3))
-            k_radius = lorentz_radius(lorentz_project(k_f, c), c).mean(dim=(0, 2, 3))
+            q_radius = lorentz_radius(lorentz_project(q_chart, c), c).mean(dim=(0, 2, 3))
+            k_radius = lorentz_radius(lorentz_project(k_chart, c), c).mean(dim=(0, 2, 3))
             v_radius = lorentz_radius(v_points, c).mean(dim=(0, 2, 3))
             self.hyperbolic_curvature_head.copy_(c_head.detach())
             self.hyperbolic_radius_head_mean.copy_((q_radius + k_radius + v_radius) / 3.0)
