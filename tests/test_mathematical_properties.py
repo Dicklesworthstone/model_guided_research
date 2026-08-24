@@ -2110,6 +2110,63 @@ class TestHossTorchParity:
         require(ratio < 500.0, f"HOSS overhead exploded: {ratio:.1f}x AdamW")
 
 
+class TestHyperbolicLorentz:
+    """mnn.5: mirrored assertions for the Lorentz-model demo checks."""
+
+    def test_exp_log_roundtrip_and_constraint(self):
+        import jax
+        import jax.numpy as jnp
+
+        import hyperbolic_geometry_and_negative_curvature_attention as hyp
+
+        key = jax.random.PRNGKey(21)
+        v = jax.random.normal(key, (16, 7)) * 2.0
+        # x64 so the residual reflects projection math, not fp32 rounding.
+        with jax.enable_x64(True):
+            v64 = v.astype(jnp.float64)
+            pts = jax.vmap(lambda vv: hyp.exp_map_o(vv, 1.0))(v64)
+            back = jax.vmap(lambda yy: hyp.log_map_o(yy, 1.0))(pts)
+            require(float(jnp.max(jnp.abs(back - v64))) < 1e-10, "exp/log roundtrip broken")
+            residual = float(jnp.max(jnp.abs(hyp.minkowski(pts, pts) + 1.0)))
+        require(residual < 1e-10, f"Lorentz constraint residual {residual:.3e}")
+
+    def test_distance_laws(self):
+        import jax
+        import jax.numpy as jnp
+
+        import hyperbolic_geometry_and_negative_curvature_attention as hyp
+
+        key = jax.random.PRNGKey(22)
+        k1, k2, k3 = random.split(key, 3)
+        pa = jax.vmap(lambda vv: hyp.exp_map_o(vv, 1.0))(jax.random.normal(k1, (16, 7)))
+        pb = jax.vmap(lambda vv: hyp.exp_map_o(vv, 1.0))(jax.random.normal(k2, (16, 7)))
+        d_h_far = jnp.arccosh(
+            jnp.maximum(pa[:, 0][:, None] * pb[:, 0][None, :] - pa[:, 1:] @ pb[:, 1:].T,
+                        1.0 + 1e-12)
+        )
+        d_e_far = jnp.linalg.norm(pa[:, 1:] - pb[:, 1:], axis=-1)
+        # Radial isometry: d_H(o, exp_o(t u)) == t.
+        u = jax.random.normal(k3, (7,))
+        u = u / jnp.linalg.norm(u)
+        for t in (1.0, 3.0):
+            x = hyp.exp_map_o(t * u, 1.0)[None]
+            require(
+                abs(float(hyp.hyp_distance(x, hyp.lorentz_origin(8, 1.0)[None], 1.0)[0]) - t) < 1e-6,
+                f"radial isometry broken at r={t}",
+            )
+        _ = d_h_far, d_e_far  # curvature-signature trend asserted via growth law below
+        ratios = []
+        for r_val in (2.0, 4.0, 8.0):
+            x = hyp.exp_map_o(r_val * u, 1.0)[None]
+            y_dir = -u + 1e-3
+            y_dir = y_dir / jnp.linalg.norm(y_dir)
+            y = hyp.exp_map_o(r_val * y_dir, 1.0)[None]
+            chord = float(jnp.linalg.norm(x[0, 1:] - y[0, 1:]))
+            d_pair = float(hyp.hyp_distance(x, y, 1.0)[0])
+            ratios.append(chord / d_pair)
+        require(ratios[0] < ratios[1] < ratios[2], f"chord/d_H must grow with radius: {ratios}")
+
+
 if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)

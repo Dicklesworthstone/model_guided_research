@@ -20,6 +20,7 @@ def require(condition, message: str):
 # List of all demo modules
 DEMO_MODULES = [
     "clifford_algebra_and_geometric_attention",
+    "hyperbolic_geometry_and_negative_curvature_attention",
     "iterated_function_systems_and_fractal_memory",
     "knot_theoretic_programs_and_braid_based_attention",
     "matrix_exponential_gauge_learning",

@@ -391,6 +391,11 @@ DEMOS = {
         "description": "Iterated Function Systems and Fractal Memory structures",
         "func": "demo",
     },
+    "hyperbolic": {
+        "module": "hyperbolic_geometry_and_negative_curvature_attention",
+        "description": "Hyperbolic geometry (Lorentz model): rotors, tree embeddings, negative curvature",
+        "func": "demo",
+    },
     "clifford": {
         "module": "clifford_algebra_and_geometric_attention",
         "description": "Clifford algebra (Cl(3,0)) geometric products, rotors, and equivariance",
