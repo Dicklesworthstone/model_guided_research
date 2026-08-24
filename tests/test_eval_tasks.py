@@ -77,6 +77,12 @@ def _score(reply: str, doc: str, task: str = "arith"):
     )
 
 
+def _difficulty(task: str, doc: str) -> float:
+    difficulty = TASKS[task].difficulty
+    assert difficulty is not None, f"{task} task must define a difficulty axis"
+    return difficulty(doc)
+
+
 def test_parser_accepts_exact_answer():
     correct, expected, got = _score(" lt", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
     assert correct is True and expected == "lt"
@@ -131,6 +137,7 @@ def test_parser_stops_at_document_separator():
         _StopModel(" lt"), _StopTok(), spec, "TASK arith CMP 1.00e-02 2.00e+03 OUT lt",
         device=torch.device("cpu"), temperature=0.0, seed=0,
     )
+    assert out is not None
     correct, expected, got = out
     assert correct is True, f"answer followed by the separator must score correct: got={got!r}"
     assert chr(_StopTok.BOS) not in got, "the separator must be truncated from the decoded answer"
@@ -151,19 +158,21 @@ def test_parser_skips_prompts_exceeding_rotary_cache():
 def test_split_prompt_uses_last_marker_occurrence():
     spec = TASKS["bag"]
     doc = "TASK bag INS a ; QUERY a OUT c1"
-    prompt, expected = spec.split_prompt(doc)
+    split = spec.split_prompt(doc)
+    assert split is not None
+    prompt, expected = split
     assert prompt.endswith(" OUT") and expected == "c1"
     assert spec.split_prompt("TASK bag no marker here") is None
     assert TASKS["regime"].split_prompt("TASK regime SEG m2 a1 n1 n3") is None  # LM-only
 
 
 def test_difficulty_axes_hand_computed():
-    assert TASKS["dyck"].difficulty("TASK dyck SEQ ( ( ) ) LABEL valid") == 2.0
-    assert TASKS["copyops"].difficulty("TASK copyops OP REV SEQ a b c OUT c b a") == 3.0
-    assert TASKS["hier"].difficulty("TASK hier TREE ( a v1 ) PATH a OUT v1") == 1.0
-    assert TASKS["rel"].difficulty("TASK rel FACT a r b ; FACT b r c QUERY a r r OUT c") == 2.0
-    assert TASKS["arith"].difficulty("TASK arith CMP 1.00e-05 2.00e+03 OUT lt") == 5.0
-    assert TASKS["bag"].difficulty("TASK bag INS a ; INS b ; QUERY a OUT c1") == 2.0
+    assert _difficulty("dyck", "TASK dyck SEQ ( ( ) ) LABEL valid") == 2.0
+    assert _difficulty("copyops", "TASK copyops OP REV SEQ a b c OUT c b a") == 3.0
+    assert _difficulty("hier", "TASK hier TREE ( a v1 ) PATH a OUT v1") == 1.0
+    assert _difficulty("rel", "TASK rel FACT a r b ; FACT b r c QUERY a r r OUT c") == 2.0
+    assert _difficulty("arith", "TASK arith CMP 1.00e-05 2.00e+03 OUT lt") == 5.0
+    assert _difficulty("bag", "TASK bag INS a ; INS b ; QUERY a OUT c1") == 2.0
 
 
 # ---------------------------------------------------------------------------

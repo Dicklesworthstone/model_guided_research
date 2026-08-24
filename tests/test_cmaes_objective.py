@@ -40,6 +40,19 @@ def _write_parquet_shard(path: Path, texts: list[str]) -> None:
     pq.write_table(table, path, row_group_size=8)
 
 
+def _standard_query_weight(model: torch.nn.Module) -> torch.Tensor:
+    from nanochat.gpt import CausalSelfAttention
+
+    attention = next(
+        (module for module in model.modules() if isinstance(module, CausalSelfAttention)),
+        None,
+    )
+    assert attention is not None, "standard-attention model has no CausalSelfAttention"
+    query = attention.c_q
+    assert isinstance(query, torch.nn.Linear), "standard attention query projection must be linear"
+    return query.weight.detach().cpu().float()
+
+
 def test_cmaes_rosenbrock_sanity() -> None:
     # A tiny CMA-ES smoke test to catch ask/tell regressions.
     # Rosenbrock has a well-known minimum at (1, 1) with f=0.
@@ -81,7 +94,7 @@ def test_nanochat_train_objective_deterministic_cpu(tmp_path: Path) -> None:
     data_dir = nanochat_base / "base_data"
 
     # Keep docs short but token-dense so even tiny B/T can fill buffers quickly.
-    docs = [("hello world " * 200).strip() for _ in range(64)]
+    docs: list[str] = [("hello world " * 200).strip() for _ in range(64)]
     _write_parquet_shard(data_dir / "shard_00000.parquet", docs)
     _write_parquet_shard(data_dir / "shard_00001.parquet", docs)
 
@@ -195,11 +208,11 @@ def test_ca_initializer_variance_sanity() -> None:
 
     m1 = GPT(cfg)
     m1.init_weights()
-    w1 = m1.transformer.h[0].attn.c_q.weight.detach().cpu().float()
+    w1 = _standard_query_weight(m1)
 
     m2 = GPT(cfg)
     m2.init_weights()
-    w2 = m2.transformer.h[0].attn.c_q.weight.detach().cpu().float()
+    w2 = _standard_query_weight(m2)
 
     assert torch.equal(w1, w2)
 
@@ -260,7 +273,7 @@ def test_ca_initializer_stats_across_shapes_rules_and_dtypes() -> None:
     )
     model = GPT(cfg).to(dtype=torch.bfloat16)
     model.init_weights()
-    w = model.transformer.h[0].attn.c_q.weight.detach().cpu().float()
+    w = _standard_query_weight(model)
     assert torch.isfinite(w).all()
     assert float(w.std(unbiased=False).item()) > 0.0
 
