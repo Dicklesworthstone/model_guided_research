@@ -1304,9 +1304,9 @@ def train(args) -> None:
                 dash_flags["beta"] = str(args.semiring_beta)
             if getattr(config, "parameterization", "current") != "current":
                 dash_flags["param"] = str(config.parameterization)
-            if getattr(config, "activation_ckpt", "none") != "none":
+            if isinstance(config, GPTConfig) and config.activation_ckpt != "none":
                 dash_flags["ckpt"] = (
-                    f"{config.activation_ckpt}@{getattr(config, 'activation_ckpt_every_k', 1)}"
+                    f"{config.activation_ckpt}@{config.activation_ckpt_every_k}"
                     if config.activation_ckpt == "every-k"
                     else str(config.activation_ckpt)
                 )

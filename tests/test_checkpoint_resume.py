@@ -14,7 +14,9 @@ including the with-state loader contract and the fast-forward path.
 
 import hashlib
 import json
+from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -51,7 +53,7 @@ def _fake_loader_factory(record: list[str] | None = None):
     return fake_loader
 
 
-def _train_args(tmp_path: Path, run_id: str, **overrides):
+def _train_args(tmp_path: Path, run_id: str, **overrides) -> Namespace:
     argv = [
         "--device",
         "cpu",
@@ -87,7 +89,13 @@ def _train_args(tmp_path: Path, run_id: str, **overrides):
     return train_mod.build_parser().parse_args(argv)
 
 
-def _run_train(monkeypatch, tmp_path: Path, run_id: str, record: list[str] | None = None, **overrides) -> dict:
+def _run_train(
+    monkeypatch,
+    tmp_path: Path,
+    run_id: str,
+    record: list[str] | None = None,
+    **overrides,
+) -> dict[str, Any]:
     monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory(record))
     monkeypatch.setattr(
         train_mod, "list_parquet_files", lambda data_dir=None: ["fake_train.parquet", "fake_val.parquet"]
@@ -1039,10 +1047,23 @@ def test_activation_checkpointing_preserves_trajectories_bitwise(monkeypatch, tm
     runs = {}
     summary = None
     for mode in ("none", "full", "every-k"):
-        overrides = dict(max_steps=6, activation_checkpointing=mode)
         if mode == "every-k":
-            overrides["activation_ckpt_every_k"] = 2
-        summary = _run_train(monkeypatch, tmp_path, f"ckpt-{mode}", **overrides)
+            summary = _run_train(
+                monkeypatch,
+                tmp_path,
+                f"ckpt-{mode}",
+                max_steps=6,
+                activation_checkpointing=mode,
+                activation_ckpt_every_k=2,
+            )
+        else:
+            summary = _run_train(
+                monkeypatch,
+                tmp_path,
+                f"ckpt-{mode}",
+                max_steps=6,
+                activation_checkpointing=mode,
+            )
         runs[mode] = summary["results"]["losses"]
         assert len(runs[mode]) == 6
         assert all(v == v for v in runs[mode]), f"{mode}: NaN loss"

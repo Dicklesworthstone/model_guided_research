@@ -937,7 +937,8 @@ class GPT(nn.Module):
         h = self.config.n_head
         q = self.config.n_embd // h
         t = self.config.sequence_len
-        nparams_ckpt = sum(p.numel() for i in idxs for p in self.transformer.h[i].parameters())
+        blocks = tuple(self.transformer["h"].children())
+        nparams_ckpt = sum(p.numel() for i in idxs for p in blocks[i].parameters())
         return flops + 2 * nparams_ckpt + 4 * h * q * t * len(idxs)
 
     def setup_optimizers(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02, weight_decay=0.0):
@@ -1039,7 +1040,7 @@ class GPT(nn.Module):
             and torch.is_grad_enabled()
             and ckpt_mode != "none"
         )
-        for i, block in enumerate(self.transformer.h):
+        for i, block in enumerate(self.transformer["h"].children()):
             if use_ckpt and (ckpt_mode == "full" or i % ckpt_k == 0):
                 # use_reentrant=False: composes with kwargs/tensors-only args,
                 # DDP, and torch.compile; recompute is numerically identical

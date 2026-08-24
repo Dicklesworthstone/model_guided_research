@@ -12,15 +12,56 @@ same 3e14 target). These tests pin the corrected accounting and guard the
 standard/additive paths against silent drift.
 """
 
+from dataclasses import replace
+
 from nanochat.gpt import GPT, GPTConfig
 
 # The z4xx symp-tied rung (depth-16, half-width reversible, tied), used as a
 # concrete regression anchor so the exact pre/post numbers stay documented.
-_Z4XX = dict(n_layer=16, n_head=4, n_kv_head=2, n_embd=128, sequence_len=256, vocab_size=50304)
+_Z4XX = GPTConfig(
+    n_layer=16,
+    n_head=4,
+    n_kv_head=2,
+    n_embd=128,
+    sequence_len=256,
+    vocab_size=50304,
+)
 
 
-def _flops(**overrides):
-    return GPT(GPTConfig(**{**_Z4XX, **overrides})).estimate_flops()
+def _config(
+    *,
+    attention_type: str | list[str] = "standard",
+    reversible_mode: str = "additive",
+    reversible_tied: bool = False,
+    activation_ckpt: str = "none",
+    activation_ckpt_every_k: int = 1,
+) -> GPTConfig:
+    return replace(
+        _Z4XX,
+        attention_type=attention_type,
+        reversible_mode=reversible_mode,
+        reversible_tied=reversible_tied,
+        activation_ckpt=activation_ckpt,
+        activation_ckpt_every_k=activation_ckpt_every_k,
+    )
+
+
+def _flops(
+    *,
+    attention_type: str | list[str] = "standard",
+    reversible_mode: str = "additive",
+    reversible_tied: bool = False,
+    activation_ckpt: str = "none",
+    activation_ckpt_every_k: int = 1,
+) -> int:
+    config = _config(
+        attention_type=attention_type,
+        reversible_mode=reversible_mode,
+        reversible_tied=reversible_tied,
+        activation_ckpt=activation_ckpt,
+        activation_ckpt_every_k=activation_ckpt_every_k,
+    )
+    return GPT(config).estimate_flops()
 
 
 def _naive_6n(cfg: GPTConfig) -> int:
@@ -33,7 +74,7 @@ def _naive_6n(cfg: GPTConfig) -> int:
 
 
 def test_standard_matches_canonical_6n():
-    cfg = GPTConfig(attention_type="standard", **_Z4XX)
+    cfg = _config(attention_type="standard")
     assert GPT(cfg).estimate_flops() == _naive_6n(cfg) == 62_226_432
 
 
@@ -42,7 +83,7 @@ def test_additive_reversible_charges_wired_recompute():
     # TRAINING path: backward recomputes activations, so a block pair costs
     # 9 forward-equivalent units per param (vs canonical 6) and its attention
     # matmuls run on every pass (16 H Q T vs 12).
-    cfg = GPTConfig(attention_type="reversible", reversible_mode="additive", **_Z4XX)
+    cfg = _config(attention_type="reversible", reversible_mode="additive")
     m = GPT(cfg)
     nparams = sum(p.numel() for p in m.parameters())
     nemb = m.transformer.wte.weight.numel()
@@ -60,13 +101,13 @@ def test_additive_reversible_charges_wired_recompute():
 def test_additive_reversible_strictly_exceeds_canonical_6n():
     # The wired recompute must cost MORE than the naive single-backward rule,
     # mirroring the symplectic guard below.
-    cfg = GPTConfig(attention_type="reversible", reversible_mode="additive", **_Z4XX)
+    cfg = _config(attention_type="reversible", reversible_mode="additive")
     assert GPT(cfg).estimate_flops() > _naive_6n(cfg)
 
 
 def test_symplectic_counts_the_double_backward():
     # Documented contract: 6*nonblock + 18*block + 3*attn.
-    m = GPT(GPTConfig(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True, **_Z4XX))
+    m = GPT(_config(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True))
     nparams = sum(p.numel() for p in m.parameters())
     nemb = m.transformer.wte.weight.numel()
     nblock = sum(p.numel() for p in m.transformer.h.parameters())
@@ -80,11 +121,10 @@ def test_mixed_symplectic_schedule_counts_only_reversible_layers():
     # Mixed stacks should charge the double-backward correction only to the
     # symplectic reversible layers, while ordinary layers keep canonical 6N.
     m = GPT(
-        GPTConfig(
+        _config(
             attention_type="standard,reversible",
             reversible_mode="symplectic",
             reversible_tied=False,
-            **_Z4XX,
         )
     )
     nparams = sum(p.numel() for p in m.parameters())
@@ -109,7 +149,7 @@ def test_symplectic_anchor_numbers():
 def test_symplectic_estimate_strictly_exceeds_buggy_undercount():
     # The correction must strictly INCREASE the per-token cost vs the naive 6N
     # the symplectic arm used to get — that is what removes the step inflation.
-    cfg = GPTConfig(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True, **_Z4XX)
+    cfg = _config(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True)
     assert GPT(cfg).estimate_flops() > _naive_6n(cfg)
 
 
@@ -149,7 +189,7 @@ def test_activation_checkpointing_surcharge_accounting():
     ek2 = _flops(attention_type="standard", activation_ckpt="every-k", activation_ckpt_every_k=2)
     assert full > ek2 > none > 0
     # exact surcharge: L=16 layers -> full checkpoints 16; every-2 checkpoints 8
-    m = GPT(GPTConfig(attention_type="standard", **_Z4XX))
+    m = GPT(_config(attention_type="standard"))
     nblock = sum(p.numel() for p in m.transformer.h.parameters())
     per_layer_params = nblock // 16
     h, q, t = 4, 32, 256
