@@ -32,15 +32,16 @@ def seed_everything(seed: int):
     return jax.random.PRNGKey(seed)
 
 
-def timer(func: Callable) -> Callable:
+def timer[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Decorator to time function execution."""
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         start = time.perf_counter()
         result = func(*args, **kwargs)
         end = time.perf_counter()
-        console.print(f"[dim]Execution time for {func.__name__}: {end - start:.3f}s[/dim]")
+        func_name = getattr(func, "__name__", type(func).__name__)
+        console.print(f"[dim]Execution time for {func_name}: {end - start:.3f}s[/dim]")
         return result
 
     return wrapper

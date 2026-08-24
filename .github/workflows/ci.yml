@@ -60,9 +60,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
-      - name: Run mypy
-        run: uv run mypy . --ignore-missing-imports
-        continue-on-error: true
+      - name: Enforce ty diagnostic baseline
+        run: scripts/ci_lite.sh --typecheck
 
   test:
     name: Test
@@ -149,6 +148,10 @@ jobs:
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ]]; then
             echo "Lint job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.typecheck.result }}" != "success" ]]; then
+            echo "Type check job failed"
             exit 1
           fi
           if [[ "${{ needs.test.result }}" != "success" ]]; then

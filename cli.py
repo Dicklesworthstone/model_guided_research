@@ -1283,13 +1283,14 @@ def _bench_welch_delta(cand: list[float], base: list[float]) -> dict[str, Any] |
 @app.command("bench-fixed-flops")
 def bench_fixed_flops(
     attention_types: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option(
             "--attention-type",
             "-a",
             help="Nanochat attention type or comma-separated attention schedule to benchmark (repeatable).",
+            show_default="standard, clifford, hyperbolic, tropical, ultrametric, simplicial, reversible, gauge",
         ),
-    ] = ("standard", "clifford", "hyperbolic", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
+    ] = None,
     device: Annotated[
         str,
         typer.Option(
@@ -1488,7 +1489,6 @@ def bench_fixed_flops(
         ),
     ] = 1800.0,
 ):
-    attention_types = [str(attn).strip() for attn in attention_types if str(attn).strip()]
     """Benchmark nanochat attention variants under a fixed FLOPs budget.
 
     Per-run nanochat artifacts:
@@ -1498,6 +1498,18 @@ def bench_fixed_flops(
     - `artifacts/bench/fixed_flops/nanochat/<suite_run_id>/summary.json`
     - `artifacts/bench/fixed_flops/nanochat/<suite_run_id>/run.md`
     """
+    if attention_types is None:
+        attention_types = [
+            "standard",
+            "clifford",
+            "hyperbolic",
+            "tropical",
+            "ultrametric",
+            "simplicial",
+            "reversible",
+            "gauge",
+        ]
+    attention_types = [str(attn).strip() for attn in attention_types if str(attn).strip()]
     if not attention_types:
         raise typer.BadParameter("--attention-type must be provided at least once")
     seed_list = [int(s) for s in seeds.split(",") if s.strip()] or [int(seed)]
@@ -3376,13 +3388,14 @@ def per_head_metrics(
         ),
     ] = "cpu",
     seeds: Annotated[
-        list[int],
+        list[int] | None,
         typer.Option(
             "--seed",
             "-s",
             help="Training seeds (repeatable).",
+            show_default="0, 1, 2",
         ),
-    ] = (0, 1, 2),
+    ] = None,
     target_flops: Annotated[
         float,
         typer.Option(
@@ -3512,6 +3525,8 @@ def per_head_metrics(
 
     Note: the FlexAttention variant requires CUDA and is skipped otherwise.
     """
+    if seeds is None:
+        seeds = [0, 1, 2]
     seeds = list(seeds)
     if not seeds:
         raise typer.BadParameter("--seed must be provided at least once")
