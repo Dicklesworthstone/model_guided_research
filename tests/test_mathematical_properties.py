@@ -7,6 +7,7 @@ properties claimed in its documentation by testing the real available functions.
 """
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 # Add parent directory to path
@@ -432,7 +433,8 @@ class TestTropicalGeometry:
         require(out.shape == (Q.shape[0], dim), f"Output shape mismatch: {out.shape}")
 
         margin = getattr(attn, "last_min_margin", None)
-        require(margin is not None, "TropicalAttention did not set last_min_margin")
+        if margin is None:
+            raise AssertionError("TropicalAttention did not set last_min_margin")
         require(margin >= -1e-6, f"Margin certificate should be >= 0, got {margin:.6e}")
 
         print(f"  ✅ Tropical margin certificate: min gap = {margin:.3e}")
@@ -1041,9 +1043,14 @@ class TestIntegrableRMatrix:
             for module in model.modules():
                 if isinstance(module, BraidCausalSelfAttention):
                     charges = module.last_braid_charges
-                    require(isinstance(charges, dict), f"missing charges for law={law}")
-                    q1 = max(q1, float(charges["q1_mass_defect"]))
-                    q2 = max(q2, float(charges["q2_braid_residual"]))
+                    if not isinstance(charges, dict):
+                        raise AssertionError(f"missing charges for law={law}")
+                    q1_value = charges["q1_mass_defect"]
+                    q2_value = charges["q2_braid_residual"]
+                    if not isinstance(q1_value, int | float) or not isinstance(q2_value, int | float):
+                        raise AssertionError(f"non-numeric charges for law={law}")
+                    q1 = max(q1, float(q1_value))
+                    q2 = max(q2, float(q2_value))
             return q1, q2
 
         q1_r, q2_r = run("rmatrix")
@@ -1072,24 +1079,25 @@ class TestIntegrableRMatrix:
 
         def gauged_sigma(st: torch.Tensor, rp: torch.Tensor, i: int, eta: float) -> tuple[torch.Tensor, torch.Tensor]:
             w = rp[i] - rp[i + 1]
-            b = torch.sinh(torch.tensor(w, dtype=torch.float64))
-            c = torch.sinh(torch.tensor(eta, dtype=torch.float64))
+            b = torch.sinh(w)
+            c = torch.sinh(st.new_tensor(eta))
             bg, cg = b / (b + c), c / (b + c)
             st = st.clone()
             a, b_state = st[i].clone(), st[i + 1].clone()
             st[i], st[i + 1] = cg * a + bg * b_state, bg * a + cg * b_state
-            rp = list(rp)
-            rp[i], rp[i + 1] = rp[i + 1], rp[i]
+            rp = rp.clone()
+            r_i = rp[i].clone()
+            rp[i], rp[i + 1] = rp[i + 1], r_i
             return st, rp
 
         torch.manual_seed(8)
         eta = 0.9
-        raps = [0.31, 0.11, -0.17]
+        raps = torch.tensor([0.31, 0.11, -0.17], dtype=torch.float64)
         states = torch.randn(3, 2, dtype=torch.float64)
-        st1, rp1 = states, list(raps)
+        st1, rp1 = states, raps
         for i in (0, 1, 0):
             st1, rp1 = gauged_sigma(st1, rp1, i, eta)
-        st2, rp2 = states, list(raps)
+        st2, rp2 = states, raps
         for i in (1, 0, 1):
             st2, rp2 = gauged_sigma(st2, rp2, i, eta)
         err = float(torch.max(torch.abs(st1 - st2)))
@@ -1284,7 +1292,7 @@ class TestSymplecticReversible:
 
         from nanochat.gpt import GPT, GPTConfig
 
-        base = dict(
+        base = GPTConfig(
             sequence_len=16,
             vocab_size=64,
             n_layer=2,
@@ -1295,7 +1303,7 @@ class TestSymplecticReversible:
             reversible_mode="symplectic",
         )
         torch.manual_seed(19)
-        model = GPT(GPTConfig(**base))
+        model = GPT(base)
         idx = torch.randint(0, 64, (2, 16))
         loss = model(idx, targets=idx)
         require(bool(torch.isfinite(loss)), f"non-finite loss {loss}")
@@ -1303,7 +1311,7 @@ class TestSymplecticReversible:
         grads = [p.grad for p in model.parameters() if p.requires_grad and p.grad is not None]
         require(len(grads) > 0 and all(bool(torch.isfinite(g).all()) for g in grads), "bad grads")
 
-        tied = GPT(GPTConfig(**{**base, "reversible_tied": True}))
+        tied = GPT(replace(base, reversible_tied=True))
         n_untied = sum(p.numel() for p in model.parameters())
         n_tied = sum(p.numel() for p in tied.parameters())
         require(n_tied < n_untied, f"tied params {n_tied} not smaller than untied {n_untied}")
@@ -1311,8 +1319,7 @@ class TestSymplecticReversible:
         require(bool(torch.isfinite(loss_t)), f"tied non-finite loss {loss_t}")
 
         try:
-            GPTConfig(**{**base, "reversible_mode": "additive", "reversible_tied": True})
-            GPT(GPTConfig(**{**base, "reversible_mode": "additive", "reversible_tied": True}))
+            GPT(replace(base, reversible_mode="additive", reversible_tied=True))
             require(False, "tied+additive must be rejected")
         except ValueError:
             pass
@@ -1326,18 +1333,18 @@ class TestSymplecticReversible:
 
         from nanochat.gpt import GPT, GPTConfig
 
-        base = dict(sequence_len=16, vocab_size=64, n_layer=2, n_head=4, n_kv_head=2, n_embd=32)
+        base = GPTConfig(sequence_len=16, vocab_size=64, n_layer=2, n_head=4, n_kv_head=2, n_embd=32)
         torch.manual_seed(23)
-        normed = GPT(GPTConfig(**base, attention_type="standard"))
+        normed = GPT(base)
         torch.manual_seed(23)
-        stripped = GPT(GPTConfig(**base, attention_type="standard", disable_block_norms=True))
+        stripped = GPT(replace(base, disable_block_norms=True))
         idx = torch.randint(0, 64, (2, 16))
         with torch.no_grad():
             delta = float((normed(idx) - stripped(idx)).abs().max())
         require(delta > 1e-6, f"no-norm arm did not change outputs (delta {delta:.2e})")
 
         try:
-            GPT(GPTConfig(**base, attention_type="tropical", disable_block_norms=True))
+            GPT(replace(base, attention_type="tropical", disable_block_norms=True))
             require(False, "disable_block_norms must be standard-only")
         except ValueError:
             pass
@@ -1401,6 +1408,8 @@ class TestAdditiveReversibleWiring:
         xe = x.clone().requires_grad_(True)
         self._eager_forward(eager, xe).backward(w)
 
+        if xw.grad is None or xe.grad is None:
+            raise AssertionError("input gradients were not populated")
         dx_err = (xw.grad - xe.grad).abs().max() / xe.grad.abs().max().clamp_min(1e-300)
         require(float(dx_err) < 1e-9, f"input grad mismatch: rel {float(dx_err):.2e}")
         for (name, pw), (_, pe) in zip(wired.named_parameters(), eager.named_parameters(), strict=True):
@@ -1683,20 +1692,52 @@ class TestTropicalFFN:
     and trainability of the whole GPT with the tropical FFN swapped in."""
 
     @staticmethod
-    def _cfg(ffn_type: str = "tropical", **kw):
+    def _cfg(
+        ffn_type: str = "tropical",
+        *,
+        n_layer: int = 1,
+        n_kv_head: int = 2,
+        n_embd: int = 16,
+        attention_type: str | list[str] = "standard",
+        ffn_beta: float | None = None,
+        tropical_record_margins: bool = False,
+    ):
         from nanochat.gpt import GPTConfig
 
-        base = dict(sequence_len=32, vocab_size=128, n_layer=1, n_head=2, n_kv_head=2, n_embd=16, ffn_type=ffn_type)
-        base.update(kw)
-        return GPTConfig(**base)
+        return GPTConfig(
+            sequence_len=32,
+            vocab_size=128,
+            n_layer=n_layer,
+            n_head=2,
+            n_kv_head=n_kv_head,
+            n_embd=n_embd,
+            attention_type=attention_type,
+            ffn_type=ffn_type,
+            ffn_beta=ffn_beta,
+            tropical_record_margins=tropical_record_margins,
+        )
 
-    def _mlp(self, ffn_type: str = "tropical", seed: int = 0, double: bool = True, **kw):
+    def _mlp(
+        self,
+        ffn_type: str = "tropical",
+        seed: int = 0,
+        double: bool = True,
+        *,
+        ffn_beta: float | None = None,
+        tropical_record_margins: bool = False,
+    ):
         import torch
 
         from nanochat.tropical_attention_torch import TropicalMLP
 
         torch.manual_seed(seed)
-        mlp = TropicalMLP(self._cfg(ffn_type, **kw))
+        mlp = TropicalMLP(
+            self._cfg(
+                ffn_type,
+                ffn_beta=ffn_beta,
+                tropical_record_margins=tropical_record_margins,
+            )
+        )
         return mlp.double() if double else mlp
 
     def test_pure_mode_is_1_lipschitz_sup_norm(self):
@@ -1841,6 +1882,8 @@ class TestTropicalFFN:
                 opt.step()
                 first = float(loss) if first is None else first
                 last = float(loss)
+            if first is None or last is None:
+                raise AssertionError("training loop produced no loss values")
             require(
                 last < first * 0.9,
                 f"{ffn_type} GPT failed to train on the memorization smoke: first={first:.3f} last={last:.3f}",

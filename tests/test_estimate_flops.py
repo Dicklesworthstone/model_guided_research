@@ -14,6 +14,8 @@ standard/additive paths against silent drift.
 
 from dataclasses import replace
 
+from torch import nn
+
 from nanochat.gpt import GPT, GPTConfig
 
 # The z4xx symp-tied rung (depth-16, half-width reversible, tied), used as a
@@ -64,11 +66,23 @@ def _flops(
     return GPT(config).estimate_flops()
 
 
+def _embedding_size(model: GPT) -> int:
+    embedding = model.transformer["wte"]
+    assert isinstance(embedding, nn.Embedding)
+    return embedding.weight.numel()
+
+
+def _blocks(model: GPT) -> nn.ModuleList:
+    blocks = model.transformer["h"]
+    assert isinstance(blocks, nn.ModuleList)
+    return blocks
+
+
 def _naive_6n(cfg: GPTConfig) -> int:
     """The pre-fix formula: 6*(N - N_emb) + 12*L*H*Q*T (one fwd + one bwd)."""
     m = GPT(cfg)
     nparams = sum(p.numel() for p in m.parameters())
-    nemb = m.transformer.wte.weight.numel()
+    nemb = _embedding_size(m)
     l, h, q, t = cfg.n_layer, cfg.n_head, cfg.n_embd // cfg.n_head, cfg.sequence_len
     return 6 * (nparams - nemb) + 12 * l * h * q * t
 
@@ -86,8 +100,8 @@ def test_additive_reversible_charges_wired_recompute():
     cfg = _config(attention_type="reversible", reversible_mode="additive")
     m = GPT(cfg)
     nparams = sum(p.numel() for p in m.parameters())
-    nemb = m.transformer.wte.weight.numel()
-    nblock = sum(p.numel() for p in m.transformer.h.parameters())
+    nemb = _embedding_size(m)
+    nblock = sum(p.numel() for p in _blocks(m).parameters())
     h, q, t = cfg.n_head, cfg.n_embd // cfg.n_head, cfg.sequence_len
     expected = (
         6 * (nparams - nemb - nblock)
@@ -109,8 +123,8 @@ def test_symplectic_counts_the_double_backward():
     # Documented contract: 6*nonblock + 18*block + 3*attn.
     m = GPT(_config(attention_type="reversible", reversible_mode="symplectic", reversible_tied=True))
     nparams = sum(p.numel() for p in m.parameters())
-    nemb = m.transformer.wte.weight.numel()
-    nblock = sum(p.numel() for p in m.transformer.h.parameters())
+    nemb = _embedding_size(m)
+    nblock = sum(p.numel() for p in _blocks(m).parameters())
     nonblock = (nparams - nemb) - nblock
     l, h, q, t = m.config.n_layer, m.config.n_head, m.config.n_embd // m.config.n_head, m.config.sequence_len
     attn = 12 * l * h * q * t
@@ -128,10 +142,8 @@ def test_mixed_symplectic_schedule_counts_only_reversible_layers():
         )
     )
     nparams = sum(p.numel() for p in m.parameters())
-    nemb = m.transformer.wte.weight.numel()
-    symplectic_blocks = [
-        block for block in m.transformer.h if getattr(block, "attention_type", None) == "reversible"
-    ]
+    nemb = _embedding_size(m)
+    symplectic_blocks = [block for block in _blocks(m) if getattr(block, "attention_type", None) == "reversible"]
     nblock = sum(p.numel() for block in symplectic_blocks for p in block.parameters())
     nonblock = (nparams - nemb) - nblock
     h, q, t = m.config.n_head, m.config.n_embd // m.config.n_head, m.config.sequence_len
@@ -190,7 +202,7 @@ def test_activation_checkpointing_surcharge_accounting():
     assert full > ek2 > none > 0
     # exact surcharge: L=16 layers -> full checkpoints 16; every-2 checkpoints 8
     m = GPT(_config(attention_type="standard"))
-    nblock = sum(p.numel() for p in m.transformer.h.parameters())
+    nblock = sum(p.numel() for p in _blocks(m).parameters())
     per_layer_params = nblock // 16
     h, q, t = 4, 32, 256
     expected_full = none + 2 * 16 * per_layer_params + 4 * h * q * t * 16
