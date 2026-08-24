@@ -1005,3 +1005,28 @@ def test_hyperbolic_attention_training_smoke(monkeypatch, tmp_path):
     assert summary["results"]["hyperbolic_radius"]["mean"] >= 0.0
     assert 0.0 <= summary["results"]["hyperbolic_frac_heads_hier"] <= 1.0
     assert 0.0 <= summary["results"]["hyperbolic_frac_heads_euclidean"] <= 1.0
+
+
+def test_find_last_step_discovers_through_meta_commit_point(tmp_path):
+    """Commit-point discovery (save_checkpoint contract): an orphaned
+    model_*.pt whose meta never landed (SIGKILL mid-save) must NOT be picked
+    as the resume step — discovery goes through meta_*.json, and load
+    falls back to the last committed step instead of dying on missing meta."""
+    from nanochat.checkpoint_manager import find_last_step
+
+    d = tmp_path / "ckpts"
+    d.mkdir()
+    # committed step 5: full triple
+    (d / "model_000005.pt").write_bytes(b"x")
+    (d / "optim_000005_rank0.pt").write_bytes(b"x")
+    (d / "meta_000005.json").write_text("{}")
+    # orphaned step 7: model landed, SIGKILL before the meta commit point
+    (d / "model_000007.pt").write_bytes(b"x")
+
+    assert find_last_step(str(d)) == 5
+
+    # empty dir -> loud error naming the commit-point requirement
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(FileNotFoundError):
+        find_last_step(str(empty))

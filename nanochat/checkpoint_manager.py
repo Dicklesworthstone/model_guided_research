@@ -279,11 +279,16 @@ def find_largest_model(checkpoint_dir):
 
 
 def find_last_step(checkpoint_dir):
-    # Look into checkpoint_dir and find model_<step>.pt with the highest step
-    checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "model_*.pt"))
-    if not checkpoint_files:
-        raise FileNotFoundError(f"No checkpoints found in {checkpoint_dir}")
-    last_step = int(max(os.path.basename(f).split("_")[-1].split(".")[0] for f in checkpoint_files))
+    # Discover through the META files, not model_*.pt: meta_<step>.json is
+    # written LAST and atomically (see save_checkpoint), so its existence is
+    # the COMMIT POINT. Globbing model_*.pt here would expose a checkpoint
+    # whose optimizer shard/meta never landed after a SIGKILL mid-save —
+    # resume would then die on the missing meta instead of falling back to
+    # the last committed step. load_checkpoint() requires the meta anyway.
+    metas = glob.glob(os.path.join(checkpoint_dir, "meta_*.json"))
+    if not metas:
+        raise FileNotFoundError(f"No committed checkpoints found in {checkpoint_dir}")
+    last_step = int(max(os.path.basename(m).split("_")[-1].split(".")[0] for m in metas))
     return last_step
 
 
