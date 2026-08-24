@@ -100,6 +100,7 @@ def test_nsa_mlp_bias_uses_exact_emax_constants():
     import torch
 
     from nanochat.gpt import GPT, GPTConfig
+    from nanochat.tropical_attention_torch import TropicalMLP
 
     def stage1_bias(mode):
         torch.manual_seed(0)
@@ -109,9 +110,9 @@ def test_nsa_mlp_bias_uses_exact_emax_constants():
             parameterization=mode,
         )
         model = GPT(cfg)
-        mlps = [m for m in model.modules() if type(m).__name__ == "TropicalMLP"]
-        assert mlps, "no TropicalMLP in a tropical-FFN model"
-        return float(mlps[0].b1.detach()[0])
+        mlp = next((module for module in model.modules() if isinstance(module, TropicalMLP)), None)
+        assert mlp is not None, "no TropicalMLP in a tropical-FFN model"
+        return float(mlp.b1.detach()[0])
 
     cur = stage1_bias("current")
     nsa = stage1_bias("nsa")
@@ -131,9 +132,26 @@ def test_nsa_attention_shift_is_exact_and_centering_composes():
     from nanochat.gpt import GPT, GPTConfig
     from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
 
-    def build(**kw):
-        base = dict(n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=32, attention_type="tropical")
-        return GPT(GPTConfig(**base, **kw))
+    def build(
+        *,
+        tropical_gauge_fix: bool,
+        parameterization: str,
+        tropical_score_center: bool = True,
+    ) -> GPT:
+        return GPT(
+            GPTConfig(
+                n_layer=1,
+                n_head=2,
+                n_kv_head=2,
+                n_embd=16,
+                sequence_len=8,
+                vocab_size=32,
+                attention_type="tropical",
+                tropical_gauge_fix=tropical_gauge_fix,
+                tropical_score_center=tropical_score_center,
+                parameterization=parameterization,
+            )
+        )
 
     torch.manual_seed(3)
     q, k, v = (torch.randn(1, 2, 8, 8) for _ in range(3))
