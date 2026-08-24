@@ -1,6 +1,6 @@
 /-
 Copyright (c) 2026 model_guided_research. All rights reserved.
-Formalization tranche 2a (PARTIAL) of bead model_guided_research-vnl.3.
+Formalization tranche 2a (ABSTRACT CORE) of bead model_guided_research-vnl.3.
 
 DELIVERED HERE (machine-checked, zero sorry):
 - no_infinite_descent / ordinal_termination: the ABSTRACT core of
@@ -10,11 +10,10 @@ DELIVERED HERE (machine-checked, zero sorry):
   implementation, sync-checked by tests/test_lean_spec_sync.py.
 
 DEFERRED (tracked on the bead): the Cantor-normal-form DECREASE lemmas
-(cnfRank_dec_A/B/C over rho = omega^2*A + omega*B + C). Two candidate
-proof skeletons exist in the bead history; the blocking mathlib-API gap is
-that ordinals provide AddLeftStrictMono but NOT AddRightStrictMono, so
-"adding a fixed tail c on the right preserves <" needs its own lemma before
-the decrease proofs go through cleanly.
+(cnfRank_dec_A/B/C over rho = omega^2*A + omega*B + C). Blocking mathlib-API
+gap: ordinals provide AddLeftStrictMono but not AddRightStrictMono, and
+Nat-cast sums do not split under mul_add without a manual cast lemma -
+both documented on the bead with candidate proof skeletons.
 
 EVENT ALPHABET (reference; sync-checked):
 - evt: PHASE_ADVANCE
