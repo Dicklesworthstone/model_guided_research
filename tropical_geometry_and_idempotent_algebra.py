@@ -54,7 +54,7 @@ class Config:
     margin: float = 1.0
 
 
-@jax.tree_util.register_dataclass(data_fields=["WQ", "WK", "WV", "Wcls"])
+@jax.tree_util.register_dataclass
 @dataclass
 class Params:
     WQ: jnp.ndarray
@@ -236,22 +236,24 @@ def route_single(params: Params, X, cfg: Config, cls: int):
         iK=iK,
         iQ=iQ,
         margin=m,
+        # Keep margins as TRACED tensors: float() here breaks under
+        # lax.scan/vmap (bead faif); concrete-path callers wrap in float().
         node_margins={
-            "cls": float(m_cls),
-            "pool": float(m_pool),
-            "head": float(m_head),
-            "z": float(m_z),
-            "u": float(m_u),
-            "v": float(m_v),
-            "k": float(m_k),
-            "q": float(m_q),
+            "cls": m_cls,
+            "pool": m_pool,
+            "head": m_head,
+            "z": m_z,
+            "u": m_u,
+            "v": m_v,
+            "k": m_k,
+            "q": m_q,
         },
     )
 
 
 def kstar(y, cls):
     y2 = y.at[cls].set(-jnp.inf)
-    return int(jnp.argmax(y2))
+    return jnp.argmax(y2)  # traced-safe (bead faif); callers index/index-by it
 
 
 def deltas_from_route(cfg: Config, route, cls, sign):
@@ -275,7 +277,7 @@ def train_step(params: Params, X, y_true, cfg: Config):
     def body(prm, xy):
         Xs, ys = xy
         ylog = forward(prm, Xs, cfg)
-        c = int(ys)
+        c = ys.astype(jnp.int32)
         r_c = route_single(prm, Xs, cfg, c)
         k = kstar(ylog, c)
         r_k = route_single(prm, Xs, cfg, k)
