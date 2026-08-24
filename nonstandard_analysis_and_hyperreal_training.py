@@ -367,9 +367,9 @@ def run_stiff_quadratic_demo():
         print_metrics(shadow_metrics, "Shadow (Deterministic) Results")
 
         conditional_print("\n[bold]First 5 losses:[/bold]", level=2)
-        conditional_print(f"  SGD:    {jnp.array2string(loss_sgd[:5], precision=2)}", level=2)
-        conditional_print(f"  HOSS:   {jnp.array2string(loss_hoss[:5], precision=2)}", level=2)
-        conditional_print(f"  Shadow: {jnp.array2string(loss_shadow[:5], precision=2)}", level=2)
+        conditional_print(f"  SGD:    {np.array2string(np.asarray(loss_sgd[:5]), precision=2)}", level=2)
+        conditional_print(f"  HOSS:   {np.array2string(np.asarray(loss_hoss[:5]), precision=2)}", level=2)
+        conditional_print(f"  Shadow: {np.array2string(np.asarray(loss_shadow[:5]), precision=2)}", level=2)
     else:
         print("=== Stiff Quadratic Demo ===")
         print(
@@ -381,9 +381,9 @@ def run_stiff_quadratic_demo():
         print(
             f"Shadow (deterministic): final ||w||={jnp.linalg.norm(w_shadow):.3e}, loss={loss_shadow[-1]:.3e}, time={t_shadow:.3f}s"
         )
-        print("First 5 losses (SGD):   ", jnp.array2string(loss_sgd[:5], precision=2))
-        print("First 5 losses (HOSS):  ", jnp.array2string(loss_hoss[:5], precision=2))
-        print("First 5 losses (Shadow):", jnp.array2string(loss_shadow[:5], precision=2))
+        print("First 5 losses (SGD):   ", np.array2string(np.asarray(loss_sgd[:5]), precision=2))
+        print("First 5 losses (HOSS):  ", np.array2string(np.asarray(loss_hoss[:5]), precision=2))
+        print("First 5 losses (Shadow):", np.array2string(np.asarray(loss_shadow[:5]), precision=2))
 
 
 def run_small_mlp_demo():

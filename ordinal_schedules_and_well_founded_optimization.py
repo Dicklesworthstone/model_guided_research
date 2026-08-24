@@ -395,7 +395,7 @@ def run_baseline_once(
     return final_mse, means
 
 
-run_baseline_once_jit = jit(run_baseline_once, static_argnums=(1, 2, 3, 4, 5, 6, 10))
+run_baseline_once_jit = jit(run_baseline_once, static_argnums=(1, 2, 3, 4, 5, 6, 12))
 
 # -----------------------------
 # Experiment Orchestration
@@ -503,7 +503,14 @@ def main():
     ap.add_argument("--mu", type=float, default=0.9)
     args = ap.parse_args()
 
-    params = OrdinalParams(A0=args.A0, B_init=args.B_init, P0=args.P0, eta0=args.eta0, gamma=args.gamma, beta=args.beta)
+    params = OrdinalParams(
+        A_init=args.A0,
+        B_init=args.B_init,
+        P_init=args.P0,
+        eta0=args.eta0,
+        gamma=args.gamma,
+        ema_decay=args.beta,
+    )
 
     from utils import create_progress_bar
 
@@ -514,10 +521,10 @@ def main():
     progress = create_progress_bar(args.runs, "Running experiments")
     task = None
     if progress:
-        task = list(progress.tasks)[0]
+        task = progress.tasks[0].id
 
     for i in range(args.runs):
-        rep_seed = int(random.bits(random.fold_in(base_key, i), 32))
+        rep_seed = int(random.bits(random.fold_in(base_key, i), (), dtype=jnp.uint32))
         res = run_replicate(
             rep_seed,
             args.dim,

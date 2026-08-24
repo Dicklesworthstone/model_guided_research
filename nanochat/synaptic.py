@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -548,13 +549,17 @@ def build_presyn_state(B: int, T: int, H: int, device, dtype, cfg: SynapticConfi
 # FlexAttention (optional)
 # -----------------------------------------------------------------------------
 
+create_block_mask: Callable[..., Any] | None
+
 try:
-    from torch.nn.attention.flex_attention import create_block_mask, flex_attention
+    from torch.nn.attention.flex_attention import create_block_mask as _create_block_mask
+    from torch.nn.attention.flex_attention import flex_attention
 except Exception:  # pragma: no cover - depends on torch build
     create_block_mask = None
     flex_attention = None
     _HAS_FLEX = False
 else:
+    create_block_mask = _create_block_mask
     _HAS_FLEX = True
 
 
@@ -856,8 +861,8 @@ class SynapticMLP(nn.Module):
 
     def forward(self, x: Tensor):
         B, T, C = x.shape
-        c0 = cast(Tensor, self.C0)
-        e0 = cast(Tensor, self.E0)
+        c0 = self.C0
+        e0 = self.E0
         c = c0.expand(B * T)
         e = e0.expand(B * T)
         h = self.fc(x.reshape(B * T, C), c, e)
@@ -963,8 +968,8 @@ class SynapticMoE(nn.Module):
         B, T, C = x.shape
         E = self.num_experts
         device = x.device
-        fatigue_buf = cast(Tensor, self.fatigue)
-        energy_buf = cast(Tensor, self.energy)
+        fatigue_buf = self.fatigue
+        energy_buf = self.energy
 
         pheno = self._get_phenotype(self.Xi)  # (E, 4)
         alpha_fatigue = pheno[:, 0]
@@ -1063,15 +1068,15 @@ class StructuralPlasticity(nn.Module):
 
     @torch.no_grad()
     def step(self, used: Tensor):
-        age = cast(Tensor, self.age)
+        age = self.age
         age.add_(1.0)
-        util = cast(Tensor, self.util)
+        util = self.util
         util.mul_(1.0 - self.cfg.structural_tau_util).add_(self.cfg.structural_tau_util * used.float())
 
     @torch.no_grad()
     def decision(self):
-        util = cast(Tensor, self.util)
-        age = cast(Tensor, self.age)
+        util = self.util
+        age = self.age
         s = torch.sigmoid(
             10.0 * (util - 0.2) - self.cfg.structural_age_bias * (age / float(self.cfg.structural_interval))
         )
