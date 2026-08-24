@@ -782,6 +782,8 @@ def train(args) -> None:
         config.n_head = args.n_head
         config.n_kv_head = args.n_kv_head
         config.parameterization = getattr(args, "parameterization", "current")
+        config.activation_ckpt = getattr(args, "activation_checkpointing", "none")
+        config.activation_ckpt_every_k = int(getattr(args, "activation_ckpt_every_k", 1))
         config.n_embd = args.n_embd
         config.sequence_len = args.sequence_len
         config.optimizer_type = args.optimizer_type
@@ -1301,6 +1303,12 @@ def train(args) -> None:
                 dash_flags["beta"] = str(args.semiring_beta)
             if getattr(config, "parameterization", "current") != "current":
                 dash_flags["param"] = str(config.parameterization)
+            if getattr(config, "activation_ckpt", "none") != "none":
+                dash_flags["ckpt"] = (
+                    f"{config.activation_ckpt}@{getattr(config, 'activation_ckpt_every_k', 1)}"
+                    if config.activation_ckpt == "every-k"
+                    else str(config.activation_ckpt)
+                )
             if "braid" in attention_schedule:
                 dash_flags["law"] = getattr(config, "braid_crossing_law", "restricted")
             if all(name == "standard" for name in attention_schedule) and getattr(config, "disable_block_norms", False):
@@ -2086,6 +2094,7 @@ def train(args) -> None:
     report_table.add_row("Warmup Steps", str(args.warmup_steps))
     report_table.add_row("LR warmdown ratio", str(args.lr_warmdown_ratio))
     report_table.add_row("Parameterization", str(getattr(config, "parameterization", "current")))
+    report_table.add_row("Activation ckpt", str(getattr(config, "activation_ckpt", "none")))
     report_table.add_row("check_numerics", str(check_numerics))
     report_table.add_row("detect_anomaly", str(detect_anomaly))
     report_table.add_row("torch.compile model", "enabled" if compiled_model else "disabled")
@@ -2583,6 +2592,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Width-scaling parameterization arm (lab.1/bp08): 'nsa' applies the "
         "derived per-stage corrections (tropical exact-E[max] constants); default 'current'.",
     )
+    parser.add_argument(
+        "--activation-checkpointing",
+        type=str,
+        default="none",
+        choices=["none", "full", "every-k"],
+        help="Trade memory for compute: checkpoint every block (full) or every k-th block "
+        "(every-k + --activation-ckpt-every-k) so backward recomputes instead of storing "
+        "activations. Numerically identical trajectories; default none.",
+    )
+    parser.add_argument("--activation-ckpt-every-k", type=int, default=1, help="Block stride for every-k mode.")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu", "mps"])
     parser.add_argument("--profile", action="store_true", help="Profile the last --profile-steps training steps (b1l torch.profiler hooks): aggregate op table + chrome trace under <run-dir>/profile/. Debug tool; zero overhead when off.")
     parser.add_argument("--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on.")

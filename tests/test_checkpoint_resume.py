@@ -1030,3 +1030,22 @@ def test_find_last_step_discovers_through_meta_commit_point(tmp_path):
     empty.mkdir()
     with pytest.raises(FileNotFoundError):
         find_last_step(str(empty))
+
+
+def test_activation_checkpointing_preserves_trajectories_bitwise(monkeypatch, tmp_path):
+    """saew: full / every-k checkpointing recomputes activations instead of
+    storing them; with no dropout the recompute is numerically identical, so
+    loss trajectories must match the default none-mode run BITWISE on CPU."""
+    runs = {}
+    summary = None
+    for mode in ("none", "full", "every-k"):
+        overrides = dict(max_steps=6, activation_checkpointing=mode)
+        if mode == "every-k":
+            overrides["activation_ckpt_every_k"] = 2
+        summary = _run_train(monkeypatch, tmp_path, f"ckpt-{mode}", **overrides)
+        runs[mode] = summary["results"]["losses"]
+        assert len(runs[mode]) == 6
+        assert all(v == v for v in runs[mode]), f"{mode}: NaN loss"
+    assert runs["full"] == runs["none"], "full ckpt changed the trajectory"
+    assert runs["every-k"] == runs["none"], "every-k ckpt changed the trajectory"
+    assert summary is not None and summary["config"]["activation_ckpt"] == "every-k"

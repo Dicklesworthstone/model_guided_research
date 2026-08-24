@@ -138,3 +138,23 @@ def test_equal_flops_budget_no_longer_inflates_symplectic_steps():
     symp_steps = math.ceil(target / (symp * tokens_per_step))
     step_inflation = symp_steps / std_steps - 1.0
     assert step_inflation < 0.10, f"symplectic step inflation still {step_inflation:.1%} (was ~37%)"
+
+
+def test_activation_checkpointing_surcharge_accounting():
+    """saew: checkpointed blocks re-run their forward inside backward, so the
+    estimator must charge +2 FLOPs/param for params in checkpointed blocks and
+    +4 H Q T per checkpointed layer. Ordering: none < every-k(2) < full."""
+    none = _flops(attention_type="standard", activation_ckpt="none")
+    full = _flops(attention_type="standard", activation_ckpt="full")
+    ek2 = _flops(attention_type="standard", activation_ckpt="every-k", activation_ckpt_every_k=2)
+    assert full > ek2 > none > 0
+    # exact surcharge: L=16 layers -> full checkpoints 16; every-2 checkpoints 8
+    m = GPT(GPTConfig(attention_type="standard", **_Z4XX))
+    nblock = sum(p.numel() for p in m.transformer.h.parameters())
+    per_layer_params = nblock // 16
+    h, q, t = 4, 32, 256
+    expected_full = none + 2 * 16 * per_layer_params + 4 * h * q * t * 16
+    assert full == expected_full
+    assert ek2 == none + 2 * 8 * per_layer_params + 4 * h * q * t * 8
+    # default is inert
+    assert _flops(attention_type="standard") == none

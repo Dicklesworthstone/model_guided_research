@@ -20,6 +20,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from nanochat.adamw import DistAdamW
 from nanochat.braid_attention_torch import BraidCausalSelfAttention
@@ -268,6 +269,13 @@ class GPTConfig:
     # is approximated by the existing Muon/AdamW grouping (derivation in the
     # table notes). Default "current" until E1 adopts nsa deliberately.
     parameterization: str = "current"
+    # Activation checkpointing (bead saew): none = store activations for
+    # backward (default); full = checkpoint every block; every-k = checkpoint
+    # every k-th block. Recompute is numerically identical (no dropout), so
+    # loss trajectories are unchanged - this trades memory for compute only.
+    # Training-only; never applied on the KV-cache decode path.
+    activation_ckpt: str = "none"
+    activation_ckpt_every_k: int = 1
     # Ultrametric-specific options (see nanochat.ultrametric_attention_torch).
     ultrametric_mode: str = "kernel"  # "kernel" | "trie" | "balltree" (exact O(K T log T), bead 33dd)
     # Eval-time digit-precision truncation (bead 8gk.4): use only the first k
@@ -629,6 +637,12 @@ class GPT(nn.Module):
                 "and quaternion/octonion (rotor LR derivation) rules; refusing a silent no-op arm"
             )
 
+        activation_ckpt = getattr(self.config, "activation_ckpt", "none")
+        if activation_ckpt not in ("none", "full", "every-k"):
+            raise ValueError(f"activation_ckpt must be none | full | every-k, got {activation_ckpt!r}")
+        if int(getattr(self.config, "activation_ckpt_every_k", 1)) < 1:
+            raise ValueError("activation_ckpt_every_k must be >= 1")
+
         ca_rule = getattr(self.config, "ca_init_rule", None)
         if isinstance(ca_rule, str):
             ca_rule = ca_rule.strip().lower()
@@ -816,7 +830,7 @@ class GPT(nn.Module):
     def get_device(self):
         return self.transformer.wte.weight.device
 
-    def estimate_flops(self):
+    def _estimate_flops_base(self):
         """Return the estimated FLOPs per token for the model. Ref: https://arxiv.org/abs/2204.02311
 
         The 6*N rule charges every matmul parameter 2 FLOPs in the forward and 4
@@ -904,6 +918,27 @@ class GPT(nn.Module):
 
         num_flops_per_token = 6 * (nparams - nparams_embedding) + attn_flops_per_token
         return num_flops_per_token
+
+    def estimate_flops(self):
+        """Public FLOPs/token estimate: the analytic base plus the activation-
+        checkpointing recompute surcharge (bead saew). Each checkpointed block
+        re-runs its forward once inside backward: +2 FLOPs per parameter
+        living in checkpointed blocks and +4 H Q T per checkpointed layer for
+        the attention score/value matmuls' extra forward pass."""
+        flops = self._estimate_flops_base()
+        ckpt_mode = str(getattr(self.config, "activation_ckpt", "none"))
+        if ckpt_mode == "none":
+            return flops
+        k = max(1, int(getattr(self.config, "activation_ckpt_every_k", 1)))
+        schedule = resolve_attention_schedule(self.config)
+        idxs = list(range(len(schedule))) if ckpt_mode == "full" else list(range(0, len(schedule), k))
+        if not idxs:
+            return flops
+        h = self.config.n_head
+        q = self.config.n_embd // h
+        t = self.config.sequence_len
+        nparams_ckpt = sum(p.numel() for i in idxs for p in self.transformer.h[i].parameters())
+        return flops + 2 * nparams_ckpt + 4 * h * q * t * len(idxs)
 
     def setup_optimizers(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02, weight_decay=0.0):
         if self.config.optimizer_type == "hoss":
@@ -996,8 +1031,22 @@ class GPT(nn.Module):
         # Forward the trunk of the Transformer
         x = self.transformer.wte(idx)
         x = norm(x)
-        for block in self.transformer.h:
-            x = block(x, cos_sin, kv_cache)
+        ckpt_mode = str(getattr(self.config, "activation_ckpt", "none"))
+        ckpt_k = max(1, int(getattr(self.config, "activation_ckpt_every_k", 1)))
+        use_ckpt = (
+            self.training
+            and kv_cache is None
+            and torch.is_grad_enabled()
+            and ckpt_mode != "none"
+        )
+        for i, block in enumerate(self.transformer.h):
+            if use_ckpt and (ckpt_mode == "full" or i % ckpt_k == 0):
+                # use_reentrant=False: composes with kwargs/tensors-only args,
+                # DDP, and torch.compile; recompute is numerically identical
+                # (no dropout in GPTConfig), so trajectories are unchanged.
+                x = checkpoint(block, x, cos_sin, kv_cache, use_reentrant=False)
+            else:
+                x = block(x, cos_sin, kv_cache)
         x = norm(x)
 
         # Forward the lm_head (compute logits)

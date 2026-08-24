@@ -9,9 +9,14 @@ goldens).
 
 ## Current state
 
-- **Not implemented.** No `torch.utils.checkpoint` / `checkpoint_sequential`
-  in either `nanochat/` or `bio_inspired_nanochat/` (grep-confirmed). Every
-  block keeps its full forward activations for backward.
+- **Implemented (bead saew).** `--activation-checkpointing {none,full,every-k}`
+  (+ `--activation-ckpt-every-k`, default none = behavior-preserving) wraps
+  block calls in `torch.utils.checkpoint(..., use_reentrant=False)` in
+  `GPT.forward` when training with grad and no KV cache. Recompute is
+  numerically identical (no dropout), so loss trajectories match none-mode
+  BITWISE - pinned by test_activation_checkpointing_preserves_trajectories_bitwise.
+  `estimate_flops` charges the recompute: +2 FLOPs/param for params in
+  checkpointed blocks, +4 H Q T per checkpointed layer.
 - **Reversible's memory win is ACTIVE (bead a6k3).** `ReversibleBlock.forward`
   routes grad-enabled, no-KV-cache forwards through `ReversibleFunction`
   (`nanochat/reversible_block_torch.py`), whose backward reconstructs
@@ -110,16 +115,17 @@ Why these choices:
 | Regime | Setting |
 |---|---|
 | E1 rung / small models | `none` (memory is not binding) |
-| Large-L/D/T scaling rungs, GPU memory-bound | `full` (standard) or `every-2` (symplectic) **with FLOPs accounting fixed or `--max-steps`** |
-| Reversible memory recovery (interim) | `full` until `ReversibleFunction` is wired in |
-| Canonical fixed-FLOPs A/B | `none` (keep `estimate_flops` honest) |
+| Large-L/D/T scaling rungs, GPU memory-bound | `full` (standard) or `every-2` (symplectic — its double-backward compounds with recompute) |
+| Reversible memory recovery (interim) | obsolete — a6k3 wired `ReversibleFunction`; reversible recomputes by default |
+| Canonical fixed-FLOPs A/B | `none`, OR any mode: `estimate_flops` now charges the recompute surcharge |
 
 ## Follow-ups
 
-- **Implement `--activation-checkpointing`** (`gpt.py` block loop + `train.py`
-  flag), default `none`. Low-risk, mechanism-agnostic. → filed.
+- ~~**Implement `--activation-checkpointing`**~~ **DONE (bead saew)** — see
+  Current state above.
+- If either is enabled under `--target-flops`, update `estimate_flops` to count
+  the recompute forward (same discipline as the 7lba symplectic correction).
+  → DONE for checkpointing; generic-checkpointing arms are charged.
 - ~~**Wire `ReversibleFunction` into `ReversibleBlock.forward`**~~ **DONE
   (bead a6k3)** — additive training recomputes by default now; see Current
   state above.
-- If either is enabled under `--target-flops`, update `estimate_flops` to count
-  the recompute forward (same discipline as the 7lba symplectic correction).

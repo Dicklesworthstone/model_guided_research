@@ -2,6 +2,8 @@
   "batch_size": 4,
   "bead": "model_guided_research-7b0.1",
   "config": {
+    "activation_ckpt": "none",
+    "activation_ckpt_every_k": 1,
     "attention_type": "fractal",
     "braid_crossing_law": "restricted",
     "braid_mode": "soft",
