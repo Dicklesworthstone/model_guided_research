@@ -3,7 +3,9 @@ Basic tests to ensure all demos run without errors.
 """
 
 import importlib
+from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import jax
 import pytest
@@ -305,7 +307,7 @@ def test_documentation_exists():
 def test_attention_schedule_instantiates_per_layer_dispatch():
     import torch
 
-    from nanochat.gpt import GPT, GPTConfig, resolve_attention_schedule
+    from nanochat.gpt import GPT, Block, GPTConfig, resolve_attention_schedule
 
     torch.manual_seed(0)
     config = GPTConfig(
@@ -318,8 +320,9 @@ def test_attention_schedule_instantiates_per_layer_dispatch():
         attention_type="standard,tropical",
     )
     model = GPT(config).train(False)
+    blocks = cast(Sequence[Block], model._blocks())
     assert resolve_attention_schedule(config) == ["standard", "tropical", "standard", "tropical"]
-    assert [block.attention_type for block in model.transformer.h] == [
+    assert [block.attention_type for block in blocks] == [
         "standard",
         "tropical",
         "standard",
@@ -465,8 +468,8 @@ def test_nanochat_hyperbolic_energy_reduction_and_telemetry():
 
     import torch
 
-    from nanochat.gpt import GPT, GPTConfig
-    from nanochat.hyperbolic_attention_torch import energy_gromov_scores
+    from nanochat.gpt import GPT, Block, GPTConfig
+    from nanochat.hyperbolic_attention_torch import HyperbolicCausalSelfAttention, energy_gromov_scores
     from nanochat.model_utils import causal_attn_mask, norm
 
     torch.manual_seed(13)
@@ -492,7 +495,8 @@ def test_nanochat_hyperbolic_energy_reduction_and_telemetry():
     ids = torch.randint(0, config.vocab_size, (2, 8), dtype=torch.long)
     with torch.inference_mode():
         logits = model(ids)
-    attn = model.transformer.h[0].attn
+    block = cast(Block, model._blocks()[0])
+    attn = cast(HyperbolicCausalSelfAttention, block.attn)
     assert torch.isfinite(logits).all()
     assert torch.isfinite(attn.hyperbolic_curvature_head).all()
     assert torch.isfinite(attn.hyperbolic_radius_head_mean).all()
@@ -514,8 +518,9 @@ def test_nanochat_braid_discrete_mode_records_schedule_and_matches_kv_cache():
     """Discrete braid mode should be KV-cache consistent and record a verifiable schedule."""
     import torch
 
+    from nanochat.braid_attention_torch import BraidCausalSelfAttention
     from nanochat.engine import KVCache
-    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.gpt import GPT, Block, GPTConfig
 
     torch.manual_seed(0)
     config = GPTConfig(
@@ -550,9 +555,10 @@ def test_nanochat_braid_discrete_mode_records_schedule_and_matches_kv_cache():
 
     torch.testing.assert_close(cached_last, full_last, rtol=1e-3, atol=1e-2)
 
-    attn0 = model.transformer["h"][0].attn
+    block = cast(Block, model._blocks()[0])
+    attn0 = cast(BraidCausalSelfAttention, block.attn)
     debug = getattr(attn0, "last_braid_debug", None)
-    require(isinstance(debug, dict), "Expected braid attention to record last_braid_debug in discrete mode")
+    assert isinstance(debug, dict), "Expected braid attention to record last_braid_debug in discrete mode"
     for key in ("order", "selected", "k", "scores", "tau", "crossing_law"):
         require(key in debug, f"Missing debug key: {key}")
     order = debug["order"]
@@ -575,8 +581,9 @@ def test_nanochat_braid_rmatrix_kv_cache_parity_and_charges():
     """
     import torch
 
+    from nanochat.braid_attention_torch import BraidCausalSelfAttention
     from nanochat.engine import KVCache
-    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.gpt import GPT, Block, GPTConfig
 
     torch.manual_seed(0)
     config = GPTConfig(
@@ -608,9 +615,10 @@ def test_nanochat_braid_rmatrix_kv_cache_parity_and_charges():
 
     torch.testing.assert_close(cached_last, full_last, rtol=1e-3, atol=1e-2)
 
-    attn0 = model.transformer["h"][0].attn
+    block = cast(Block, model._blocks()[0])
+    attn0 = cast(BraidCausalSelfAttention, block.attn)
     charges = getattr(attn0, "last_braid_charges", None)
-    require(isinstance(charges, dict), "Expected rmatrix attention to record last_braid_charges")
+    assert isinstance(charges, dict), "Expected rmatrix attention to record last_braid_charges"
     require(charges["crossing_law"] == "rmatrix", "Expected the rmatrix law fingerprint")
     require(float(charges["q1_mass_defect"]) < 1e-5, f"Q1 mass defect too large: {charges['q1_mass_defect']}")
     require(float(charges["q2_braid_residual"]) < 1e-10, f"Q2 braid residual too large: {charges['q2_braid_residual']}")
@@ -739,7 +747,7 @@ def test_nanochat_standard_attention_entropy_records_per_head_stats():
     """Standard attention should optionally record a finite per-head entropy summary."""
     import torch
 
-    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.gpt import GPT, Block, CausalSelfAttention, GPTConfig
 
     torch.manual_seed(0)
     config = GPTConfig(
@@ -758,9 +766,9 @@ def test_nanochat_standard_attention_entropy_records_per_head_stats():
     with torch.inference_mode():
         _ = model(ids)
 
-    attn0 = model.transformer["h"][0].attn
-    entropy = getattr(attn0, "attn_entropy_head_mean", None)
-    require(torch.is_tensor(entropy), "Expected attn_entropy_head_mean to be a tensor")
+    block = cast(Block, model._blocks()[0])
+    attn0 = cast(CausalSelfAttention, block.attn)
+    entropy = attn0.attn_entropy_head_mean
     require(
         tuple(entropy.shape) == (config.n_head,),
         f"Expected entropy shape ({config.n_head},), got {tuple(entropy.shape)}",
@@ -886,7 +894,9 @@ def test_kv_cache_prefill_expands_batch_dimension():
     expanded = KVCache(batch_size=2, num_heads=2, seq_len=8, head_dim=4, num_layers=2)
     expanded.prefill(other)
     require(expanded.get_pos() == other.get_pos(), "Prefilled KVCache pos mismatch")
-    require(expanded.kv_cache is not None and other.kv_cache is not None, "KV caches must be initialized after prefill")
+    assert expanded.kv_cache is not None and other.kv_cache is not None, (
+        "KV caches must be initialized after prefill"
+    )
 
     # Both batch rows should match the single source prefix exactly.
     torch.testing.assert_close(

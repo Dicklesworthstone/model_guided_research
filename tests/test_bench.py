@@ -20,11 +20,13 @@ runner = CliRunner()
 
 def test_welch_delta_identical_samples():
     d = cli._bench_welch_delta([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
+    assert d is not None
     assert d["delta"] == 0.0 and d["p_value"] == 1.0 and d["ci95"] == [0.0, 0.0]
 
 
 def test_welch_delta_separated_significant():
     d = cli._bench_welch_delta([2.0, 2.1, 1.9, 2.05], [1.0, 1.1, 0.9, 0.95])
+    assert d is not None
     assert d["delta"] > 0 and d["p_value"] < 0.05
     assert d["ci95"][0] > 0  # CI excludes zero on the positive side
 
@@ -34,6 +36,7 @@ def test_welch_delta_matches_scipy():
 
     a, b = [2.0, 2.1, 1.9, 2.05], [1.0, 1.1, 0.9, 0.95]
     d = cli._bench_welch_delta(a, b)
+    assert d is not None
     ref = sps.ttest_ind(a, b, equal_var=False)
     assert abs(d["p_value"] - float(ref.pvalue)) < 1e-12
     assert abs(d["t_stat"] - float(ref.statistic)) < 1e-12
@@ -46,8 +49,10 @@ def test_welch_delta_insufficient_seeds():
 
 def test_welch_delta_zero_variance_different_means():
     d = cli._bench_welch_delta([2.0, 2.0], [1.0, 1.0])
+    assert d is not None
     assert d["delta"] == 1.0 and d["p_value"] == 0.0 and math.isinf(d["t_stat"]) and d["t_stat"] > 0
     d2 = cli._bench_welch_delta([1.0, 1.0], [2.0, 2.0])
+    assert d2 is not None
     assert d2["t_stat"] == float("-inf") and d2["p_value"] == 0.0
 
 
