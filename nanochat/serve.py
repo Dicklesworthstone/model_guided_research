@@ -5,6 +5,7 @@ Inference Server for NanoChat (JAX)
 import json
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -19,19 +20,26 @@ except ModuleNotFoundError as e:
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax.typing import VariableDict
 from rich.console import Console
 
 # Import local modules
 from nanochat.gpt_jax import GPT, GPTConfig
-from nanochat.tokenizer import get_tokenizer
+from nanochat.tokenizer import HuggingFaceTokenizer, get_tokenizer
 
 console = Console()
 _UI_PATH = Path(__file__).with_name("ui.html")
 
-# Global state
-model_state = None
-tokenizer = None
-config = None
+
+@dataclass(frozen=True, slots=True)
+class InferenceState:
+    model: GPT
+    variables: VariableDict
+    tokenizer: HuggingFaceTokenizer
+    config: GPTConfig
+
+
+_inference_state: InferenceState | None = None
 
 
 class ChatMessage(BaseModel):
@@ -46,35 +54,38 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int = Field(default=512, ge=1, le=4096)
 
 
-def load_model() -> None:
-    global model_state, tokenizer, config
+def load_model() -> InferenceState:
+    console.print("[bold cyan]Loading tokenizer...[/bold cyan]")
+    tokenizer = get_tokenizer()
+    config = GPTConfig(
+        sequence_len=256,
+        vocab_size=tokenizer.get_vocab_size(),
+        n_layer=4,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=128,
+    )
 
     console.print("[bold cyan]Loading model...[/bold cyan]")
-    config = GPTConfig()
-    # Use the same config as training
-    config.n_layer = 4
-    config.n_head = 4
-    config.n_kv_head = 4
-    config.n_embd = 128
-    config.sequence_len = 256
-
-    # Initialize model
     model = GPT(config)
     rng = jax.random.PRNGKey(42)
     dummy_input = jnp.ones((1, config.sequence_len), dtype=jnp.int32)
-    params = model.init(rng, dummy_input, train=False)["params"]
+    variables = model.init(rng, dummy_input, train=False)
 
-    model_state = {"params": params, "apply_fn": model.apply}
-
-    console.print("[bold cyan]Loading tokenizer...[/bold cyan]")
-    tokenizer = get_tokenizer()
     console.print("[bold green]Model and tokenizer loaded.[/bold green]")
+    return InferenceState(model=model, variables=variables, tokenizer=tokenizer, config=config)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    load_model()
-    yield
+    global _inference_state
+
+    loaded_state = load_model()
+    _inference_state = loaded_state
+    try:
+        yield
+    finally:
+        _inference_state = None
 
 
 app = FastAPI(lifespan=lifespan)
@@ -92,9 +103,8 @@ async def health():
 
 @app.post("/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
-    global model_state, tokenizer, config
-
-    if not model_state:
+    state = _inference_state
+    if state is None:
         return JSONResponse(status_code=503, content={"error": "Model not loaded"})
 
     # Tokenize
@@ -111,12 +121,12 @@ async def chat_completions(request: ChatCompletionRequest):
         prompt += f"{m.role}: {m.content}\n"
     prompt += "assistant: "
 
-    input_ids = tokenizer.encode(prompt)
-    input_ids = jnp.array([input_ids], dtype=jnp.int32)  # [1, T]
+    encoded_ids = state.tokenizer.encode(prompt)
+    input_ids = jnp.array([encoded_ids], dtype=jnp.int32)  # [1, T]
 
     # Truncate if too long
-    if input_ids.shape[1] > config.sequence_len:
-        input_ids = input_ids[:, -config.sequence_len :]
+    if input_ids.shape[1] > state.config.sequence_len:
+        input_ids = input_ids[:, -state.config.sequence_len :]
 
     async def generate_stream():
         current_ids = input_ids
@@ -125,12 +135,15 @@ async def chat_completions(request: ChatCompletionRequest):
             # Forward pass
             # We need to handle context length.
             # If current_ids > sequence_len, we crop.
-            if current_ids.shape[1] > config.sequence_len:
-                cond_ids = current_ids[:, -config.sequence_len :]
+            if current_ids.shape[1] > state.config.sequence_len:
+                cond_ids = current_ids[:, -state.config.sequence_len :]
             else:
                 cond_ids = current_ids
 
-            logits = model_state["apply_fn"]({"params": model_state["params"]}, cond_ids, train=False)
+            raw_logits: object = state.model.apply(state.variables, cond_ids, train=False)
+            if not isinstance(raw_logits, jax.Array) or raw_logits.ndim != 3:
+                raise RuntimeError("GPT inference must return a rank-3 JAX logits array")
+            logits = raw_logits
             next_token_logits = logits[0, -1, :]
 
             # Sampling
@@ -151,7 +164,7 @@ async def chat_completions(request: ChatCompletionRequest):
                 next_token_idx = int(np.argmax(next_token_logits))
 
             # Decode
-            token_str = tokenizer.decode([next_token_idx])
+            token_str = state.tokenizer.decode([next_token_idx])
 
             # Yield
             yield f"data: {json.dumps({'token': token_str})}\n\n"

@@ -77,7 +77,7 @@ def test_generator_version_bump_enforced(tmp_path):
     if not FIXTURE_PATH.exists():
         pytest.fail(
             f"Missing fixture {FIXTURE_PATH}. Capture it with: "
-            "uv run python -c \"from tests.test_diagnostics_data import capture_hash_fixture; capture_hash_fixture()\""
+            'uv run python -c "from tests.test_diagnostics_data import capture_hash_fixture; capture_hash_fixture()"'
         )
     fixture = json.loads(FIXTURE_PATH.read_text())
     for task in sorted(DEFAULT_TASKS):
@@ -312,6 +312,24 @@ def test_rot_octahedral_group_is_exact():
 # tokenizer safety (per task, explicit)
 
 
+def test_rustbpe_missing_error_names_installable_extra(monkeypatch):
+    from nanochat import tokenizer
+
+    monkeypatch.setattr(tokenizer, "rustbpe", None)
+    with pytest.raises(ImportError, match="uv sync --extra tokenizer-train"):
+        tokenizer.RustBPETokenizer.train_from_iterator(["small training corpus"], vocab_size=270)
+
+
+def test_rustbpe_training_round_trip_when_extra_is_installed():
+    pytest.importorskip("rustbpe")
+    from nanochat.tokenizer import RustBPETokenizer
+
+    text = "small training corpus with repeated words " * 32
+    tokenizer = RustBPETokenizer.train_from_iterator([text], vocab_size=270)
+
+    assert tokenizer.decode(tokenizer.encode(text)) == text
+
+
 def _assert_delimiters_unmerged(tok, doc: str, delimiters: tuple[str, ...], task: str) -> None:
     ids = tok.encode(doc)
     pieces = [tok.decode([i]) for i in ids]
@@ -337,8 +355,7 @@ def _assert_delimiters_unmerged(tok, doc: str, delimiters: tuple[str, ...], task
                 left_spill = doc[ps:ds].strip()
                 right_spill = doc[de:pe].strip()
                 assert not left_spill and not right_spill, (
-                    f"{task}: delimiter {delim!r} merged with neighbors in piece "
-                    f"{doc[ps:pe]!r} of doc {doc[:120]!r}"
+                    f"{task}: delimiter {delim!r} merged with neighbors in piece {doc[ps:pe]!r} of doc {doc[:120]!r}"
                 )
             start = de
 

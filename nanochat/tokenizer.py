@@ -10,7 +10,8 @@ import base64
 import copy
 import json
 import os
-from typing import Any, cast
+from collections.abc import Iterable
+from typing import Any, Protocol, cast
 
 SPECIAL_TOKENS = [
     # every document begins with the Beginning of Sequence (BOS) token that delimits documents
@@ -168,10 +169,28 @@ class HuggingFaceTokenizer:
 
 # -----------------------------------------------------------------------------
 # Tokenizer based on rustbpe + tiktoken combo
+class _RustBPETrainer(Protocol):
+    def train_from_iterator(self, text_iterator: Iterable[str], vocab_size: int, *, pattern: str) -> None: ...
+
+    def get_pattern(self) -> str: ...
+
+    def get_mergeable_ranks(self) -> list[tuple[bytes, int]]: ...
+
+
+class _RustBPEModule(Protocol):
+    Tokenizer: type[_RustBPETrainer]
+
+
+_rustbpe_module: object | None
 try:
-    import rustbpe
-except ImportError:
-    rustbpe = None
+    import rustbpe as _loaded_rustbpe
+except ModuleNotFoundError as exc:
+    if exc.name != "rustbpe":
+        raise
+    _rustbpe_module = None
+else:
+    _rustbpe_module = _loaded_rustbpe
+rustbpe = cast(_RustBPEModule | None, _rustbpe_module)
 import tiktoken
 
 
@@ -212,7 +231,8 @@ class RustBPETokenizer:
     def train_from_iterator(cls, text_iterator, vocab_size):
         if rustbpe is None:
             raise ImportError(
-                "rustbpe is required to train this tokenizer. Install it into your uv environment, then re-run."
+                "rustbpe is required to train this tokenizer. Install it with "
+                "`uv sync --extra tokenizer-train`, then re-run."
             )
         # 1) train using rustbpe
         tokenizer = rustbpe.Tokenizer()
@@ -457,7 +477,7 @@ class RustBPETokenizer:
 # nanochat-specific convenience functions
 
 
-def get_tokenizer():
+def get_tokenizer() -> HuggingFaceTokenizer:
     from nanochat.common import get_base_dir
 
     base_dir = get_base_dir()

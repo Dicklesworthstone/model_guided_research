@@ -1213,6 +1213,39 @@ def test_neuroviz_optional_import_handles_missing_parent(monkeypatch: pytest.Mon
         neuroviz._maybe_import("optional_backend")
 
 
+def test_neuroviz_jax_optional_import_handles_missing_parent(monkeypatch: pytest.MonkeyPatch):
+    import types
+
+    from nanochat import neuroviz_jax
+
+    require(
+        neuroviz_jax._maybe_import("model_guided_research_missing_parent.child") is None,
+        "a missing optional parent package must be treated as unavailable",
+    )
+
+    def fail_with_transitive_dependency(_module: str):
+        raise ModuleNotFoundError("missing transitive dependency", name="unrelated_dependency")
+
+    fake_importlib = types.SimpleNamespace(import_module=fail_with_transitive_dependency)
+    monkeypatch.setattr(neuroviz_jax, "importlib", fake_importlib)
+    with pytest.raises(ModuleNotFoundError, match="transitive dependency"):
+        neuroviz_jax._maybe_import("optional_backend")
+
+
+@pytest.mark.asyncio
+async def test_serve_lifespan_publishes_and_clears_one_atomic_state(monkeypatch: pytest.MonkeyPatch):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    loaded_state = object()
+    monkeypatch.setattr(serve, "load_model", lambda: loaded_state)
+
+    async with serve.lifespan(serve.app):
+        require(serve._inference_state is loaded_state, "lifespan did not atomically publish the loaded state")
+
+    require(serve._inference_state is None, "lifespan did not clear the state during shutdown")
+
+
 def test_nanochat_synaptic_modules_import():
     # These modules are optional/experimental, but should import cleanly.
     import nanochat.gpt_synaptic  # noqa: F401
@@ -1507,19 +1540,21 @@ def test_regressions_flags_still_passing_degradation_with_factor(tmp_path):
 
     import cli as mgr_cli
 
-    base = _cert_summary(
-        tmp_path, "deg-base", [_check("reversible", "round_trip_error", status="pass", measured=1e-7)]
-    )
-    cand = _cert_summary(
-        tmp_path, "deg-cand", [_check("reversible", "round_trip_error", status="pass", measured=8e-5)]
-    )
+    base = _cert_summary(tmp_path, "deg-base", [_check("reversible", "round_trip_error", status="pass", measured=1e-7)])
+    cand = _cert_summary(tmp_path, "deg-cand", [_check("reversible", "round_trip_error", status="pass", measured=8e-5)])
 
     runner = CliRunner()
     flagged = runner.invoke(
         mgr_cli.app,
         [
-            "regressions", "--baseline", str(base), "--candidate", str(cand),
-            "--cert-degrade-factor", "10", "--fail-on-regression",
+            "regressions",
+            "--baseline",
+            str(base),
+            "--candidate",
+            str(cand),
+            "--cert-degrade-factor",
+            "10",
+            "--fail-on-regression",
         ],
     )
     require(flagged.exit_code == 1, f"800x degradation must be flagged, got exit {flagged.exit_code}")
@@ -1527,8 +1562,14 @@ def test_regressions_flags_still_passing_degradation_with_factor(tmp_path):
     cleared = runner.invoke(
         mgr_cli.app,
         [
-            "regressions", "--baseline", str(base), "--candidate", str(cand),
-            "--cert-degrade-factor", "10000", "--fail-on-regression",
+            "regressions",
+            "--baseline",
+            str(base),
+            "--candidate",
+            str(cand),
+            "--cert-degrade-factor",
+            "10000",
+            "--fail-on-regression",
         ],
     )
     require(cleared.exit_code == 0, f"degradation under the factor must pass, got {cleared.exit_code}")
@@ -1543,9 +1584,7 @@ def test_regressions_rejects_certificate_kind_mismatch(tmp_path):
 
     import cli as mgr_cli
 
-    cert = _cert_summary(
-        tmp_path, "mix-cert", [_check("standard", "causality", status="pass", measured=0.0)]
-    )
+    cert = _cert_summary(tmp_path, "mix-cert", [_check("standard", "causality", status="pass", measured=0.0)])
     other = tmp_path / "plain.json"
     other.write_text(json_mod.dumps({"results": {"losses": [1.0, 2.0]}}))
 

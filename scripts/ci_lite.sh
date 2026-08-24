@@ -59,7 +59,9 @@ step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 check_ty_baseline() {
   local expected output status current
   expected="$(
-    uv run python -c \
+    uv run --locked --exact \
+      --extra dev --extra server --extra viz --extra tokenizer-train \
+      python -c \
       'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["tool"]["mgr"]["quality"]["ty-diagnostic-baseline"])'
   )"
   if [[ ! "$expected" =~ ^[0-9]+$ ]]; then
@@ -68,7 +70,11 @@ check_ty_baseline() {
   fi
 
   set +e
-  output="$(uv run ty check --output-format concise --color never --no-progress 2>&1)"
+  output="$(
+    uv run --locked --exact \
+      --extra dev --extra server --extra viz --extra tokenizer-train \
+      ty check --output-format concise --color never --no-progress 2>&1
+  )"
   status=$?
   set -e
 

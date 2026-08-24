@@ -62,9 +62,13 @@ server = [
 ]
 viz = [
     "tensorboard>=2.18.0",
-    "umap-learn>=0.5.6",
+    "umap-learn>=0.5.12",
+    "numba>=0.67.0",
     "scikit-learn>=1.5.0",
     "plotly>=5.22.0",
+]
+tokenizer-train = [
+    "rustbpe>=0.1.0",
 ]
 
 # Development dependencies
@@ -136,7 +140,7 @@ ignore_missing_imports = true
 [tool.mgr.quality]
 # Exact full-repository `ty check` diagnostic count. Lower this in the same
 # change that fixes diagnostics; remove the ratchet when the count reaches zero.
-ty-diagnostic-baseline = 202
+ty-diagnostic-baseline = 185
 
 # uv specific configuration
 [tool.uv]

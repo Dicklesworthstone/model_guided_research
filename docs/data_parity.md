@@ -32,7 +32,7 @@ Both files implement the same GPT-4-style BPE tokenizer.
 | BPE model | `BPE(byte_fallback=True, unk_token=None, fuse_unk=False)` | identical | ✅ identical |
 | Pre-tokenizer | `Split(isolated)` → `ByteLevel(add_prefix_space=False, use_regex=False)` | identical | ✅ identical |
 | Vocab accounting | `vocab_size_no_special = vocab_size - len(SPECIAL_TOKENS)`, min 256 (`:218`) | identical | ✅ identical |
-| Training backend | `rustbpe` (optional) → HF `tokenizers` fallback | identical | ✅ identical |
+| Training backend | Explicit choice: optional `rustbpe` extra or core HF `tokenizers` | identical implementations | ✅ identical |
 
 A whitespace-insensitive diff is **199 lines**, but every substantive hunk is
 defensive hardening that this repo added on top of the shared base; none

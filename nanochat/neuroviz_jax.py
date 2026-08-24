@@ -3,6 +3,7 @@ NeuroViz for JAX
 Adapts the visualization logic from nanochat/neuroviz.py to work with JAX arrays.
 """
 
+import importlib
 import json
 import os
 
@@ -16,27 +17,22 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 
-# Optional imports
-try:
-    import umap
 
-    _HAS_UMAP = True
-except ImportError:
-    _HAS_UMAP = False
+def _maybe_import(module: str, attr: str | None = None) -> Any:
+    try:
+        imported = importlib.import_module(module)
+    except ModuleNotFoundError as exc:
+        missing = exc.name
+        if missing == module or (missing is not None and module.startswith(f"{missing}.")):
+            return None
+        raise
+    return getattr(imported, attr) if attr else imported
 
-try:
-    from sklearn.decomposition import PCA
 
-    _HAS_SKLEARN = True
-except ImportError:
-    _HAS_SKLEARN = False
-
-try:
-    import importlib.util
-
-    _HAS_PLOTLY = importlib.util.find_spec("plotly") is not None
-except ImportError:
-    _HAS_PLOTLY = False
+UMAP = _maybe_import("umap", "UMAP")
+_HAS_UMAP = UMAP is not None
+PCA = _maybe_import("sklearn.decomposition", "PCA")
+_HAS_SKLEARN = PCA is not None
 
 
 def _to_np(x):
@@ -60,7 +56,7 @@ def _fit_2d(emb):
 
     if _HAS_UMAP:
         try:
-            red = umap.UMAP(n_neighbors=min(15, emb.shape[0] - 1), min_dist=0.3, metric="cosine", random_state=42)
+            red = UMAP(n_neighbors=min(15, emb.shape[0] - 1), min_dist=0.3, metric="cosine", random_state=42)
             return red.fit_transform(emb)
         except Exception as err:
             # UMAP can fail on degenerate embeddings; fall back gracefully while surfacing the reason
@@ -149,5 +145,5 @@ class NeuroVizManager:
         # Save raw data
         data_path = os.path.join(outdir, f"{name}_metrics_{step:09d}.json")
         serializable_m = {k: _to_np(v).tolist() if isinstance(v, (np.ndarray, jax.Array)) else v for k, v in m.items()}
-        with open(data_path, "w") as f:
+        with open(data_path, "w", encoding="utf-8") as f:
             json.dump(serializable_m, f)
