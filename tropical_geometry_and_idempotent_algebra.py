@@ -39,7 +39,9 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+from rich.console import Console
 
+_console = Console()
 
 @dataclass
 class Config:
@@ -336,8 +338,9 @@ def run():
         params = train_epoch(params, Xtr, ytr, cfg)
         tr_loss, tr_acc = batch_loss(params, Xtr, ytr, cfg)
         te_loss, te_acc = batch_loss(params, Xte, yte, cfg_test)
-        print(
-            f"epoch {e + 1} | train loss {float(tr_loss):.4f} acc {float(tr_acc):.4f} | test(L={cfg_test.L}) loss {float(te_loss):.4f} acc {float(te_acc):.4f}"
+        _console.print(
+            f"[dim]epoch {e + 1} | train loss {float(tr_loss):.4f} acc {float(tr_acc):.4f} | "
+            f"test(L={cfg_test.L}) loss {float(te_loss):.4f} acc {float(te_acc):.4f}[/dim]"
         )
     yhat = jax.vmap(lambda x: forward(params, x, cfg_test))(Xte)
     cert = jnp.minimum(  # per-sample crude cert via logit gap
@@ -345,7 +348,7 @@ def run():
         - jnp.max(jnp.where(jnp.arange(cfg.C) == yte[:, None], -jnp.inf, yhat), axis=1),
         jnp.array([jnp.inf]),
     )
-    print("median margin:", float(jnp.median(cert)))
+    _console.print(f"[cyan]median margin:[/cyan] {float(jnp.median(cert)):.4f}")
 
     # Optional: sparse mixtures of tropical polynomials (param-efficient)
     mix_rows = []
@@ -412,7 +415,7 @@ def run():
             }
         )
     _Console().print(tbl)
-    print("Min route gap/2 certificate:", f"{(min(gaps) / 2.0):.4f}")
+    _console.print(f"[cyan]Min route gap/2 certificate:[/cyan] {(min(gaps) / 2.0):.4f}")
     # Optional compact per-node min-gap/2 table
     try:
         t2 = _Table(title="Per-node Min-Gap/2 (first 10)", show_header=True, header_style="bold magenta")
