@@ -20,6 +20,13 @@ Minimize a scalar score computed from a short, fixed-budget training run:
 
 Phase 1 uses **train loss** only (no validation pass) to keep the pilot lightweight.
 
+> **Search no-go:** the preregistered cheap-proxy calibration in
+> `docs/cmaes_plan_mgr.md` found that this training-loss score is reproducible
+> but too flat to rank candidates (`reference std=0.000427`, proxy/reference
+> Spearman `rho=0.486`). Keep this path for plumbing smokes only. Do not spend a
+> Phase-1 or Phase-2 search budget until the validation-objective successor
+> (`model_guided_research-2c8j`) lands and passes the documented proxy gate.
+
 ---
 
 ## Parameter Vector (10D)
@@ -120,4 +127,3 @@ uv run python scripts/cmaes_phase1.py \
 > `--max-wall-seconds` / `--patience` / `--max-crash-rate` for the budget guard;
 > `--resume` to continue a preempted run; `--data-dir` to pin the corpus.
 > Analyze any run with `scripts/cmaes_analyze.py --run-id <id>` (bead `0wn`).
-

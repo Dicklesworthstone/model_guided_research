@@ -163,6 +163,75 @@ For a fixed-budget objective, do **short training** and score with:
 
 Avoid using raw `train loss` only unless necessary, because it can be gamed by overfitting tiny batches.
 
+### Cheap-proxy validation gate
+
+No short-run score may be used as a CMA-ES objective merely because it is
+cheaper. Before a search spends its budget, calibrate the proxy on the exact
+model, dataset fingerprint, candidate decoder, and seed policy that the search
+will use:
+
+1. Sample at least six candidates from a fixed search seed.
+2. Evaluate the same candidate configurations and evaluation seeds at the
+   proposed proxy budget and the reference budget.
+3. Require all of the following before enabling the proxy:
+   - the reference scores have detectable spread (`std > 1e-3` for the current
+     CE scale),
+   - Spearman rank correlation is at least `0.80`,
+   - the proxy retains every member of the reference top two, and
+   - median proxy wall time is no more than half the median reference wall
+     time.
+4. Record the candidate scores, data fingerprint, step counts, timings, and
+   pass/fail result. A failed gate is a **no-go**, not permission to tune the
+   thresholds after seeing the cohort.
+
+The calibration must be repeated when the model shape, dataset, metric,
+candidate space, or seed aggregation changes. This is intentionally stricter
+than checking loss-curve similarity: identical early loss prefixes prove
+reproducibility, but do not prove that the early ranking predicts the final
+ranking.
+
+#### CPU calibration result (bead `model_guided_research-2xy`)
+
+The first preregistered calibration tested the existing Phase-1 objective:
+mean of the final three training losses. It used six candidates with
+`search_seed=17`, `eval_seed=123`, a pinned two-shard dataset fingerprint
+`9ed31c98e6496157db24586949e5d15c9e46a5c6253d24dfc817b486fb8dc415`, and
+this CPU smoke configuration:
+
+```text
+n_layer=2, n_head=2, n_kv_head=2, n_embd=64
+sequence_len=64, batch_size=4, warmup_steps=0
+proxy=1e9 FLOPs (22 steps), reference=4e9 FLOPs (87 steps)
+```
+
+| candidate | proxy score | reference score | proxy seconds | reference seconds |
+|---:|---:|---:|---:|---:|
+| 0 | 10.507860 | 8.277376 | 18.04 | 16.29 |
+| 1 | 10.508038 | 8.276974 | 7.09 | 33.75 |
+| 2 | 10.507350 | 8.276485 | 7.64 | 23.26 |
+| 3 | 10.508210 | 8.276564 | 12.65 | 41.61 |
+| 4 | 10.508458 | 8.277685 | 8.12 | 21.30 |
+| 5 | 10.508067 | 8.277201 | 10.02 | 23.04 |
+
+The candidate JSON objects matched exactly across runs, all six evaluations
+completed, and every 22-step proxy loss curve exactly matched the corresponding
+prefix of its 87-step reference curve (`max_abs_delta = 0`). The proxy was
+cheap enough: median duration was `9.07 s` versus `23.15 s` (`39.2%`). It was
+not predictive enough:
+
+- reference-score standard deviation: `0.000427` (**fails** the `1e-3` signal
+  floor),
+- Spearman rank correlation: `0.486` (**fails** `0.80`), and
+- proxy top two `{2, 0}` versus reference top two `{2, 3}` (**fails** complete
+  retention).
+
+**Verdict: reject the raw short-training-loss proxy.** The failure is not
+nondeterminism; the underlying Phase-1 train-loss objective is too flat at this
+calibration scale to support candidate ranking. Do not launch more CMA-ES
+generations with this proxy. The next calibration must first replace the score
+with a fixed validation metric (validation CE or BPB), verify that the
+reference cohort has signal, and then apply the same gate above.
+
 ---
 
 ## Seed Discipline (Critical)
