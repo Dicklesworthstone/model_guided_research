@@ -4928,7 +4928,7 @@ def _run_certify_checks(
                 attn.radial_k.normal_(mean=0.0, std=0.5)
             hyp_output = attn.attend(q, k, v, kv_cache=None, pos0=None)
             std_output = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
-            return float((hyp_output - std_output).abs().max())
+            return float((hyp_output - std_output).detach().abs().max())
 
         add_check(
             "hyperbolic",
