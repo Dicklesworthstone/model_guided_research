@@ -15,6 +15,7 @@ locally (CI without network).
 import hashlib
 import json
 import statistics
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -172,7 +173,7 @@ def test_heldout_difficulty_actually_held_out():
 # dial monotonicity (brute-force statistics; the profiler cross-check is 77l.3)
 
 
-def _mono_increasing(values: list[float], label: str) -> None:
+def _mono_increasing(values: Sequence[float], label: str) -> None:
     assert all(b > a for a, b in zip(values, values[1:])), f"{label} not strictly increasing: {values}"
 
 

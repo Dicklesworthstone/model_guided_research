@@ -85,7 +85,8 @@ class GaugeBlock(nn.Module):
         # dispatch - standard / tropical / tropical-rational - applies here).
         self.mlp = mlp
 
-    def _apply_rotations(self, x: torch.Tensor, thetas: torch.Tensor, inverse: bool = False) -> torch.Tensor:
+    @staticmethod
+    def _apply_rotations(x: torch.Tensor, thetas: torch.Tensor, inverse: bool = False) -> torch.Tensor:
         """
         Apply 2x2 Givens rotations defined by thetas to x.
         x: (B, T, D)

@@ -806,12 +806,25 @@ def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
                 out[rec["step"]] = rec["semiring_beta"]
         return out
 
-    common = dict(
-        attention_type="tropical", semiring_beta="coverage:1:16:0.5",
-        tropical_record_margins=None, log_interval="1",
+    summary_a = _run_train(
+        monkeypatch,
+        tmp_path,
+        "cov-uninterrupted",
+        attention_type="tropical",
+        semiring_beta="coverage:1:16:0.5",
+        tropical_record_margins=None,
+        log_interval="1",
     )
-    summary_a = _run_train(monkeypatch, tmp_path, "cov-uninterrupted", **common)
-    _run_train(monkeypatch, tmp_path, "cov-parent", checkpoint_interval=6, **common)
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "cov-parent",
+        checkpoint_interval=6,
+        attention_type="tropical",
+        semiring_beta="coverage:1:16:0.5",
+        tropical_record_margins=None,
+        log_interval="1",
+    )
 
     betas_a = beta_series("cov-uninterrupted")
     assert len(set(betas_a.values())) > 1, "fake coverage must move beta or this test is vacuous"
@@ -824,7 +837,12 @@ def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
 
     summary_b = _run_train(
         monkeypatch, tmp_path, "cov-resumed",
-        resume_from=str(_ckpt_dir(tmp_path, "cov-parent")), resume_step=5, **common,
+        resume_from=str(_ckpt_dir(tmp_path, "cov-parent")),
+        resume_step=5,
+        attention_type="tropical",
+        semiring_beta="coverage:1:16:0.5",
+        tropical_record_margins=None,
+        log_interval="1",
     )
     assert summary_b["results"]["start_step"] == 6
     betas_b = beta_series("cov-resumed")

@@ -7,10 +7,10 @@
 #   scripts/ci_lite.sh --staged   # staged files only (use right before commit)
 #   scripts/ci_lite.sh --all      # whole repo: full ruff + full pytest
 #   scripts/ci_lite.sh --no-tests # skip pytest (lint/format/ubs/ty still run)
-#   scripts/ci_lite.sh --typecheck # full-repo ty baseline gate only
+#   scripts/ci_lite.sh --typecheck # full-repo ty gate only
 #
 # Stages: 1) ruff check  2) ruff format --check  3) ubs (if installed)
-#         4) ty baseline  5) fast pytest subset (skipped with --no-tests;
+#         4) ty  5) fast pytest subset (skipped with --no-tests;
 #         full suite with --all)
 #
 # Exit non-zero on the first failing stage. FlexAttention tests skip themselves
@@ -56,60 +56,15 @@ py_files() {
 
 step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 
-check_ty_baseline() {
-  local expected output status current
-  expected="$(
-    uv run --locked --exact \
-      --extra dev --extra server --extra viz --extra tokenizer-train \
-      python -c \
-      'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["tool"]["mgr"]["quality"]["ty-diagnostic-baseline"])'
-  )"
-  if [[ ! "$expected" =~ ^[0-9]+$ ]]; then
-    echo "invalid tool.mgr.quality.ty-diagnostic-baseline: $expected" >&2
-    return 2
-  fi
-
-  set +e
-  output="$(
-    uv run --locked --exact \
-      --extra dev --extra server --extra viz --extra tokenizer-train \
-      ty check --output-format concise --color never --no-progress 2>&1
-  )"
-  status=$?
-  set -e
-
-  if [[ $status -eq 0 ]]; then
-    current=0
-  elif [[ $status -eq 1 ]]; then
-    current="$(sed -n 's/^Found \([0-9][0-9]*\) diagnostics*$/\1/p' <<<"$output" | tail -n 1)"
-    if [[ -z "$current" ]]; then
-      printf '%s\n' "$output" >&2
-      echo "ty failed without a parseable diagnostic summary" >&2
-      return 2
-    fi
-  else
-    printf '%s\n' "$output" >&2
-    echo "ty failed before completing its analysis (exit $status)" >&2
-    return "$status"
-  fi
-
-  if (( current > expected )); then
-    printf '%s\n' "$output" >&2
-    printf '\033[1;31mty regression: %d diagnostics exceed the committed baseline of %d.\033[0m\n' \
-      "$current" "$expected" >&2
-    return 1
-  fi
-  if (( current < expected )); then
-    printf '\033[1;33mty improved: lower tool.mgr.quality.ty-diagnostic-baseline from %d to %d.\033[0m\n' \
-      "$expected" "$current" >&2
-    return 1
-  fi
-  printf '\033[1;32mty baseline OK (%d diagnostics)\033[0m\n' "$current"
+check_ty() {
+  uv run --locked --exact \
+    --extra dev --extra server --extra viz --extra tokenizer-train \
+    ty check
 }
 
 if [[ "$TYPECHECK_ONLY" -eq 1 ]]; then
-  step "ty diagnostic baseline (repository)"
-  check_ty_baseline
+  step "ty check (repository)"
+  check_ty
   exit 0
 fi
 
@@ -138,8 +93,8 @@ else
   fi
 fi
 
-step "ty diagnostic baseline (repository)"
-check_ty_baseline
+step "ty check (repository)"
+check_ty
 
 if [[ "$RUN_TESTS" -eq 1 ]]; then
   if [[ "$MODE" == "all" ]]; then

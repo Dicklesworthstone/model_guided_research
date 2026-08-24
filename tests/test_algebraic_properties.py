@@ -740,7 +740,7 @@ def test_set_semiring_beta_and_coverage_telemetry():
     """The schedule hook updates every tropical layer; with margins on and a
     finite beta the coverage buffer becomes a finite fraction in [0, 1]."""
     from nanochat.gpt import GPT, GPTConfig
-    from nanochat.tropical_attention_torch import set_semiring_beta
+    from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, set_semiring_beta
 
     config = GPTConfig(
         sequence_len=32, vocab_size=50304, n_layer=2, n_head=2, n_kv_head=2, n_embd=16,
@@ -753,7 +753,7 @@ def test_set_semiring_beta_and_coverage_telemetry():
     covs = [
         float(m.tropical_route_coverage)
         for m in model.modules()
-        if hasattr(m, "tropical_route_coverage")
+        if isinstance(m, TropicalCausalSelfAttention)
     ]
     assert covs and all(math.isfinite(c) and 0.0 <= c <= 1.0 for c in covs)
     # back to the exact endpoint: coverage telemetry goes quiet (nan)
@@ -762,7 +762,7 @@ def test_set_semiring_beta_and_coverage_telemetry():
     covs = [
         float(m.tropical_route_coverage)
         for m in model.modules()
-        if hasattr(m, "tropical_route_coverage")
+        if isinstance(m, TropicalCausalSelfAttention)
     ]
     assert covs and all(math.isnan(c) for c in covs)
 

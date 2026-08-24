@@ -74,7 +74,7 @@ from nanochat.tropical_attention_torch import tropical_inner
 from nanochat.ultrametric_attention_torch import _PackedPrefixTrie
 
 SEED = 20260610
-ATOL = {np.float32: 1e-6, np.float64: 1e-12}
+ATOL: dict[type, float] = {np.float32: 1e-6, np.float64: 1e-12}
 
 
 def _rng(salt: int = 0) -> np.random.Generator:
@@ -233,8 +233,7 @@ def test_givens_rotation_parity() -> None:
     B, T, D = 2, 3, 8
     x = rng.normal(size=(B, T, D)).astype(np.float32)
     thetas = (rng.normal(size=(B, T, D // 2)) * np.pi).astype(np.float32)
-    # torch method uses no instance state - call unbound
-    out_t = GaugeBlock._apply_rotations(None, torch.from_numpy(x), torch.from_numpy(thetas)).numpy()
+    out_t = GaugeBlock._apply_rotations(torch.from_numpy(x), torch.from_numpy(thetas)).numpy()
     pairs = even_odd_pairs(D)
     out_j = np.asarray(apply_givens_stage(jnp.asarray(x), jnp.asarray(thetas), pairs))
     assert np.allclose(out_t, out_j, atol=1e-6, rtol=0), _report("givens forward", out_t, out_j)
@@ -245,7 +244,7 @@ def test_givens_rotation_inverse_parity() -> None:
     B, T, D = 1, 4, 6
     x = rng.normal(size=(B, T, D)).astype(np.float32)
     thetas = (rng.normal(size=(B, T, D // 2)) * np.pi).astype(np.float32)
-    out_t = GaugeBlock._apply_rotations(None, torch.from_numpy(x), torch.from_numpy(thetas), inverse=True).numpy()
+    out_t = GaugeBlock._apply_rotations(torch.from_numpy(x), torch.from_numpy(thetas), inverse=True).numpy()
     pairs = even_odd_pairs(D)
     out_j = np.asarray(apply_givens_stage(jnp.asarray(x), jnp.asarray(-thetas), pairs))
     assert np.allclose(out_t, out_j, atol=1e-6, rtol=0), _report("givens inverse", out_t, out_j)

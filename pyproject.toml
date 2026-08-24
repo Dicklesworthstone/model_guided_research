@@ -137,11 +137,6 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 
-[tool.mgr.quality]
-# Exact full-repository `ty check` diagnostic count. Lower this in the same
-# change that fixes diagnostics; remove the ratchet when the count reaches zero.
-ty-diagnostic-baseline = 12
-
 # uv specific configuration
 [tool.uv]
 python-preference = "only-managed"
