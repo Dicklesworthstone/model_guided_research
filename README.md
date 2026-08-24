@@ -830,6 +830,22 @@ mgr bench-fixed-flops \
     -a standard -a tropical -a standard,tropical \
     --include-demo-certs
 
+# Resumable preregistered scorecard: task-specific training, checkpoint eval,
+# ci-v6 verdicts, placebo publication gate, and JSON/Markdown/HTML reports.
+# Repeat --budget to get an explicit verdict-flip table across scales.
+mgr scorecard \
+    --run-id hierarchy_scorecard \
+    --budget 2e9 --budget 2e10 \
+    -m hyperbolic -m ultrametric -m fractal \
+    -t hier \
+    --seeds 3
+# The standard baseline and placebo task are added automatically. Re-running
+# the identical command skips completed cells via
+# artifacts/scorecards/hierarchy_scorecard/manifest.json.
+# Cells planning fewer than --min-evidence-steps (default 10) are labeled
+# SMOKE-ONLY and excluded from ci-v6, preventing tiny floored plumbing runs
+# from being laundered into scientific verdicts.
+
 # Practical utility suite (writes artifacts if --artifacts-dir set)
 mgr eval --artifacts-dir artifacts --run-id util_suite
 

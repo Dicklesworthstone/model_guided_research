@@ -7045,6 +7045,813 @@ def eval_tasks(
     console.print(f"[bold green]Wrote eval artifacts[/bold green] → {run_dir}")
 
 
+_SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v1"
+
+
+def _scorecard_cell_id(budget_index: int, mechanism: str, task: str, seed: int) -> str:
+    return f"b{budget_index}-{task}-{mechanism}-s{seed}"
+
+
+def _scorecard_train_dir(suite_dir: Path, cell: dict[str, Any]) -> Path:
+    return (
+        suite_dir
+        / "runs"
+        / f"budget_{cell['budget_index']}"
+        / str(cell["task"])
+        / str(cell["mechanism"])
+        / f"seed_{cell['seed']}"
+    )
+
+
+def _scorecard_eval_dir(suite_dir: Path, cell: dict[str, Any]) -> Path:
+    return suite_dir / "evals" / "tasks" / f"eval-{cell['id']}"
+
+
+def _scorecard_train_command(
+    cell: dict[str, Any],
+    *,
+    suite_dir: Path,
+    device: str,
+    batch_size: int,
+    sequence_len: int,
+    n_layer: int,
+    n_head: int,
+    n_kv_head: int,
+    n_embd: int,
+    learning_rate: float,
+    optimizer_type: str,
+    warmup_steps: int,
+    log_interval: int,
+    val_interval: int,
+    val_batches: int,
+    checkpoint_interval: int,
+) -> list[str]:
+    cmd = [
+        sys.executable,
+        "-m",
+        "nanochat.train",
+        "--device",
+        device,
+        "--seed",
+        str(cell["seed"]),
+        "--batch-size",
+        str(batch_size),
+        "--sequence-len",
+        str(sequence_len),
+        "--n-layer",
+        str(n_layer),
+        "--n-head",
+        str(n_head),
+        "--n-kv-head",
+        str(n_kv_head),
+        "--n-embd",
+        str(n_embd),
+        "--learning-rate",
+        str(learning_rate),
+        "--optimizer-type",
+        optimizer_type,
+        "--warmup-steps",
+        str(warmup_steps),
+        "--log-interval",
+        str(log_interval),
+        "--attention-type",
+        str(cell["mechanism"]),
+        "--target-flops",
+        str(cell["budget_flops"]),
+        "--checkpoint-interval",
+        str(checkpoint_interval),
+        "--checkpoint-keep",
+        "1",
+        "--data-dir",
+        str(suite_dir / "data" / str(cell["task"])),
+        "--min-parquet-files",
+        "2",
+        "--artifacts-dir",
+        str(suite_dir),
+        "--artifacts-kind",
+        "runs",
+        "--artifacts-topic",
+        f"budget_{cell['budget_index']}/{cell['task']}/{cell['mechanism']}",
+        "--run-id",
+        f"seed_{cell['seed']}",
+        "--check-numerics",
+    ]
+    if val_interval > 0:
+        cmd.extend(["--val-interval", str(val_interval), "--val-batches", str(val_batches)])
+    return cmd
+
+
+def _scorecard_eval_command(
+    cell: dict[str, Any],
+    *,
+    suite_dir: Path,
+    device: str,
+    eval_seeds: str,
+    examples: int,
+) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "cli",
+        "eval-tasks",
+        "--checkpoint",
+        str(_scorecard_train_dir(suite_dir, cell) / "checkpoints"),
+        "--task",
+        str(cell["task"]),
+        "--device",
+        device,
+        "--seeds",
+        eval_seeds,
+        "--examples",
+        str(examples),
+        "--artifacts-dir",
+        str(suite_dir),
+        "--run-id",
+        f"eval-{cell['id']}",
+    ]
+
+
+def _scorecard_launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+    """Launch one scorecard stage; module-level for deterministic tests."""
+    try:
+        proc = subprocess.run(  # nosec B603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=float(timeout_s),
+            check=False,
+        )
+        return int(proc.returncode), proc.stdout or "", proc.stderr or ""
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        return 124, stdout, stderr
+
+
+def _scorecard_generate_task(task: str, *, out_dir: Path, size: int, seed: int) -> dict[str, Any]:
+    """Generate one deterministic training corpus; module-level for tests."""
+    from nanochat.diagnostics_data import generate_task
+
+    return generate_task(task, out_dir=out_dir, size=size, seed=seed)
+
+
+def _scorecard_flops_per_step(
+    mechanisms: list[str],
+    *,
+    batch_size: int,
+    sequence_len: int,
+    n_layer: int,
+    n_head: int,
+    n_kv_head: int,
+    n_embd: int,
+) -> dict[str, int]:
+    """Exact model-estimator FLOPs/step preflight for budget-floor quarantine."""
+    from nanochat.gpt import GPT, GPTConfig
+
+    estimates: dict[str, int] = {}
+    for mechanism in mechanisms:
+        resolved_kv_heads = n_head // 2 if mechanism == "reversible" else n_kv_head
+        model = GPT(
+            GPTConfig(
+                sequence_len=sequence_len,
+                n_layer=n_layer,
+                n_head=n_head,
+                n_kv_head=resolved_kv_heads,
+                n_embd=n_embd,
+                attention_type=mechanism,
+            )
+        )
+        estimates[mechanism] = int(model.estimate_flops()) * int(batch_size) * int(sequence_len)
+        del model
+    return estimates
+
+
+def _scorecard_extract_train_metrics(summary_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, dict):
+        return {}
+    losses = results.get("losses")
+    final_loss = None
+    if isinstance(losses, list) and losses and isinstance(losses[-1], int | float):
+        final_loss = float(losses[-1])
+    return {
+        "final_loss": final_loss,
+        "val_ce_final": results.get("val_ce_final"),
+        "tokens_per_second": results.get("tokens_per_second"),
+        "peak_memory_allocated_gb": results.get("peak_memory_allocated_gb"),
+        "planned_total_flops_est": (payload.get("budget") or {}).get("planned_total_flops_est"),
+    }
+
+
+def _scorecard_cell_table(manifest: dict[str, Any]) -> Table:
+    cells = manifest["cells"]
+    table = Table(title="scorecard cell matrix", box=box.SIMPLE_HEAVY)
+    table.add_column("cell", style="bold")
+    table.add_column("status")
+    table.add_column("stage")
+    table.add_column("steps", justify="right")
+    table.add_column("evidence")
+    table.add_column("elapsed", justify="right")
+    table.add_column("loss", justify="right")
+    visible = cells if len(cells) <= 40 else cells[-40:]
+    if len(cells) > len(visible):
+        counts = {status: sum(c["status"] == status for c in cells) for status in ("done", "failed", "running", "pending")}
+        table.caption = (
+            f"showing final {len(visible)} of {len(cells)} cells · "
+            + " · ".join(f"{key}={value}" for key, value in counts.items())
+        )
+    styles = {
+        "done": "green",
+        "failed": "red",
+        "running": "cyan",
+        "interrupted": "yellow",
+        "pending": "dim",
+    }
+    for cell in visible:
+        status = str(cell["status"])
+        style = styles.get(status, "white")
+        elapsed = cell.get("wall_seconds")
+        loss = (cell.get("metrics") or {}).get("final_loss")
+        table.add_row(
+            str(cell["id"]),
+            f"[{style}]{status}[/{style}]",
+            str(cell.get("stage") or "-"),
+            str(cell.get("planned_steps") or "-"),
+            "[green]qualified[/green]" if cell.get("evidence_qualified") else "[yellow]SMOKE-ONLY[/yellow]",
+            f"{float(elapsed):.1f}s" if isinstance(elapsed, int | float) else "-",
+            f"{float(loss):.4f}" if isinstance(loss, int | float) else "-",
+        )
+    return table
+
+
+def _scorecard_adjudications(
+    suite_dir: Path,
+    budgets: list[float],
+    *,
+    qualified_summary_paths: set[Path] | None = None,
+) -> dict[str, Any]:
+    registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
+    if registry is None or load_errors:
+        return {
+            "policy_version": _ADJ_POLICY_VERSION,
+            "error": "; ".join(load_errors),
+            "verdicts": [],
+            "by_budget": {},
+            "verdict_flips": [],
+            "placebo": {"rows": [], "publication_blocked": True, "blockers": ["registry_invalid"]},
+        }
+    hypotheses = [h for h in registry.get("hypotheses", []) if isinstance(h, dict)]
+    indexed_artifacts = _adj_collect_artifacts([suite_dir])
+    if qualified_summary_paths is None:
+        artifacts = indexed_artifacts
+    else:
+        qualified = {path.resolve() for path in qualified_summary_paths}
+        artifacts = [artifact for artifact in indexed_artifacts if Path(artifact["path"]).resolve() in qualified]
+    verdicts = [_adjudicate_hypothesis(h, artifacts) for h in hypotheses]
+    by_budget: dict[str, list[dict[str, Any]]] = {}
+    for budget in budgets:
+        cohort = [
+            artifact
+            for artifact in artifacts
+            if (planned := _adj_planned_flops(artifact)) is not None
+            and math.isclose(float(planned), float(budget), rel_tol=_ADJ_BUDGET_RTOL)
+        ]
+        by_budget[str(budget)] = [_adjudicate_hypothesis(h, cohort) for h in hypotheses]
+
+    verdict_flips: list[dict[str, Any]] = []
+    if len(by_budget) > 1:
+        ids = [str(h.get("id")) for h in hypotheses]
+        for hypothesis_id in ids:
+            sequence = {
+                budget: next((v["verdict"] for v in rows if v.get("id") == hypothesis_id), "blocked")
+                for budget, rows in by_budget.items()
+            }
+            decided = {verdict for verdict in sequence.values() if verdict != "blocked"}
+            if len(decided) > 1:
+                verdict_flips.append({"id": hypothesis_id, "by_budget": sequence})
+
+    hypothesis_by_id = {str(h.get("id")): h for h in hypotheses}
+    placebo_rows: list[dict[str, Any]] = []
+    placebo_blockers: list[str] = []
+    for verdict in verdicts:
+        hyp = hypothesis_by_id.get(str(verdict.get("id"))) or {}
+        pred = hyp.get("prediction")
+        if not isinstance(pred, dict) or "tasks.placebo." not in str(pred.get("metric_path", "")):
+            continue
+        placebo_rows.append(verdict)
+        if verdict.get("verdict") == "refuted":
+            placebo_blockers.append(f"{verdict.get('id')}: registered placebo bound refuted")
+        if pred.get("threshold_kind") != "ratio":
+            continue
+        for mechanism, arm in (verdict.get("arms") or {}).items():
+            ci = arm.get("ci95") if isinstance(arm, dict) else None
+            if isinstance(ci, list) and len(ci) == 2 and isinstance(ci[1], int | float) and float(ci[1]) < 0.98:
+                placebo_blockers.append(
+                    f"{verdict.get('id')}:{mechanism}: significant improvement below 0.98x requires two-cause control"
+                )
+    universal_placebo = next(
+        (row for row in placebo_rows if row.get("id") == "hyp-placebo-no-winner"),
+        None,
+    )
+    if universal_placebo is None or universal_placebo.get("verdict") != "supported":
+        placebo_blockers.append("hyp-placebo-no-winner: universal placebo guard has not been supported")
+
+    return {
+        "policy_version": _ADJ_POLICY_VERSION,
+        "artifact_count": len(artifacts),
+        "quarantined_artifact_count": len(indexed_artifacts) - len(artifacts),
+        "verdicts": verdicts,
+        "by_budget": by_budget,
+        "verdict_flips": verdict_flips,
+        "placebo": {
+            "rows": placebo_rows,
+            "publication_blocked": bool(placebo_blockers),
+            "blockers": placebo_blockers,
+        },
+    }
+
+
+def _scorecard_report_markdown(summary: dict[str, Any]) -> str:
+    manifest = summary["manifest"]
+    adjudications = summary["adjudications"]
+    cells = manifest["cells"]
+    lines = [
+        f"# Mechanism scorecard — {manifest['run_id']}",
+        "",
+        f"- Command: `{manifest['command']}`",
+        f"- Budgets: `{manifest['config']['budgets']}`",
+        f"- Mechanisms: `{manifest['config']['mechanisms']}`",
+        f"- Tasks: `{manifest['config']['tasks']}`",
+        f"- Training seeds: `{manifest['config']['training_seeds']}`",
+        f"- Runtime: `{summary['runtime_seconds']:.1f}s`",
+        f"- Cells: `{sum(c['status'] == 'done' for c in cells)}/{len(cells)}` done",
+        f"- Adjudication policy: `{adjudications.get('policy_version')}`",
+        "",
+        "## Cell matrix",
+        "",
+        "| cell | budget | mechanism | task | seed | status | evidence | elapsed s | final loss | logs |",
+        "|---|---:|---|---|---:|---|---|---:|---:|---|",
+    ]
+    for cell in cells:
+        metrics = cell.get("metrics") or {}
+        loss = metrics.get("final_loss")
+        loss_text = f"{float(loss):.6f}" if isinstance(loss, int | float) else "-"
+        log = cell.get("stderr_path") or cell.get("stdout_path") or "-"
+        lines.append(
+            f"| {cell['id']} | {cell['budget_flops']:.3e} | {cell['mechanism']} | {cell['task']} | "
+            f"{cell['seed']} | {cell['status']} | {'qualified' if cell['evidence_qualified'] else 'SMOKE-ONLY'} | "
+            f"{cell.get('wall_seconds') or '-'} | {loss_text} | {log} |"
+        )
+    quarantined = sum(not cell["evidence_qualified"] for cell in cells)
+    if quarantined:
+        lines.extend(
+            [
+                "",
+                f"> **Evidence quarantine:** {quarantined} cell(s) planned fewer than "
+                f"{manifest['config']['min_evidence_steps']} optimizer steps. They test plumbing only and are excluded "
+                "from every ci-v6 verdict pool.",
+            ]
+        )
+    placebo = adjudications.get("placebo") or {}
+    gate = "BLOCKED" if placebo.get("publication_blocked") else "clear on available evidence"
+    lines.extend(["", "## Placebo publication gate", "", f"**{gate}**"])
+    for blocker in placebo.get("blockers") or []:
+        lines.append(f"- {blocker}")
+    if not placebo.get("rows"):
+        lines.append("- No operationalized placebo row was found; publication remains blocked.")
+
+    lines.extend(
+        [
+            "",
+            "## Preregistered verdicts",
+            "",
+            "| hypothesis | verdict | reason / effect |",
+            "|---|---|---|",
+        ]
+    )
+    for verdict in adjudications.get("verdicts") or []:
+        detail = verdict.get("reason") or json.dumps(verdict.get("arms") or {}, sort_keys=True)
+        lines.append(f"| {verdict.get('id')} | {str(verdict.get('verdict')).upper()} | {detail} |")
+    lines.extend(["", "## Verdict stability across scale", ""])
+    flips = adjudications.get("verdict_flips") or []
+    if flips:
+        for flip in flips:
+            lines.append(f"- `{flip['id']}`: `{flip['by_budget']}`")
+    else:
+        lines.append("- No decided verdict flips in the available budget cohorts.")
+
+    decided = [
+        v for v in adjudications.get("verdicts") or [] if v.get("verdict") in {"supported", "refuted", "inconclusive"}
+    ]
+    if decided and all(v.get("verdict") == "supported" for v in decided):
+        lines.extend(
+            [
+                "",
+                "**Methodology red flag:** every decided row is SUPPORTED. Re-review floors, budgets, and placebo controls before publication.",
+            ]
+        )
+    lines.extend(["", "Raw contracts: `summary.json` and `manifest.json`.", ""])
+    return "\n".join(lines)
+
+
+def _scorecard_report_html(summary: dict[str, Any]) -> str:
+    import html
+
+    rows = []
+    for verdict in summary["adjudications"].get("verdicts") or []:
+        status = str(verdict.get("verdict", "blocked"))
+        detail = verdict.get("reason") or json.dumps(verdict.get("arms") or {}, sort_keys=True)
+        rows.append(
+            f"<tr><td>{html.escape(str(verdict.get('id')))}</td>"
+            f"<td class='{html.escape(status)}'>{html.escape(status.upper())}</td>"
+            f"<td><code>{html.escape(str(detail))}</code></td></tr>"
+        )
+    placebo = summary["adjudications"].get("placebo") or {}
+    gate_class = "refuted" if placebo.get("publication_blocked") else "supported"
+    gate_text = "PUBLICATION BLOCKED" if placebo.get("publication_blocked") else "placebo gate clear on available evidence"
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Mechanism scorecard</title>
+<style>
+body{{font:15px system-ui,sans-serif;margin:2rem;background:#0b1020;color:#e8edf7}}
+table{{border-collapse:collapse;width:100%;background:#111a2e}}th,td{{padding:.6rem;border:1px solid #2d3a57;text-align:left;vertical-align:top}}
+th{{background:#17233d}}code{{white-space:pre-wrap}}.supported{{color:#67e8a5}}.refuted{{color:#ff7b86}}
+.inconclusive{{color:#ffd166}}.blocked{{color:#9aa7bd}}.gate{{padding:1rem;border:1px solid #405174;background:#111a2e}}
+</style></head><body>
+<h1>Mechanism scorecard — {html.escape(str(summary['manifest']['run_id']))}</h1>
+<p class="gate"><strong class="{gate_class}">{html.escape(gate_text)}</strong></p>
+<p>{sum(c['status'] == 'done' for c in summary['manifest']['cells'])}/{len(summary['manifest']['cells'])} cells done ·
+policy {html.escape(str(summary['adjudications'].get('policy_version')))}</p>
+<table><thead><tr><th>Hypothesis</th><th>Verdict</th><th>Reason / effect</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></body></html>"""
+
+
+@app.command("scorecard")
+def scorecard(
+    budget: Annotated[
+        list[float] | None,
+        typer.Option("--budget", help="Fixed FLOPs budget per cell (repeatable; two values enable verdict-flip reporting)"),
+    ] = None,
+    mechanism: Annotated[
+        list[str] | None,
+        typer.Option("--mechanism", "-m", help="Attention mechanism (repeatable; standard baseline is added automatically)"),
+    ] = None,
+    task: Annotated[
+        list[str] | None,
+        typer.Option("--task", "-t", help="Diagnostic task (repeatable; placebo is added automatically)"),
+    ] = None,
+    seeds: Annotated[int, typer.Option(help="Number of independent training seeds", min=1)] = 3,
+    eval_seeds: Annotated[str, typer.Option(help="Comma-separated repeated-measure eval seeds per checkpoint")] = "0",
+    examples: Annotated[int, typer.Option(help="Evaluation examples per split per eval seed", min=1)] = 24,
+    dataset_size: Annotated[int, typer.Option(help="Generated documents per task corpus", min=3)] = 2000,
+    dataset_seed: Annotated[int, typer.Option(help="Deterministic task-corpus seed", min=0)] = 42,
+    device: Annotated[str, typer.Option(help="Training/evaluation device: cpu or cuda")] = "cpu",
+    batch_size: Annotated[int, typer.Option(help="Training batch size", min=1)] = 8,
+    sequence_len: Annotated[int, typer.Option(help="Training context length", min=8)] = 256,
+    n_layer: Annotated[int, typer.Option(help="Transformer layers", min=1)] = 4,
+    n_head: Annotated[int, typer.Option(help="Attention heads", min=1)] = 4,
+    n_kv_head: Annotated[int, typer.Option(help="KV heads", min=1)] = 4,
+    n_embd: Annotated[int, typer.Option(help="Embedding width", min=16)] = 128,
+    learning_rate: Annotated[float, typer.Option(help="Training learning rate", min=1e-8)] = 6e-4,
+    optimizer_type: Annotated[str, typer.Option(help="nanochat optimizer")] = "adamw",
+    warmup_steps: Annotated[int, typer.Option(help="Warmup steps", min=0)] = 0,
+    log_interval: Annotated[int, typer.Option(help="Training log cadence", min=1)] = 1,
+    val_interval: Annotated[int, typer.Option(help="Training validation cadence; 0 disables it", min=0)] = 0,
+    val_batches: Annotated[int, typer.Option(help="Validation batches", min=1)] = 10,
+    checkpoint_interval: Annotated[int, typer.Option(help="Checkpoint cadence; final checkpoint is always saved", min=1)] = 1000,
+    min_evidence_steps: Annotated[
+        int,
+        typer.Option(help="Cells below this planned optimizer-step count are smoke-only and quarantined", min=1),
+    ] = 10,
+    timeout_s: Annotated[float, typer.Option(help="Timeout per train or eval subprocess", min=1.0)] = 3600.0,
+    artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
+    run_id: Annotated[str | None, typer.Option(help="Run id; reuse to resume exactly matching cells")] = None,
+    resume: Annotated[bool, typer.Option("--resume/--fresh", help="Resume done cells from an existing manifest")] = True,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print the cell plan without writing or launching")] = False,
+) -> None:
+    """Run the preregistered fixed-FLOPs mechanism scorecard (bead vdc.4).
+
+    The manifest is the operational authority: every mechanism × task × seed
+    cell moves through pending/running/done/failed, is written atomically, and
+    can be resumed without replaying completed work. Failed cells never stop
+    independent cells. Verdicts come from the existing ci-v6 adjudicator; this
+    command does not write the hypothesis registry.
+    """
+    from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
+    from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
+
+    resolved_run_id = run_id or _default_run_id()
+    if (
+        len(resolved_run_id) > 128
+        or not resolved_run_id
+        or not resolved_run_id[0].isalnum()
+        or any(not (char.isalnum() or char in "._-") for char in resolved_run_id)
+    ):
+        raise typer.BadParameter(
+            "--run-id must be a single 1-128 character artifact-directory name using letters, numbers, '.', '_', or '-'"
+        )
+
+    budgets = [float(value) for value in (budget or [2e9])]
+    if any(not math.isfinite(value) or value < 1e6 for value in budgets):
+        raise typer.BadParameter("every --budget must be finite and >= 1e6")
+    if len(set(budgets)) != len(budgets):
+        raise typer.BadParameter("duplicate --budget values are not allowed")
+    for index, left in enumerate(budgets):
+        if any(math.isclose(left, right, rel_tol=_ADJ_BUDGET_RTOL) for right in budgets[index + 1 :]):
+            raise typer.BadParameter("--budget cohorts must differ by more than the adjudicator's 5% tolerance")
+
+    mechanisms = [str(value).strip() for value in (mechanism or list(SUPPORTED_ATTENTION_TYPES))]
+    unknown_mechanisms = sorted(set(mechanisms) - set(SUPPORTED_ATTENTION_TYPES))
+    if unknown_mechanisms:
+        raise typer.BadParameter(f"unknown mechanisms: {unknown_mechanisms}")
+    mechanisms = list(dict.fromkeys(["standard", *mechanisms]))
+
+    tasks = [str(value).strip() for value in (task or list(DEFAULT_TASKS))]
+    unknown_tasks = sorted(set(tasks) - set(TASKS))
+    if unknown_tasks:
+        raise typer.BadParameter(f"unknown tasks: {unknown_tasks}")
+    tasks = list(dict.fromkeys([*tasks, "placebo"]))
+    training_seeds = list(range(seeds))
+    flops_per_step = _scorecard_flops_per_step(
+        mechanisms,
+        batch_size=batch_size,
+        sequence_len=sequence_len,
+        n_layer=n_layer,
+        n_head=n_head,
+        n_kv_head=n_kv_head,
+        n_embd=n_embd,
+    )
+
+    config = {
+        "budgets": budgets,
+        "mechanisms": mechanisms,
+        "tasks": tasks,
+        "training_seeds": training_seeds,
+        "eval_seeds": eval_seeds,
+        "examples": examples,
+        "dataset_size": dataset_size,
+        "dataset_seed": dataset_seed,
+        "device": device,
+        "batch_size": batch_size,
+        "sequence_len": sequence_len,
+        "n_layer": n_layer,
+        "n_head": n_head,
+        "n_kv_head": n_kv_head,
+        "n_embd": n_embd,
+        "learning_rate": learning_rate,
+        "optimizer_type": optimizer_type,
+        "warmup_steps": warmup_steps,
+        "log_interval": log_interval,
+        "val_interval": val_interval,
+        "val_batches": val_batches,
+        "checkpoint_interval": checkpoint_interval,
+        "min_evidence_steps": min_evidence_steps,
+        "flops_per_step_est": flops_per_step,
+    }
+    cells: list[dict[str, Any]] = []
+    for budget_index, budget_value in enumerate(budgets):
+        for task_name in tasks:
+            for mechanism_name in mechanisms:
+                planned_steps = max(1, math.ceil(budget_value / flops_per_step[mechanism_name]))
+                for seed in training_seeds:
+                    cells.append(
+                        {
+                            "id": _scorecard_cell_id(budget_index, mechanism_name, task_name, seed),
+                            "budget_index": budget_index,
+                            "budget_flops": budget_value,
+                            "mechanism": mechanism_name,
+                            "task": task_name,
+                            "seed": seed,
+                            "flops_per_step_est": flops_per_step[mechanism_name],
+                            "planned_steps": planned_steps,
+                            "planned_flops_est": planned_steps * flops_per_step[mechanism_name],
+                            "evidence_qualified": planned_steps >= min_evidence_steps,
+                            "status": "pending",
+                            "stage": None,
+                            "attempts": 0,
+                            "wall_seconds": None,
+                            "metrics": {},
+                            "train_summary_path": None,
+                            "eval_summary_path": None,
+                            "stdout_path": None,
+                            "stderr_path": None,
+                            "returncode": None,
+                            "error": None,
+                        }
+                    )
+    planned = {
+        "schema_version": _SCORECARD_SCHEMA_VERSION,
+        "kind": "scorecard-manifest",
+        "run_id": resolved_run_id,
+        "command": shlex.join(sys.argv),
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "updated_at": None,
+        "git": _get_git_info(),
+        "config": config,
+        "cells": cells,
+    }
+    if dry_run:
+        console.print(_scorecard_cell_table(planned))
+        console.print(
+            Panel(
+                f"{len(cells)} cells · budgets={budgets} · mechanisms={mechanisms} · tasks={tasks}\n"
+                "[bold yellow]dry run: no files written and no subprocesses launched[/bold yellow]",
+                title="scorecard plan",
+                border_style="yellow",
+            )
+        )
+        return
+
+    suite_dir = artifacts_dir / "scorecards" / str(planned["run_id"])
+    manifest_path = suite_dir / "manifest.json"
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = suite_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    if manifest_path.exists() and resume:
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(f"corrupt scorecard manifest {manifest_path}: {exc}") from exc
+        if existing.get("schema_version") != _SCORECARD_SCHEMA_VERSION:
+            raise typer.BadParameter("scorecard manifest schema changed; choose a new --run-id")
+        if existing.get("config") != config:
+            raise typer.BadParameter("scorecard config differs from the existing manifest; choose a new --run-id")
+        prior = {str(cell["id"]): cell for cell in existing.get("cells", [])}
+        for cell in cells:
+            cell_id = str(cell["id"])
+            if cell_id in prior:
+                cell.update(prior[cell_id])
+            if cell["status"] == "done" and not (_scorecard_eval_dir(suite_dir, cell) / "summary.json").exists():
+                cell.update(status="pending", stage=None, error="done cell lost eval summary; rescheduled")
+        planned = {**existing, "command": shlex.join(sys.argv), "cells": cells}
+    elif manifest_path.exists():
+        raise typer.BadParameter(
+            "--fresh cannot reuse a scorecard run directory because old evidence would contaminate the new run; "
+            "choose a new --run-id"
+        )
+
+    def save_manifest() -> None:
+        planned["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        _scaling_write_json_atomic(manifest_path, planned)
+
+    save_manifest()
+    data_root = suite_dir / "data"
+    for task_name in tasks:
+        task_manifest = data_root / task_name / "manifest.json"
+        if not task_manifest.exists():
+            console.print(f"[bold cyan]generating corpus[/bold cyan] task={task_name} size={dataset_size}")
+            _scorecard_generate_task(task_name, out_dir=data_root, size=dataset_size, seed=dataset_seed)
+
+    from rich.live import Live
+
+    started = time.perf_counter()
+    interrupted = False
+    current: dict[str, Any] | None = None
+    with Live(_scorecard_cell_table(planned), console=console, refresh_per_second=4) as live:
+        try:
+            for cell in cells:
+                if cell["status"] == "done":
+                    continue
+                current = cell
+                cell["status"] = "running"
+                cell["stage"] = "train"
+                attempts = cell.get("attempts")
+                cell["attempts"] = (attempts if isinstance(attempts, int) else 0) + 1
+                cell["error"] = None
+                save_manifest()
+                live.update(_scorecard_cell_table(planned), refresh=True)
+
+                train_cmd = _scorecard_train_command(
+                    cell,
+                    suite_dir=suite_dir,
+                    device=device,
+                    batch_size=batch_size,
+                    sequence_len=sequence_len,
+                    n_layer=n_layer,
+                    n_head=n_head,
+                    n_kv_head=n_kv_head,
+                    n_embd=n_embd,
+                    learning_rate=learning_rate,
+                    optimizer_type=optimizer_type,
+                    warmup_steps=warmup_steps,
+                    log_interval=log_interval,
+                    val_interval=val_interval,
+                    val_batches=val_batches,
+                    checkpoint_interval=checkpoint_interval,
+                )
+                cell_t0 = time.perf_counter()
+                returncode, stdout, stderr = _scorecard_launch(train_cmd, timeout_s=timeout_s)
+                train_out = logs_dir / f"{cell['id']}.train.stdout.txt"
+                train_err = logs_dir / f"{cell['id']}.train.stderr.txt"
+                train_out.write_text(stdout, encoding="utf-8")
+                train_err.write_text(stderr, encoding="utf-8")
+                train_summary = _scorecard_train_dir(suite_dir, cell) / "summary.json"
+                checkpoint_dir = _scorecard_train_dir(suite_dir, cell) / "checkpoints"
+                cell["stdout_path"] = str(train_out.relative_to(suite_dir))
+                cell["stderr_path"] = str(train_err.relative_to(suite_dir))
+                cell["returncode"] = returncode
+                cell["train_summary_path"] = (
+                    str(train_summary.relative_to(suite_dir)) if train_summary.exists() else None
+                )
+                cell["metrics"] = _scorecard_extract_train_metrics(train_summary)
+                if returncode != 0 or not train_summary.exists() or not checkpoint_dir.is_dir():
+                    cell["status"] = "failed"
+                    cell["stage"] = "train"
+                    cell["wall_seconds"] = round(time.perf_counter() - cell_t0, 2)
+                    cell["error"] = (
+                        f"train rc={returncode}; summary={train_summary.exists()}; checkpoints={checkpoint_dir.is_dir()}"
+                    )
+                    save_manifest()
+                    live.update(_scorecard_cell_table(planned), refresh=True)
+                    continue
+
+                cell["stage"] = "eval"
+                save_manifest()
+                live.update(_scorecard_cell_table(planned), refresh=True)
+                eval_cmd = _scorecard_eval_command(
+                    cell,
+                    suite_dir=suite_dir,
+                    device=device,
+                    eval_seeds=eval_seeds,
+                    examples=examples,
+                )
+                returncode, stdout, stderr = _scorecard_launch(eval_cmd, timeout_s=timeout_s)
+                eval_out = logs_dir / f"{cell['id']}.eval.stdout.txt"
+                eval_err = logs_dir / f"{cell['id']}.eval.stderr.txt"
+                eval_out.write_text(stdout, encoding="utf-8")
+                eval_err.write_text(stderr, encoding="utf-8")
+                eval_summary = _scorecard_eval_dir(suite_dir, cell) / "summary.json"
+                cell["stdout_path"] = str(eval_out.relative_to(suite_dir))
+                cell["stderr_path"] = str(eval_err.relative_to(suite_dir))
+                cell["returncode"] = returncode
+                cell["eval_summary_path"] = (
+                    str(eval_summary.relative_to(suite_dir)) if eval_summary.exists() else None
+                )
+                cell["wall_seconds"] = round(time.perf_counter() - cell_t0, 2)
+                if returncode == 0 and eval_summary.exists():
+                    cell["status"] = "done"
+                    cell["stage"] = "complete"
+                else:
+                    cell["status"] = "failed"
+                    cell["stage"] = "eval"
+                    cell["error"] = f"eval rc={returncode}; summary={eval_summary.exists()}"
+                save_manifest()
+                live.update(_scorecard_cell_table(planned), refresh=True)
+        except KeyboardInterrupt:
+            interrupted = True
+            if current is not None and current.get("status") == "running":
+                current["status"] = "interrupted"
+                current["error"] = "interrupted; rerun the same command to resume"
+            save_manifest()
+            live.update(_scorecard_cell_table(planned), refresh=True)
+
+    runtime_seconds = time.perf_counter() - started
+    qualified_summary_paths: set[Path] = set()
+    for cell in cells:
+        if cell["status"] != "done" or not cell["evidence_qualified"]:
+            continue
+        qualified_summary_paths.add(_scorecard_train_dir(suite_dir, cell) / "summary.json")
+        qualified_summary_paths.add(_scorecard_eval_dir(suite_dir, cell) / "summary.json")
+    adjudications = _scorecard_adjudications(
+        suite_dir,
+        budgets,
+        qualified_summary_paths=qualified_summary_paths,
+    )
+    summary = {
+        "schema_version": _SCORECARD_SCHEMA_VERSION,
+        "kind": "scorecard",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "runtime_seconds": runtime_seconds,
+        "manifest": planned,
+        "adjudications": adjudications,
+    }
+    _scaling_write_json_atomic(suite_dir / "summary.json", summary)
+    (suite_dir / "report.md").write_text(_scorecard_report_markdown(summary), encoding="utf-8")
+    (suite_dir / "report.html").write_text(_scorecard_report_html(summary), encoding="utf-8")
+
+    counts = {status: sum(cell["status"] == status for cell in cells) for status in ("done", "failed", "interrupted", "pending")}
+    console.print(
+        Panel(
+            f"done={counts['done']} failed={counts['failed']} interrupted={counts['interrupted']} "
+            f"pending={counts['pending']} · runtime={runtime_seconds:.1f}s\nartifacts: {suite_dir}",
+            title="scorecard complete" if not interrupted else "scorecard interrupted — resumable",
+            border_style="green" if counts["done"] == len(cells) else "yellow",
+        )
+    )
+    if interrupted:
+        raise typer.Exit(code=130)
+    if counts["failed"] or counts["interrupted"] or counts["pending"]:
+        raise typer.Exit(code=1)
+
+
 @app.command("probe-charges")
 def probe_charges(
     checkpoint: Annotated[Path, typer.Option(help="Checkpoint directory (rz8.1 layout); must be braid/rmatrix")],

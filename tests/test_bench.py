@@ -215,3 +215,295 @@ def test_schedule_arm_uses_attention_schedule_flag(tmp_path, monkeypatch):
         (arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text()
     )
     assert "standard,tropical" in summary["aggregates"]
+
+
+def _fake_scorecard_generator(task: str, *, out_dir: Path, size: int, seed: int) -> dict:
+    task_dir = out_dir / task
+    task_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {"task": task, "size": size, "seed": seed}
+    (task_dir / "manifest.json").write_text(json.dumps(manifest))
+    return manifest
+
+
+def _fake_scorecard_flops(mechanisms: list[str], **_kwargs) -> dict[str, int]:
+    return {mechanism: 100_000 for mechanism in mechanisms}
+
+
+def _write_fake_scorecard_train(cmd: list[str]) -> None:
+    artifacts = Path(cmd[cmd.index("--artifacts-dir") + 1])
+    topic = cmd[cmd.index("--artifacts-topic") + 1]
+    run_id = cmd[cmd.index("--run-id") + 1]
+    mechanism = cmd[cmd.index("--attention-type") + 1]
+    budget = float(cmd[cmd.index("--target-flops") + 1])
+    run_dir = artifacts / "runs" / topic / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "checkpoints").mkdir(exist_ok=True)
+    summary = {
+        "schema_version": "mgr.telemetry.v1",
+        "kind": "runs",
+        "config": {"attention_type": mechanism},
+        "budget": {"target_flops": budget, "planned_total_flops_est": budget},
+        "provenance": {"tainted": False},
+        "results": {"losses": [3.0, 2.5], "tokens_per_second": 100.0},
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary))
+
+
+def _write_fake_scorecard_eval(cmd: list[str]) -> None:
+    artifacts = Path(cmd[cmd.index("--artifacts-dir") + 1])
+    run_id = cmd[cmd.index("--run-id") + 1]
+    checkpoint = Path(cmd[cmd.index("--checkpoint") + 1])
+    task = cmd[cmd.index("--task") + 1]
+    mechanism = checkpoint.parent.parent.name
+    train_summary = json.loads((checkpoint.parent / "summary.json").read_text())
+    budget = train_summary["budget"]["target_flops"]
+    metric = 0.9 if mechanism == "tropical" else 1.0
+    run_dir = artifacts / "evals" / "tasks" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "schema_version": "mgr.evaltasks.v3",
+        "kind": "eval-tasks",
+        "meta": {
+            "run_id": run_id,
+            "checkpoint": {
+                "dir": str(checkpoint),
+                "step": 0,
+                "attention_type": mechanism,
+                "budget": {"target_flops": budget},
+                "lineage": {"run_id": str(checkpoint.parent)},
+                "model_config": {"attention_type": mechanism},
+            },
+        },
+        "provenance": {"tainted": False},
+        "train_provenance": {"tainted": False},
+        "tasks": {
+            task: {
+                "exact_match": {
+                    "greedy": {
+                        "in_range": {"mean": metric, "per_seed": [metric]},
+                        "held_out": {"mean": metric, "per_seed": [metric]},
+                    }
+                },
+                "answer_prior": {
+                    "in_range": {"mean": 0.5, "per_seed": [0.5]},
+                    "held_out": {"mean": 0.5, "per_seed": [0.5]},
+                },
+                "perplexity": {"in_range": metric, "held_out": metric},
+            }
+        },
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary))
+
+
+def _fake_scorecard_success(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+    assert timeout_s > 0
+    if "nanochat.train" in cmd:
+        _write_fake_scorecard_train(cmd)
+    else:
+        assert "eval-tasks" in cmd
+        _write_fake_scorecard_eval(cmd)
+    return 0, "ok", ""
+
+
+def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    state = {"train_calls": 0, "interrupt_once": True}
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            if state["train_calls"] == 2 and state["interrupt_once"]:
+                state["interrupt_once"] = False
+                raise KeyboardInterrupt
+            state["train_calls"] += 1
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    args = [
+        "scorecard",
+        "-m",
+        "tropical",
+        "-t",
+        "placebo",
+        "--seeds",
+        "2",
+        "--budget",
+        "1e6",
+        "--dataset-size",
+        "6",
+        "--examples",
+        "1",
+        "--artifacts-dir",
+        str(artifacts),
+        "--run-id",
+        "resume-contract",
+    ]
+    first = runner.invoke(cli.app, args)
+    assert first.exit_code == 130, first.output
+    manifest_path = artifacts / "scorecards" / "resume-contract" / "manifest.json"
+    first_manifest = json.loads(manifest_path.read_text())
+    assert sum(cell["status"] == "done" for cell in first_manifest["cells"]) == 2
+    assert sum(cell["status"] == "interrupted" for cell in first_manifest["cells"]) == 1
+
+    before_resume = state["train_calls"]
+    second = runner.invoke(cli.app, args)
+    assert second.exit_code == 0, second.output
+    assert state["train_calls"] - before_resume == 2
+    final_manifest = json.loads(manifest_path.read_text())
+    assert all(cell["status"] == "done" for cell in final_manifest["cells"])
+    assert [cell["attempts"] for cell in final_manifest["cells"]] == [1, 1, 2, 1]
+    suite = manifest_path.parent
+    for required in ("summary.json", "report.md", "report.html"):
+        assert (suite / required).exists()
+    summary = json.loads((suite / "summary.json").read_text())
+    assert summary["adjudications"]["placebo"]["publication_blocked"] is True
+    assert "universal placebo guard" in " ".join(summary["adjudications"]["placebo"]["blockers"])
+
+    before_fresh = state["train_calls"]
+    fresh = runner.invoke(cli.app, [*args, "--fresh"])
+    assert fresh.exit_code == 2
+    assert "choose a new --run-id" in fresh.output
+    assert state["train_calls"] == before_fresh
+
+
+def test_scorecard_rejects_run_id_path_traversal(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--run-id",
+            "../escape",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "Invalid value: --run-id" in result.output
+    assert not artifacts.exists()
+    assert not (tmp_path / "escape").exists()
+
+
+def test_scorecard_failure_is_recorded_without_stopping_other_cells(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    launched: list[str] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            mechanism = cmd[cmd.index("--attention-type") + 1]
+            launched.append(mechanism)
+            if mechanism == "tropical":
+                return 7, "", "deliberate failure"
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "-m",
+            "tropical",
+            "-t",
+            "placebo",
+            "--seeds",
+            "1",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--run-id",
+            "failure-contract",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert launched == ["standard", "tropical"]
+    suite = artifacts / "scorecards" / "failure-contract"
+    manifest = json.loads((suite / "manifest.json").read_text())
+    status = {cell["mechanism"]: cell["status"] for cell in manifest["cells"]}
+    assert status == {"standard": "done", "tropical": "failed"}
+    tropical = next(cell for cell in manifest["cells"] if cell["mechanism"] == "tropical")
+    assert tropical["returncode"] == 7 and tropical["stage"] == "train"
+    assert "deliberate failure" in (suite / tropical["stderr_path"]).read_text()
+    assert (suite / "summary.json").exists() and (suite / "report.html").exists()
+
+
+def _write_scorecard_placebo_evidence(root: Path, *, budget: float, mechanism: str, seed: int, value: float) -> None:
+    run_id = f"b{int(budget)}-{mechanism}-s{seed}"
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "schema_version": "mgr.evaltasks.v3",
+        "kind": "eval-tasks",
+        "meta": {
+            "run_id": run_id,
+            "checkpoint": {
+                "dir": f"checkpoints/{run_id}",
+                "step": 0,
+                "attention_type": mechanism,
+                "budget": {"target_flops": budget},
+                "lineage": {"run_id": run_id},
+                "model_config": {"attention_type": mechanism},
+            },
+        },
+        "provenance": {"tainted": False},
+        "train_provenance": {"tainted": False},
+        "tasks": {"placebo": {"perplexity": {"in_range": value, "held_out": value}}},
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary))
+
+
+def test_scorecard_reports_scale_flips_and_two_sided_placebo_gate(tmp_path, monkeypatch):
+    registry = tmp_path / "registry.yaml"
+    registry.write_text(
+        """schema_version: 1
+hypotheses:
+  - id: hyp-placebo-no-winner
+    statement: no mechanism wins on placebo
+    mechanisms: [tropical]
+    source: {kind: human, provenance: test}
+    date_registered: '2026-08-24'
+    prediction:
+      metric_path: evaltasks:tasks.placebo.perplexity.in_range
+      comparator: <=
+      threshold_kind: ratio
+      threshold: 1.02
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+    status: open
+    evidence: []
+    verdict_history: []
+"""
+    )
+    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    evidence = tmp_path / "scorecard"
+    for seed in range(3):
+        _write_scorecard_placebo_evidence(evidence, budget=1e6, mechanism="standard", seed=seed, value=1.0)
+        _write_scorecard_placebo_evidence(evidence, budget=1e6, mechanism="tropical", seed=seed, value=1.0)
+        _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="standard", seed=seed, value=1.0)
+        _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=1.1)
+
+    degraded = cli._scorecard_adjudications(evidence, [1e6, 2e6])
+    assert degraded["by_budget"]["1000000.0"][0]["verdict"] == "supported"
+    assert degraded["by_budget"]["2000000.0"][0]["verdict"] == "refuted"
+    assert degraded["verdict_flips"] == [
+        {
+            "id": "hyp-placebo-no-winner",
+            "by_budget": {"1000000.0": "supported", "2000000.0": "refuted"},
+        }
+    ]
+    assert degraded["placebo"]["publication_blocked"] is True
+
+    for seed in range(3):
+        _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=0.9)
+    improved = cli._scorecard_adjudications(evidence, [1e6, 2e6])
+    assert improved["verdicts"][0]["verdict"] == "supported"
+    assert improved["placebo"]["publication_blocked"] is True
+    assert "significant improvement below 0.98x" in " ".join(improved["placebo"]["blockers"])

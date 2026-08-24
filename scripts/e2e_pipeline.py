@@ -21,6 +21,8 @@ Scenarios (run one with --scenario, or all):
   regression-gate bench-fixed-flops two variants -> mgr regressions passes on
                   self-vs-self and TRIPS (--fail-on-regression, exit 1) on a
                   deliberately degraded fixture copy
+  scorecard       one standard x placebo x seed fixed-FLOPs cell -> atomic
+                  manifest, eval evidence, ci-v6 report JSON/Markdown/HTML
   word-problem    (bead u55.3) group word-problem mini-eval: gen-tasks group ->
                   train tiny braid/rmatrix + tiny standard -> eval-tasks both
                   -> assert length_slope (held-out OLS + per-group breakdown)
@@ -600,13 +602,76 @@ def scenario_regression_gate(work: Path) -> bool:
     return r.report()
 
 
+def scenario_scorecard(work: Path) -> bool:
+    """vdc.4 maintenance contract: one real train/eval cell through C4."""
+    r = Runner(work, "scorecard")
+    try:
+        r.run(
+            "scorecard-smoke",
+            CLI
+            + [
+                "scorecard",
+                "--mechanism",
+                "standard",
+                "--task",
+                "placebo",
+                "--seeds",
+                "1",
+                "--budget",
+                "1e6",
+                "--dataset-size",
+                "30",
+                "--examples",
+                "1",
+                "--n-layer",
+                "1",
+                "--n-head",
+                "2",
+                "--n-kv-head",
+                "2",
+                "--n-embd",
+                "32",
+                "--sequence-len",
+                "64",
+                "--batch-size",
+                "4",
+                "--device",
+                "cpu",
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e-scorecard",
+            ],
+            timeout=1200,
+        )
+        suite = work / "artifacts" / "scorecards" / "e2e-scorecard"
+        manifest = json.loads((suite / "manifest.json").read_text())
+        summary = json.loads((suite / "summary.json").read_text())
+        r.assert_true(
+            "scorecard-contract",
+            manifest["schema_version"] == "mgr.scorecard.v1"
+            and len(manifest["cells"]) == 1
+            and manifest["cells"][0]["status"] == "done"
+            and manifest["cells"][0]["evidence_qualified"] is False
+            and summary["schema_version"] == "mgr.scorecard.v1"
+            and summary["adjudications"]["artifact_count"] == 0
+            and summary["adjudications"]["quarantined_artifact_count"] == 2
+            and (suite / "report.md").exists()
+            and (suite / "report.html").exists(),
+            "one-cell scorecard produced reports and quarantined its one-step smoke artifacts",
+        )
+    except StageFailure:
+        pass
+    return r.report()
+
+
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--scenario",
-                        choices=["full-loop", "resume", "determinism", "regression-gate", "word-problem",
+                        choices=["full-loop", "resume", "determinism", "regression-gate", "scorecard", "word-problem",
                                  "symplectic", "all"],
                         default="all")
     parser.add_argument("--workdir", type=Path, default=None,
@@ -625,6 +690,7 @@ def main() -> int:
         "resume": lambda: scenario_resume(work, args.resume_kill_seed),
         "determinism": lambda: scenario_determinism(work),
         "regression-gate": lambda: scenario_regression_gate(work),
+        "scorecard": lambda: scenario_scorecard(work),
         "word-problem": lambda: scenario_word_problem(work),
         "symplectic": lambda: scenario_symplectic(work),
     }
