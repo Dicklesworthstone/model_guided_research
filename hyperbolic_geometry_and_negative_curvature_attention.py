@@ -156,7 +156,6 @@ def hyperbolic_attention(q_tan, k_tan, v_tan, c):
 
 def _random_tree(seed: int, *, depth=3, branch=3):
     """Random rooted tree; returns level array + pairwise tree distances."""
-    rng = np.random.default_rng(seed)
     parents = [-1]
     level = [0]
     frontier = [0]
@@ -390,7 +389,6 @@ def run_property_checks(seed: int = 7) -> list[tuple[str, bool, str]]:
     # -- 5. metric sanity: triangle inequality + curvature signature ----------
     key, k5, k6 = random.split(key, 3)
     pa = jax.vmap(lambda vv: exp_map_o(vv, 1.0))(random.normal(k5, (16, 7)))
-    pb = jax.vmap(lambda vv: exp_map_o(vv, 1.0))(random.normal(k6, (16, 7)))
 
     tri_ok = True
     for idx_triple in random.randint(random.split(k5)[1], (8, 3), 0, 16):

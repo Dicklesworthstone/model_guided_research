@@ -984,3 +984,24 @@ def test_clifford_attention_training_smoke(monkeypatch, tmp_path):
     assert all(loss == loss and abs(loss) != float("inf") for loss in losses), (
         f"non-finite clifford training losses: {losses}"
     )
+
+
+def test_hyperbolic_attention_training_smoke(monkeypatch, tmp_path):
+    """mnn.6: hyperbolic attention trains through the real CPU loop and
+    publishes curvature/radius observables into the summary results."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "hyperbolic-smoke",
+        max_steps=6,
+        attention_type="hyperbolic",
+    )
+    losses = summary["results"]["losses"]
+    assert len(losses) == 6
+    assert all(loss == loss and abs(loss) != float("inf") for loss in losses), (
+        f"non-finite hyperbolic training losses: {losses}"
+    )
+    assert summary["results"]["hyperbolic_curvature"]["mean"] > 0.0
+    assert summary["results"]["hyperbolic_radius"]["mean"] >= 0.0
+    assert 0.0 <= summary["results"]["hyperbolic_frac_heads_hier"] <= 1.0
+    assert 0.0 <= summary["results"]["hyperbolic_frac_heads_euclidean"] <= 1.0

@@ -28,6 +28,7 @@ from nanochat.common import get_dist_info
 from nanochat.fractal_attention_torch import FractalCausalSelfAttention
 from nanochat.gauge_block_torch import GaugeBlock
 from nanochat.hoss_opt_torch import HOSS
+from nanochat.hyperbolic_attention_torch import HyperbolicCausalSelfAttention
 from nanochat.model_utils import AttentionCore, causal_attn_mask, norm, sdpa_causal_attend
 from nanochat.muon import DistMuon, Muon
 from nanochat.octonion_attention_torch import OctonionCausalSelfAttention
@@ -57,6 +58,7 @@ _CA_RULES: dict[str, int] = {
 SUPPORTED_ATTENTION_TYPES: tuple[str, ...] = (
     "standard",
     "clifford",
+    "hyperbolic",
     "tropical",
     "ultrametric",
     "simplicial",
@@ -446,6 +448,8 @@ class Block(nn.Module):
             self.attn = FractalCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "clifford":
             self.attn = CliffordCausalSelfAttention(config, layer_idx)
+        elif self.attention_type == "hyperbolic":
+            self.attn = HyperbolicCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "octonion":
             self.attn = OctonionCausalSelfAttention(config, layer_idx)
         elif self.attention_type == "surreal":

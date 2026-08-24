@@ -184,6 +184,7 @@ def test_attention_schedule_kv_cache_single_and_chunk_match_full_forward():
         "simplicial",
         "braid",
         "clifford",
+        "hyperbolic",
         "fractal",
         "quaternion",
         "octonion",
@@ -227,6 +228,48 @@ def test_nanochat_kv_cache_last_token_matches_full_forward(attention_type: str):
 
     # Shape-specific kernels (e.g. (Tq,Tk)=(1,8) vs (8,8)) can yield tiny numeric drift.
     torch.testing.assert_close(cached_last, full_last, rtol=1e-3, atol=1e-2)
+
+
+def test_nanochat_hyperbolic_energy_reduction_and_telemetry():
+    """mnn.6: the production scorer has the standard-attention anchor and
+    exposes finite per-head geometry observables after a real forward."""
+    import math
+
+    import torch
+
+    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.hyperbolic_attention_torch import energy_gromov_scores
+    from nanochat.model_utils import causal_attn_mask, norm
+
+    torch.manual_seed(13)
+    q = norm(torch.randn(2, 4, 7, 16))
+    k = norm(torch.randn(2, 4, 7, 16))
+    c = torch.full((1, 4, 1, 1), 1e-7)
+    scale = 1.0 / math.sqrt(q.size(-1))
+    mask = causal_attn_mask(7, 7, device=q.device)
+    hyp = torch.softmax((energy_gromov_scores(q, k, c) * scale).masked_fill(~mask, float("-inf")), dim=-1)
+    standard = torch.softmax(((q @ k.transpose(-1, -2)) * scale).masked_fill(~mask, float("-inf")), dim=-1)
+    torch.testing.assert_close(hyp, standard, rtol=2e-5, atol=2e-6)
+
+    config = GPTConfig(
+        sequence_len=16,
+        vocab_size=128,
+        n_layer=1,
+        n_head=4,
+        n_kv_head=2,
+        n_embd=64,
+        attention_type="hyperbolic",
+    )
+    model = GPT(config).train(False)
+    ids = torch.randint(0, config.vocab_size, (2, 8), dtype=torch.long)
+    with torch.inference_mode():
+        logits = model(ids)
+    attn = model.transformer.h[0].attn
+    assert torch.isfinite(logits).all()
+    assert torch.isfinite(attn.hyperbolic_curvature_head).all()
+    assert torch.isfinite(attn.hyperbolic_radius_head_mean).all()
+    assert attn.hyperbolic_curvature_head.shape == (config.n_head,)
+    assert attn.hyperbolic_radius_head_mean.shape == (config.n_head,)
 
 
 def test_nanochat_braid_discrete_mode_records_schedule_and_matches_kv_cache():

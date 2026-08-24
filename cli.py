@@ -1289,7 +1289,7 @@ def bench_fixed_flops(
             "-a",
             help="Nanochat attention type or comma-separated attention schedule to benchmark (repeatable).",
         ),
-    ] = ("standard", "clifford", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
+    ] = ("standard", "clifford", "hyperbolic", "tropical", "ultrametric", "simplicial", "reversible", "gauge"),
     device: Annotated[
         str,
         typer.Option(
@@ -4388,6 +4388,7 @@ _CERTIFY_MECHANISMS: list[str] = [
     "reversible",
     "gauge",
     "clifford",
+    "hyperbolic",
 ]
 def _certify_tiny_config(mechanism: str):
     """Build a tiny GPTConfig for `mechanism` satisfying its structural constraints."""
@@ -4882,6 +4883,72 @@ def _run_certify_checks(
             "reduction",
             cl_quaternion_reduction_measure,
             tolerance=1e-10,
+        )
+
+    # ----- hyperbolic: Lorentz geometry + standard-attention reduction -----
+    if "hyperbolic" in mechanisms:
+        from nanochat.hyperbolic_attention_torch import (
+            energy_gromov_scores,
+            lorentz_exp_o,
+            lorentz_log_o,
+            lorentz_project,
+        )
+
+        def _hyperbolic_inputs() -> tuple[Any, Any, Any]:
+            torch.manual_seed(seed + 13)
+            q = torch.randn(2, 2, 8, 32, dtype=torch.float32, device=device)
+            k = torch.randn(2, 2, 8, 32, dtype=torch.float32, device=device)
+            c = torch.tensor([0.3, 1.7], dtype=torch.float32, device=device).view(1, 2, 1, 1)
+            return q, k, c
+
+        def hyperbolic_constraint_measure() -> float:
+            q, _, c = _hyperbolic_inputs()
+            points = lorentz_project(q, c)
+            minkowski_self = -points[..., :1].square() + points[..., 1:].square().sum(-1, keepdim=True)
+            return float((c * minkowski_self + 1.0).abs().max())
+
+        def hyperbolic_exp_log_measure() -> float:
+            q, _, c = _hyperbolic_inputs()
+            tangent = q * 0.1
+            recovered = lorentz_log_o(lorentz_exp_o(tangent, c), c)
+            return float((recovered - tangent).abs().max())
+
+        def hyperbolic_standard_reduction_measure() -> float:
+            q, k, _ = _hyperbolic_inputs()
+            q = rmsnorm(q)
+            k = rmsnorm(k)
+            c_small = torch.full((1, 2, 1, 1), 1e-7, dtype=torch.float32, device=device)
+            scale = 1.0 / math.sqrt(q.size(-1))
+            hyp_scores = energy_gromov_scores(q, k, c_small) * scale
+            std_scores = (q @ k.transpose(-1, -2)) * scale
+            mask = causal_attn_mask(q.size(2), k.size(2), device=device)
+            hyp_weights = torch.softmax(hyp_scores.masked_fill(~mask, float("-inf")), dim=-1)
+            std_weights = torch.softmax(std_scores.masked_fill(~mask, float("-inf")), dim=-1)
+            return float((hyp_weights - std_weights).abs().max())
+
+        add_check(
+            "hyperbolic",
+            "lorentz_constraint_residual",
+            "classical",
+            hyperbolic_constraint_measure,
+            tolerance=2e-5,
+            detail="max |c <x,x>_L + 1| after the production projective lift",
+        )
+        add_check(
+            "hyperbolic",
+            "exp_log_origin_roundtrip",
+            "classical",
+            hyperbolic_exp_log_measure,
+            tolerance=2e-5,
+            detail="max |log_o(exp_o(v)) - v| in the fp32 Lorentz island",
+        )
+        add_check(
+            "hyperbolic",
+            "energy_gromov_reduces_to_standard",
+            "reduction",
+            hyperbolic_standard_reduction_measure,
+            tolerance=2e-5,
+            detail="max causal-softmax weight error against scaled dot product at c=1e-7",
         )
 
     # ----- octonion: division-algebra laws + non-associativity witness (fp64) -----
@@ -8122,6 +8189,9 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "gauge.rotation_additivity_cumsum_law",
         "gauge.rotation_inverse_roundtrip",
         "gauge.rotation_pairwise_norm_preservation",
+        "hyperbolic.energy_gromov_reduces_to_standard",
+        "hyperbolic.exp_log_origin_roundtrip",
+        "hyperbolic.lorentz_constraint_residual",
         "octonion.o_times_conj_is_norm_squared",
         "octonion.omul_alternativity",
         "octonion.omul_nonassociativity_witness",
@@ -8532,6 +8602,7 @@ _HYP_MECHANISMS = frozenset(
         "surreal",
         "reversible",
         "gauge",
+        "hyperbolic",
         "hoss",
         "ordinal",
     }
@@ -9467,7 +9538,7 @@ _ADJ_POWER_FLOOR = 0.5  # below this, SUPPORTED arms carry the UNDERPOWERED qual
 _ADJ_POWER_TARGET = 0.8  # the n_for_80pct column solves for this
 _ADJ_FDR_Q = 0.10  # Benjamini-Hochberg level for the ledger-family headline (ci-v4)
 _ADJ_ATTENTION_MECHS = frozenset(
-    {"standard", "tropical", "ultrametric", "simplicial", "quaternion", "braid", "fractal", "octonion", "surreal", "reversible", "gauge"}
+    {"standard", "tropical", "ultrametric", "simplicial", "quaternion", "braid", "fractal", "octonion", "surreal", "reversible", "gauge", "hyperbolic"}
 )
 
 _ADJ_BLOCK_REASONS = {

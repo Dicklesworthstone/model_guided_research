@@ -54,6 +54,7 @@ class Config:
     margin: float = 1.0
 
 
+@jax.tree_util.register_dataclass(data_fields=["WQ", "WK", "WV", "Wcls"])
 @dataclass
 class Params:
     WQ: jnp.ndarray
@@ -304,19 +305,21 @@ def pivot_crowd_dataset(k, n, L, cfg: Config):
     d = cfg.d
 
     def one(k):
-        k1, k2, k3 = jax.random.split(k, 3)
-        c = int(jax.random.bernoulli(k1, 0.5))
-        p = int(jax.random.randint(k2, (), 0, L))
+        k1, k2 = jax.random.split(k)
+        # Traced-safe under vmap: no int()/Python conditionals on tracers
+        # (bead faif — `int(bernoulli(...))` raised ConcretizationTypeError).
+        c = jax.random.bernoulli(k1).astype(jnp.int32)
+        p = jax.random.randint(k2, (), 0, L)
         X = jnp.full((d, L), -2.0)
         X = X.at[0].set(-1.0)
         X = X.at[0, p].set(0.0)
         X = X.at[1].set(-1.0)
-        X = X.at[1, p].set(0.0 if c == 1 else -1.0)
+        X = X.at[1, p].set(jnp.where(c == 1, 0.0, -1.0))
         return gauge_time(X), c
 
     ks = jax.random.split(k, n)
     Xc, yc = jax.vmap(one)(ks)
-    return Xc, jnp.array(yc)
+    return Xc, yc
 
 
 def run():

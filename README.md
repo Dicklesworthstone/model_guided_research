@@ -7,8 +7,8 @@
 - [**Project Overview**](#-project-overview) - What this project is about
 - [**Dual Implementation Strategy**](#-dual-implementation-strategy) - Research (JAX) + Production (PyTorch)
 - [**Quick Start**](#-quick-start) - Get up and running
-- [**The 11 Mathematical Frameworks**](#-the-11-mathematical-frameworks) - Browse all implementations
-- [**Nanochat: Production Transformer**](#-nanochat-production-transformer-implementation) - Unified GPT with all 11 approaches
+- [**The 13 Mathematical Frameworks**](#-the-13-mathematical-frameworks) - Browse all implementations
+- [**Nanochat: Production Transformer**](#-nanochat-production-transformer-implementation) - Unified GPT with 13 selectable attention types
 - [**Experimental Matrix**](#-experimental-matrix) - Systematic evaluation framework
 - [**CLI Usage**](#-cli-usage) - How to run demos and experiments
 - [**Project Structure**](#-project-structure) - Repository organization
@@ -34,14 +34,14 @@ This represents a new paradigm: **AI systems as genuine partners in mathematical
 The project has evolved through three distinct phases:
 
 **Phase 1: Mathematical Exploration (JAX Demos)**
-- 11 standalone demonstrations of exotic mathematical structures
+- 13 standalone demonstrations of exotic mathematical structures
 - Pure research focus: "Can this work in principle?"
 - Rich, interactive visualizations
 - Property validation and sanity checks
 
 **Phase 2: Unification (Nanochat)**
 - Production-ready GPT transformer in PyTorch
-- All 11 mathematical approaches as drop-in attention mechanisms
+- 13 selectable attention types spanning the framework implementations
 - Systematic experimental framework
 - Runtime configuration without code changes
 
@@ -69,7 +69,7 @@ This project maintains **two complementary implementations** of each mathematica
 ```bash
 mgr list                    # See all demos
 mgr run matrix-gauge        # Run specific demo
-mgr run-all                 # Run all 11 demos
+mgr run-all                 # Run all 13 demos
 ```
 
 ### PyTorch Production (Implementation)
@@ -196,7 +196,7 @@ model_guided_research/
 │   ├── matrix_exponential_gauge_learning.md
 │   ├── ultrametric_worlds_and_p_adic_computation.md
 │   ├── tropical_geometry_and_idempotent_algebra.md
-│   └── ... (one for each of the 11 frameworks)
+│   └── ... (one for each of the 13 frameworks)
 │
 ├── tests/                             # Test suite
 │   ├── test_practical_utility.py      # Comprehensive benchmarks
@@ -211,10 +211,12 @@ model_guided_research/
 │   ├── train_jax.py                   # Training script (JAX)
 │   ├── model_utils.py                 # Shared utilities (norm, RoPE)
 │   │
-│   ├── # Attention Mechanisms (11 total)
+│   ├── # Attention Mechanisms (13 total)
 │   ├── braid_attention_torch.py       # Braid group topology
+│   ├── clifford_attention_torch.py    # Geometric algebra products
 │   ├── fractal_attention_torch.py     # IFS hierarchical routing
 │   ├── gauge_block_torch.py           # Lie group parallel transport
+│   ├── hyperbolic_attention_torch.py  # Lorentz energy-Gromov routing
 │   ├── octonion_attention_torch.py    # 8D non-associative algebra
 │   ├── quaternion_attention_torch.py  # 4D rotations
 │   ├── reversible_block_torch.py      # Invertible coupling
@@ -238,7 +240,9 @@ model_guided_research/
 │       ├── checkpoint_manager.py      # Model checkpointing
 │       └── ... (other support files)
 │
-└── # JAX Demo Implementations (11 total)
+└── # JAX Demo Implementations (13 total)
+    ├── clifford_algebra_and_geometric_attention.py
+    ├── hyperbolic_geometry_and_negative_curvature_attention.py
     ├── matrix_exponential_gauge_learning.py
     ├── ultrametric_worlds_and_p_adic_computation.py
     ├── tropical_geometry_and_idempotent_algebra.py
@@ -252,7 +256,7 @@ model_guided_research/
     └── surreal_numbers_transseries_and_scaling.py
 ```
 
-## 🔬 The 11 Mathematical Frameworks
+## 🔬 The 13 Mathematical Frameworks
 
 Each framework is implemented twice:
 1. **JAX Demo**: Interactive exploration with visualizations
@@ -516,11 +520,43 @@ Each framework is implemented twice:
 - Matrix exponential functions (φ_δ, Lyapunov integral)
 - Krylov subspace projection
 
+### 12. Clifford Algebra & Geometric Attention
+**Key Idea**: A unified geometric product carries scalars, vectors, bivectors, and rotors in one associative algebra
+**JAX Demo**: `clifford` | [Documentation](markdown_documentation/clifford_algebra_and_geometric_attention.md) | [Code](clifford_algebra_and_geometric_attention.py)
+**PyTorch**: `nanochat/clifford_attention_torch.py` | Use: `--attention-type clifford`
+
+**Mathematical Foundation**:
+- The Cl(3,0) geometric product combines inner and exterior products
+- Its even subalgebra reduces exactly to quaternions
+- Unit rotors act by norm-preserving sandwich products
+- Associativity supports compositional geometric routing
+
+**Why It Matters**:
+- Represents orientation and higher-grade interactions without separate bespoke algebras
+- Provides exact algebraic reduction checks against quaternion attention
+- Exposes interpretable per-grade signal norms
+
+### 13. Hyperbolic Geometry & Negative-Curvature Attention
+**Key Idea**: Negative curvature supplies a continuous geometry whose volume growth naturally represents hierarchies
+**JAX Demo**: `hyperbolic` | [Documentation](markdown_documentation/hyperbolic_geometry_and_negative_curvature_attention.md) | [Code](hyperbolic_geometry_and_negative_curvature_attention.py)
+**PyTorch**: `nanochat/hyperbolic_attention_torch.py` | Use: `--attention-type hyperbolic`
+
+**Mathematical Foundation**:
+- Lorentz-model points satisfy a certified negative-curvature constraint
+- Stable energy-Gromov scores reduce to dot-product attention as curvature approaches zero
+- Origin-chart aggregation preserves the ordinary weighted-mean endpoint
+- Learnable per-head curvature connects Euclidean, hyperbolic, and tree-like regimes
+
+**Why It Matters**:
+- Makes hierarchy bias continuous and learnable rather than hard-coded
+- Curvature collapse is an honest internal null indicating Euclidean behavior
+- Per-head curvature and radius are emitted as adjudicable training telemetry
+
 ## 🔬 Nanochat: Production Transformer Implementation
 
 ### Architecture Overview
 
-**Nanochat** is a production-ready GPT transformer that serves as a unified testbed for all 11 mathematical frameworks. It provides:
+**Nanochat** is a production-ready GPT transformer that serves as a unified testbed with 13 selectable attention types. It provides:
 
 - **Modular attention mechanisms**: Drop-in replacements for standard softmax attention
 - **Multiple optimizers**: AdamW, Muon, HOSS
@@ -547,7 +583,7 @@ nanochat/hoss_opt.py         # HOSS (JAX)
 # Schedulers
 nanochat/ordinal_scheduler.py # Transfinite LR scheduling
 
-# 11 Attention Mechanisms
+# 13 Attention Mechanisms
 nanochat/*_attention_torch.py  # See structure above
 nanochat/*_block_torch.py      # Special block types
 ```
@@ -621,13 +657,13 @@ torchrun --nproc_per_node=4 -m nanochat.train \
 The nanochat framework enables systematic exploration of:
 
 **Dimensions**:
-1. **Attention Types** (11): standard, tropical, ultrametric, simplicial, quaternion, braid, fractal, octonion, surreal, reversible, gauge
+1. **Attention Types** (13): standard, clifford, hyperbolic, tropical, ultrametric, simplicial, quaternion, braid, fractal, octonion, surreal, reversible, gauge
 2. **Per-layer attention schedules**: homogeneous, exact-length stacks, or evenly repeating patterns
 3. **Optimizers** (3): adamw, muon, hoss
 4. **Schedulers** (2): none, ordinal
 5. **Hyperparameters**: learning rate, batch size, model size, sequence length
 
-**Total Homogeneous Base Configurations**: 11 × 3 × 2 = 66
+**Total Homogeneous Base Configurations**: 13 × 3 × 2 = 78
 
 ### Recommended Experimental Protocol
 
@@ -983,7 +1019,7 @@ This meta-cognitive approach—AI generating and evaluating its own research dir
 ### Comprehensive Test Suite
 
 **`tests/test_practical_utility.py`** (Primary)
-- 11 mini-benchmarks (one per framework)
+- 11 historical mini-benchmarks covering the original framework set
 - Practical benefits (memory, scaling, generalization)
 - Mathematical properties (Lipschitz, norm preservation)
 - Green/yellow/red verdicts with recommendations

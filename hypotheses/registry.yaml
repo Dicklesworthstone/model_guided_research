@@ -1431,3 +1431,88 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+
+  # ---------------------------------------------------------------------------
+  # Hyperbolic attention (framework 13, bead mnn.6). Registered before any
+  # production hyperbolic training or evaluation artifact exists.
+  # ---------------------------------------------------------------------------
+  - id: hyp-hyperbolic-hierarchy-retrieval
+    statement: >-
+      Hyperbolic energy-Gromov attention improves held-out hierarchical
+      retrieval exact match by at least 0.03 over standard attention at equal
+      FLOPs, reflecting useful continuous hierarchy bias rather than a
+      different optimization budget.
+    mechanisms: [hyperbolic]
+    source:
+      kind: model
+      provenance: "gromov_product_and_the_ultrametric_hyperbolic_bridge.md sections 3 and 6; mnn.6 pre-evidence merge gate"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.hier.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      validity:
+        baseline_floor: 0.014
+        floor_source: "population majority-answer prior of the hier held-out split (10 generator seeds x 3000 docs, 2026-06-10); artifact-recorded answer_prior takes precedence"
+      scale_caveats: >-
+        Pre-evidence claim. The campaign must first find an off-floor rung and
+        replace the house-minimum seed count with the power-derived count in
+        its bead preregistration before evidence collection.
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-hyperbolic-placebo-specificity
+    statement: >-
+      Hyperbolic attention does not degrade structure-free placebo perplexity
+      by more than two percent relative to standard attention at equal FLOPs;
+      a larger gap blocks the hierarchy claim as a fairness or optimization
+      confound.
+    mechanisms: [hyperbolic]
+    source:
+      kind: model
+      provenance: "new_mechanism_checklist.md item 2; mnn.6 pre-evidence placebo control"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.placebo.perplexity.in_range"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 1.02
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: >-
+        Pre-evidence control. Run at the same off-floor rung, seeds, and FLOPs
+        as the hierarchy comparison; any apparent placebo improvement must be
+        investigated as carefully as degradation before publishing a
+        mechanism-specific hierarchy conclusion.
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-hyperbolic-curvature-readout
+    statement: >-
+      On hierarchical retrieval at least 25 percent of heads move above the
+      hierarchy-curvature threshold, while on a structure-free placebo at
+      least 95 percent collapse into the near-Euclidean curvature band at the
+      same training budget.
+    mechanisms: [hyperbolic]
+    source:
+      kind: model
+      provenance: "gromov_product_and_the_ultrametric_hyperbolic_bridge.md sections 4 and 6; mnn.6 interpretability gate"
+    date_registered: "2026-08-24"
+    prediction: null
+    operationalization_note: >-
+      The production module now emits train:results.hyperbolic_frac_heads_hier
+      and train:results.hyperbolic_frac_heads_euclidean, with fixed thresholds
+      recorded beside the per-head curvature values. Safe adjudication of the
+      paired claim still needs a task-identity selector for training artifacts;
+      without it the recursive artifact index could pool hierarchy and placebo
+      runs under one mechanism. Keep blocked until that selector and a
+      power-derived seed count are preregistered, then split the two directional
+      thresholds into separately adjudicable successors if required.
+    status: blocked
+    evidence: []
+    verdict_history: []

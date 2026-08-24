@@ -992,8 +992,8 @@ TASKS: dict[str, TaskSpec] = {
         ),
         TaskSpec(
             name="hier",
-            target_mechanisms=("ultrametric", "fractal"),
-            hypothesis="LCP routing resolves nested key paths; held-out DEPTH is the discriminating axis",
+            target_mechanisms=("ultrametric", "fractal", "hyperbolic"),
+            hypothesis="discrete, recursive, and continuous-curvature routing resolve nested key paths; held-out DEPTH is the discriminating axis",
             dials=(
                 Dial("depth", 3, "tree depth (train; test uses depth+2)", 1, 8),
                 Dial("branching", 3, "children per node", 2, 6),

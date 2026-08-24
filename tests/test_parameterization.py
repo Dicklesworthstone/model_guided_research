@@ -49,7 +49,7 @@ def test_gumbel_scaling_law_slope():
 
 
 def test_scaling_table_covers_core_mechanisms():
-    for mech in ("standard", "tropical", "ultrametric", "quaternion", "octonion", "reversible"):
+    for mech in ("standard", "tropical", "ultrametric", "hyperbolic", "quaternion", "octonion", "reversible"):
         rule = P.scaling_rule(mech)
         assert rule.mechanism == mech
         assert rule.concentration_class
@@ -73,7 +73,7 @@ def test_coordinate_check_standard_is_flat():
     assert all(v > 0 for v in res["activation_rms"].values())
 
 
-@pytest.mark.parametrize("mech", ["tropical", "quaternion", "reversible"])
+@pytest.mark.parametrize("mech", ["tropical", "hyperbolic", "quaternion", "reversible"])
 def test_coordinate_check_runs_for_mechanisms(mech):
     """The harness is generic over mechanisms: each produces finite per-width
     scales and a finite slope (the per-mechanism interpretation lives in the
@@ -86,6 +86,10 @@ def test_coordinate_check_runs_for_mechanisms(mech):
     assert len(res["activation_rms"]) == 3
     assert all(math.isfinite(v) and v > 0 for v in res["activation_rms"].values())
     assert math.isfinite(res["loglog_slope"])
+    if mech == "hyperbolic":
+        assert abs(res["loglog_slope"]) < 0.05, (
+            f"hyperbolic Lorentz-energy parameterization is not flat: {res['loglog_slope']:.4f}"
+        )
 
 
 def test_nsa_mlp_bias_uses_exact_emax_constants():

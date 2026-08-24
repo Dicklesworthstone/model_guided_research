@@ -1877,7 +1877,9 @@ class TestCliffordAlgebra:
 
         import clifford_algebra_and_geometric_attention as clifford
 
-        blade = lambda name: jnp.zeros((8,)).at[clifford._BLADE_INDEX[name]].set(1.0)
+        def blade(name):
+            return jnp.zeros((8,)).at[clifford._BLADE_INDEX[name]].set(1.0)
+
         e1, e2 = blade((1,)), blade((2,))
         require(
             bool(jnp.allclose(clifford.gp(clifford.gp(e1, e2), e1), -e2, atol=0)),

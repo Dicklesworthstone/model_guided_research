@@ -321,6 +321,61 @@ def _collect_tropical_route_coverage(model: torch.nn.Module) -> float | None:
     return (sum(vals) / len(vals)) if vals else None
 
 
+def _collect_hyperbolic_stats(model: torch.nn.Module) -> dict[str, Any] | None:
+    """Collect per-head curvature and radius from hyperbolic attention layers.
+
+    Curvature is the mechanism-internal hierarchy readout: movement toward
+    zero is the Euclidean null, while movement above the registered hierarchy
+    threshold is evidence that a head is using negative curvature. Radius
+    records whether the learned chart actually occupies hyperbolic depth.
+    """
+    from nanochat.hyperbolic_attention_torch import (
+        EUCLIDEAN_CURVATURE_THRESHOLD,
+        HIERARCHY_CURVATURE_THRESHOLD,
+    )
+
+    curvature_layers: list[torch.Tensor] = []
+    radius_layers: list[torch.Tensor] = []
+    for module in model.modules():
+        curvature = getattr(module, "hyperbolic_curvature_head", None)
+        radius = getattr(module, "hyperbolic_radius_head_mean", None)
+        if not torch.is_tensor(curvature) or curvature.ndim != 1:
+            continue
+        curvature_f = curvature.detach().float().cpu()
+        if not torch.isfinite(curvature_f).all():
+            continue
+        curvature_layers.append(curvature_f)
+        if torch.is_tensor(radius) and radius.ndim == 1:
+            radius_f = radius.detach().float().cpu()
+            if torch.isfinite(radius_f).all():
+                radius_layers.append(radius_f)
+    if not curvature_layers:
+        return None
+
+    curvature_all = torch.cat(curvature_layers)
+    stats: dict[str, Any] = {
+        "curvature": {
+            "layer_head": [[float(x) for x in layer.tolist()] for layer in curvature_layers],
+            "mean": float(curvature_all.mean()),
+            "min": float(curvature_all.min()),
+            "max": float(curvature_all.max()),
+        },
+        "frac_heads_hier": float((curvature_all >= HIERARCHY_CURVATURE_THRESHOLD).float().mean()),
+        "frac_heads_euclidean": float((curvature_all <= EUCLIDEAN_CURVATURE_THRESHOLD).float().mean()),
+        "hierarchy_curvature_threshold": HIERARCHY_CURVATURE_THRESHOLD,
+        "euclidean_curvature_threshold": EUCLIDEAN_CURVATURE_THRESHOLD,
+    }
+    if radius_layers:
+        radius_all = torch.cat(radius_layers)
+        stats["radius"] = {
+            "layer_head": [[float(x) for x in layer.tolist()] for layer in radius_layers],
+            "mean": float(radius_all.mean()),
+            "min": float(radius_all.min()),
+            "max": float(radius_all.max()),
+        }
+    return stats
+
+
 def _collect_braid_charge_stats(model: torch.nn.Module) -> dict[str, Any] | None:
     """Collect the latest conserved-charge readings from braid attention layers
     (bead u55.3): Q1 = mass-partition defect (exactly 0 for the rmatrix law, the
@@ -1673,6 +1728,15 @@ def train(args) -> None:
                                 + (", …]" if len(head_mean) > len(head_snip) else "]")
                             )
 
+                if model_type == "gpt" and "hyperbolic" in attention_schedule:
+                    hyperbolic = _collect_hyperbolic_stats(raw_model)
+                    if hyperbolic is not None:
+                        curvature = hyperbolic["curvature"]
+                        radius = hyperbolic.get("radius")
+                        msg += f"  [dim]c_mean[/dim] {float(curvature['mean']):>7.4g}"
+                        if isinstance(radius, dict):
+                            msg += f"  [dim]r_mean[/dim] {float(radius['mean']):>7.4g}"
+
                 console.print(msg)
                 last_log_time = step_t1
                 last_log_step = step
@@ -1742,6 +1806,13 @@ def train(args) -> None:
                                 record["braid_eta_per_layer"] = braid_stats["eta_per_layer"]
                             if "rapidity_span_per_layer" in braid_stats:
                                 record["braid_rapidity_span_per_layer"] = braid_stats["rapidity_span_per_layer"]
+                    if model_type == "gpt" and "hyperbolic" in attention_schedule:
+                        hyperbolic = _collect_hyperbolic_stats(raw_model)
+                        if hyperbolic is not None:
+                            record["hyperbolic_curvature"] = hyperbolic["curvature"]
+                            record["hyperbolic_radius"] = hyperbolic.get("radius")
+                            record["hyperbolic_frac_heads_hier"] = hyperbolic["frac_heads_hier"]
+                            record["hyperbolic_frac_heads_euclidean"] = hyperbolic["frac_heads_euclidean"]
                     if (
                         model_type == "gpt"
                         and "reversible" in attention_schedule
@@ -1931,6 +2002,13 @@ def train(args) -> None:
             results["route_coverage_first"] = route_coverage_first
             results["route_coverage_final"] = route_coverage_last
             results["route_coverage_delta"] = route_coverage_last - route_coverage_first
+    if model_type == "gpt" and "hyperbolic" in attention_schedule:
+        hyperbolic = _collect_hyperbolic_stats(raw_model)
+        if hyperbolic is not None:
+            results["hyperbolic_curvature"] = hyperbolic["curvature"]
+            results["hyperbolic_radius"] = hyperbolic.get("radius")
+            results["hyperbolic_frac_heads_hier"] = hyperbolic["frac_heads_hier"]
+            results["hyperbolic_frac_heads_euclidean"] = hyperbolic["frac_heads_euclidean"]
     # the beta the model ended training at (y2h9): null = exact tropical
     # endpoint or a non-semiring model; mirrors checkpoint semiring_beta_live
     results["semiring_beta_final"] = last_semiring_beta

@@ -113,6 +113,13 @@ WIDTH_SCALING_TABLE: dict[str, ScalingRule] = {
         "scale CLT-normally; the alpha/beta temperature must track the log-depth "
         "so the weighting stays Theta(1) as the key population grows.",
     ),
+    "hyperbolic": ScalingRule(
+        "hyperbolic", "radial / curvature-gated Lorentz energy", 0.0, 0.0, "1/sqrt(d_head)",
+        "the energy-Gromov score has the dot-product CLT limit at c -> 0; "
+        "finite curvature adds a bounded radial correction after QK norm. "
+        "Curvature is a per-head scalar coordinate and keeps the baseline "
+        "projection/LR scaling until the coordinate-check evidence says otherwise.",
+    ),
     "quaternion": ScalingRule(
         "quaternion", "isometry (normed algebra)", 0.0, -1.0, "1 (norm-preserving)",
         "unit-rotor products are exact isometries (forward scale is "

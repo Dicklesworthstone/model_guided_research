@@ -57,6 +57,7 @@ BASE_CONFIG: dict[str, Any] = {
 
 MECHANISM_CONFIG_OVERRIDES: dict[str, dict[str, Any]] = {
     "standard": {},
+    "hyperbolic": {},
     "tropical": {},
     "ultrametric": {},
     "simplicial": {},
