@@ -19,14 +19,14 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import torch.distributed as torch_dist
 
 from nanochat.torch_imports import Tensor, nn, torch
 from utils import console
 
-dist = cast(Any, torch_dist)
+dist = torch_dist
 
 from .synaptic import SynapticExpert, SynapticLinear, SynapticMoE
 
@@ -132,14 +132,14 @@ def _copy_synaptic_linear_(dst: SynapticLinear, src: SynapticLinear):
     dst.w_slow.copy_(src.w_slow)
     dst.w_fast.copy_(src.w_fast)
     if (dst.bias is not None) and (src.bias is not None):
-        cast(Tensor, dst.bias).copy_(cast(Tensor, src.bias))
+        dst.bias.copy_(src.bias)
     # postsyn state
-    cast(Tensor, dst.post.U).copy_(cast(Tensor, src.post.U))
-    cast(Tensor, dst.post.V).copy_(cast(Tensor, src.post.V))
-    cast(Tensor, dst.post.H_fast).copy_(cast(Tensor, src.post.H_fast))
-    cast(Tensor, dst.post.m_gate).copy_(cast(Tensor, src.post.m_gate))
-    cast(Tensor, dst.post.camkii).copy_(cast(Tensor, src.post.camkii))
-    cast(Tensor, dst.post.pp1).copy_(cast(Tensor, src.post.pp1))
+    dst.post.U.copy_(src.post.U)
+    dst.post.V.copy_(src.post.V)
+    dst.post.H_fast.copy_(src.post.H_fast)
+    dst.post.m_gate.copy_(src.post.m_gate)
+    dst.post.camkii.copy_(src.post.camkii)
+    dst.post.pp1.copy_(src.post.pp1)
 
 
 @torch.no_grad()
@@ -153,9 +153,7 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             mix_and_shift_tensors(winner.w_slow, loser.w_slow, alpha, cfg.clone_noise_linear)
             mix_and_shift_tensors(winner.w_fast, loser.w_fast, alpha, cfg.clone_noise_linear)
             if (winner.bias is not None) and (loser.bias is not None):
-                mix_and_shift_tensors(
-                    cast(Tensor, winner.bias), cast(Tensor, loser.bias), alpha, cfg.clone_noise_linear
-                )
+                mix_and_shift_tensors(winner.bias, loser.bias, alpha, cfg.clone_noise_linear)
 
             # Postsynaptic state
             # For state, we might want less noise or different logic?
@@ -175,20 +173,20 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
             # State tensors are small (rank R).
 
             # Manual state update (same as before)
-            cast(Tensor, winner.post.U).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.U))
-            cast(Tensor, winner.post.V).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.V))
-            cast(Tensor, winner.post.H_fast).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.H_fast))
-            cast(Tensor, winner.post.m_gate).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.m_gate))
-            cast(Tensor, winner.post.camkii).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.camkii))
-            cast(Tensor, winner.post.pp1).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.pp1))
+            winner.post.U.mul_(alpha).add_((1.0 - alpha) * loser.post.U)
+            winner.post.V.mul_(alpha).add_((1.0 - alpha) * loser.post.V)
+            winner.post.H_fast.mul_(alpha).add_((1.0 - alpha) * loser.post.H_fast)
+            winner.post.m_gate.mul_(0.9).add_(0.1 * loser.post.m_gate)
+            winner.post.camkii.mul_(0.9).add_(0.1 * loser.post.camkii)
+            winner.post.pp1.mul_(0.9).add_(0.1 * loser.post.pp1)
 
             # Clone state to loser (with reset logic)
-            cast(Tensor, loser.post.U).copy_(cast(Tensor, winner.post.U)).mul_(0.5)
-            cast(Tensor, loser.post.V).copy_(cast(Tensor, winner.post.V)).mul_(0.5)
-            cast(Tensor, loser.post.H_fast).zero_()
-            cast(Tensor, loser.post.m_gate).copy_(cast(Tensor, winner.post.m_gate))
-            cast(Tensor, loser.post.camkii).copy_(cast(Tensor, winner.post.camkii))
-            cast(Tensor, loser.post.pp1).copy_(cast(Tensor, winner.post.pp1))
+            loser.post.U.copy_(winner.post.U).mul_(0.5)
+            loser.post.V.copy_(winner.post.V).mul_(0.5)
+            loser.post.H_fast.zero_()
+            loser.post.m_gate.copy_(winner.post.m_gate)
+            loser.post.camkii.copy_(winner.post.camkii)
+            loser.post.pp1.copy_(winner.post.pp1)
 
             return
         except ImportError:
@@ -199,14 +197,14 @@ def _merge_linear_into_(winner: SynapticLinear, loser: SynapticLinear, alpha: fl
     winner.w_slow.mul_(alpha).add_((1.0 - alpha) * loser.w_slow)
     winner.w_fast.mul_(alpha).add_((1.0 - alpha) * loser.w_fast)
     if (winner.bias is not None) and (loser.bias is not None):
-        cast(Tensor, winner.bias).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.bias))
-    cast(Tensor, winner.post.U).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.U))
-    cast(Tensor, winner.post.V).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.V))
-    cast(Tensor, winner.post.H_fast).mul_(alpha).add_((1.0 - alpha) * cast(Tensor, loser.post.H_fast))
+        winner.bias.mul_(alpha).add_((1.0 - alpha) * loser.bias)
+    winner.post.U.mul_(alpha).add_((1.0 - alpha) * loser.post.U)
+    winner.post.V.mul_(alpha).add_((1.0 - alpha) * loser.post.V)
+    winner.post.H_fast.mul_(alpha).add_((1.0 - alpha) * loser.post.H_fast)
     # gate and enzymes: bias toward winner (more stable)
-    cast(Tensor, winner.post.m_gate).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.m_gate))
-    cast(Tensor, winner.post.camkii).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.camkii))
-    cast(Tensor, winner.post.pp1).mul_(0.9).add_(0.1 * cast(Tensor, loser.post.pp1))
+    winner.post.m_gate.mul_(0.9).add_(0.1 * loser.post.m_gate)
+    winner.post.camkii.mul_(0.9).add_(0.1 * loser.post.camkii)
+    winner.post.pp1.mul_(0.9).add_(0.1 * loser.post.pp1)
 
     # Clone back into loser (to keep count constant)
     _clone_linear_from_(loser, winner, cfg.clone_noise_linear)
@@ -218,11 +216,11 @@ def _clone_linear_from_(dst: SynapticLinear, src: SynapticLinear, noise_scale: f
     _add_noise_(dst.w_slow, noise_scale)
     _add_noise_(dst.w_fast, noise_scale)
     if dst.bias is not None:
-        _add_noise_(cast(Tensor, dst.bias), noise_scale)
+        _add_noise_(dst.bias, noise_scale)
     # reset fast Hebbian traces for cloned expert
-    cast(Tensor, dst.post.H_fast).zero_()
-    cast(Tensor, dst.post.U).mul_(0.5)
-    cast(Tensor, dst.post.V).mul_(0.5)  # keep some eligibility but dampen
+    dst.post.H_fast.zero_()
+    dst.post.U.mul_(0.5)
+    dst.post.V.mul_(0.5)  # keep some eligibility but dampen
 
 
 @torch.no_grad()
@@ -273,8 +271,8 @@ def _merge_expert_into_and_clone_(
     emb[loser_idx : loser_idx + 1].copy_(e_l)
 
     # 5) Reset stats
-    fatigue = cast(Tensor, layer.fatigue)
-    energy = cast(Tensor, layer.energy)
+    fatigue = layer.fatigue
+    energy = layer.energy
     fatigue[loser_idx] = 0.0
     energy[loser_idx] = 1.0
 
@@ -302,8 +300,8 @@ class SplitMergeController:
     @torch.no_grad()
     def _health(self, layer: SynapticMoE) -> Tensor:
         # Higher is better: combine (1 - fatigue) with energy in [0,1]
-        fat = cast(Tensor, layer.fatigue).clamp(0, 1)  # EMA utilization proxy
-        eng = cast(Tensor, layer.energy).clamp(0, 1)
+        fat = layer.fatigue.clamp(0, 1)  # EMA utilization proxy
+        eng = layer.energy.clamp(0, 1)
         health = (1.0 - fat) * (0.5 + 0.5 * eng)  # [0,1]
         return health
 
@@ -312,7 +310,7 @@ class SplitMergeController:
         if not self.cfg.use_util_weighting:
             return 0.6  # mild bias toward first arg
         # invert fatigue → utilization proxy
-        fat = cast(Tensor, layer.fatigue)
+        fat = layer.fatigue
         u_i = (1.0 - fat[i]).clamp(0, 1)
         u_j = (1.0 - fat[j]).clamp(0, 1)
         s = (u_i + u_j).clamp_min(1e-6)
@@ -407,8 +405,8 @@ class SplitMergeController:
                 )
             )
             # reset stats
-            fatigue = cast(Tensor, layer.fatigue)
-            energy = cast(Tensor, layer.energy)
+            fatigue = layer.fatigue
+            energy = layer.energy
             fatigue[dst] = 0.0
             energy[dst] = 1.0
             # emit lineage event: split parent src -> child dst

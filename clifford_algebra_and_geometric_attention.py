@@ -43,6 +43,7 @@ Runtime: well under 2 minutes on CPU.
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -67,9 +68,11 @@ BLADES: tuple[tuple[int, ...], ...] = (
 )
 
 #: Metric diagonal for Cl(3,0): every generator squares to +1.
-_METRIC = {1: 1.0, 2: 1.0, 3: 1.0}
+_METRIC: dict[int, float] = {1: 1.0, 2: 1.0, 3: 1.0}
 
-_BLADE_INDEX = {blade: i for i, blade in enumerate(BLADES)}
+_BLADE_INDEX: dict[tuple[int, ...], int] = {
+    blade: i for i, blade in enumerate(BLADES)
+}
 
 
 def _blade_product(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[tuple[int, ...], float]:
@@ -271,7 +274,7 @@ def run_property_checks(seed: int = 7) -> list[tuple[str, bool, str]]:
     key = random.PRNGKey(seed)
 
     # -- known identities of the derived table -------------------------------
-    def _blade_vec(name: str) -> jnp.ndarray:
+    def _blade_vec(name: tuple[int, ...]) -> jnp.ndarray:
         idx = _BLADE_INDEX[name]
 
         return jnp.zeros((8,)).at[idx].set(1.0)
@@ -436,7 +439,7 @@ def _make_data(key, *, n_base=32, n_aug=16):
     return (train_v, train_y), (test_v, test_y), axis
 
 
-def _rotor_model_loss(params, inputs, targets):
+def _rotor_model_loss(params: jax.Array, inputs: jax.Array, targets: jax.Array) -> jax.Array:
     b_unit = unit_bivector_from_params(params[:3])
     theta = params[3]
     rotor = rotor_from_bivector(b_unit, theta)
@@ -445,7 +448,9 @@ def _rotor_model_loss(params, inputs, targets):
     return jnp.mean((pred - targets) ** 2)
 
 
-def _mlp_model_loss(params, inputs, targets):
+def _mlp_model_loss(
+    params: dict[str, jax.Array], inputs: jax.Array, targets: jax.Array
+) -> jax.Array:
     hidden = jnp.tanh(inputs @ params["w1"] + params["b1"])
     hidden = jnp.tanh(hidden @ params["w2"] + params["b2"])
     pred = hidden @ params["w3"] + params["b3"]
@@ -467,7 +472,7 @@ def run_generalization_experiment(seed: int = 7, steps: int = 600):
     grad_mlp = jax.jit(jax.value_and_grad(_mlp_model_loss))
 
     # Rotor model: 3 plane params + angle; restarts dodge local minima.
-    best = (jnp.inf, None)
+    best: tuple[jax.Array, jax.Array | None] = (jnp.asarray(jnp.inf), None)
     for trial in range(4):
         k1, k2 = random.split(random.fold_in(k_rot, trial), 2)
         params_rot = jnp.concatenate(
@@ -478,15 +483,17 @@ def run_generalization_experiment(seed: int = 7, steps: int = 600):
         for _ in range(steps):
             _, g_r = grad_rot(params_rot, train_v, train_y)
             updates, state_rot = opt_rot.update(g_r, state_rot)
-            params_rot = optax.apply_updates(params_rot, updates)
+            params_rot = cast(jax.Array, optax.apply_updates(params_rot, updates))
         final = _rotor_model_loss(params_rot, train_v, train_y)
         if final < best[0]:
             best = (final, params_rot)
-    params_rot = best[1]
+    _, params_rot = best
+    if params_rot is None:
+        raise RuntimeError("Rotor optimization did not produce parameters")
 
     # MLP baseline: 3 -> 64 -> 64 -> 3, same step budget.
     k1, k2, k3 = random.split(k_mlp, 3)
-    params_mlp = {
+    params_mlp: dict[str, jax.Array] = {
         "w1": random.normal(k1, (3, 64)) * 0.3,
         "b1": jnp.zeros(64),
         "w2": random.normal(k2, (64, 64)) * 0.3,
@@ -499,7 +506,7 @@ def run_generalization_experiment(seed: int = 7, steps: int = 600):
     for _ in range(steps):
         _, g_m = grad_mlp(params_mlp, train_v, train_y)
         updates_m, state_mlp = opt_mlp.update(g_m, state_mlp)
-        params_mlp = optax.apply_updates(params_mlp, updates_m)
+        params_mlp = cast(dict[str, jax.Array], optax.apply_updates(params_mlp, updates_m))
 
     b_unit = unit_bivector_from_params(params_rot[:3])
     rotor = rotor_from_bivector(b_unit, params_rot[3])

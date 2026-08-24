@@ -13,8 +13,9 @@ import statistics
 import subprocess  # nosec B404
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 import typer
 import yaml
@@ -34,6 +35,23 @@ app = typer.Typer(
 console = Console()
 
 _ALLOWED_CMDS = {"git"}
+
+
+class _RegressionComparison(TypedDict):
+    metric: str
+    label: str
+    direction: str
+    baseline: float | None
+    candidate: float | None
+    delta: float | None
+    delta_rel: float | None
+    status: str
+
+
+def _subprocess_text(output: str | bytes | None) -> str:
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
 
 
 def _run_command(cmd: str) -> str | None:
@@ -199,6 +217,19 @@ def _as_float(x: Any) -> float | None:
     return None
 
 
+def _comparison_row_values(
+    row: _RegressionComparison,
+) -> tuple[str, float | None, float | None, float | None, float | None, str]:
+    return (
+        str(row["label"]),
+        _as_float(row["baseline"]),
+        _as_float(row["candidate"]),
+        _as_float(row["delta"]),
+        _as_float(row["delta_rel"]),
+        str(row["status"]),
+    )
+
+
 def _extract_metric(summary: dict[str, Any], *, metric: str, variant: str | None) -> float | None:
     """Extract a canonical metric from heterogeneous summary.json shapes."""
     # Suite summaries: choose by attention_type.
@@ -285,7 +316,7 @@ def _certify_comparisons(
     candidate_obj: dict[str, Any],
     *,
     degrade_factor: float,
-) -> list[dict[str, Any]]:
+) -> list[_RegressionComparison]:
     """Build regression rows from two `mgr certify` summaries (bead 5ki.3).
 
     A certificate check regresses when it flips green -> red (pass ->
@@ -308,7 +339,7 @@ def _certify_comparisons(
     }
     keys = sorted(set(base_checks) | set(cand_checks))
 
-    comparisons: list[dict[str, Any]] = []
+    comparisons: list[_RegressionComparison] = []
     for mechanism, check_name in keys:
         key = f"cert:{mechanism}.{check_name}"
         b = base_checks.get((mechanism, check_name))
@@ -1613,8 +1644,8 @@ def bench_fixed_flops(
             stderr = proc.stderr
             returncode = int(proc.returncode)
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
+            stdout = _subprocess_text(exc.stdout)
+            stderr = _subprocess_text(exc.stderr)
             returncode = 124
         t1 = time.perf_counter()
 
@@ -1734,8 +1765,8 @@ def bench_fixed_flops(
                 stderr = proc.stderr
                 returncode = int(proc.returncode)
             except subprocess.TimeoutExpired as exc:
-                stdout = exc.stdout or ""
-                stderr = exc.stderr or ""
+                stdout = _subprocess_text(exc.stdout)
+                stderr = _subprocess_text(exc.stderr)
                 returncode = 124
 
             (logs_dir / f"demo_{demo_name}.stdout.txt").write_text(stdout, encoding="utf-8")
@@ -2266,13 +2297,7 @@ def _scaling_launch_train(cmd: list[str], *, timeout_s: float) -> tuple[int, str
         )
         return int(proc.returncode), proc.stdout or "", proc.stderr or ""
     except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode("utf-8", errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode("utf-8", errors="replace")
-        return 124, stdout, stderr
+        return 124, _subprocess_text(exc.stdout), _subprocess_text(exc.stderr)
 
 
 def _scaling_seed_dir(artifacts_dir: Path, mechanism: str, suite_run_id: str, row: dict[str, Any], seed: int) -> Path:
@@ -3642,8 +3667,8 @@ def per_head_metrics(
             stderr = proc.stderr
             returncode = int(proc.returncode)
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
+            stdout = _subprocess_text(exc.stdout)
+            stderr = _subprocess_text(exc.stderr)
             returncode = 124
         t1 = time.perf_counter()
 
@@ -4105,8 +4130,9 @@ def regressions(
             "non-certificate snapshot is not meaningful."
         )
 
+    comparisons: list[_RegressionComparison]
     if base_obj.get("kind") == "certify":
-        comparisons: list[dict[str, Any]] = _certify_comparisons(
+        comparisons = _certify_comparisons(
             base_obj, cand_obj, degrade_factor=cert_degrade_factor
         )
     else:
@@ -4194,14 +4220,10 @@ def regressions(
     t.add_column("Δ%", justify="right")
     t.add_column("status", justify="right")
     for row in comparisons:
-        b = row["baseline"]
-        c = row["candidate"]
-        d = row["delta"]
-        dr = row["delta_rel"]
-        status = row["status"]
+        label, b, c, d, dr, status = _comparison_row_values(row)
         style = {"regression": "bold red", "ok": "green", "missing": "dim"}.get(status, "")
         t.add_row(
-            row["label"],
+            label,
             "-" if b is None else f"{b:.6g}",
             "-" if c is None else f"{c:.6g}",
             "-" if d is None else f"{d:+.6g}",
@@ -4251,20 +4273,17 @@ def regressions(
     md_lines.append("| metric | baseline | candidate | delta | delta% | status |")
     md_lines.append("| --- | ---: | ---: | ---: | ---: | --- |")
     for row in comparisons:
-        b = row["baseline"]
-        c = row["candidate"]
-        d = row["delta"]
-        dr = row["delta_rel"]
+        label, b, c, d, dr, status = _comparison_row_values(row)
         md_lines.append(
             "| "
             + " | ".join(
                 [
-                    row["label"],
+                    label,
                     "-" if b is None else f"{b:.6g}",
                     "-" if c is None else f"{c:.6g}",
                     "-" if d is None else f"{d:+.6g}",
                     "-" if dr is None else f"{(100.0 * dr):+.2f}%",
-                    row["status"],
+                    status,
                 ]
             )
             + " |"
@@ -4308,11 +4327,7 @@ def regressions(
                 "<table><thead><tr><th>metric</th><th>baseline</th><th>candidate</th><th>delta</th><th>delta%</th><th>status</th></tr></thead><tbody>"
             ]
             for row in comparisons:
-                b = row["baseline"]
-                c = row["candidate"]
-                d = row["delta"]
-                dr = row["delta_rel"]
-                status = row["status"]
+                label, b, c, d, dr, status = _comparison_row_values(row)
                 cls = "regression" if status == "regression" else ("ok" if status == "ok" else "missing")
                 html_table.append(
                     "<tr class='"
@@ -4321,7 +4336,7 @@ def regressions(
                     + "".join(
                         f"<td>{cell}</td>"
                         for cell in [
-                            row["label"],
+                            label,
                             "-" if b is None else f"{b:.6g}",
                             "-" if c is None else f"{c:.6g}",
                             "-" if d is None else f"{d:+.6g}",
@@ -4361,7 +4376,7 @@ def regressions(
             failing_rows.extend(missing_found)
 
         if failing_rows:
-            failing_metrics = ", ".join(row.get("metric", "?") for row in failing_rows)
+            failing_metrics = ", ".join(str(row.get("metric", "?")) for row in failing_rows)
             console.print(
                 Panel(
                     f"[bold red]Regressions detected[/bold red]: {failing_metrics}",
@@ -5103,11 +5118,9 @@ def _run_certify_checks(
         )
 
         def _symplectic_block() -> tuple[Any, Any]:
-            from nanochat.gpt import GPTConfig
-
             torch.manual_seed(seed)
             base = _certify_tiny_config("reversible")
-            cfg = GPTConfig(**{**vars(base), "reversible_mode": "symplectic"})
+            cfg = replace(base, reversible_mode="symplectic")
             block = Block(cfg, 0).to(device=device, dtype=torch.float64)
             block.eval()
             return block.special_block, cfg
@@ -7189,13 +7202,7 @@ def _scorecard_launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, st
         )
         return int(proc.returncode), proc.stdout or "", proc.stderr or ""
     except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode("utf-8", errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode("utf-8", errors="replace")
-        return 124, stdout, stderr
+        return 124, _subprocess_text(exc.stdout), _subprocess_text(exc.stderr)
 
 
 def _scorecard_generate_task(task: str, *, out_dir: Path, size: int, seed: int) -> dict[str, Any]:
