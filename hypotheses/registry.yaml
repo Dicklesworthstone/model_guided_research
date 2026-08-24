@@ -1516,3 +1516,140 @@ hypotheses:
     status: blocked
     evidence: []
     verdict_history: []
+
+  - id: hyp-reversible-copyops-inversion
+    statement: >-
+      Reversible-coupling attention matches or exceeds standard attention's held-out length extrapolation on permutation/inversion copy operations (exact match delta >= 0.05 at equal FLOPs): the coupling's built-in inverse gives the residual stream an explicit undo path that fixed-depth baselines lack.
+    mechanisms: [reversible]
+    source:
+      kind: model
+      provenance: "README Expected Performance Characteristics (copyops/reversible inversion prior); nanochat/diagnostics_data.py TaskSpec copyops target_mechanisms"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.copyops.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      validity:
+        baseline_floor: 0.001
+        floor_source: "same split generator as hyp-braid-length-generalization's measured prior (answers near-unique); artifact-recorded answer_prior governs when present"
+      scale_caveats: "conservative vs braid's 0.1 on the same task: RevNet coupling provides an invertibility bias, not explicit permutation algebra"
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-gauge-group-state-tracking
+    statement: >-
+      On S5 word problems (non-solvable, NC1-complete state tracking), orthogonal gauge-block attention decays with held-out word length at no more than half the standard-attention rate at equal FLOPs (slope ratio <= 0.5): Lie-group rotations give a stable coordinate frame for sequential state composition.
+    mechanisms: [gauge]
+    source:
+      kind: model
+      provenance: "nanochat/diagnostics_data.py TaskSpec group target_mechanisms; README gauge stability claims"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.group.length_slope.by_category.s5.slope"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.5
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: "RATIO-SPACE semantics per hyp-rmatrix-s5-length-slope's fresh-eyes fix: slopes are negative (accuracy decays with length), so M/B <= 0.5 reads flatter-or-better; non-negative candidate slope gives ratio <= 0 <= 0.5 and SUPPORTED is correct. Verdict meaningful only if the standard baseline's in-range exact match clears the group answer prior - check by hand until slope-path floors are engine-enforced. No expressivity claim (TC0 bounds apply to both)."
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-ultrametric-realhier-wild
+    statement: >-
+      Ultrametric (LCP-trie) attention beats standard attention by at least 0.03 held-out exact match on real-world hierarchical structure (stdlib AST path retrieval) at equal FLOPs, evidencing that the synthetic-hier advantage transfers to naturally occurring trees.
+    mechanisms: [ultrametric]
+    source:
+      kind: model
+      provenance: "nanochat/diagnostics_data.py TaskSpec realhier target_mechanisms; README ultrametric hierarchical-bias claims"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.realhier.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: "realhier is opt-in (--include-real): byte identity is conditional on the Python version (module source SHA256s recorded in the manifest). Floor: artifact-recorded answer_prior governs (registry floor omitted pending a measured prior)."
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-fractal-realhier-wild
+    statement: >-
+      Fractal (IFS) attention beats standard attention by at least 0.03 held-out exact match on real-world hierarchical structure (stdlib AST path retrieval) at equal FLOPs, testing whether self-similar routing exploits naturally occurring trees.
+    mechanisms: [fractal]
+    source:
+      kind: model
+      provenance: "nanochat/diagnostics_data.py TaskSpec realhier target_mechanisms; README IFS fractal-memory hierarchy claims"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.realhier.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: "realhier is opt-in (--include-real); byte identity conditional on Python version. Floor: artifact-recorded answer_prior governs."
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-ordinal-regime-recovery
+    statement: >-
+      Ordinal well-founded LR scheduling beats flat-LR standard attention by at least 0.03 held-out exact match on regime-shift streams (test doubles the SHIFT count) at equal FLOPs: principled restarts re-anchor the optimizer after each distribution flip.
+    mechanisms: [ordinal]
+    source:
+      kind: model
+      provenance: "nanochat/diagnostics_data.py TaskSpec regime target_mechanisms and hypothesis string; README ordinal restart/anneal claims"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.regime.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: "recovery TIME per shift is the finer D4 signal and is deliberately NOT preregistered here (needs a per-shift loss telemetry schema); this entry pins the coarse EM claim only. Ordinal arm selected via scheduler_type=ordinal; baseline must be scheduler_type=none (engine's ordinal arm-matching handles this)."
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-hoss-regime-curvature
+    statement: >-
+      HOSS (hyperreal second-order optimizer) beats AdamW-trained standard attention by at least 0.03 held-out exact match on regime-shift streams at equal FLOPs: curvature-aware steps adapt faster across distribution flips.
+    mechanisms: [hoss]
+    source:
+      kind: model
+      provenance: "nanochat/diagnostics_data.py TaskSpec regime target_mechanisms; README HOSS ill-conditioned-landscape claims"
+    date_registered: "2026-08-24"
+    prediction:
+      metric_path: "evaltasks:tasks.regime.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 3
+      scale_caveats: "baseline mechanism is standard with default optimizer (AdamW); engine hoss arm-matching selects optimizer_type=hoss runs. Recovery-time refinement deferred to D4 as for the ordinal entry."
+    status: open
+    evidence: []
+    verdict_history: []
+
+  - id: hyp-tropical-robustness-perturbation
+    statement: >-
+      Under the eps-bounded embedding perturbation probe (sup-norm eps at the token-embedding output; apply_embedding_perturbation is the single measurement path), tropical max-plus attention degrades at most HALF as much as standard attention in held-out exact match.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: "README tropical 1-Lipschitz robustness claims; diagnostics_data.py ROBUSTNESS PROBE SPEC (apply_embedding_perturbation SSOT)"
+    date_registered: "2026-08-24"
+    prediction: null
+    operationalization_note: "BLOCKED, registered before any perturbation evidence exists. Measurement SSOT: apply_embedding_perturbation (uniform U(-eps,+eps) per coordinate, post-wte/post-norm/pre-block-0, caller-pinned Generator; eps=0 byte-identical no-op). Operationalization blocked on the 8gk.7 certified-robustness benchmark emitting per-eps exact-match artifacts with meta.checkpoint.model_config for arm matching; then operationalize as evaltasks:tasks.<probe-task>.exact_match.greedy.<split>.mean at a pinned eps grid, comparator <= threshold_kind ratio threshold 0.5, candidate_variant carrying the probe eps. Pure-mode 1-Lipschitz predicts the half-degradation ratio exactly; rational mode (2-Lipschitz) predicts a weaker factor."
+    status: blocked
+    evidence: []
+    verdict_history: []
