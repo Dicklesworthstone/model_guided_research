@@ -230,7 +230,7 @@ def _probe_init_activations(
                 proj_rms[qual] = _rms(t)
         return _hook
 
-    for block in model.transformer.h:
+    for block in model._blocks():
         handles.append(block.register_forward_hook(_mk_block_hook()))
     for qual, module in model.named_modules():
         if isinstance(module, torch.nn.Linear):
@@ -321,7 +321,8 @@ def _run_train_cell(
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         returncode = 124
-        stderr_tail = exc.stderr or ""
+        raw_stderr = exc.stderr or ""
+        stderr_tail = raw_stderr.decode(errors="replace") if isinstance(raw_stderr, bytes) else raw_stderr
     res.duration_s = time.perf_counter() - t0
 
     train_dir = artifacts_dir / "ca_init" / topic / cell_run_id
@@ -467,16 +468,22 @@ def _render_report(run_id: str, args: argparse.Namespace, cells: list[CellResult
     lines.append("## Interpretation\n")
     for cfg in args.configs:
         base = agg.get((cfg, "standard"))
-        if not base or base.get("loss_final") is None:
+        if base is None:
+            continue
+        base_loss_final = base.get("loss_final")
+        if base_loss_final is None:
             continue
         lines.append(f"### {cfg}\n")
         for var in args.variants:
             if var == "standard":
                 continue
             m = agg.get((cfg, var))
-            if not m or m.get("loss_final") is None:
+            if m is None:
                 continue
-            dloss = m["loss_final"] - base["loss_final"]
+            loss_final = m.get("loss_final")
+            if loss_final is None:
+                continue
+            dloss = loss_final - base_loss_final
             verdict = "worse" if dloss > 0.01 else ("better" if dloss < -0.01 else "~tied")
             lines.append(
                 f"- **{var}** vs standard: final-loss Δ = `{dloss:+.4f}` ({verdict}); "
@@ -517,9 +524,11 @@ def _print_table(cells: list[CellResult]) -> None:
                 continue
             style = None
             base = agg.get((cfg, "standard"))
-            if var != "standard" and base and m.get("loss_final") is not None and base.get("loss_final") is not None:
-                style = "green" if m["loss_final"] < base["loss_final"] - 0.01 else (
-                    "red" if m["loss_final"] > base["loss_final"] + 0.01 else "yellow")
+            loss_final = m.get("loss_final")
+            base_loss_final = base.get("loss_final") if base else None
+            if var != "standard" and loss_final is not None and base_loss_final is not None:
+                style = "green" if loss_final < base_loss_final - 0.01 else (
+                    "red" if loss_final > base_loss_final + 0.01 else "yellow")
             table.add_row(
                 cfg, var, f"{m['n_ok']}/{m['n_total']}", f(m["loss_final"]), f(m["loss_drop"]),
                 f(m["grad_norm_mean"]), f(m["act_input_proj_rms"]), f(m["weight_std_mean"]),

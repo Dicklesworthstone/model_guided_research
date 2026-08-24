@@ -63,7 +63,7 @@ def _build_block(attention_type: str, ffn_type: str, n_embd: int, n_head: int, n
     )
     with contextlib.redirect_stdout(io.StringIO()):
         model = GPT(cfg)
-    block = model.transformer.h[0]
+    block = model._blocks()[0]
     cos_sin = (model.cos[:, :seq], model.sin[:, :seq])
     return block, cos_sin
 

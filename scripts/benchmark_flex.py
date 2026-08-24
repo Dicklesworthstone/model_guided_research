@@ -5,6 +5,7 @@ import json
 import shlex
 import sys
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
@@ -159,7 +160,7 @@ def main() -> int:
 
     x = torch.randint(0, cfg_sdpa.vocab_size, (args.batch_size, args.sequence_len), device=device, dtype=torch.long)
 
-    def _bench(model: GPT) -> tuple[float, float, float]:
+    def _bench(model: Callable[[torch.Tensor], torch.Tensor]) -> tuple[float, float, float]:
         if device.type == "cuda":
             torch.cuda.reset_peak_memory_stats()
 

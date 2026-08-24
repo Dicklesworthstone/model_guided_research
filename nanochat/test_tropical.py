@@ -13,6 +13,12 @@ def require(condition, message: str):
         raise AssertionError(message)
 
 
+def _require_jax_array(value: object) -> jax.Array:
+    if not isinstance(value, jax.Array):
+        raise TypeError(f"Expected a JAX array, got {type(value).__name__}")
+    return value
+
+
 def test_tropical_forward():
     print("Testing Tropical Attention Forward Pass...")
 
@@ -32,7 +38,7 @@ def test_tropical_forward():
 
     # Forward
     print("Running forward pass...")
-    logits = model.apply({"params": params}, x, train=False)
+    logits = _require_jax_array(model.apply({"params": params}, x, train=False))
 
     print(f"Logits shape: {logits.shape}")
     require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")
@@ -58,7 +64,7 @@ def test_standard_forward():
     params = variables["params"]
 
     # Forward
-    logits = model.apply({"params": params}, x, train=False)
+    logits = _require_jax_array(model.apply({"params": params}, x, train=False))
 
     print(f"Logits shape: {logits.shape}")
     require(logits.shape == (1, 32, config.vocab_size), "Unexpected logits shape")

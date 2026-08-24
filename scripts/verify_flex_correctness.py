@@ -5,6 +5,7 @@ import json
 import shlex
 import sys
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -114,7 +115,13 @@ def _kv_cache_for(cfg: GPTConfig, *, batch_size: int, total_len: int) -> KVCache
     )
 
 
-def _run_chunk_decode(model: GPT, cfg: GPTConfig, *, prefix: torch.Tensor, chunk: torch.Tensor) -> torch.Tensor:
+def _run_chunk_decode(
+    model: Callable[..., torch.Tensor],
+    cfg: GPTConfig,
+    *,
+    prefix: torch.Tensor,
+    chunk: torch.Tensor,
+) -> torch.Tensor:
     kv_cache = _kv_cache_for(cfg, batch_size=prefix.size(0), total_len=prefix.size(1) + chunk.size(1))
     _ = model(prefix, kv_cache=kv_cache)
     logits = model(chunk, kv_cache=kv_cache)
