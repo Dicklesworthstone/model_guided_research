@@ -3,6 +3,7 @@ Basic tests to ensure all demos run without errors.
 """
 
 import importlib
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -1254,6 +1255,151 @@ async def test_serve_lifespan_publishes_and_clears_one_atomic_state(monkeypatch:
         require(serve._inference_state is loaded_state, "lifespan did not atomically publish the loaded state")
 
     require(serve._inference_state is None, "lifespan did not clear the state during shutdown")
+
+
+def _write_tiny_jax_serving_checkpoint(checkpoint_dir: Path):
+    import jax.numpy as jnp
+
+    from nanochat.common_jax import GPTConfig
+    from nanochat.gpt_jax import GPT
+    from nanochat.jax_checkpoint import write_serving_checkpoint
+    from nanochat.tokenizer import HuggingFaceTokenizer
+
+    tokenizer = HuggingFaceTokenizer.train_from_iterator(
+        ["alpha beta gamma delta epsilon zeta eta theta" for _ in range(8)],
+        vocab_size=272,
+    )
+    config = GPTConfig(
+        sequence_len=8,
+        vocab_size=int(tokenizer.get_vocab_size()) + 3,
+        n_layer=1,
+        n_head=1,
+        n_kv_head=1,
+        n_embd=8,
+    )
+    model = GPT(config)
+    variables = model.init(jax.random.PRNGKey(123), jnp.zeros((1, 1), dtype=jnp.int32), train=False)
+    zero_variables = jax.tree_util.tree_map(jnp.zeros_like, variables)
+    write_serving_checkpoint(
+        checkpoint_dir,
+        step=7,
+        config=config,
+        variables=zero_variables,
+        tokenizer=tokenizer,
+    )
+    return tokenizer, zero_variables
+
+
+def test_serve_checkpoint_backed_generation_streams_sse(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    pytest.importorskip("fastapi")
+    import jax.numpy as jnp
+    from fastapi.testclient import TestClient
+
+    from nanochat import serve
+
+    checkpoint_dir = tmp_path / "jax-serving-checkpoint"
+    tokenizer, _ = _write_tiny_jax_serving_checkpoint(checkpoint_dir)
+    monkeypatch.setenv(serve.CHECKPOINT_ENV, str(checkpoint_dir))
+
+    with TestClient(serve.app) as client:
+        health = client.get("/health")
+        require(health.status_code == 200, health.text)
+        require(health.json()["step"] == 7, "health did not expose the loaded checkpoint step")
+        state = serve._inference_state
+        if state is None:
+            pytest.fail("lifespan did not publish the validated checkpoint")
+        require(
+            all(bool(jnp.all(leaf == 0)) for leaf in jax.tree_util.tree_leaves(state.variables)),
+            "server did not publish the serialized zero-valued variable tree",
+        )
+
+        response = client.post(
+            "/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "hello"}],
+                "temperature": 0,
+                "top_k": 1,
+                "max_tokens": 1,
+            },
+        )
+
+    require(response.status_code == 200, response.text)
+    require(response.headers["content-type"].startswith("text/event-stream"), response.headers["content-type"])
+    events = [line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: ")]
+    require(len(events) == 1, f"expected one SSE token event, got {events}")
+    require(json.loads(events[0]) == {"token": tokenizer.decode([0])}, "endpoint did not use checkpoint-backed logits")
+    require(serve._inference_state is None, "lifespan did not clear checkpoint state after shutdown")
+
+
+@pytest.mark.asyncio
+async def test_serve_rejects_unloaded_state(monkeypatch: pytest.MonkeyPatch):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    monkeypatch.setattr(serve, "_inference_state", None)
+    response = await serve.chat_completions(
+        serve.ChatCompletionRequest(messages=[serve.ChatMessage(role="user", content="hello")], max_tokens=1)
+    )
+    require(response.status_code == 503, "unloaded inference state must return 503")
+    require(json.loads(response.body) == {"error": "Model not loaded"}, "unexpected unloaded-state response")
+
+
+def test_serve_startup_requires_checkpoint(monkeypatch: pytest.MonkeyPatch):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    monkeypatch.delenv(serve.CHECKPOINT_ENV, raising=False)
+    with pytest.raises(serve.JaxCheckpointError, match=serve.CHECKPOINT_ENV):
+        serve.load_model()
+
+
+def test_serve_rejects_tokenizer_vocab_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    checkpoint_dir = tmp_path / "vocab-mismatch"
+    tokenizer, _ = _write_tiny_jax_serving_checkpoint(checkpoint_dir)
+    manifest_path = checkpoint_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["model_config"]["vocab_size"] = int(tokenizer.get_vocab_size()) - 1
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(serve, "_inference_state", None)
+
+    with pytest.raises(serve.JaxCheckpointError, match="vocabulary is incompatible"):
+        serve.load_model(checkpoint_dir)
+    require(serve._inference_state is None, "invalid vocabulary state must not be published")
+
+
+def test_serve_rejects_tokenizer_digest_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    checkpoint_dir = tmp_path / "tokenizer-digest-mismatch"
+    _write_tiny_jax_serving_checkpoint(checkpoint_dir)
+    tokenizer_path = checkpoint_dir / "tokenizer" / "tokenizer.json"
+    tokenizer_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(serve, "_inference_state", None)
+
+    with pytest.raises(serve.JaxCheckpointError, match="tokenizer digest"):
+        serve.load_model(checkpoint_dir)
+    require(serve._inference_state is None, "digest-mismatched state must not be published")
+
+
+def test_serve_rejects_checkpoint_architecture_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    pytest.importorskip("fastapi")
+    from nanochat import serve
+
+    checkpoint_dir = tmp_path / "architecture-mismatch"
+    _write_tiny_jax_serving_checkpoint(checkpoint_dir)
+    manifest_path = checkpoint_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["model_config"]["n_embd"] = 16
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(serve, "_inference_state", None)
+
+    with pytest.raises(serve.JaxCheckpointError, match="shape/dtype mismatch"):
+        serve.load_model(checkpoint_dir)
+    require(serve._inference_state is None, "architecture-mismatched state must not be published")
 
 
 def test_nanochat_synaptic_modules_import():

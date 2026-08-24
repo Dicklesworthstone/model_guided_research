@@ -5,6 +5,8 @@ Training script for JAX/Flax port of nanochat.
 import os
 import sys
 import time
+from pathlib import Path
+from typing import cast
 
 os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
 
@@ -13,13 +15,16 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax.training import train_state
+from flax.typing import VariableDict
 
 # Import local modules
 from nanochat.common_jax import GPTConfig
 from nanochat.dataloader import tokenizing_distributed_data_loader
 from nanochat.gpt_jax import GPT
 from nanochat.hoss_opt import hoss  # Import HOSS optimizer
+from nanochat.jax_checkpoint import write_serving_checkpoint
 from nanochat.muon_jax import muon
+from nanochat.tokenizer import get_tokenizer
 
 # Ensure we can import from nanochat when executed as a script from repo root.
 sys.path.append(os.getcwd())
@@ -121,6 +126,11 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=6e-4, help="Learning rate (delta for HOSS)")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument(
+        "--serving-checkpoint-dir",
+        type=Path,
+        help="Publish a self-contained JAX serving checkpoint after successful training",
+    )
     args = parser.parse_args()
 
     # Config
@@ -233,6 +243,19 @@ def main():
         print(f"Failed to run training loop: {e}")
         print("Note: This is expected if no parquet data is found in ~/.cache/nanochat/base_data")
         print("If you set NANOCHAT_BASE_DIR, check that location instead.")
+        if args.serving_checkpoint_dir is not None:
+            raise RuntimeError("training failed; no JAX serving checkpoint was written") from e
+
+    if args.serving_checkpoint_dir is not None:
+        if step == 0:
+            raise RuntimeError("training completed zero steps; refusing to publish an untrained serving checkpoint")
+        write_serving_checkpoint(
+            args.serving_checkpoint_dir,
+            step=int(state.step),
+            config=config,
+            variables=cast(VariableDict, {"params": state.params}),
+            tokenizer=get_tokenizer(),
+        )
 
 
 if __name__ == "__main__":
