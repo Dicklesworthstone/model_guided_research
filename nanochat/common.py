@@ -12,6 +12,7 @@ import torch.distributed as dist
 from filelock import FileLock
 
 from nanochat.torch_imports import torch
+from utils import console
 
 
 class ColoredFormatter(logging.Formatter):
@@ -89,7 +90,7 @@ def download_file_with_lock(url, filename, postprocess_fn=None):
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             raise ValueError(f"Refusing to download from non-http(s) URL: {url}")
-        print(f"Downloading {url}...")
+        console.print(f"Downloading {url}...", style="cyan", markup=False)
         temp_path = file_path + ".tmp"
         with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310 scheme validated above
             with open(temp_path, "wb") as f:
@@ -99,7 +100,7 @@ def download_file_with_lock(url, filename, postprocess_fn=None):
                         break
                     f.write(chunk)
         os.replace(temp_path, file_path)
-        print(f"Downloaded to {file_path}")
+        console.print(f"Downloaded to {file_path}", style="bold green", markup=False)
 
         # Run the postprocess function if provided
         if postprocess_fn is not None:
@@ -154,7 +155,8 @@ def autodetect_device_type():
         device_type = "mps"
     else:
         device_type = "cpu"
-    print0(f"Autodetected device type: {device_type}")
+    if int(os.environ.get("RANK", 0)) == 0:
+        console.print(f"Autodetected device type: {device_type}", style="cyan", markup=False)
     return device_type
 
 

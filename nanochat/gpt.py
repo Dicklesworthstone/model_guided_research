@@ -38,6 +38,7 @@ from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
 from nanochat.surreal_torch import SurrealCausalSelfAttention
 from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, TropicalMLP
 from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
+from utils import console
 
 try:
     from torch.nn.attention.flex_attention import create_block_mask, flex_attention
@@ -906,7 +907,7 @@ class GPT(nn.Module):
 
     def setup_optimizers(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02, weight_decay=0.0):
         if self.config.optimizer_type == "hoss":
-            print("Using HOSS optimizer")
+            console.print("Using HOSS optimizer", style="bold green")
             return [HOSS([p for p in self.parameters() if p.requires_grad], lr=matrix_lr)]
 
         model_dim = self.config.n_embd
@@ -942,7 +943,11 @@ class GPT(nn.Module):
         # Scale the LR for the AdamW parameters by ∝1/√dmodel (having tuned the LRs for 768 dim model)
         dmodel_lr_scale = (model_dim / 768) ** -0.5
         if rank == 0:
-            print(f"Scaling the LR for the AdamW parameters ∝1/√({model_dim}/768) = {dmodel_lr_scale:.6f}")
+            console.print(
+                f"Scaling the LR for the AdamW parameters ∝1/√({model_dim}/768) = {dmodel_lr_scale:.6f}",
+                style="cyan",
+                markup=False,
+            )
         adam_groups = [
             dict(params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale),
             dict(params=embedding_params, lr=embedding_lr * dmodel_lr_scale),

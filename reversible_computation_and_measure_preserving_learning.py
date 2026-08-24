@@ -942,7 +942,7 @@ def tiny_train_step(m: Model, x: Array, y_target: Array, opt, opt_state, rng: in
 
 def diagnostics_print():
     from config import get_config
-    from utils import conditional_print, print_metrics
+    from utils import console, print_metrics
 
     config = get_config()
     ok, emax, ledger, tape_u32, res_u32 = cycle_test()
@@ -963,11 +963,22 @@ def diagnostics_print():
         }
         print_metrics(bit_metrics, "Bit Operations")
 
-        conditional_print("[bold]Per-block bits:[/bold]", level=2)
-        for i, s in enumerate(ledger["per_block"]):
-            conditional_print(
-                f"  Block {i}: written={s.bits_written}, consumed={s.bits_consumed}, delta={s.delta_bits}", level=2
-            )
+        if config.verbose and config.verbose_level >= 2:
+            from rich.table import Table
+
+            per_block = Table(title="Per-Block Bit Ledger", show_header=True, header_style="bold magenta")
+            per_block.add_column("Block", style="cyan")
+            per_block.add_column("Written", justify="right")
+            per_block.add_column("Consumed", justify="right")
+            per_block.add_column("Delta", justify="right")
+            for i, stats in enumerate(ledger["per_block"]):
+                per_block.add_row(
+                    str(i),
+                    str(stats.bits_written),
+                    str(stats.bits_consumed),
+                    str(stats.delta_bits),
+                )
+            console.print(per_block)
 
         baseline_MB = (8 * 3 * 64 * 16 * 4) / (1024 * 1024)
         ours_MB = (2 * 64 * 16 * 4) / (1024 * 1024)
@@ -1020,10 +1031,26 @@ def demo():
     """Run the reversible computation and measure preserving learning demonstration."""
     global last_diagnostics
     from config import get_config
-    from utils import conditional_print, get_device_info, log_metrics_conditionally, print_metrics
+    from utils import conditional_print, console, get_device_info, log_metrics_conditionally, print_metrics
 
     config = get_config()
     config.setup_jax()
+
+    def report_warning(message: str) -> None:
+        if config.use_rich_output:
+            from rich.markup import escape
+
+            console.print(f"[bold yellow]Warning:[/bold yellow] {escape(message)}")
+        else:
+            print(f"Warning: {message}")
+
+    def report_failure(message: str) -> None:
+        if config.use_rich_output:
+            from rich.markup import escape
+
+            console.print(f"[bold red]Error:[/bold red] {escape(message)}")
+        else:
+            print(f"Error: {message}")
 
     # Pedagogical walkthrough (bead 9f1): MGR_WALKTHROUGH=1 narrates this
     # framework's mathematics before the demo runs. Off by default; the import
@@ -1034,7 +1061,7 @@ def demo():
         if walkthrough_enabled():
             narrate_demo("reversible")
     except Exception as _wt_err:  # never let narration break the demo
-        print(f"[reversible] walkthrough narration skipped: {_wt_err}")
+        report_warning(f"Walkthrough narration skipped: {_wt_err}")
 
     # Default: enable Cayley hybrid + per-layer certificate table for this demo
     import os as _os
@@ -1042,20 +1069,20 @@ def demo():
     try:
         set_reversible_cayley(True)
     except Exception as err:
-        print(f"[reversible] Failed to enable Cayley mix: {err}")
+        report_failure(f"Failed to enable Cayley mix: {err}")
     _os.environ.setdefault("REV_LAYER_CERT", "1")
     # Optional strict Givens-only mixing (exact inverse, det=1)
     if _os.environ.get("REV_GIVENS", "0") == "1":
         try:
             set_reversible_givens_mix(True)
         except Exception as err:
-            print(f"[reversible] Failed to enable Givens mix: {err}")
+            report_failure(f"Failed to enable Givens mix: {err}")
     # Optional generating-function step
     if _os.environ.get("REV_GENERATING", "0") == "1":
         try:
             set_reversible_generating_symplectic(True)
         except Exception as err:
-            print(f"[reversible] Failed to enable generating symplectic: {err}")
+            report_failure(f"Failed to enable generating symplectic step: {err}")
 
     # Print device info if verbose
     if config.verbose_level >= 2:
@@ -1063,19 +1090,22 @@ def demo():
         print_metrics(device_info, "JAX Configuration")
 
     # Preface: mode summary (strict Givens / generating / gen-VJP)
-    try:
-        from rich.console import Console as _Console
+    mode_rows = [
+        ("Strict Givens", "ON" if USE_GIVENS_MIX else "OFF"),
+        ("Generating step", "ON" if USE_GENERATING_SYMPLECTIC else "OFF"),
+        ("Generating-step VJP", "ON" if (os.environ.get("REV_GEN_VJP", "0") == "1") else "OFF"),
+    ]
+    if config.use_rich_output:
         from rich.table import Table as _Table
 
         mode = _Table(title="Reversible Mode Summary", show_header=True, header_style="bold magenta")
-        mode.add_column("option")
-        mode.add_column("value")
-        mode.add_row("strict_givens", "ON" if USE_GIVENS_MIX else "OFF")
-        mode.add_row("generating", "ON" if USE_GENERATING_SYMPLECTIC else "OFF")
-        mode.add_row("gen_vjp", "ON" if (os.environ.get("REV_GEN_VJP", "0") == "1") else "OFF")
-        _Console().print(mode)
-    except Exception as err:
-        print(f"[reversible] Skipping mode summary: {err}")
+        mode.add_column("Option", style="cyan")
+        mode.add_column("Value", justify="center")
+        for option, value in mode_rows:
+            mode.add_row(option, value)
+        console.print(mode)
+    else:
+        print("reversible_modes", {option: value for option, value in mode_rows})
 
     conditional_print("[bold magenta]Reversible Computation & Measure-Preserving Learning Demo[/bold magenta]", level=1)
     diagnostics_print()
@@ -1094,8 +1124,6 @@ def demo():
     x = jax.random.normal(k, (bs, T, d), dtype=jnp.float32)
     idx_tar = jax.random.randint(k, (bs, T), 0, dummy_logits_dim)
     y_tar = jax.nn.one_hot(idx_tar, dummy_logits_dim)
-    from utils import conditional_print
-
     # Initialize optimizer state with full parameter list used by tiny_train_step
     _params = []
     for b in m.blocks:
@@ -1131,11 +1159,7 @@ def demo():
     import os as _os
 
     if _os.environ.get("REV_LAYER_CERT", "0") == "1" and USE_CAYLEY_HYBRID:
-        from rich.table import Table as _Table
-
-        t = _Table(title="Reversible Cayley Layer Checks", show_header=True, header_style="bold magenta")
-        t.add_column("Layer")
-        t.add_column("||Q^T Q − I||_F", justify="right")
+        cayley_rows: list[tuple[str, str]] = []
         # Probe with a small random batch
         probe = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
         for i, _b in enumerate(m.blocks):
@@ -1164,76 +1188,83 @@ def demo():
                 return jnp.linalg.norm(QtQy - y_) / (jnp.linalg.norm(y_) + 1e-12)
 
             err = float(jnp.mean(jax.vmap(err_vec)(yv)))
-            t.add_row(str(i), f"{err:.2e}")
+            cayley_rows.append((str(i), f"{err:.2e}"))
         if config.use_rich_output:
-            from rich.console import Console as _Console
+            from rich.table import Table as _Table
 
-            _Console().print(t)
+            t = _Table(title="Reversible Cayley Layer Checks", show_header=True, header_style="bold magenta")
+            t.add_column("Layer", style="cyan")
+            t.add_column("||Q^T Q − I||_F", justify="right")
+            for layer, error in cayley_rows:
+                t.add_row(layer, error)
+            console.print(t)
+        else:
+            print("reversible_cayley_layer_checks", cayley_rows)
 
-    # Invertibility summary table (orthogonality + symplectic checks)
+    # Invertibility summary (orthogonality + symplectic checks)
+    inv_rows = [("Strict Givens mixing", "ON" if USE_GIVENS_MIX else "OFF")]
+    import numpy as _np
+
+    M = _np.random.randn(d_a, d_a)
+    A = 0.1 * (M - M.T)
+    Q = jnp.linalg.solve(
+        jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32)
+    )
+    inv_rows.append(("||Q^T Q−I||_F", f"{float(jnp.linalg.norm(Q.T @ Q - jnp.eye(d_a))):.2e}"))
+    if USE_SYMPLECTIC_HYBRID:
+        n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
+        if n > 0:
+            Z = jnp.zeros((n, n))
+            eye_n = jnp.eye(n)
+            J = jnp.block([[Z, eye_n], [-eye_n, Z]])
+            Hs = jnp.eye(2 * n) * 0.1
+            S = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
+            inv_rows.append(("||S^T J S−J||_F", f"{float(jnp.linalg.norm(S.T @ J @ S - J)):.2e}"))
+    try:
+        mix_eps = 1e-3
+        cayley_eps = 1e-3
+        det_eps = 1e-3
+        ok_count = 0
+        for b in m.blocks:
+            vx = jax.random.normal(key(321), (4, d), dtype=jnp.float32)
+            mv = givens_mix(vx, b.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, b.coup.mix)
+            mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
+            u2 = jax.random.normal(key(322), (2, d_a), dtype=jnp.float32)
+            u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
+            v = jnp.roll(u, 1, axis=-1)
+            v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
+
+            def _S(xv, u=u, v=v):
+                a = jnp.sum(v * xv, axis=-1, keepdims=True)
+                b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
+                return u * a - v * b_
+
+            yv = jax.random.normal(key(323), (2, d_a), dtype=jnp.float32)
+            cayley_err = float(
+                jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
+            )
+            det_err = 0.0
+            if d <= 128:
+                eye_d = jnp.eye(d, dtype=jnp.float32)
+                Mrows = givens_mix(eye_d, b.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, b.coup.mix)
+                det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
+            ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps)
+            ok_count += int(ok)
+        inv_rows.append(("Layers OK (mix/cayley/det)", f"{ok_count}/{len(m.blocks)}"))
+    except Exception as err:
+        report_failure(f"Layer property summary failed: {err}")
+
     if config.use_rich_output:
         from rich.table import Table as _Table
 
         inv = _Table(title="Invertibility Summary", show_header=True, header_style="bold magenta")
-        inv.add_column("Property")
+        inv.add_column("Property", style="cyan")
         inv.add_column("Value", justify="right")
-        inv.add_row("Strict Givens mixing", "ON" if USE_GIVENS_MIX else "OFF")
-        # Orthogonality proxy from a random skew via Cayley
-        import numpy as _np
-
-        M = _np.random.randn(d_a, d_a)
-        A = 0.1 * (M - M.T)
-        Q = jnp.linalg.solve(
-            jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32)
-        )
-        inv.add_row("||Q^T Q−I||_F", f"{float(jnp.linalg.norm(Q.T @ Q - jnp.eye(d_a))):.2e}")
-        if USE_SYMPLECTIC_HYBRID:
-            n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
-            if n > 0:
-                Z = jnp.zeros((n, n))
-                eye_n = jnp.eye(n)
-                J = jnp.block([[Z, eye_n], [-eye_n, Z]])
-                # Build a sample symplectic map via Cayley
-                Hs = jnp.eye(2 * n) * 0.1
-                S = jnp.linalg.solve(jnp.eye(2 * n) - J @ Hs, jnp.eye(2 * n) + J @ Hs)
-                inv.add_row("||S^T J S−J||_F", f"{float(jnp.linalg.norm(S.T @ J @ S - J)):.2e}")
-        # Compact rollup: layers OK by quick proxies (mix/cayley/det)
-        try:
-            mix_eps = 1e-3
-            cayley_eps = 1e-3
-            det_eps = 1e-3
-            ok_count = 0
-            for b in m.blocks:
-                vx = jax.random.normal(key(321), (4, d), dtype=jnp.float32)
-                mv = givens_mix(vx, b.coup.mix) if USE_GIVENS_MIX else orth_mix(vx, b.coup.mix)
-                mix_err = float(jnp.mean(jnp.abs(jnp.linalg.norm(vx, axis=-1) - jnp.linalg.norm(mv, axis=-1))))
-                u2 = jax.random.normal(key(322), (2, d_a), dtype=jnp.float32)
-                u = u2 / (jnp.linalg.norm(u2, axis=-1, keepdims=True) + 1e-12)
-                v = jnp.roll(u, 1, axis=-1)
-                v = v / (jnp.linalg.norm(v, axis=-1, keepdims=True) + 1e-12)
-
-                def _S(xv, u=u, v=v):
-                    a = jnp.sum(v * xv, axis=-1, keepdims=True)
-                    b_ = jnp.sum(u * xv, axis=-1, keepdims=True)
-                    return u * a - v * b_
-
-                yv = jax.random.normal(key(323), (2, d_a), dtype=jnp.float32)
-                cayley_err = float(
-                    jnp.mean(jnp.linalg.norm((yv + _S(yv)) - yv, axis=-1) / (jnp.linalg.norm(yv, axis=-1) + 1e-12))
-                )
-                det_err = 0.0
-                if d <= 128:
-                    eye_d = jnp.eye(d, dtype=jnp.float32)
-                    Mrows = givens_mix(eye_d, b.coup.mix) if USE_GIVENS_MIX else orth_mix(eye_d, b.coup.mix)
-                    det_err = float(jnp.abs(jnp.linalg.det(Mrows) - 1.0))
-                ok = (mix_err < mix_eps) and (cayley_err < cayley_eps) and (det_err < det_eps)
-                ok_count += int(ok)
-            inv.add_row("Layers OK (mix/cayley/det)", f"{ok_count}/{len(m.blocks)}")
-        except Exception as err:
-            print(f"[reversible] Layer property summary failed: {err}")
-        from rich.console import Console as _Console
-
-        _Console().print(inv)
+        for property_name, value in inv_rows:
+            inv.add_row(property_name, value)
+        console.print(inv)
+    else:
+        print("invertibility_summary", dict(inv_rows))
 
     # Per-layer property checkers table (mix norm proxy, Cayley proxy, symplectic proxy)
     if config.use_rich_output:
@@ -1303,18 +1334,16 @@ def demo():
             tbl.add_row(
                 str(i), f"{mix_err:.2e}", f"{cayley_err:.2e}", f"{symp_err:.2e}", f"{det_err:.2e}", ("✓" if ok else "✗")
             )
-        from rich.console import Console as _Console
-
-        _Console().print(tbl)
+        console.print(tbl)
         try:
             from rich.table import Table as _Table
 
             summ = _Table(title="Property Summary", show_header=False, header_style="bold magenta")
             summ.add_column("k/total")
             summ.add_row(f"{ok_count}/{len(m.blocks)} layers OK")
-            _Console().print(summ)
+            console.print(summ)
         except Exception as err:
-            print(f"[reversible] Skipping property summary: {err}")
+            report_warning(f"Skipping property summary: {err}")
 
         # ASCII sparklines for aggregated trends
         def spark(vals):
@@ -1338,7 +1367,11 @@ def demo():
             _ = model_forward(x, m, BitTape(), Reservoir(555), audit_mode=True)
             tm_by_iter.append((_time.perf_counter() - _t0) * 1000.0)
             mem_by_iter.append(0.0)  # placeholder (rich table above shows mem)
-        print("iters time(ms):", spark(tm_by_iter))
+        trend = _Table(title="Cayley Iteration Trend", show_header=True, header_style="bold magenta")
+        trend.add_column("Iterations", style="cyan")
+        trend.add_column("Time trend", justify="center")
+        trend.add_row("1 → 4", spark(tm_by_iter))
+        console.print(trend)
 
     # Export per-layer property check diagnostics
     try:
@@ -1424,15 +1457,18 @@ def demo():
         try:
             diag_merge["property_ok_spark"] = "".join("█" if r.get("ok", False) else "▁" for r in prop_rows)
         except Exception as err:
-            print(f"[reversible] Failed to build sparkline: {err}")
+            report_warning(f"Failed to build property sparkline: {err}")
         if gen_norms:
             diag_merge["gen_param_norms"] = gen_norms
         if "last_diagnostics" in globals() and isinstance(last_diagnostics, dict):
             last_diagnostics.update(diag_merge)
         else:
             last_diagnostics = diag_merge
+        if not config.use_rich_output:
+            print("per_layer_property_checks", prop_rows)
+            print("property_summary", f"{ok_count_export}/{len(prop_rows)} layers OK")
     except Exception as err:
-        print(f"[reversible] Failed to merge diagnostics: {err}")
+        report_failure(f"Failed to merge diagnostics: {err}")
 
     # Optional Pareto sweep over Cayley iters and depth (compute vs memory)
     if _os.environ.get("REV_PARETO", "0") == "1":
@@ -1471,9 +1507,7 @@ def demo():
                 tm_by_depth.setdefault(iters, []).append(dt)
                 mem_by_depth.setdefault(iters, []).append(peak_mb)
         if config.use_rich_output:
-            from rich.console import Console as _Console
-
-            _Console().print(t)
+            console.print(t)
 
             # ASCII sparklines for trends
             def spark(vals):
@@ -1487,12 +1521,7 @@ def demo():
                 return "".join(bars[i] for i in idxs)
 
             depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
-            print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
-            print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
             iter_for_depth = 2 if 2 in tm_by_depth else sorted(tm_by_depth.keys())[0]
-            print(f"depth→time (iters={iter_for_depth}):", spark(tm_by_depth[iter_for_depth]))
-            print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
-            # Inverse timing sparkline (fixed iters)
             inv_times = []
             set_reversible_cayley_iters(iter_for_depth)
             y_tmp, _ = model_forward(x, m_sweep, BitTape(), Reservoir(321), audit_mode=True)
@@ -1500,25 +1529,26 @@ def demo():
                 t0i = time.perf_counter()
                 _ = model_inverse(y_tmp, m_sweep, BitTape(), Reservoir(321))
                 inv_times.append((time.perf_counter() - t0i) * 1000.0)
-            print("inverse time(ms):", spark(inv_times))
 
-            # ASCII sparklines for trends
-            def spark(vals):
-                bars = "▁▂▃▄▅▆▇█"
-                if not vals:
-                    return ""
-                lo, hi = min(vals), max(vals)
-                if hi - lo < 1e-12:
-                    return bars[0] * len(vals)
-                idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(bars) - 1)) for v in vals]
-                return "".join(bars[i] for i in idxs)
-
-            depth_for_iter = 3 if 3 in tm_by_iter else sorted(tm_by_iter.keys())[0]
-            print(f"iters→time (L={depth_for_iter}):", spark(tm_by_iter[depth_for_iter]))
-            print(f"iters→mem  (L={depth_for_iter}):", spark(mem_by_iter[depth_for_iter]))
-            iter_for_depth = 2 if 2 in tm_by_depth else sorted(tm_by_depth.keys())[0]
-            print(f"depth→time (iters={iter_for_depth}):", spark(tm_by_depth[iter_for_depth]))
-            print(f"depth→mem  (iters={iter_for_depth}):", spark(mem_by_depth[iter_for_depth]))
+            trends = _Table(title="Cayley Pareto Trends", show_header=True, header_style="bold magenta")
+            trends.add_column("Sweep", style="cyan")
+            trends.add_column("Trend", justify="center")
+            trends.add_row(f"Iterations → time (L={depth_for_iter})", spark(tm_by_iter[depth_for_iter]))
+            trends.add_row(f"Iterations → memory (L={depth_for_iter})", spark(mem_by_iter[depth_for_iter]))
+            trends.add_row(f"Depth → time (iterations={iter_for_depth})", spark(tm_by_depth[iter_for_depth]))
+            trends.add_row(f"Depth → memory (iterations={iter_for_depth})", spark(mem_by_depth[iter_for_depth]))
+            trends.add_row("Inverse time", spark(inv_times))
+            console.print(trends)
+        else:
+            print(
+                "cayley_pareto",
+                {
+                    "time_by_iterations": tm_by_iter,
+                    "memory_by_iterations": mem_by_iter,
+                    "time_by_depth": tm_by_depth,
+                    "memory_by_depth": mem_by_depth,
+                },
+            )
         # Exportable diagnostics for CLI
         try:
             last_diagnostics = {
@@ -1530,11 +1560,8 @@ def demo():
                 }
             }
         except Exception as err:
-            print(f"[reversible] Failed to record Pareto diagnostics: {err}")
+            report_failure(f"Failed to record Pareto diagnostics: {err}")
     if config.use_rich_output:
-        from rich.console import Console
-
-        console = Console()
         if final_ok:
             console.print("\n[bold green]✓ Final cycle check: PASSED[/bold green]")
         else:

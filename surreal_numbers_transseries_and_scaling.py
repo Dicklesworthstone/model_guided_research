@@ -66,7 +66,7 @@ def layer_norm(x, eps=1e-5, gamma=None, beta=None):
 
 
 def teacher_make(rng, in_dim, hid_dim, out_dim):
-    k1, k2 = rng.split(2)
+    k1, k2 = jax.random.split(rng, 2)
     W1 = glorot(k1, (in_dim, hid_dim))
     b1 = jnp.zeros((hid_dim,))
     W2 = glorot(k2, (hid_dim, out_dim))
@@ -172,8 +172,8 @@ def nll(params, x, y, width_mask, depth_mask, inv_keep, H):
     return -jnp.mean(z[jnp.arange(z.shape[0]), y])
 
 
-def tree_map(f, tree):
-    return jax.tree_util.tree_map(f, tree)
+def tree_map(f, *trees):
+    return jax.tree_util.tree_map(f, *trees)
 
 
 def tree_add(a, b):
@@ -303,6 +303,12 @@ def stress_test(
 
 
 def main():
+    from rich.table import Table
+
+    from config import get_config
+    from utils import console
+
+    config = get_config()
     seed = 42
     in_dim = 64
     d_model = 192
@@ -325,13 +331,25 @@ def main():
     depth_mask_half = make_depth_mask(H, True)
     get_tr = dataset_iter(Xtr, Ytr, batch_size)
     get_va = dataset_iter(Xva, Yva, batch_size)
+    progress_rows: list[tuple[int, float, float]] = []
     for step in range(steps):
         xb, yb = get_tr(step)
         params, opt, loss = train_step(params, opt, xb, yb, H, width_mask_ones, depth_mask_full, inv1, lr)
         if (step + 1) % 100 == 0:
             vxb, vyb = get_va(step // 100)
             Lva = nll(params, vxb, vyb, width_mask_ones, depth_mask_full, inv1, H)
-            print(f"step {step + 1} train_nll={float(loss):.4f} val_nll={float(Lva):.4f}")
+            if config.use_rich_output:
+                progress_rows.append((step + 1, float(loss), float(Lva)))
+            else:
+                print(f"step {step + 1} train_nll={float(loss):.4f} val_nll={float(Lva):.4f}")
+    if config.use_rich_output:
+        progress_table = Table(title="Transseries Training Progress")
+        progress_table.add_column("Step", style="cyan", justify="right")
+        progress_table.add_column("Train NLL", justify="right")
+        progress_table.add_column("Validation NLL", justify="right")
+        for report_step, train_nll, val_nll in progress_rows:
+            progress_table.add_row(str(report_step), f"{train_nll:.4f}", f"{val_nll:.4f}")
+        console.print(progress_table)
     xb_t, yb_t = get_tr(0)
     xv_t, yv_t = get_va(0)
     TD, TH, TW, Ltr, Lva = compute_T(
@@ -363,14 +381,61 @@ def main():
         depth_mask_half,
         0.02,
     )
-    print("ratios T_D,T_H,T_W =", float(TD), float(TH), float(TW))
-    print("next_move =", move)
-    print(
-        "stress_test_ok =", ok, " batch1=", m1, " batch2=", m2, " ratios1=", TD1, TH1, TW1, " ratios2=", TD2, TH2, TW2
-    )
-    print("E_train=", float(Ltr), " E_val=", float(Lva))
-    if not ok:
-        print("FALSIFIED")
+    if config.use_rich_output:
+        decision_table = Table(title="Dominance Probe Decision")
+        decision_table.add_column("Axis", style="cyan")
+        decision_table.add_column("Damage ratio", justify="right")
+        decision_table.add_column("Selected", justify="center")
+        for axis_key, axis_label, ratio in (
+            ("data", "Data", float(TD)),
+            ("depth", "Depth", float(TH)),
+            ("width", "Width", float(TW)),
+        ):
+            decision_table.add_row(
+                axis_label,
+                f"{ratio:.4f}",
+                "[bold green]yes[/bold green]" if move == axis_key else "",
+            )
+        decision_table.add_row("", "", "")
+        decision_table.add_row("Train error", f"{float(Ltr):.4f}", "")
+        decision_table.add_row("Validation error", f"{float(Lva):.4f}", "")
+        console.print(decision_table)
+
+        stability_table = Table(title="Independent-Batch Stability Check")
+        stability_table.add_column("Batch", style="cyan")
+        stability_table.add_column("Decision")
+        stability_table.add_column("T_D", justify="right")
+        stability_table.add_column("T_H", justify="right")
+        stability_table.add_column("T_W", justify="right")
+        stability_table.add_row("1", m1, f"{TD1:.4f}", f"{TH1:.4f}", f"{TW1:.4f}")
+        stability_table.add_row("2", m2, f"{TD2:.4f}", f"{TH2:.4f}", f"{TW2:.4f}")
+        console.print(stability_table)
+        if ok:
+            console.print("[bold green]Dominance decision reproduced across both batches.[/bold green]")
+        else:
+            console.print("[bold red]FALSIFIED:[/bold red] dominance decision changed across independent batches.")
+    else:
+        print("ratios T_D,T_H,T_W =", float(TD), float(TH), float(TW))
+        print("next_move =", move)
+        print(
+            "stress_test_ok =",
+            ok,
+            " batch1=",
+            m1,
+            " batch2=",
+            m2,
+            " ratios1=",
+            TD1,
+            TH1,
+            TW1,
+            " ratios2=",
+            TD2,
+            TH2,
+            TW2,
+        )
+        print("E_train=", float(Ltr), " E_val=", float(Lva))
+        if not ok:
+            print("FALSIFIED")
 
 
 def demo():

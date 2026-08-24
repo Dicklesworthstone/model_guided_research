@@ -24,6 +24,7 @@ from typing import Any, cast
 import torch.distributed as torch_dist
 
 from nanochat.torch_imports import Tensor, nn, torch
+from utils import console
 
 dist = cast(Any, torch_dist)
 
@@ -416,7 +417,11 @@ class SplitMergeController:
                     self.logger.on_split(layer, parent_idx=int(src), child_idx=int(dst), step=step)
                 except Exception as _e:
                     if self.cfg.verbose:
-                        print(f"[SplitMerge] logger.on_split failed: {_e}")
+                        console.print(
+                            f"SplitMerge logger.on_split failed: {_e}",
+                            style="bold red",
+                            markup=False,
+                        )
             # zero optimizer moments
             if optimizer is not None:
                 changed = [
@@ -437,7 +442,7 @@ class SplitMergeController:
     def _do_merges(self, layer: SynapticMoE, optimizer: torch.optim.Optimizer | None, step: int):
         pairs = self._pick_merge_pairs(layer)
         if self.cfg.verbose and len(pairs) > 0:
-            print(f"[SplitMerge] Merging pairs: {pairs}")
+            console.print(f"SplitMerge merging pairs: {pairs}", style="cyan", markup=False)
         for i, j in pairs:
             # winner = healthier of the two
             health = self._health(layer)
@@ -459,7 +464,11 @@ class SplitMergeController:
                     )
                 except Exception as _e:
                     if self.cfg.verbose:
-                        print(f"[SplitMerge] logger.on_merge failed: {_e}")
+                        console.print(
+                            f"SplitMerge logger.on_merge failed: {_e}",
+                            style="bold red",
+                            markup=False,
+                        )
             # zero optimizer moments for both experts + router rows
             if optimizer is not None:
                 changed = [
@@ -501,7 +510,7 @@ class SplitMergeController:
             return
 
         if self.cfg.verbose:
-            print(f"[SplitMerge] step @ {global_step}")
+            console.print(f"SplitMerge step @ {global_step}", style="dim", markup=False)
 
         # Perform operations layer-by-layer on rank 0
         for layer in self._moe_layers:
@@ -512,7 +521,11 @@ class SplitMergeController:
             if len(sources) > 0 and self.cfg.splits_per_call > 0:
                 slots = self._weakest_slots(layer, min(len(sources), self.cfg.splits_per_call))
                 if self.cfg.verbose:
-                    print(f"[SplitMerge] Splitting {list(zip(sources, slots))}")
+                    console.print(
+                        f"SplitMerge splitting {list(zip(sources, slots))}",
+                        style="cyan",
+                        markup=False,
+                    )
                 self._split_into_slots(layer, sources, slots, optimizer, global_step)
 
         # Broadcast updated params to all ranks (DDP)

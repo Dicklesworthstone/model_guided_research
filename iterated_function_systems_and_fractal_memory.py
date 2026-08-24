@@ -39,10 +39,23 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array, jit, lax, random, vmap
 from jax import tree_util as _tree
+from rich import box
+from rich.table import Table
+
+from config import get_config
+from utils import console
 
 # ------------------------------
 # Utility functions
 # ------------------------------
+
+
+def _print_styled(message: str, *, style: str | None = None) -> None:
+    """Use the shared Rich console unless the caller selected plain output."""
+    if get_config().use_rich_output:
+        console.print(message, style=style, markup=False)
+    else:
+        print(message)
 
 
 def _is_power_of_two(x: int) -> bool:
@@ -177,7 +190,7 @@ class FractalKV:
                 lambda _, c: FractalKVState(*c),
             )
         except Exception as err:
-            print(f"[fractal-kv] PyTree registration skipped: {err}")
+            _print_styled(f"[fractal-kv] PyTree registration skipped: {err}", style="bold yellow")
 
         # JIT‑compiled kernels (no static args; keep pure for tracing)
         self._jit_compute_c = jit(self._compute_c_batch)
@@ -451,7 +464,7 @@ try:
         lambda _, xs: RouterOptState(t=xs[0], mW=xs[1], vW=xs[2], mb=xs[3], vb=xs[4]),
     )
 except Exception as err:
-    print(f"[fractal-kv] Router PyTree registration skipped: {err}")
+    _print_styled(f"[fractal-kv] Router PyTree registration skipped: {err}", style="bold yellow")
 
 
 class LearnedRouter:
@@ -575,7 +588,7 @@ class LearnedRouter:
                 )
                 losses.append(float(loss_val))
             if verbose and (ep % max(1, epochs // 10) == 0 or ep == 1):
-                print(f"[Router] epoch {ep}/{epochs}  loss={np.mean(losses):.4f}")
+                _print_styled(f"[Router] epoch {ep}/{epochs}  loss={np.mean(losses):.4f}", style="cyan")
 
     def predict(self, q: Array) -> Array:
         return self._jit_predict_path(self.params, q)  # type: ignore[no-any-return]
@@ -665,7 +678,23 @@ def catastrophic_forgetting_benchmark(
     bs = N // batches
     seen_mask = np.zeros(N, dtype=bool)
 
-    print("\n=== Sequential write/read benchmark ===")
+    rich_output = get_config().use_rich_output
+    results_table = Table(
+        title="Sequential write/read benchmark",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    results_table.add_column("Batch", justify="right", style="cyan")
+    results_table.add_column("Fractal MSE", justify="right")
+    results_table.add_column("Baseline MSE", justify="right")
+    results_table.add_column("Δ (baseline − fractal)", justify="right")
+    results_table.add_column("Utilization", justify="right")
+    results_table.add_column("Collision rate", justify="right")
+    results_table.add_column("Separation margin", justify="right")
+    if not rich_output:
+        print("\n=== Sequential write/read benchmark ===")
+
     for b in range(1, batches + 1):
         start, end = (b - 1) * bs, b * bs
         seen_mask[start:end] = True
@@ -692,30 +721,56 @@ def catastrophic_forgetting_benchmark(
         # Diagnostics
         diag = store.diagnostics()
 
-        print(
-            f"Batch {b}/{batches}: "
-            f"Fractal MSE={fr_mse:.4f}, Baseline MSE={base_mse:.4f}, "
-            f"Δ={base_mse - fr_mse:+.4f} (positive means store better), "
-            f"Util={diag['utilization']:.4f}, CollRate={diag['collision_rate']:.4f}, "
-            f"SepMargin={diag['separation_margin']:.3f}"
-        )
+        delta = base_mse - fr_mse
+        if rich_output:
+            results_table.add_row(
+                f"{b}/{batches}",
+                f"{fr_mse:.4f}",
+                f"{base_mse:.4f}",
+                f"{delta:+.4f}",
+                f"{diag['utilization']:.4f}",
+                f"{diag['collision_rate']:.4f}",
+                f"{diag['separation_margin']:.3f}",
+            )
+        else:
+            print(
+                f"Batch {b}/{batches}: "
+                f"Fractal MSE={fr_mse:.4f}, Baseline MSE={base_mse:.4f}, "
+                f"Δ={delta:+.4f} (positive means store better), "
+                f"Util={diag['utilization']:.4f}, CollRate={diag['collision_rate']:.4f}, "
+                f"SepMargin={diag['separation_margin']:.3f}"
+            )
+
+    if rich_output:
+        console.print(results_table)
 
     # Re-indexing demo if fragmentation threshold exceeded (example condition)
     diag = store.diagnostics()
     if diag["collision_rate"] >= 0.20 or diag["separation_margin"] <= 0.02:
-        print("\n[Reindex] Triggered (collision rate or margin threshold). Expanding depth by +1.")
+        _print_styled(
+            "Reindex triggered by collision-rate or separation-margin threshold; expanding depth by +1.",
+            style="bold yellow",
+        )
         store = store.reindex_increase_depth()
         diag2 = store.diagnostics()
-        print(
-            f"[Reindex] New depth k={store.cfg.k}, new capacity={store.cfg.capacity}, "
-            f"separation margin={diag2['separation_margin']:.3f}"
-        )
+        if rich_output:
+            reindex_table = Table(title="Reindex result", box=box.ROUNDED)
+            reindex_table.add_column("Metric", style="cyan")
+            reindex_table.add_column("Value", justify="right")
+            reindex_table.add_row("Depth", str(store.cfg.k))
+            reindex_table.add_row("Capacity", f"{store.cfg.capacity:,}")
+            reindex_table.add_row("Separation margin", f"{diag2['separation_margin']:.3f}")
+            console.print(reindex_table)
+        else:
+            print(
+                f"[Reindex] New depth k={store.cfg.k}, new capacity={store.cfg.capacity}, "
+                f"separation margin={diag2['separation_margin']:.3f}"
+            )
 
     # --- Optional: Router distillation from hashed routes ---
     import os as _os
 
     if _os.environ.get("IFS_DISTILL", "0") == "1":
-        print("\n=== Router distillation from hashed routes ===")
         hashed = _hashed_paths_for_vectors(Q, m, k)
         # Train a fresh router on hashed targets
         router2 = LearnedRouter(rng_jax, d_key=d_key, m=m, k=k, dtype=jnp.float32)
@@ -736,16 +791,28 @@ def catastrophic_forgetting_benchmark(
         vhat_r, present_r = store_r.read(P_r)
         mse_r = float(mse(vhat_r, V))
 
-        from rich.table import Table as _Table
-
-        t = _Table(title="Distillation: Hashed vs Learned Router", show_header=True, header_style="bold magenta")
-        t.add_column("Metric")
-        t.add_column("Hashed", justify="right")
-        t.add_column("Learned", justify="right")
-        t.add_row("Utilization", f"{diag_h['utilization']:.3f}", f"{diag_r['utilization']:.3f}")
-        t.add_row("CollisionRate", f"{diag_h['collision_rate']:.3f}", f"{diag_r['collision_rate']:.3f}")
-        t.add_row("Readback MSE", f"{mse_h:.4f}", f"{mse_r:.4f}")
-        print(t)
+        distillation_rows = (
+            ("Utilization", f"{diag_h['utilization']:.3f}", f"{diag_r['utilization']:.3f}"),
+            ("Collision rate", f"{diag_h['collision_rate']:.3f}", f"{diag_r['collision_rate']:.3f}"),
+            ("Readback MSE", f"{mse_h:.4f}", f"{mse_r:.4f}"),
+        )
+        if rich_output:
+            distillation_table = Table(
+                title="Distillation: Hashed vs Learned Router",
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold magenta",
+            )
+            distillation_table.add_column("Metric", style="cyan")
+            distillation_table.add_column("Hashed", justify="right")
+            distillation_table.add_column("Learned", justify="right")
+            for row in distillation_rows:
+                distillation_table.add_row(*row)
+            console.print(distillation_table)
+        else:
+            print("\n=== Router distillation from hashed routes ===")
+            for metric, hashed_value, learned_value in distillation_rows:
+                print(f"{metric}: hashed={hashed_value}, learned={learned_value}")
 
 
 # ------------------------------
@@ -771,7 +838,7 @@ def _sanity_small():
     d = store.diagnostics()
     if not (0.0 <= d["collision_rate"] <= 1.0):
         raise RuntimeError("Collision rate out of bounds")
-    print("[Sanity] Exact write/read OK, MSE ~", err)
+    _print_styled(f"[Sanity] Exact write/read OK, MSE ~ {err}", style="bold green")
 
 
 # ------------------------------

@@ -94,7 +94,7 @@ def right_mat4(q):
     return jnp.stack(
         [
             jnp.stack([a, -b, -c, -d], -1),
-            jnp.stack([b, a, c, -d], -1),
+            jnp.stack([b, a, d, -c], -1),
             jnp.stack([c, -d, a, b], -1),
             jnp.stack([d, c, -b, a], -1),
         ],
@@ -125,20 +125,10 @@ def left_2x2(q, x):
 def right_2x2(x, q):
     a, b, c, d = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
     w, x1, y, z = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
-    A00, A01, A10, A11 = a, -b, b, a
-    C00, C01, C10, C11 = c, -d, d, c
-    t0 = A00 * w + A01 * x1
-    t1 = A10 * w + A11 * x1
-    t2 = C00 * y + C01 * z
-    t3 = C10 * y + C11 * z
-    o0 = t0 - t2
-    o1 = t1 - t3
-    s0 = C00 * w + C01 * x1
-    s1 = C10 * w + C11 * x1
-    u0 = A00 * y + A01 * z
-    u1 = A10 * y + A11 * z
-    o2 = s0 + u0
-    o3 = s1 + u1
+    o0 = w * a - x1 * b - y * c - z * d
+    o1 = w * b + x1 * a + y * d - z * c
+    o2 = w * c - x1 * d + y * a + z * b
+    o3 = w * d + x1 * c - y * b + z * a
     return jnp.stack([o0, o1, o2, o3], -1)
 
 
@@ -260,8 +250,9 @@ def mha_apply(x, params):
     v = apply_head_map(xh, params["wLv"], params["wRv"], params["aLv"], params["aRv"])
     qn = qnormalize(q)
     kn = qnormalize(k)
-    qk = qmul(qn, qconj(kn[:, None, ...]))
-    s = jnp.sum(jnp.real(qk[..., :1]) * params["alpha"][None, None, :, :, None], axis=-2)[..., 0]
+    qk = qmul(qn[:, :, None, ...], qconj(kn[:, None, ...]))
+    alpha = params["alpha"][None, None, None, :, :, None]
+    s = jnp.sum(jnp.real(qk[..., :1]) * alpha, axis=-2)[..., 0]
     s = s / jnp.sqrt(C)
     s = s / params["temp"]
     w = jax.nn.softmax(s, axis=2)
@@ -422,12 +413,56 @@ def mha_invariants_check():
 
 def demo():
     """Run the octonionic quaternionic signal flow demonstration."""
-    print("invariants_rotor_gate:", invariants_test())
-    print("associativity:", associativity_test())
-    print("block_equivalence:", block_equiv_test())
-    print("mha_norm_check:", mha_invariants_check())
-    print("tiny_seq_demo_norms:", tiny_seq_demo())
-    print("long_range_experiment:", long_range_experiment())
+    from rich.table import Table
+
+    from config import get_config
+    from utils import console
+
+    rotor_norm_error = invariants_test()
+    associativity_error = associativity_test()
+    left_block_error, right_block_error = block_equiv_test()
+    mha_norm_error = mha_invariants_check()
+    sequence_output_norm, sequence_input_norm = tiny_seq_demo()
+    long_range = long_range_experiment()
+
+    if get_config().use_rich_output:
+        checks = Table(title="Quaternion Algebra and Sequence Checks")
+        checks.add_column("Check", style="cyan")
+        checks.add_column("Value", justify="right")
+        checks.add_row("Rotor-gate max norm error", f"{rotor_norm_error:.3e}")
+        checks.add_row("Associativity max error", f"{associativity_error:.3e}")
+        checks.add_row("Left 2×2 block equivalence", f"{left_block_error:.3e}")
+        checks.add_row("Right 2×2 block equivalence", f"{right_block_error:.3e}")
+        checks.add_row("MHA mean norm error", f"{mha_norm_error:.3e}")
+        checks.add_row("Tiny sequence output norm", f"{sequence_output_norm:.4f}")
+        checks.add_row("Tiny sequence input norm", f"{sequence_input_norm:.4f}")
+        console.print(checks)
+
+        composition = Table(title="Long-Range Composition")
+        composition.add_column("Model", style="cyan")
+        composition.add_column("Angular error", justify="right")
+        composition.add_column("Norm drift", justify="right")
+        composition.add_column("Parameters", justify="right")
+        composition.add_row(
+            "Rotor gate",
+            f"{long_range['angle_err_rotorgate']:.4f}",
+            f"{long_range['norm_drift_rotorgate']:.3e}",
+            str(long_range["params_rotorgate"]),
+        )
+        composition.add_row(
+            "Dense",
+            f"{long_range['angle_err_dense']:.4f}",
+            f"{long_range['norm_drift_dense']:.3e}",
+            str(long_range["params_dense"]),
+        )
+        console.print(composition)
+    else:
+        print("invariants_rotor_gate:", rotor_norm_error)
+        print("associativity:", associativity_error)
+        print("block_equivalence:", (left_block_error, right_block_error))
+        print("mha_norm_check:", mha_norm_error)
+        print("tiny_seq_demo_norms:", (sequence_output_norm, sequence_input_norm))
+        print("long_range_experiment:", long_range)
 
 
 # --- Minimal 8D octonion operations for tests ---

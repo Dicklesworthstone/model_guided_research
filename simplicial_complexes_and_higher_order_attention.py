@@ -11,7 +11,6 @@ L\_bdry = Σ\_k || D\_k h\_k − h\_{k−1} ||² + Σ\_k || D\_{k+1}^T h\_k − 
 
 # Docs: markdown_documentation/simplicial_complexes_and_higher_order_attention.md
 
-from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -338,10 +337,10 @@ def model_loss_single(params, complex_, L, xK, y, r, lam_bdry):
 
 
 def model_loss_batch(params, complex_, L, X, Y, r, lam_bdry):
-    f = partial(model_loss_single, complex_=complex_, L=L, r=r, lam_bdry=lam_bdry)
-    (losses, (logits, bds, masses)) = jax.vmap(f, in_axes=(None, None, None, 0, 0, None, None))(
-        params, complex_, L, X, Y, r, lam_bdry
-    )
+    def f(candidate_params, xK, y):
+        return model_loss_single(candidate_params, complex_, L, xK, y, r, lam_bdry)
+
+    losses, (logits, bds, masses) = jax.vmap(f, in_axes=(None, 0, 0))(params, X, Y)
     return jnp.mean(losses), {"logits": logits, "bd": bds, "mass": masses}
 
 
@@ -349,7 +348,6 @@ def sgd_update(params, grads, lr):
     return jax.tree_util.tree_map(lambda p, g: p - lr * g, params, grads)
 
 
-@jax.jit
 def train_step(params, complex_, L, X, Y, r, lam_bdry, lr):
     def loss_fn(p):
         loss_val, aux = model_loss_batch(p, complex_, L, X, Y, r, lam_bdry)
@@ -363,6 +361,21 @@ def train_step(params, complex_, L, X, Y, r, lam_bdry, lr):
     bd = jnp.mean(aux["bd"])
     mass = jnp.mean(aux["mass"])
     return new_params, loss_value, acc, bd, mass
+
+
+def make_train_step(complex_, L, r, lam_bdry, lr):
+    """Compile a train step with topology and scalar hyperparameters closed over.
+
+    The complex contains sparse arrays plus Python topology metadata. Capturing
+    it in the compiled closure keeps ``K`` concrete for the incidence loops
+    without trying to hash the full complex as a static JAX argument.
+    """
+
+    @jax.jit
+    def compiled(params, X, Y):
+        return train_step(params, complex_, L, X, Y, r, lam_bdry, lr)
+
+    return compiled
 
 
 def generate_dataset(key, complex_, num, r=None, unbalanced=False):
@@ -473,6 +486,9 @@ def demo_signed_attention(seed: int = 0):
     import numpy as _np
     from rich.table import Table as _Table
 
+    from config import get_config
+    from utils import console
+
     rng = _np.random.default_rng(seed)
     n = 10
     # Build a directed ring with orientations
@@ -505,12 +521,23 @@ def demo_signed_attention(seed: int = 0):
     t.add_column("Accuracy", justify="right")
     t.add_row("Unsigned", f"{acc_u:.2f}")
     t.add_row("Signed", f"{acc_s:.2f}")
-    print(t)
+    if get_config().use_rich_output:
+        console.print(t)
+    else:
+        print(f"Unsigned accuracy: {acc_u:.2f}")
+        print(f"Signed accuracy: {acc_s:.2f}")
 
 
 def main():
     from config import get_config
-    from utils import check_nan_inf, conditional_print, log_metrics_conditionally, print_model_summary, save_checkpoint
+    from utils import (
+        check_nan_inf,
+        conditional_print,
+        log_metrics_conditionally,
+        print_metrics,
+        print_model_summary,
+        save_checkpoint,
+    )
 
     config = get_config()
 
@@ -536,6 +563,7 @@ def main():
     lr = config.default_learning_rate if hasattr(config, "default_learning_rate") else 1e-2
     lam_bdry = 1e-4
     batch_size = config.default_batch_size if hasattr(config, "default_batch_size") else 64
+    compiled_train_step = make_train_step(complex_, L, r, lam_bdry, lr)
 
     def batches(X, Y, bs):
         n = X.shape[0]
@@ -557,7 +585,7 @@ def main():
             if config.check_numerics:
                 check_nan_inf(Xb, f"input batch {batch_idx}")
 
-            params, loss, acc, bd, mass = train_step(params, complex_, L, Xb, Yb, r, lam_bdry, lr)
+            params, loss, acc, bd, mass = compiled_train_step(params, Xb, Yb)
             losses.append(loss)
             accs.append(acc)
 
@@ -580,9 +608,31 @@ def main():
         return loss_val, acc
 
     test_loss, test_acc = eval_batch(X_test, Y_test)
-    print(f"test_loss {float(test_loss):.4f} | test_acc {float(test_acc):.3f}")
     s = sanity_suite(params, complex_, d=d)
-    print("sanity:", s)
+    if config.use_rich_output:
+        print_metrics(
+            {
+                "Test loss": float(test_loss),
+                "Test accuracy": float(test_acc),
+            },
+            "Simplicial Mixer Evaluation",
+        )
+        print_metrics(
+            {
+                "Initial mass": s["mass0"],
+                "Mass after down-step": s["mass1"],
+                "Mass after up-step": s["mass2"],
+                "Down-step mass error": s["mass_conservation_down"],
+                "Up-step mass error": s["mass_conservation_up"],
+                "Homology residuals": s["homology_norms"],
+                "Boundary loss before": s["boundary_loss_before"],
+                "Boundary loss after": s["boundary_loss_after"],
+            },
+            "Simplicial Conservation Checks",
+        )
+    else:
+        print(f"test_loss {float(test_loss):.4f} | test_acc {float(test_acc):.3f}")
+        print("sanity:", s)
 
 
 def demo():

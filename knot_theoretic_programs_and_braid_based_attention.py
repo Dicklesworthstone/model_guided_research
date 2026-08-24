@@ -45,9 +45,9 @@ Implementation:
 # - Set BRAID_CROSSING_LAW=ybe to use crossing_update_ybe, which *does* satisfy YBE.
 
 # braid_attention_jax.py
+import argparse
 import math
 import os
-import sys
 import time
 from dataclasses import dataclass
 
@@ -464,7 +464,15 @@ def plot_braid(sample, perm, k):
     try:
         import matplotlib.pyplot as plt
     except Exception:
-        print("matplotlib unavailable; skipping plot")
+        from config import get_config
+
+        message = "matplotlib unavailable; skipping braid plot"
+        if get_config().use_rich_output:
+            from utils import console
+
+            console.print(f"[bold yellow]Warning:[/bold yellow] {message}")
+        else:
+            print(f"Warning: {message}")
         return
     L = sample.shape[0]
     xs = [[] for _ in range(L)]
@@ -502,27 +510,13 @@ def plot_braid(sample, perm, k):
 
 
 # ---------- CLI ----------
-def main():
-    seed = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    steps = int(sys.argv[2]) if len(sys.argv) > 2 else 250
-    crossing_law = os.environ.get("BRAID_CROSSING_LAW", "restricted")
-    if len(sys.argv) > 3:
-        crossing_law = sys.argv[3]
-    res = run_experiment(seed=seed, steps=steps, crossing_law=crossing_law)
+def main(seed: int = 0, steps: int = 250, crossing_law: str | None = None):
+    from config import get_config
+
+    config = get_config()
+    resolved_crossing_law = crossing_law or os.environ.get("BRAID_CROSSING_LAW", "restricted")
+    res = run_experiment(seed=seed, steps=steps, crossing_law=resolved_crossing_law)
     p = res["params"]
-    print("crossing_law:", res.get("crossing_law"))
-    print("params:", {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in p.__dict__.items()})
-    print("train_time_s:", round(res["train_time_s"], 3))
-    print("train_acc:", res["train_acc"], "test_acc:", res["test_acc"])
-    print(
-        "baseline_depth:",
-        res["baseline_depth"],
-        "baseline_train_acc:",
-        res["baseline_train_acc"],
-        "baseline_test_acc:",
-        res["baseline_test_acc"],
-    )
-    print("max_decode_diff(train,test):", res["train_max_decode_diff"], res["test_max_decode_diff"])
     tags_te, vals_te, aidx_te, mask_te, perm_te, chosen_te, k_te, pred_te, gt_te = res["artifacts"]["test"]
     i = 0
     B, L = tags_te.shape
@@ -531,19 +525,100 @@ def main():
     word = BraidWord(n=L, k=k_i)
     ok_allowed = word.verify_allowed()
     ok_normal = word.normalize_local().k == word.k
-    print("verify_allowed_only_sigma1:", bool(ok_allowed), "normalize_idempotent:", bool(ok_normal))
+    params_display = {
+        name: value.tolist() if hasattr(value, "tolist") else value for name, value in p.__dict__.items()
+    }
+
+    if config.use_rich_output:
+        from rich import box
+        from rich.table import Table
+
+        from utils import console
+
+        run_table = Table(title="Braid Attention Run", box=box.ROUNDED, header_style="bold magenta")
+        run_table.add_column("Setting", style="cyan", no_wrap=True)
+        run_table.add_column("Value", overflow="fold")
+        run_table.add_row("Crossing law", str(res.get("crossing_law")))
+        run_table.add_row("Training time", f"{res['train_time_s']:.3f} s")
+        run_table.add_row("Weight vector (w)", str(params_display["w"]))
+        run_table.add_row("Bias (b)", str(params_display["b"]))
+        run_table.add_row("Threshold (tau)", str(params_display["tau"]))
+        console.print(run_table)
+
+        accuracy_table = Table(
+            title="Observed Exact-Match Accuracy",
+            box=box.ROUNDED,
+            header_style="bold magenta",
+        )
+        accuracy_table.add_column("Decoder", style="cyan")
+        accuracy_table.add_column("Train", justify="right")
+        accuracy_table.add_column("Test", justify="right")
+        accuracy_table.add_row("Braid attention", f"{res['train_acc']:.4f}", f"{res['test_acc']:.4f}")
+        accuracy_table.add_row(
+            f"Fixed-depth baseline (depth {res['baseline_depth']})",
+            f"{res['baseline_train_acc']:.4f}",
+            f"{res['baseline_test_acc']:.4f}",
+        )
+        console.print(accuracy_table)
+
+        verification_table = Table(title="Program Verification", box=box.ROUNDED, header_style="bold magenta")
+        verification_table.add_column("Check", style="cyan")
+        verification_table.add_column("Status", justify="center")
+        verification_table.add_column("Observed value", justify="right")
+        verification_table.add_row(
+            "Allowed word uses only σ₁",
+            "[bold green]PASS[/bold green]" if ok_allowed else "[bold red]FAIL[/bold red]",
+            str(bool(ok_allowed)),
+        )
+        verification_table.add_row(
+            "Local normalization is idempotent",
+            "[bold green]PASS[/bold green]" if ok_normal else "[bold red]FAIL[/bold red]",
+            str(bool(ok_normal)),
+        )
+        verification_table.add_row(
+            "Maximum decode difference (train)",
+            "[dim]reported[/dim]",
+            f"{res['train_max_decode_diff']:.3e}",
+        )
+        verification_table.add_row(
+            "Maximum decode difference (test)",
+            "[dim]reported[/dim]",
+            f"{res['test_max_decode_diff']:.3e}",
+        )
+        console.print(verification_table)
+    else:
+        print("crossing_law:", res.get("crossing_law"))
+        print("params:", params_display)
+        print("train_time_s:", round(res["train_time_s"], 3))
+        print("train_acc:", res["train_acc"], "test_acc:", res["test_acc"])
+        print(
+            "baseline_depth:",
+            res["baseline_depth"],
+            "baseline_train_acc:",
+            res["baseline_train_acc"],
+            "baseline_test_acc:",
+            res["baseline_test_acc"],
+        )
+        print("max_decode_diff(train,test):", res["train_max_decode_diff"], res["test_max_decode_diff"])
+        print("verify_allowed_only_sigma1:", bool(ok_allowed), "normalize_idempotent:", bool(ok_normal))
     # Optional one-figure sanity check
     # Reindex strand labels by permutation for plotting shape only
     plot_braid(jnp.arange(L), perm_i, k_i)
+    return res
 
 
-def demo():
+def demo(seed: int = 0, steps: int = 250, crossing_law: str | None = None):
     """Run the knot theoretic programs and braid based attention demonstration."""
-    main()
+    return main(seed=seed, steps=steps, crossing_law=crossing_law)
 
 
 if __name__ == "__main__":
-    demo()
+    parser = argparse.ArgumentParser(description="Run the braid-attention JAX demo.")
+    parser.add_argument("seed", nargs="?", type=int, default=0)
+    parser.add_argument("steps", nargs="?", type=int, default=250)
+    parser.add_argument("crossing_law", nargs="?", default=None)
+    direct_args = parser.parse_args()
+    demo(seed=direct_args.seed, steps=direct_args.steps, crossing_law=direct_args.crossing_law)
 
 
 # (adapter defined above)

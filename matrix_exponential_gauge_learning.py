@@ -36,7 +36,7 @@ import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import jax
 import jax.numpy as jnp
@@ -45,10 +45,44 @@ import numpy as np
 import optax
 from flax import linen as nn
 from jax import Array, lax
+from rich import box
+from rich.table import Table
+
+from config import get_config
+from utils import console
 
 # ---------------------------
 # Utilities: pairs & rotations
 # ---------------------------
+
+
+def _print_styled(message: str, *, style: str | None = None) -> None:
+    """Use the shared Rich console unless plain output was requested."""
+    if get_config().use_rich_output:
+        console.print(message, style=style, markup=False)
+    else:
+        print(message)
+
+
+def _print_table(
+    title: str,
+    columns: Sequence[tuple[str, Literal["default", "left", "center", "right", "full"]]],
+    rows: Sequence[Sequence[str]],
+) -> None:
+    """Render a result table with a compact plain-text fallback."""
+    if get_config().use_rich_output:
+        table = Table(title=title, box=box.ROUNDED, show_header=True, header_style="bold magenta")
+        for heading, justify in columns:
+            table.add_column(heading, justify=justify)
+        for row in rows:
+            table.add_row(*row)
+        console.print(table)
+        return
+
+    print(f"\n=== {title} ===")
+    print(" | ".join(heading for heading, _ in columns))
+    for row in rows:
+        print(" | ".join(row))
 
 
 def even_odd_pairs(dh: int) -> jnp.ndarray:
@@ -871,24 +905,38 @@ def demo():
     variables = model.init(key, x, train=False, return_debug=True)
     y, dbg = model.apply(variables, x, train=False, return_debug=True)
 
-    print("Forward OK:", y.shape)
-    print("Offsets:", dbg[0]["offsets"].tolist())
-    print("Uniformization maximum K (first block):", int(jnp.max(dbg[0]["uniformization_K"])))
-    print("Q bands shape (first block):", dbg[0]["Q_bands"].shape)
-    print("Curvature-proxy shape (first block):", dbg[0]["curvature_proxy"].shape)
+    forward_rows = [
+        ("Output shape", str(y.shape)),
+        ("Offsets", str(dbg[0]["offsets"].tolist())),
+        ("Uniformization maximum K (block 0)", str(int(jnp.max(dbg[0]["uniformization_K"])))),
+        ("Q bands shape (block 0)", str(dbg[0]["Q_bands"].shape)),
+        ("Curvature-proxy shape (block 0)", str(dbg[0]["curvature_proxy"].shape)),
+        ("Structured blocks", "ON" if cfg.use_structured_blocks else "OFF"),
+    ]
     if cfg.use_structured_blocks:
-        print("Structured blocks: ON; commutator norms (first block):", dbg[0].get("comm_norms", {}))
+        forward_rows.append(("Commutator norms (block 0)", str(dbg[0].get("comm_norms", {}))))
+    _print_table("Gauge Transformer forward pass", (("Metric", "left"), ("Value", "right")), forward_rows)
 
     # Per-block uniformization stats
     Ks = [jnp.mean(bdbg["uniformization_K"]).item() for bdbg in dbg]
     Kmaxs = [int(jnp.max(bdbg["uniformization_K"])) for bdbg in dbg]
-    print("Uniformization K mean per block:", [float(f"{k:.2f}") for k in Ks])
-    print("Uniformization K max per block:", Kmaxs)
+    _print_table(
+        "Uniformization depth by block",
+        (("Block", "right"), ("Mean K", "right"), ("Maximum K", "right")),
+        [
+            (str(block), f"{mean_k:.2f}", str(max_k))
+            for block, (mean_k, max_k) in enumerate(zip(Ks, Kmaxs, strict=True))
+        ],
+    )
     # Per-head K stats for first block (mean, max) per head
     K_bh = dbg[0]["uniformization_K"]  # (B,H)
     if K_bh.ndim == 2:
         K_head_stats = [(float(jnp.mean(K_bh[:, h])), int(jnp.max(K_bh[:, h]))) for h in range(K_bh.shape[1])]
-        print("Uniformization K per head (mean,max) [block0]:", K_head_stats)
+        _print_table(
+            "Uniformization depth by head (block 0)",
+            (("Head", "right"), ("Mean K", "right"), ("Maximum K", "right")),
+            [(str(head), f"{mean_k:.2f}", str(max_k)) for head, (mean_k, max_k) in enumerate(K_head_stats)],
+        )
 
     # If sampling mode is enabled, estimate smoothness via repeated samples
     reps = int(os.environ.get("GAUGE_UNIF_REPS", "1"))
@@ -901,7 +949,11 @@ def demo():
         del os.environ["GAUGE_UNIF_REP_SEED"]
         Ystack = jnp.stack(outs, axis=0)
         var_mean = float(jnp.mean(jnp.var(Ystack, axis=0)))
-        print(f"Sampling smoothness (mean var over reps={reps}): {var_mean:.4e}")
+        _print_table(
+            "Sampling smoothness",
+            (("Metric", "left"), ("Value", "right")),
+            ((f"Mean variance over {reps} repetitions", f"{var_mean:.4e}"),),
+        )
 
     # Optional sampling schedule comparison: compare deterministic vs sampled outputs
     if os.environ.get("GAUGE_SAMPLE_SCHEDULE", "0") == "1":
@@ -919,7 +971,11 @@ def demo():
             pass
         YS = jnp.stack(outs, axis=0)
         diff = float(jnp.mean(jnp.linalg.norm(YS - y_det, axis=-1)))
-        print(f"Schedule compare: mean ||Y_sampled − Y_det|| = {diff:.4e}")
+        _print_table(
+            "Sampling schedule comparison",
+            (("Metric", "left"), ("Value", "right")),
+            (("Mean ||Y_sampled − Y_deterministic||", f"{diff:.4e}"),),
+        )
 
     # Optional lightweight train/eval schedule comparison
     if os.environ.get("GAUGE_SAMPLE_TRAIN", "0") == "1":
@@ -937,19 +993,24 @@ def demo():
         for _ in range(2):
             state, loss_sam = train_step(state, Xtr)
         eval_sam = float(eval_step(state, Xtr))
-        print(
-            f"Train schedule MSE: det={float(loss_det):.4e} sam={float(loss_sam):.4e} | eval det={eval_det:.4e} sam={eval_sam:.4e}"
+        _print_table(
+            "Train/eval schedule MSE",
+            (("Phase", "left"), ("Deterministic", "right"), ("Sampled", "right")),
+            (
+                ("Train", f"{float(loss_det):.4e}", f"{float(loss_sam):.4e}"),
+                ("Evaluation", f"{eval_det:.4e}", f"{eval_sam:.4e}"),
+            ),
         )
 
     # ASCII heatmap of commutators per block (so_spd, so_sp, spd_sp)
     if cfg.use_structured_blocks:
         combos = ["so_spd", "so_sp", "spd_sp"]
         # Gather norms per block
-        rows = {c: [] for c in combos}
+        heatmap_rows = {c: [] for c in combos}
         for b in dbg:
             cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
             for c in combos:
-                rows[c].append(float(cm.get(c, 0.0)))
+                heatmap_rows[c].append(float(cm.get(c, 0.0)))
         # Normalize to 0..1 for heatmap glyphs
         glyphs = " .:-=+*#%@"
 
@@ -962,9 +1023,11 @@ def demo():
             idxs = [int((v - lo) / (hi - lo + 1e-12) * (len(glyphs) - 1)) for v in vals]
             return "".join(glyphs[i] for i in idxs)
 
-        print("\n[Comm Heatmap per block]")
-        for c in combos:
-            print(f"{c:7s}:", row_to_ascii(rows[c]))
+        _print_table(
+            "Commutator heatmap by block",
+            (("Commutator", "left"), ("Relative magnitude", "left")),
+            [(name, row_to_ascii(heatmap_rows[name])) for name in combos],
+        )
 
     # Quick stability comparison: structured vs unstructured curvature proxy
     # Build a second config with the opposite setting and compare mean curvature
@@ -989,15 +1052,23 @@ def demo():
     _, dbg_alt = model_alt.apply(vars_alt, x, train=False, return_debug=True)
     curv_mean = float(jnp.mean(dbg[0]["curvature_proxy"]))
     curv_mean_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
-    print(f"Curvature mean (structured={cfg.use_structured_blocks}): {curv_mean:.4f}")
-    print(f"Curvature mean (structured={not cfg.use_structured_blocks}): {curv_mean_alt:.4f}")
+    _print_table(
+        "Structured/unstructured curvature comparison",
+        (("Structured blocks", "center"), ("Mean curvature proxy", "right")),
+        (
+            (str(cfg.use_structured_blocks), f"{curv_mean:.4f}"),
+            (str(not cfg.use_structured_blocks), f"{curv_mean_alt:.4f}"),
+        ),
+    )
     if curv_mean <= curv_mean_alt:
-        print("Decision: keep structured blocks as default for this demo.")
+        _print_styled("Decision: keep structured blocks as default for this demo.", style="bold green")
     else:
-        print("Decision: structured not better on this seed; toggle via --gauge-structured if desired.")
+        _print_styled(
+            "Decision: structured blocks were not better on this seed; toggle with --gauge-structured if desired.",
+            style="bold yellow",
+        )
 
     # --- Structured SO/SPD/Sp composition mini-demo ---
-    print("\n[Structured Generators Demo]")
     dh2 = dh if (dh % 2 == 0) else dh - 1
     if dh2 >= 4:
         # Build small skew, symmetric, and Hamiltonian generators
@@ -1017,11 +1088,18 @@ def demo():
         def comm_norm(X, Y):
             return float(jnp.linalg.norm(X @ Y - Y @ X))
 
-        print("||[skew, sym]||:", f"{comm_norm(skew, sym):.2e}")
-        print("||[skew, A]||:", f"{comm_norm(skew, A):.2e}")
-        print("||[sym, A]||:", f"{comm_norm(sym, A):.2e}")
+        _print_table(
+            "Structured generators",
+            (("Commutator", "left"), ("Norm", "right")),
+            (
+                ("||[skew, sym]||", f"{comm_norm(skew, sym):.2e}"),
+                ("||[skew, A]||", f"{comm_norm(skew, A):.2e}"),
+                ("||[sym, A]||", f"{comm_norm(sym, A):.2e}"),
+            ),
+        )
 
     # --- BCH/Magnus fusion mini-experiment ---
+    bch_rows = None
     if os.environ.get("GAUGE_BCH_FUSION", "1") != "0":
         key, subkey = jax.random.split(key)
         dim_fuse = 6
@@ -1029,7 +1107,7 @@ def demo():
         base_keys = jax.random.split(subkey, n_steps)
         base_mats = [_skew_symmetric_from_rng(k, dim_fuse, scale=1.0) for k in base_keys]
         eps_list = [0.02, 0.05, 0.1, 0.2]
-        rows = []
+        bch_rows = []
 
         for eps in eps_list:
             mats = [eps * m for m in base_mats]
@@ -1056,22 +1134,20 @@ def demo():
                 comm_max = 0.0
 
             safe = comm_max < 1e-2 and err_2 < 1e-3
-            rows.append((eps, comm_sum, comm_max, err_1, err_2, safe))
+            bch_rows.append((eps, comm_sum, comm_max, err_1, err_2, safe))
 
-        try:
-            from rich.console import Console as _Console
-            from rich.table import Table as _Table
-
-            tbl = _Table(title="BCH Fusion Mini-Experiment", show_header=True, header_style="bold magenta")
-            tbl.add_column("eps", justify="right")
-            tbl.add_column("comm_sum", justify="right")
-            tbl.add_column("comm_max", justify="right")
-            tbl.add_column("err_1st", justify="right")
-            tbl.add_column("err_2nd", justify="right")
-            tbl.add_column("safe?", justify="center")
-
-            for eps, comm_sum, comm_max, err_1, err_2, safe in rows:
-                tbl.add_row(
+        _print_table(
+            "BCH fusion mini-experiment",
+            (
+                ("eps", "right"),
+                ("comm_sum", "right"),
+                ("comm_max", "right"),
+                ("err_1st", "right"),
+                ("err_2nd", "right"),
+                ("safe?", "center"),
+            ),
+            [
+                (
                     f"{eps:.2f}",
                     f"{comm_sum:.2e}",
                     f"{comm_max:.2e}",
@@ -1079,10 +1155,10 @@ def demo():
                     f"{err_2:.2e}",
                     "yes" if safe else "no",
                 )
-            _Console().print(tbl)
-            _Console().print("[dim]Heuristic: safe if comm_max < 1e-2 and err_2nd < 1e-3[/dim]")
-        except Exception:
-            pass
+                for eps, comm_sum, comm_max, err_1, err_2, safe in bch_rows
+            ],
+        )
+        _print_styled("Heuristic: safe if comm_max < 1e-2 and err_2nd < 1e-3", style="dim")
 
     # --- BCH-aware stacking demo: enforce commuting blocks on even layers ---
     from flax.core import freeze, unfreeze
@@ -1108,32 +1184,36 @@ def demo():
     y_comm, dbg_comm = model.apply(variables_comm, x, train=False, return_debug=True)
     curv_mean_comm = float(jnp.mean(dbg_comm[0]["curvature_proxy"]))
     curv_mean_def = float(jnp.mean(dbg[0]["curvature_proxy"]))
-    print("Curvature mean default:", f"{curv_mean_def:.4f}")
-    print("Curvature mean BCH-aware (even commuting):", f"{curv_mean_comm:.4f}")
+    _print_table(
+        "BCH-aware curvature comparison",
+        (("Stacking mode", "left"), ("Mean curvature proxy", "right")),
+        (("Default", f"{curv_mean_def:.4f}"), ("Even blocks commuting", f"{curv_mean_comm:.4f}")),
+    )
     # Curvature/comm summary table per block
-    try:
-        from rich.console import Console as _Console
-        from rich.table import Table as _Table
-
-        sumtbl = _Table(title="Per-block Curvature/Comm Summary", show_header=True, header_style="bold magenta")
-        sumtbl.add_column("Block")
-        sumtbl.add_column("curv_mean", justify="right")
-        sumtbl.add_column("so_spd", justify="right")
-        sumtbl.add_column("so_sp", justify="right")
-        sumtbl.add_column("spd_sp", justify="right")
-        for bi, b in enumerate(dbg):
-            curv_b = float(jnp.mean(b["curvature_proxy"]))
-            cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
-            sumtbl.add_row(
+    per_block_rows = []
+    for bi, b in enumerate(dbg):
+        curv_b = float(jnp.mean(b["curvature_proxy"]))
+        cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
+        per_block_rows.append(
+            (
                 str(bi),
                 f"{curv_b:.3e}",
                 f"{float(cm.get('so_spd', 0.0)):.3e}",
                 f"{float(cm.get('so_sp', 0.0)):.3e}",
                 f"{float(cm.get('spd_sp', 0.0)):.3e}",
             )
-        _Console().print(sumtbl)
-    except Exception:
-        pass
+        )
+    _print_table(
+        "Per-block curvature/commutator summary",
+        (
+            ("Block", "right"),
+            ("curv_mean", "right"),
+            ("so_spd", "right"),
+            ("so_sp", "right"),
+            ("spd_sp", "right"),
+        ),
+        per_block_rows,
+    )
 
     # Alternate structured/unstructured: zero out generators on odd blocks (env GAUGE_ALT_STRUCT=1)
     if os.environ.get("GAUGE_ALT_STRUCT", "0") == "1":
@@ -1152,65 +1232,64 @@ def demo():
         variables_alt = _freeze(vars_alt)
         _, dbg_alt = model.apply(variables_alt, x, train=False, return_debug=True)
         curv_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
-        print("Curvature mean alt (odd unstructured):", f"{curv_alt:.4f}")
-        # Compact compare table
-        try:
-            from rich.console import Console as _Console
-            from rich.table import Table as _Table
+        _print_table(
+            "Curvature means comparison",
+            (("Mode", "left"), ("Mean curvature proxy", "right")),
+            (
+                ("Baseline", f"{curv_mean_def:.4f}"),
+                ("Even blocks commuting", f"{curv_mean_comm:.4f}"),
+                ("Odd blocks unstructured", f"{curv_alt:.4f}"),
+            ),
+        )
 
-            ct = _Table(title="Curvature Means Compare", show_header=True, header_style="bold magenta")
-            ct.add_column("mode")
-            ct.add_column("mean")
-            ct.add_row("baseline", f"{curv_mean_def:.4f}")
-            ct.add_row("even commuting", f"{curv_mean_comm:.4f}")
-            ct.add_row("odd unstructured", f"{curv_alt:.4f}")
-            _Console().print(ct)
+        # Commutator norms compare (sum across blocks)
+        def comm_sums(dbgl):
+            sums = {"so_spd": 0.0, "so_sp": 0.0, "spd_sp": 0.0}
+            for block_debug in dbgl:
+                cm = block_debug.get("comm_norms", {}) if isinstance(block_debug, dict) else {}
+                for name in sums:
+                    sums[name] += float(cm.get(name, 0.0))
+            return sums
 
-            # Commutator norms compare (sum across blocks)
-            def comm_sums(dbgl):
-                s = {"so_spd": 0.0, "so_sp": 0.0, "spd_sp": 0.0}
-                for b in dbgl:
-                    cm = b.get("comm_norms", {}) if isinstance(b, dict) else {}
-                    for k in s.keys():
-                        s[k] += float(cm.get(k, 0.0))
-                return s
-
-            sums_def = comm_sums(dbg)
-            sums_comm = comm_sums(dbg_comm)
-            sums_alt = comm_sums(dbg_alt)
-            ct2 = _Table(title="Commutator Sums Compare", show_header=True, header_style="bold magenta")
-            ct2.add_column("mode")
-            ct2.add_column("so_spd")
-            ct2.add_column("so_sp")
-            ct2.add_column("spd_sp")
-            ct2.add_row(
-                "baseline", f"{sums_def['so_spd']:.2e}", f"{sums_def['so_sp']:.2e}", f"{sums_def['spd_sp']:.2e}"
+        sums_def = comm_sums(dbg)
+        sums_comm = comm_sums(dbg_comm)
+        sums_alt = comm_sums(dbg_alt)
+        _print_table(
+            "Commutator sums comparison",
+            (("Mode", "left"), ("so_spd", "right"), ("so_sp", "right"), ("spd_sp", "right")),
+            (
+                (
+                    "Baseline",
+                    f"{sums_def['so_spd']:.2e}",
+                    f"{sums_def['so_sp']:.2e}",
+                    f"{sums_def['spd_sp']:.2e}",
+                ),
+                (
+                    "Even blocks commuting",
+                    f"{sums_comm['so_spd']:.2e}",
+                    f"{sums_comm['so_sp']:.2e}",
+                    f"{sums_comm['spd_sp']:.2e}",
+                ),
+                (
+                    "Odd blocks unstructured",
+                    f"{sums_alt['so_spd']:.2e}",
+                    f"{sums_alt['so_sp']:.2e}",
+                    f"{sums_alt['spd_sp']:.2e}",
+                ),
+            ),
+        )
+        delta_rows = [
+            ("curvature", f"{curv_mean_comm - curv_mean_def:.4f}", f"{curv_alt - curv_mean_def:.4f}")
+        ]
+        for name in ("so_spd", "so_sp", "spd_sp"):
+            delta_rows.append(
+                (name, f"{sums_comm[name] - sums_def[name]:.2e}", f"{sums_alt[name] - sums_def[name]:.2e}")
             )
-            ct2.add_row(
-                "even commuting",
-                f"{sums_comm['so_spd']:.2e}",
-                f"{sums_comm['so_sp']:.2e}",
-                f"{sums_comm['spd_sp']:.2e}",
-            )
-            ct2.add_row(
-                "odd unstructured", f"{sums_alt['so_spd']:.2e}", f"{sums_alt['so_sp']:.2e}", f"{sums_alt['spd_sp']:.2e}"
-            )
-            _Console().print(ct2)
-            # Delta table (baseline → commuting, baseline → alt)
-            ct3 = _Table(
-                title="Curvature/Commutator Deltas (vs baseline)", show_header=True, header_style="bold magenta"
-            )
-            ct3.add_column("metric")
-            ct3.add_column("Δ(commuting-baseline)")
-            ct3.add_column("Δ(alt-baseline)")
-            ct3.add_row("curvature", f"{(curv_mean_comm - curv_mean_def):.4f}", f"{(curv_alt - curv_mean_def):.4f}")
-            for name in ("so_spd", "so_sp", "spd_sp"):
-                d1 = sums_comm[name] - sums_def[name]
-                d2 = sums_alt[name] - sums_def[name]
-                ct3.add_row(name, f"{d1:.2e}", f"{d2:.2e}")
-            _Console().print(ct3)
-        except Exception:
-            pass
+        _print_table(
+            "Curvature/commutator deltas vs baseline",
+            (("Metric", "left"), ("Δ commuting", "right"), ("Δ alt", "right")),
+            delta_rows,
+        )
 
     # If GAUGE_UNIF_CAP_K is set, compare vs uncapped K means
     cap_val = os.environ.get("GAUGE_UNIF_CAP_K", "")
@@ -1221,9 +1300,13 @@ def demo():
         os.environ["GAUGE_UNIF_CAP_K"] = val
         K_uncap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg_uncap]
         K_cap = [float(jnp.mean(bdbg["uniformization_K"])) for bdbg in dbg]
-        print(
-            "Uniformization K mean (uncapped vs capped):",
-            list(zip([round(v, 2) for v in K_uncap], [round(v, 2) for v in K_cap], strict=False)),
+        _print_table(
+            "Uniformization cap comparison",
+            (("Block", "right"), ("Uncapped mean K", "right"), ("Capped mean K", "right")),
+            [
+                (str(block), f"{uncapped:.2f}", f"{capped:.2f}")
+                for block, (uncapped, capped) in enumerate(zip(K_uncap, K_cap, strict=False))
+            ],
         )
 
     # Exportable diagnostics for CLI (module-level)
@@ -1252,7 +1335,7 @@ def demo():
                 "odd_unstructured": _comm_sums(dbg_alt),
             }
         bch_fusion = None
-        if "rows" in locals():
+        if bch_rows is not None:
             bch_fusion = [
                 {
                     "eps": float(eps),
@@ -1262,7 +1345,7 @@ def demo():
                     "err_2nd": float(err_2),
                     "safe": bool(safe),
                 }
-                for (eps, comm_sum, comm_max, err_1, err_2, safe) in rows
+                for (eps, comm_sum, comm_max, err_1, err_2, safe) in bch_rows
             ]
 
         last_diagnostics = {
@@ -1326,8 +1409,8 @@ def demo():
                 },
             },
         }
-    except Exception:
-        pass
+    except Exception as err:
+        _print_styled(f"Could not publish matrix-gauge diagnostics: {err}", style="bold red")
 
 
 if __name__ == "__main__":

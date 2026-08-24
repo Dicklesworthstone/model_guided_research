@@ -82,6 +82,108 @@ def test_tropical_pivot_dataset_and_route_training_are_jax_trace_safe():
     require(all(bool(jnp.isfinite(leaf).all()) for leaf in leaves), "tropical training produced non-finite values")
 
 
+def test_knot_demo_programmatic_dispatch_ignores_outer_argv(monkeypatch):
+    """The Typer wrapper's argv must not be parsed as direct-script demo arguments."""
+    import sys
+
+    import knot_theoretic_programs_and_braid_based_attention as knot
+
+    monkeypatch.setattr(sys, "argv", ["mgr", "run", "knot-braid"])
+    monkeypatch.setattr(knot, "plot_braid", lambda *_args: None)
+
+    result = knot.demo(seed=3, steps=1, crossing_law="restricted")
+
+    require(result["crossing_law"] == "restricted", "programmatic crossing-law argument was not preserved")
+    require(bool(jax.numpy.isfinite(result["test_acc"])), "programmatic knot demo produced non-finite accuracy")
+
+
+def test_simplicial_model_loss_batch_vectorizes_only_examples():
+    """Regression for qf1a: partially bound static args must not be passed twice to vmap."""
+    import jax.numpy as jnp
+
+    import simplicial_complexes_and_higher_order_attention as simplicial
+
+    complex_ = simplicial.build_complete_complex_K2(4)
+    params = simplicial.init_params(jax.random.PRNGKey(0), K=2, d=4)
+    route = simplicial.cycle_indicator_on_edges(4, [0, 1, 2, 3], edges=complex_["edges"])
+    X, Y = simplicial.generate_dataset(jax.random.PRNGKey(1), complex_, num=3, r=route)
+
+    loss, aux = simplicial.model_loss_batch(params, complex_, 1, X, Y, route, 1e-4)
+
+    require(loss.shape == (), f"expected scalar batch loss, got shape {loss.shape}")
+    require(bool(jnp.isfinite(loss)), "simplicial batch loss is not finite")
+    for name in ("logits", "bd", "mass"):
+        require(aux[name].shape == (3,), f"unexpected {name} shape: {aux[name].shape}")
+        require(bool(jnp.isfinite(aux[name]).all()), f"simplicial {name} contains non-finite values")
+
+    compiled_step = simplicial.make_train_step(complex_, 1, route, 1e-4, 1e-2)
+    updated, step_loss, accuracy, boundary_loss, mass = compiled_step(params, X, Y)
+    leaves = (*jax.tree_util.tree_leaves(updated), step_loss, accuracy, boundary_loss, mass)
+    require(all(bool(jnp.isfinite(leaf).all()) for leaf in leaves), "compiled simplicial step is not finite")
+
+
+def test_quaternion_mha_preserves_batch_and_sequence_axes():
+    """Regression for v9wq: pairwise q/k broadcasting must retain both token axes."""
+    import jax.numpy as jnp
+
+    import octonionic_quaternionic_signal_flow as quaternion
+
+    x = jax.random.normal(jax.random.PRNGKey(0), (2, 5, 8, 4))
+    params = quaternion.mha_init(jax.random.PRNGKey(1), d=8, H=2)
+
+    y = quaternion.mha_apply(x, params)
+
+    require(y.shape == x.shape, f"quaternion MHA changed shape from {x.shape} to {y.shape}")
+    require(bool(jnp.isfinite(y).all()), "quaternion MHA produced non-finite outputs")
+    require(bool(jnp.isfinite(quaternion.mha_invariants_check())), "quaternion MHA invariant metric is not finite")
+    rotor_norm_error = quaternion.invariants_test()
+    left_error, right_error = quaternion.block_equiv_test()
+    require(rotor_norm_error < 1e-5, f"rotor gate violated norm preservation: {rotor_norm_error:.3e}")
+    require(left_error < 1e-5, f"left 2x2 block violated Hamilton product: {left_error:.3e}")
+    require(right_error < 1e-5, f"right 2x2 block violated Hamilton product: {right_error:.3e}")
+
+
+def test_surreal_dataset_uses_raw_jax_keys_after_wrapper_split():
+    """Regressions for wrid/xu25: raw RNG keys and multi-tree Adam updates."""
+    import jax.numpy as jnp
+
+    import surreal_numbers_transseries_and_scaling as surreal
+
+    (x_train, y_train), (x_val, y_val) = surreal.make_dataset(
+        surreal.PRNG(0),
+        n_train=7,
+        n_val=5,
+        in_dim=4,
+        K=3,
+    )
+
+    require(x_train.shape == (7, 4), f"unexpected training shape: {x_train.shape}")
+    require(y_train.shape == (7,), f"unexpected training-label shape: {y_train.shape}")
+    require(x_val.shape == (5, 4), f"unexpected validation shape: {x_val.shape}")
+    require(y_val.shape == (5,), f"unexpected validation-label shape: {y_val.shape}")
+    arrays = (x_train, y_train, x_val, y_val)
+    require(all(bool(jnp.isfinite(array).all()) for array in arrays), "surreal dataset contains non-finite values")
+
+    model_rng = surreal.PRNG(1)
+    params = surreal.init_params(model_rng, in_dim=4, d_model=8, ff_mult=2.0, H=2, K=3)
+    optimizer = surreal.adam_init(params)
+    width_mask = jnp.ones((8,), dtype=jnp.float32)
+    depth_mask = surreal.make_depth_mask(2, False)
+    updated, optimizer, loss = surreal.train_step(
+        params,
+        optimizer,
+        x_train,
+        y_train,
+        2,
+        width_mask,
+        depth_mask,
+        1.0,
+        1e-3,
+    )
+    leaves = (*jax.tree_util.tree_leaves(updated), *jax.tree_util.tree_leaves(optimizer), loss)
+    require(all(bool(jnp.isfinite(leaf).all()) for leaf in leaves), "surreal training step produced non-finite values")
+
+
 def test_documentation_exists():
     """Test that markdown documentation exists for each module."""
     doc_dir = Path("markdown_documentation")

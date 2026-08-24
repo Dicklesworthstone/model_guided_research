@@ -40,6 +40,8 @@ from tokenizers import Tokenizer as HFTokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 
+from utils import console
+
 
 class HuggingFaceTokenizer:
     """Light wrapper around HuggingFace Tokenizer for some utilities"""
@@ -161,7 +163,7 @@ class HuggingFaceTokenizer:
         os.makedirs(tokenizer_dir, exist_ok=True)
         tokenizer_path = os.path.join(tokenizer_dir, "tokenizer.json")
         self.tokenizer.save(tokenizer_path)
-        print(f"Saved tokenizer to {tokenizer_path}")
+        console.print(f"Saved tokenizer to {tokenizer_path}", style="bold green", markup=False)
 
 
 # -----------------------------------------------------------------------------
@@ -238,7 +240,11 @@ class RustBPETokenizer:
     def from_directory(cls, tokenizer_dir):
         encoding_path = os.path.join(tokenizer_dir, "tokenizer_encoding.json")
         if not os.path.exists(encoding_path):
-            print(f"Tokenizer not found at {encoding_path}, attempting to regenerate...")
+            console.print(
+                f"Tokenizer not found at {encoding_path}; regeneration is required.",
+                style="yellow",
+                markup=False,
+            )
             raise FileNotFoundError(
                 f"Tokenizer not found at {encoding_path}. Please run 'python -m nanochat.tokenizer' to generate it."
             )
@@ -317,7 +323,7 @@ class RustBPETokenizer:
         encoding_path = os.path.join(tokenizer_dir, "tokenizer_encoding.json")
         with open(encoding_path, "w", encoding="utf-8") as f:
             json.dump(_encoding_to_json(self.enc), f, indent=2)
-        print(f"Saved tokenizer encoding to {encoding_path}")
+        console.print(f"Saved tokenizer encoding to {encoding_path}", style="bold green", markup=False)
 
     def render_conversation(self, conversation, max_tokens=2048):
         """
@@ -459,7 +465,11 @@ def get_tokenizer():
     try:
         return HuggingFaceTokenizer.from_directory(tokenizer_dir)
     except Exception:
-        print(f"Tokenizer not found in {tokenizer_dir}. Downloading GPT-2 tokenizer...")
+        console.print(
+            f"Tokenizer not found in {tokenizer_dir}. Downloading GPT-2 tokenizer...",
+            style="yellow",
+            markup=False,
+        )
         tokenizer = HuggingFaceTokenizer.from_pretrained("gpt2")
         tokenizer.save(tokenizer_dir)
         return tokenizer
