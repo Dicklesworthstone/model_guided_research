@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 import cli
 
 runner = CliRunner()
+REGISTRY_PATH = Path(cli.__file__).resolve().parent / "hypotheses" / "registry.yaml"
 
 
 def test_welch_delta_identical_samples():
@@ -466,6 +467,8 @@ def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_pa
             "1",
             "--artifacts-dir",
             str(artifacts),
+            "--governance-registry",
+            str(REGISTRY_PATH),
             "--run-id",
             "sparse-contract",
         ],
@@ -481,6 +484,7 @@ def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_pa
         {"mechanism": "reversible", "task": "placebo"},
     ]
     assert manifest["config"]["hypothesis_ids"] == ["hyp-braid-length-generalization"]
+    assert manifest["config"]["governance_registry"] == str(REGISTRY_PATH)
     assert [item["id"] for item in manifest["config"]["hypothesis_snapshot"]] == ["hyp-braid-length-generalization"]
     assert not (
         {"status", "evidence", "verdict_history", "manual_hold"} & manifest["config"]["hypothesis_snapshot"][0].keys()
@@ -601,11 +605,104 @@ def test_scorecard_rejects_dirty_claim_bearing_run_before_writing(tmp_path, monk
             "hyp-hyperbolic-placebo-specificity",
             "--artifacts-dir",
             str(artifacts),
+            "--governance-registry",
+            str(REGISTRY_PATH),
         ],
     )
     assert result.exit_code == 2
     assert "clean, known Git commit" in result.output
     assert not artifacts.exists()
+
+
+def test_scorecard_requires_absolute_live_governance_registry_before_writing(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    artifacts = tmp_path / "artifacts"
+    base_args = [
+        "scorecard",
+        "--cell",
+        "hyperbolic:placebo",
+        "-H",
+        "hyp-hyperbolic-placebo-specificity",
+        "--artifacts-dir",
+        str(artifacts),
+    ]
+    missing = runner.invoke(cli.app, base_args)
+    assert missing.exit_code == 2
+    assert "require --governance-registry" in missing.output
+    assert not artifacts.exists()
+
+    relative = runner.invoke(cli.app, [*base_args, "--governance-registry", "hypotheses/registry.yaml"])
+    assert relative.exit_code == 2
+    assert "must be an absolute path" in relative.output
+    assert not artifacts.exists()
+
+    malformed_registry = tmp_path / "malformed-registry.yaml"
+    malformed_registry.write_text("hypotheses: [")
+    malformed = runner.invoke(
+        cli.app,
+        [*base_args, "--governance-registry", str(malformed_registry)],
+    )
+    assert malformed.exit_code == 2
+    assert "live governance registry failed validation" in malformed.output
+    assert not artifacts.exists()
+
+
+def test_scorecard_blocks_every_claim_and_exits_nonzero_if_live_governance_disappears(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(cli, "_scorecard_launch", _fake_scorecard_success)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    governance_reads = 0
+
+    def live_holds(_ids, _registry_path):
+        nonlocal governance_reads
+        governance_reads += 1
+        if governance_reads == 1:
+            return {}, None
+        return {}, "registry became unreadable"
+
+    monkeypatch.setattr(cli, "_scorecard_live_manual_holds", live_holds)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "hyperbolic:placebo",
+            "-H",
+            "hyp-hyperbolic-placebo-specificity",
+            "--seeds",
+            "1",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--governance-registry",
+            str(REGISTRY_PATH),
+            "--run-id",
+            "governance-fail-closed",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    summary = json.loads((artifacts / "scorecards" / "governance-fail-closed" / "summary.json").read_text())
+    assert summary["adjudications"]["governance_error"] == "registry became unreadable"
+    assert all(
+        verdict["verdict"] == "blocked" and verdict["reason_code"] == "live_governance_unavailable"
+        for verdict in summary["adjudications"]["verdicts"]
+    )
+    assert summary["adjudications"]["fdr"]["family_size"] == 0
 
 
 def test_scorecard_off_floor_gate_is_training_seed_strict_and_budget_local(tmp_path):
@@ -740,6 +837,8 @@ def test_scorecard_claim_resume_uses_frozen_snapshot_live_hold_and_original_sha(
         "1",
         "--artifacts-dir",
         str(artifacts),
+        "--governance-registry",
+        str(REGISTRY_PATH),
         "--run-id",
         "claim-resume-contract",
     ]
@@ -757,7 +856,7 @@ def test_scorecard_claim_resume_uses_frozen_snapshot_live_hold_and_original_sha(
     monkeypatch.setattr(
         cli,
         "_scorecard_live_manual_holds",
-        lambda _ids: (
+        lambda _ids, _registry_path: (
             {
                 "hyp-hyperbolic-placebo-specificity": {
                     "held": True,

@@ -7476,6 +7476,22 @@ def _scorecard_fdr(verdicts: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _scorecard_block_for_governance(
+    hypotheses: list[dict[str, Any]],
+    governance_error: str,
+) -> list[dict[str, Any]]:
+    """Fail every selected claim closed when live manual-hold state is unknown."""
+    return [
+        {
+            "id": hypothesis.get("id"),
+            "verdict": "blocked",
+            "reason_code": "live_governance_unavailable",
+            "reason": f"live governance registry could not be validated: {governance_error}",
+        }
+        for hypothesis in hypotheses
+    ]
+
+
 def _scorecard_off_floor_tasks(
     cells: list[dict[str, Any]],
     suite_dir: Path,
@@ -7575,7 +7591,11 @@ def _scorecard_adjudications(
     else:
         qualified = {path.resolve() for path in qualified_summary_paths}
         artifacts = [artifact for artifact in indexed_artifacts if Path(artifact["path"]).resolve() in qualified]
-    verdicts = [_adjudicate_hypothesis(h, artifacts) for h in hypotheses]
+    verdicts = (
+        _scorecard_block_for_governance(hypotheses, governance_error)
+        if governance_error is not None
+        else [_adjudicate_hypothesis(h, artifacts) for h in hypotheses]
+    )
     fdr = _scorecard_fdr(verdicts)
     by_budget: dict[str, list[dict[str, Any]]] = {}
     by_budget_fdr: dict[str, dict[str, Any]] = {}
@@ -7587,7 +7607,11 @@ def _scorecard_adjudications(
             and math.isclose(float(planned), float(budget), rel_tol=_ADJ_BUDGET_RTOL)
         ]
         budget_key = str(budget)
-        by_budget[budget_key] = [_adjudicate_hypothesis(h, cohort) for h in hypotheses]
+        by_budget[budget_key] = (
+            _scorecard_block_for_governance(hypotheses, governance_error)
+            if governance_error is not None
+            else [_adjudicate_hypothesis(h, cohort) for h in hypotheses]
+        )
         by_budget_fdr[budget_key] = _scorecard_fdr(by_budget[budget_key])
 
     verdict_flips: list[dict[str, Any]] = []
@@ -7640,6 +7664,7 @@ def _scorecard_adjudications(
         "policy_version": _ADJ_POLICY_VERSION,
         "artifact_count": len(artifacts),
         "quarantined_artifact_count": len(indexed_artifacts) - len(artifacts),
+        "governance_error": governance_error,
         "verdicts": verdicts,
         "fdr": fdr,
         "by_budget": by_budget,
@@ -7920,6 +7945,10 @@ def scorecard(
     ] = 10,
     timeout_s: Annotated[float, typer.Option(help="Timeout per train or eval subprocess", min=1.0)] = 3600.0,
     artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
+    governance_registry: Annotated[
+        Path | None,
+        typer.Option(help="Absolute path to the live mutable hypothesis registry used only for manual-hold checks"),
+    ] = None,
     run_id: Annotated[str | None, typer.Option(help="Run id; reuse to resume exactly matching cells")] = None,
     resume: Annotated[
         bool, typer.Option("--resume/--fresh", help="Resume done cells from an existing manifest")
@@ -7986,6 +8015,15 @@ def scorecard(
         raise typer.BadParameter("--hypothesis values cannot be empty")
     if len(hypothesis_ids) != len(set(hypothesis_ids)):
         raise typer.BadParameter("duplicate --hypothesis values are not allowed")
+    resolved_governance_registry: Path | None = None
+    if governance_registry is not None:
+        if not governance_registry.is_absolute():
+            raise typer.BadParameter("--governance-registry must be an absolute path")
+        resolved_governance_registry = governance_registry.resolve()
+        if not resolved_governance_registry.is_file():
+            raise typer.BadParameter("--governance-registry must name an existing registry file")
+    if hypothesis_ids and not dry_run and resolved_governance_registry is None:
+        raise typer.BadParameter("claim-bearing scorecards require --governance-registry")
     if existing_manifest is not None:
         existing_config = existing_manifest.get("config")
         if not isinstance(existing_config, dict):
@@ -8012,6 +8050,14 @@ def scorecard(
             producer_git = existing_manifest.get("git") or {}
             if producer_git.get("commit_full") != git_info.get("commit_full") or bool(producer_git.get("dirty")):
                 raise typer.BadParameter("scorecard resume must use the original clean producer commit")
+        if resolved_governance_registry is None:
+            raise RuntimeError("claim-bearing scorecard reached preflight without a governance registry")
+        _preflight_holds, preflight_governance_error = _scorecard_live_manual_holds(
+            hypothesis_ids,
+            resolved_governance_registry,
+        )
+        if preflight_governance_error is not None:
+            raise typer.BadParameter(f"live governance registry failed validation: {preflight_governance_error}")
     training_seeds = list(range(seeds))
     flops_per_step = _scorecard_flops_per_step(
         mechanisms,
@@ -8030,6 +8076,9 @@ def scorecard(
         "matrix": [{"mechanism": mechanism_name, "task": task_name} for mechanism_name, task_name in matrix],
         "hypothesis_ids": hypothesis_ids,
         "hypothesis_snapshot": hypothesis_snapshot,
+        "governance_registry": (
+            str(resolved_governance_registry) if resolved_governance_registry is not None else None
+        ),
         "adjudication_policy": _ADJ_POLICY_VERSION,
         "training_seeds": training_seeds,
         "eval_seeds": eval_seeds,
@@ -8266,7 +8315,15 @@ def scorecard(
             continue
         qualified_summary_paths.add(_scorecard_train_dir(suite_dir, cell) / "summary.json")
         qualified_summary_paths.add(_scorecard_eval_dir(suite_dir, cell) / "summary.json")
-    live_holds, governance_error = _scorecard_live_manual_holds(hypothesis_ids)
+    if hypothesis_ids:
+        if resolved_governance_registry is None:
+            raise RuntimeError("claim-bearing scorecard reached adjudication without a governance registry")
+        live_holds, governance_error = _scorecard_live_manual_holds(
+            hypothesis_ids,
+            resolved_governance_registry,
+        )
+    else:
+        live_holds, governance_error = {}, None
     adjudication_hypotheses: list[dict[str, Any]] = []
     for hypothesis_entry in hypothesis_snapshot:
         adjudication_entry = copy.deepcopy(hypothesis_entry)
@@ -8309,7 +8366,7 @@ def scorecard(
     )
     if interrupted:
         raise typer.Exit(code=130)
-    if counts["failed"] or counts["interrupted"] or counts["pending"]:
+    if governance_error is not None or counts["failed"] or counts["interrupted"] or counts["pending"]:
         raise typer.Exit(code=1)
 
 

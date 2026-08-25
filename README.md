@@ -833,6 +833,9 @@ mgr bench-fixed-flops \
 # Resumable preregistered scorecard: sparse mechanism/task cells, checkpoint
 # eval, frozen ci-v6 claim allowlist, placebo gate, and JSON/Markdown/HTML reports.
 # Set this only from a committed, quarantined sizing probe.
+# Export this while still in the mutable coordination checkout, before entering
+# the detached producer worktree. It must not point into that frozen worktree.
+export MGR_LIVE_GOVERNANCE_REGISTRY="$PWD/hypotheses/registry.yaml"
 mgr scorecard \
     --run-id hierarchy_scorecard \
     --budget "$PREREGISTERED_OFF_FLOOR_FLOPS" \
@@ -843,6 +846,7 @@ mgr scorecard \
     -H hyp-ultrametric-hier-heldout-depth \
     -H hyp-fractal-hier-heldout-depth \
     -H hyp-hyperbolic-placebo-specificity \
+    --governance-registry "$MGR_LIVE_GOVERNANCE_REGISTRY" \
     --seeds 3 --dry-run
 # Each selected task gets a standard baseline; every selected mechanism gets a
 # placebo cell. The exact hypothesis definitions are snapshotted in the manifest.
@@ -850,7 +854,8 @@ mgr scorecard \
 # also select every arm of hyp-placebo-no-winner. A reversible campaign must set
 # one campaign-wide KV geometry with --n-kv-head equal to --n-head / 2.
 # Remove --dry-run only after the command and stopping rule are preregistered.
-# Claim-bearing runs require one clean producer SHA; resume refuses another SHA.
+# Claim-bearing runs require one clean producer SHA and an absolute path to the
+# separately mutable governance registry; resume refuses another SHA or registry path.
 # Re-running that identical command skips completed cells via
 # artifacts/scorecards/hierarchy_scorecard/manifest.json.
 # Cells planning fewer than --min-evidence-steps (default 10) are labeled
