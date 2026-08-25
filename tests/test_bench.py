@@ -482,7 +482,9 @@ def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_pa
     ]
     assert manifest["config"]["hypothesis_ids"] == ["hyp-braid-length-generalization"]
     assert [item["id"] for item in manifest["config"]["hypothesis_snapshot"]] == ["hyp-braid-length-generalization"]
-    assert not ({"status", "evidence", "verdict_history", "manual_hold"} & manifest["config"]["hypothesis_snapshot"][0].keys())
+    assert not (
+        {"status", "evidence", "verdict_history", "manual_hold"} & manifest["config"]["hypothesis_snapshot"][0].keys()
+    )
     assert [(cell["mechanism"], cell["resolved_n_kv_head"]) for cell in manifest["cells"]] == [
         ("standard", 2),
         ("braid", 2),
@@ -1012,8 +1014,6 @@ def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific
         hypotheses=[universal, hyperbolic],
         mechanisms=["standard", "tropical", "hyperbolic"],
     )
-    hyperbolic_row = next(
-        row for row in inconclusive["placebo"]["rows"] if row["id"] == hyperbolic["id"]
-    )
+    hyperbolic_row = next(row for row in inconclusive["placebo"]["rows"] if row["id"] == hyperbolic["id"])
     assert hyperbolic_row["verdict"] == "inconclusive"
     assert "registered placebo guard is INCONCLUSIVE" in " ".join(inconclusive["placebo"]["blockers"])

@@ -846,12 +846,17 @@ mgr scorecard \
     --seeds 3 --dry-run
 # Each selected task gets a standard baseline; every selected mechanism gets a
 # placebo cell. The exact hypothesis definitions are snapshotted in the manifest.
+# This hierarchy-only slice remains publication-blocked: the final scorecard must
+# also select every arm of hyp-placebo-no-winner. A reversible campaign must set
+# one campaign-wide KV geometry with --n-kv-head equal to --n-head / 2.
 # Remove --dry-run only after the command and stopping rule are preregistered.
+# Claim-bearing runs require one clean producer SHA; resume refuses another SHA.
 # Re-running that identical command skips completed cells via
 # artifacts/scorecards/hierarchy_scorecard/manifest.json.
 # Cells planning fewer than --min-evidence-steps (default 10) are labeled
 # SMOKE-ONLY and excluded from ci-v6, preventing tiny floored plumbing runs
-# from being laundered into scientific verdicts.
+# from being laundered into scientific verdicts. Step-qualified cells are still
+# excluded unless every standard seed and its lower 95% CI clear recorded prior.
 
 # Practical utility suite (writes artifacts if --artifacts-dir set)
 mgr eval --artifacts-dir artifacts --run-id util_suite

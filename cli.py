@@ -7427,11 +7427,14 @@ def _scorecard_validate_hypothesis_coverage(
         raise typer.BadParameter("hypothesis/matrix coverage failed: " + "; ".join(errors))
 
 
-def _scorecard_live_manual_holds(hypothesis_ids: list[str]) -> tuple[dict[str, dict[str, Any]], str | None]:
+def _scorecard_live_manual_holds(
+    hypothesis_ids: list[str],
+    registry_path: Path,
+) -> tuple[dict[str, dict[str, Any]], str | None]:
     """Read only live governance holds; claim definitions remain frozen in the manifest."""
     if not hypothesis_ids:
         return {}, None
-    registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
+    registry, load_errors = _load_hypothesis_registry(registry_path)
     repo_root = Path(__file__).resolve().parent
     validation_errors, _warnings, _summary = _validate_hypothesis_registry(
         registry,
@@ -7744,6 +7747,12 @@ def _scorecard_report_markdown(summary: dict[str, Any]) -> str:
             lines.append(f"- `{flip['id']}`: `{flip['by_budget']}`")
     else:
         lines.append("- No decided verdict flips in the available budget cohorts.")
+    for budget_key, budget_fdr in (adjudications.get("by_budget_fdr") or {}).items():
+        lines.append(
+            f"- Budget `{budget_key}` FDR: {budget_fdr.get('supported', 0)} supported; "
+            f"{len(budget_fdr.get('supported_fdr_survivors') or [])} survive BH at "
+            f"q={budget_fdr.get('q_level', _ADJ_FDR_Q)}."
+        )
 
     decided = [
         v for v in adjudications.get("verdicts") or [] if v.get("verdict") in {"supported", "refuted", "inconclusive"}
