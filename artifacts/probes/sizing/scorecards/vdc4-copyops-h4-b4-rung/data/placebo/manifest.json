@@ -1,0 +1,21 @@
+{
+  "dials": {
+    "structure": 0.0
+  },
+  "generator_version": 1,
+  "hypothesis": "NO mechanism should win here; a significant gap is a harness fairness bug or a pure-optimization effect and blocks publication of affected comparisons until root-caused",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "b51e7eefb236b80539638de30859e76346a8f84829d7a5fc25cc42a0431ce807",
+    "train_000.parquet": "456e83b9ff91815c6c08269dcd2889d6b66b5595765bb969685b0663fe40aaaa",
+    "val_000.parquet": "b6aaccf461774885c741cf8004222ef3b206b87b60ebbc53671ec7f48c416f1a"
+  },
+  "size": 1000,
+  "split_sizes": {
+    "test": 100,
+    "train": 800,
+    "val": 100
+  },
+  "target_mechanisms": [],
+  "task": "placebo"
+}

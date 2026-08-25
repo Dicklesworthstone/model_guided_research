@@ -1,0 +1,117 @@
+{
+  "schema_version": "mgr.sizing_probe_result.v1",
+  "bead": "model_guided_research-vdc.4",
+  "phase": "phase-0d-copyops-h4-rung-finding",
+  "quarantined": true,
+  "claim_evidence_eligible": false,
+  "producer_git": {
+    "commit": "035903690e433f8a89a36ee3bab523938b011fce",
+    "dirty": false
+  },
+  "source_manifest": "manifest.json",
+  "runtime_seconds": 2897.4077725624666,
+  "completed_cells": 6,
+  "failed_cells": 0,
+  "coordinate": {
+    "attention_type": "standard",
+    "n_layer": 2,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_embd": 64,
+    "sequence_len": 64,
+    "batch_size": 4,
+    "learning_rate": 0.0006,
+    "optimizer_type": "adamw",
+    "warmup_steps": 0,
+    "dataset_size": 1000,
+    "dataset_seed": 42,
+    "training_seeds": [
+      0,
+      1,
+      2
+    ],
+    "eval_seeds": [
+      0,
+      1,
+      2
+    ],
+    "examples_per_split": 48,
+    "flops_per_step_est": 5108662272
+  },
+  "selection_rule": "The exact H4 rung qualifies only if all three standard copyops checkpoints exceed their artifact-recorded held-out answer prior and the per-seed held-out distribution is non-pathological and unimodal rather than floor-bimodal.",
+  "rung": {
+    "target_flops": 4000000000000.0,
+    "planned_flops": 4000082558976,
+    "planned_steps": 783,
+    "final_losses": [
+      1.8309340476989746,
+      1.8088092803955078,
+      1.8162246942520142
+    ],
+    "held_out_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "in_range_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "held_out_answer_prior": [
+      0.020833333333333332,
+      0.020833333333333332,
+      0.020833333333333332
+    ],
+    "held_out_perplexity": [
+      15.452243778440687,
+      16.562974287403954,
+      16.303333242734272
+    ],
+    "in_range_perplexity": [
+      6.867359664705065,
+      6.786308924357097,
+      6.833997709883584
+    ],
+    "qualified": false,
+    "reason": "No standard checkpoint exceeded its artifact-recorded answer prior; all held-out and in-range exact-match scores were zero."
+  },
+  "qualitative_diagnostic": {
+    "single_token_generations": 530,
+    "total_generations": 864,
+    "interpretation": "The prior e OUT loops gave way to mostly one-token or otherwise prematurely terminated outputs. The behavior changed, but no checkpoint executed the stateful operation."
+  },
+  "quarantined_placebo_control": {
+    "final_losses": [
+      1.5318882465362549,
+      1.5323222875595093,
+      1.532835602760315
+    ],
+    "held_out_perplexity": [
+      50.6009091536204,
+      50.43402801619636,
+      36.6946197019683
+    ],
+    "in_range_perplexity": [
+      4.122163222895728,
+      4.121338266465399,
+      4.122658481200536
+    ],
+    "skipped_examples": [
+      0,
+      0,
+      0
+    ]
+  },
+  "decision": {
+    "selected_target_flops": null,
+    "outcome": "no_rung_qualified",
+    "interpretation": "Doubling exposure from 2e12 to 4e12 improved in-range perplexity but worsened held-out perplexity and left every exact-match score at zero. This quarantined probe is sizing orientation only and is not evidence for or against any mechanism claim.",
+    "successor_required": true,
+    "successor_target_flops": 8000000000000.0,
+    "successor_planned_steps": 1566,
+    "successor_planned_flops": 8000165117952,
+    "successor_change": "target FLOPs only",
+    "successor_is_final_automatic_budget_rung": true
+  }
+}
