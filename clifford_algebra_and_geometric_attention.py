@@ -70,9 +70,7 @@ BLADES: tuple[tuple[int, ...], ...] = (
 #: Metric diagonal for Cl(3,0): every generator squares to +1.
 _METRIC: dict[int, float] = {1: 1.0, 2: 1.0, 3: 1.0}
 
-_BLADE_INDEX: dict[tuple[int, ...], int] = {
-    blade: i for i, blade in enumerate(BLADES)
-}
+_BLADE_INDEX: dict[tuple[int, ...], int] = {blade: i for i, blade in enumerate(BLADES)}
 
 
 def _blade_product(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[tuple[int, ...], float]:
@@ -179,9 +177,7 @@ def quat_to_clifford(q):
 def clifford_to_quat(m):
     """Extract (..., 4) Hamilton coefficients from the even subalgebra."""
 
-    comps = [
-        m[..., _QUAT_EMBED_IDX[i]] * _QUAT_EMBED_SIGN[i] for i in range(4)
-    ]
+    comps = [m[..., _QUAT_EMBED_IDX[i]] * _QUAT_EMBED_SIGN[i] for i in range(4)]
 
     return jnp.stack(comps, -1)
 
@@ -288,8 +284,7 @@ def run_property_checks(seed: int = 7) -> list[tuple[str, bool, str]]:
         (
             "derived_table_known_identities",
             id_ok,
-            "e1 e2 e1 = -e2 and e12^2 = -1 reproduced exactly from the "
-            "programmatically built table",
+            "e1 e2 e1 = -e2 and e12^2 = -1 reproduced exactly from the programmatically built table",
         )
     )
 
@@ -398,11 +393,7 @@ def _rotate_about(key, v, axis, angle):
     cos_a = jnp.cos(angle)
     sin_a = jnp.sin(angle)
 
-    return (
-        v * cos_a
-        + jnp.cross(axis[None, :], v) * sin_a
-        + jnp.outer(v @ axis, axis) * (1.0 - cos_a)
-    )
+    return v * cos_a + jnp.cross(axis[None, :], v) * sin_a + jnp.outer(v @ axis, axis) * (1.0 - cos_a)
 
 
 def _make_data(key, *, n_base=32, n_aug=16):
@@ -448,9 +439,7 @@ def _rotor_model_loss(params: jax.Array, inputs: jax.Array, targets: jax.Array) 
     return jnp.mean((pred - targets) ** 2)
 
 
-def _mlp_model_loss(
-    params: dict[str, jax.Array], inputs: jax.Array, targets: jax.Array
-) -> jax.Array:
+def _mlp_model_loss(params: dict[str, jax.Array], inputs: jax.Array, targets: jax.Array) -> jax.Array:
     hidden = jnp.tanh(inputs @ params["w1"] + params["b1"])
     hidden = jnp.tanh(hidden @ params["w2"] + params["b2"])
     pred = hidden @ params["w3"] + params["b3"]
@@ -575,8 +564,10 @@ def demo():
             print(f"{'PASS' if ok else 'FAIL'}  {name}: {detail}")
     say("")
 
-    say("[bold]Rotation-equivariance generalization[/bold] (teacher: 90-degree "
-        "rotation about a hidden axis; train on near-identity augmentations)")
+    say(
+        "[bold]Rotation-equivariance generalization[/bold] (teacher: 90-degree "
+        "rotation about a hidden axis; train on near-identity augmentations)"
+    )
     res = run_generalization_experiment(seed=7)
     try:
         from rich.table import Table as _Table

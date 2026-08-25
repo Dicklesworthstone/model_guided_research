@@ -1206,9 +1206,7 @@ def demo():
 
     M = _np.random.randn(d_a, d_a)
     A = 0.1 * (M - M.T)
-    Q = jnp.linalg.solve(
-        jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32)
-    )
+    Q = jnp.linalg.solve(jnp.eye(d_a) - jnp.array(A, dtype=jnp.float32), jnp.eye(d_a) + jnp.array(A, dtype=jnp.float32))
     inv_rows.append(("||Q^T Q−I||_F", f"{float(jnp.linalg.norm(Q.T @ Q - jnp.eye(d_a))):.2e}"))
     if USE_SYMPLECTIC_HYBRID:
         n = d_a // 2 if (d_a % 2 == 0) else (d_a - 1) // 2
@@ -1531,7 +1529,9 @@ def demo():
         set_reversible_cayley_iters(configured_cayley_steps)
     if config.use_rich_output:
         if final_ok:
-            console.print(f"\n[bold green]✓ Final cycle check: PASSED[/bold green] [dim](max error {final_error:.3e})[/dim]")
+            console.print(
+                f"\n[bold green]✓ Final cycle check: PASSED[/bold green] [dim](max error {final_error:.3e})[/dim]"
+            )
         else:
             console.print(f"\n[bold red]✗ Final cycle check: FAILED[/bold red] (max error {final_error:.3e})")
     else:

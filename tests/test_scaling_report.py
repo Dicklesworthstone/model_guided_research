@@ -44,10 +44,7 @@ def _write_seed_run(
     curve += rng.normal(0.0, target_loss * 0.002, size=n_steps)
     lines = [
         json.dumps({"type": "header", "schema_version": 1}),
-        *(
-            json.dumps({"type": "step", "step": i + 1, "loss": float(curve[i])})
-            for i in range(n_steps)
-        ),
+        *(json.dumps({"type": "step", "step": i + 1, "loss": float(curve[i])}) for i in range(n_steps)),
     ]
     (seed_dir / "metrics.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (seed_dir / "summary.json").write_text(
@@ -83,7 +80,11 @@ def _make_suite(
                 "flops_per_token_est": None,
                 "planned_max_steps": None,
                 "runs": [
-                    {"seed": s, "status": "done", "summary_path": str(suite / f"rung_{idx}" / f"seed_{s}" / "summary.json")}
+                    {
+                        "seed": s,
+                        "status": "done",
+                        "summary_path": str(suite / f"rung_{idx}" / f"seed_{s}" / "summary.json"),
+                    }
                     for s in range(seeds)
                 ],
             }
@@ -127,7 +128,6 @@ def _known_law_points(a=1.0e4, b_true=0.35, c=0.7):
     cs = [1e12, 3e12, 1e13, 3e13, 1e14]
     # NOTE: comprehension uses x so the floor c is not shadowed by the loop var
     return cs, [a * x ** (-b_true) + c for x in cs]
-
 
 
 def test_read_losses_prefers_metrics_falls_back_to_summary(tmp_path):

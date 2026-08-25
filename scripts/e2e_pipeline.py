@@ -64,8 +64,24 @@ REPO = Path(__file__).resolve().parents[1]
 CLI = [sys.executable, str(REPO / "cli.py")]
 TRAIN = [sys.executable, "-m", "nanochat.train"]
 PROMPT = "TASK arith CMP 1.00e-02 2.00e+03 OUT"
-TINY_MODEL = ["--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "32",
-              "--sequence-len", "64", "--batch-size", "4", "--device", "cpu", "--warmup-steps", "0"]
+TINY_MODEL = [
+    "--n-layer",
+    "1",
+    "--n-head",
+    "2",
+    "--n-kv-head",
+    "2",
+    "--n-embd",
+    "32",
+    "--sequence-len",
+    "64",
+    "--batch-size",
+    "4",
+    "--device",
+    "cpu",
+    "--warmup-steps",
+    "0",
+]
 
 console = Console()
 
@@ -138,10 +154,13 @@ class Runner:
         status = "pass" if ok else ("fail" if required else "skipped")
         color = {"pass": "green", "fail": "red", "skipped": "yellow"}[status]
         note = "" if ok else f"exit={code} (expected {expect_exit})" + ("" if required else " - optional, non-blocking")
-        console.print(Panel(
-            f"[{color}]{status.upper()}[/{color}] exit={code} (expected {expect_exit}) · {elapsed:.1f}s · log={log_path}",
-            title=f"END {self.scenario}/{name}", border_style=color,
-        ))
+        console.print(
+            Panel(
+                f"[{color}]{status.upper()}[/{color}] exit={code} (expected {expect_exit}) · {elapsed:.1f}s · log={log_path}",
+                title=f"END {self.scenario}/{name}",
+                border_style=color,
+            )
+        )
         self.stages.append(Stage(name, cmd_str, status, elapsed, note=note, log=str(log_path)))
         if not ok and required:
             tail = "\n".join(out.splitlines()[-50:])
@@ -166,7 +185,9 @@ class Runner:
         """A pure-python check recorded as a stage (artifact contracts etc.)."""
         status = "pass" if cond else "fail"
         color = "green" if cond else "red"
-        console.print(Panel(f"[{color}]{status.upper()}[/{color}]: {detail}", title=f"check: {name}", border_style=color))
+        console.print(
+            Panel(f"[{color}]{status.upper()}[/{color}]: {detail}", title=f"check: {name}", border_style=color)
+        )
         self.stages.append(Stage(name, f"(check) {detail}", status, 0.0))
         if not cond:
             raise StageFailure(name)
@@ -176,8 +197,7 @@ class Runner:
         rdir = self.workdir / "reports" / self.scenario
         rdir.mkdir(parents=True, exist_ok=True)
         inventory = sorted(
-            f"{p.relative_to(self.workdir)} ({p.stat().st_size:,}B)"
-            for p in self.workdir.rglob("summary.json")
+            f"{p.relative_to(self.workdir)} ({p.stat().st_size:,}B)" for p in self.workdir.rglob("summary.json")
         )
         payload = {
             "scenario": self.scenario,
@@ -211,14 +231,33 @@ class Runner:
 # shared helpers
 
 
-def _train_argv(work: Path, run_id: str, mech: str, *, max_steps: int, ckpt_interval: int, data_dir: Path,
-                seed: int = 7) -> list[str]:
-    return TRAIN + TINY_MODEL + [
-        "--attention-type", mech, "--data-dir", str(data_dir), "--max-steps", str(max_steps),
-        "--checkpoint-interval", str(ckpt_interval), "--seed", str(seed),
-        "--artifacts-dir", str(work / "artifacts"), "--artifacts-kind", "e2e", "--artifacts-topic", "loop",
-        "--run-id", run_id,
-    ]
+def _train_argv(
+    work: Path, run_id: str, mech: str, *, max_steps: int, ckpt_interval: int, data_dir: Path, seed: int = 7
+) -> list[str]:
+    return (
+        TRAIN
+        + TINY_MODEL
+        + [
+            "--attention-type",
+            mech,
+            "--data-dir",
+            str(data_dir),
+            "--max-steps",
+            str(max_steps),
+            "--checkpoint-interval",
+            str(ckpt_interval),
+            "--seed",
+            str(seed),
+            "--artifacts-dir",
+            str(work / "artifacts"),
+            "--artifacts-kind",
+            "e2e",
+            "--artifacts-topic",
+            "loop",
+            "--run-id",
+            run_id,
+        ]
+    )
 
 
 def _run_dir(work: Path, run_id: str) -> Path:
@@ -248,12 +287,18 @@ def _ckpt_steps(run_dir: Path) -> list[int]:
     return sorted(int(p.stem.split("_")[1]) for p in (run_dir / "checkpoints").glob("meta_*.json"))
 
 
-def _kill_train_mid_run(r: Runner, name: str, argv: list[str], run_dir: Path, kill_at_step: int,
-                        timeout: int = 600) -> None:
+def _kill_train_mid_run(
+    r: Runner, name: str, argv: list[str], run_dir: Path, kill_at_step: int, timeout: int = 600
+) -> None:
     """Start a training run, SIGKILL it once metrics.jsonl reaches kill_at_step."""
     cmd_str = shlex.join(argv)
-    console.print(Panel(f"[bold]{cmd_str}[/bold]\nSIGKILL at checkpoint-on-disk >= step {kill_at_step}",
-                        title=f"BEGIN {r.scenario}/{name}", border_style="cyan"))
+    console.print(
+        Panel(
+            f"[bold]{cmd_str}[/bold]\nSIGKILL at checkpoint-on-disk >= step {kill_at_step}",
+            title=f"BEGIN {r.scenario}/{name}",
+            border_style="cyan",
+        )
+    )
     t0 = time.perf_counter()
     log_path = r.logdir / f"{name}.log"
     with log_path.open("w") as log_fh:
@@ -275,23 +320,36 @@ def _kill_train_mid_run(r: Runner, name: str, argv: list[str], run_dir: Path, ki
     elapsed = time.perf_counter() - t0
     interrupted = killed and not (run_dir / "summary.json").exists()
     note = (
-        f"killed at checkpoint>={kill_at_step}" if interrupted
-        else ("kill landed after training completed (summary.json exists) - widen the window"
-              if killed else "run finished before kill")
+        f"killed at checkpoint>={kill_at_step}"
+        if interrupted
+        else (
+            "kill landed after training completed (summary.json exists) - widen the window"
+            if killed
+            else "run finished before kill"
+        )
     )
     status = "pass" if interrupted else "fail"
     r.stages.append(Stage(name, cmd_str, status, elapsed, note=note))
-    console.print(Panel(f"{'[green]PASS' if interrupted else '[red]FAIL'}[/] · {elapsed:.1f}s · {note}",
-                        title=f"END {r.scenario}/{name}", border_style="green" if interrupted else "red"))
+    console.print(
+        Panel(
+            f"{'[green]PASS' if interrupted else '[red]FAIL'}[/] · {elapsed:.1f}s · {note}",
+            title=f"END {r.scenario}/{name}",
+            border_style="green" if interrupted else "red",
+        )
+    )
     if not interrupted:
         raise StageFailure(name)
 
 
-def _resume_and_verify(r: Runner, name: str, work: Path, run_id: str, mech: str, *, max_steps: int,
-                       ckpt_interval: int, data_dir: Path) -> None:
+def _resume_and_verify(
+    r: Runner, name: str, work: Path, run_id: str, mech: str, *, max_steps: int, ckpt_interval: int, data_dir: Path
+) -> None:
     run_dir = _run_dir(work, run_id)
     argv = _train_argv(work, run_id, mech, max_steps=max_steps, ckpt_interval=ckpt_interval, data_dir=data_dir) + [
-        "--resume-from", "latest", "--checkpoint-dir", str(run_dir / "checkpoints"),
+        "--resume-from",
+        "latest",
+        "--checkpoint-dir",
+        str(run_dir / "checkpoints"),
     ]
     r.run(name, argv)
     # Trajectory continuity across the SIGKILL splice. Honest contract:
@@ -303,10 +361,12 @@ def _resume_and_verify(r: Runner, name: str, work: Path, run_id: str, mech: str,
     lines = _metric_lines(run_dir)
     headers = [i for i, rec in enumerate(lines) if rec.get("type") == "header"]
     resumes = [i for i, rec in enumerate(lines) if rec.get("type") == "resume_header"]
-    r.assert_true(f"{name}-splice",
-                  len(headers) == 1 and len(resumes) >= 1,
-                  f"history preserved across resume: headers={len(headers)} resume_headers={len(resumes)}")
-    tail = [rec["step"] for rec in lines[resumes[-1]:] if isinstance(rec.get("step"), int)]
+    r.assert_true(
+        f"{name}-splice",
+        len(headers) == 1 and len(resumes) >= 1,
+        f"history preserved across resume: headers={len(headers)} resume_headers={len(resumes)}",
+    )
+    tail = [rec["step"] for rec in lines[resumes[-1] :] if isinstance(rec.get("step"), int)]
     contiguous = all(b == a + 1 for a, b in zip(tail, tail[1:], strict=False))
     r.assert_true(
         f"{name}-continuity",
@@ -326,53 +386,142 @@ def scenario_full_loop(work: Path) -> bool:
     data_dir = work / "diag" / "arith"
     try:
         r.run("doctor", CLI + ["doctor", "--json"], required=False, timeout=180)
-        r.run("gen-tasks", CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"),
-                                  "--size", "300", "--seed", "7"])
+        r.run(
+            "gen-tasks",
+            CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"), "--size", "300", "--seed", "7"],
+        )
         # train the standard arm and SIGKILL it mid-run; the chain then proves
         # resume completes it to the planned budget
-        argv_std = _train_argv(work, "e2e-standard", "standard", max_steps=steps_total,
-                               ckpt_interval=interval, data_dir=data_dir)
-        _kill_train_mid_run(r, "train-standard-kill", argv_std, _run_dir(work, "e2e-standard"),
-                            kill_at_step=interval - 1)
-        _resume_and_verify(r, "train-standard-resume", work, "e2e-standard", "standard",
-                           max_steps=steps_total, ckpt_interval=interval, data_dir=data_dir)
-        r.run("train-tropical", _train_argv(work, "e2e-tropical", "tropical", max_steps=steps_total,
-                                            ckpt_interval=interval, data_dir=data_dir))
-        r.run("certify", CLI + ["certify", "-m", "standard", "-m", "tropical",
-                                "--artifacts-dir", str(work / "artifacts"), "--run-id", "e2e-cert"], timeout=1800)
+        argv_std = _train_argv(
+            work, "e2e-standard", "standard", max_steps=steps_total, ckpt_interval=interval, data_dir=data_dir
+        )
+        _kill_train_mid_run(
+            r, "train-standard-kill", argv_std, _run_dir(work, "e2e-standard"), kill_at_step=interval - 1
+        )
+        _resume_and_verify(
+            r,
+            "train-standard-resume",
+            work,
+            "e2e-standard",
+            "standard",
+            max_steps=steps_total,
+            ckpt_interval=interval,
+            data_dir=data_dir,
+        )
+        r.run(
+            "train-tropical",
+            _train_argv(
+                work, "e2e-tropical", "tropical", max_steps=steps_total, ckpt_interval=interval, data_dir=data_dir
+            ),
+        )
+        r.run(
+            "certify",
+            CLI
+            + [
+                "certify",
+                "-m",
+                "standard",
+                "-m",
+                "tropical",
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e-cert",
+            ],
+            timeout=1800,
+        )
         for arm in ("standard", "tropical"):
-            r.run(f"eval-{arm}", CLI + ["eval-tasks", "--checkpoint", str(_run_dir(work, f"e2e-{arm}") / "checkpoints"),
-                                        "--task", "arith", "--seeds", "0", "--examples", "6",
-                                        "--artifacts-dir", str(work / "artifacts"), "--run-id", f"e2e-eval-{arm}"])
+            r.run(
+                f"eval-{arm}",
+                CLI
+                + [
+                    "eval-tasks",
+                    "--checkpoint",
+                    str(_run_dir(work, f"e2e-{arm}") / "checkpoints"),
+                    "--task",
+                    "arith",
+                    "--seeds",
+                    "0",
+                    "--examples",
+                    "6",
+                    "--artifacts-dir",
+                    str(work / "artifacts"),
+                    "--run-id",
+                    f"e2e-eval-{arm}",
+                ],
+            )
             summary = work / "artifacts" / "evals" / "tasks" / f"e2e-eval-{arm}" / "summary.json"
             rec = json.loads(summary.read_text())
-            r.assert_true(f"eval-{arm}-contract",
-                          rec["schema_version"] == "mgr.evaltasks.v3" and "answer_prior" in rec["tasks"]["arith"]
-                          and (summary.parent / "generations.jsonl").exists(),
-                          f"{summary.name}: v2 schema + answer_prior + receipts present")
-        out = r.run("sample", CLI + ["sample", "--checkpoint", str(_run_dir(work, "e2e-standard") / "checkpoints"),
-                                     "--prompt", PROMPT, "--max-tokens", "8", "--json"])
-        r.assert_true("sample-contract", '"results"' in out and '"tokens_per_s"' in out,
-                      "sample --json emits the results contract")
-        r.run("regressions", CLI + ["regressions",
-                                    "--baseline", str(_run_dir(work, "e2e-standard")),
-                                    "--candidate", str(_run_dir(work, "e2e-tropical")),
-                                    "--artifacts-dir", str(work / "artifacts"), "--run-id", "e2e-reg",
-                                    "--no-html", "--no-fail-on-regression"])
+            r.assert_true(
+                f"eval-{arm}-contract",
+                rec["schema_version"] == "mgr.evaltasks.v3"
+                and "answer_prior" in rec["tasks"]["arith"]
+                and (summary.parent / "generations.jsonl").exists(),
+                f"{summary.name}: v2 schema + answer_prior + receipts present",
+            )
+        out = r.run(
+            "sample",
+            CLI
+            + [
+                "sample",
+                "--checkpoint",
+                str(_run_dir(work, "e2e-standard") / "checkpoints"),
+                "--prompt",
+                PROMPT,
+                "--max-tokens",
+                "8",
+                "--json",
+            ],
+        )
+        r.assert_true(
+            "sample-contract",
+            '"results"' in out and '"tokens_per_s"' in out,
+            "sample --json emits the results contract",
+        )
+        r.run(
+            "regressions",
+            CLI
+            + [
+                "regressions",
+                "--baseline",
+                str(_run_dir(work, "e2e-standard")),
+                "--candidate",
+                str(_run_dir(work, "e2e-tropical")),
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e-reg",
+                "--no-html",
+                "--no-fail-on-regression",
+            ],
+        )
         # G2 maintenance-contract stage: the verdict engine must REFUSE this
         # under-seeded, single-seed evidence - blocked with machine-readable
         # reasons is the PASSING outcome here
-        out = r.run("adjudicate-dry-run", CLI + ["adjudicate", "--all", "--dry-run",
-                                                 "--artifacts", str(work / "artifacts"),
-                                                 "--artifacts-dir", str(work / "artifacts"), "--run-id", "e2e"])
+        out = r.run(
+            "adjudicate-dry-run",
+            CLI
+            + [
+                "adjudicate",
+                "--all",
+                "--dry-run",
+                "--artifacts",
+                str(work / "artifacts"),
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e",
+            ],
+        )
         verdicts = json.loads((work / "artifacts" / "adjudications" / "e2e" / "verdicts.json").read_text())
-        bad = [v for v in verdicts["verdicts"]
-               if v["verdict"] == "blocked" and not v.get("reason_code")]
+        bad = [v for v in verdicts["verdicts"] if v["verdict"] == "blocked" and not v.get("reason_code")]
         ruled = [v for v in verdicts["verdicts"] if v["verdict"] not in ("blocked",)]
-        r.assert_true("adjudicate-refusal-integrity",
-                      not bad and not ruled,
-                      f"engine refused all {len(verdicts['verdicts'])} hypotheses with machine-readable reasons "
-                      f"(ruled={len(ruled)}, missing-reason={len(bad)})")
+        r.assert_true(
+            "adjudicate-refusal-integrity",
+            not bad and not ruled,
+            f"engine refused all {len(verdicts['verdicts'])} hypotheses with machine-readable reasons "
+            f"(ruled={len(ruled)}, missing-reason={len(bad)})",
+        )
     except StageFailure:
         pass
     return r.report()
@@ -386,25 +535,51 @@ def scenario_resume(work: Path, seed: int | None) -> bool:
     # kill triggers on a checkpoint hitting disk, so pick a random checkpoint
     # boundary well short of the end (leave >= 2 intervals of runway)
     kill_at = rng.randrange(interval - 1, steps_total - 2 * interval, interval)
-    console.print(Panel(f"randomized kill: seed={rng_seed} kill_at_step={kill_at}",
-                        title="resume scenario parameters", border_style="magenta"))
+    console.print(
+        Panel(
+            f"randomized kill: seed={rng_seed} kill_at_step={kill_at}",
+            title="resume scenario parameters",
+            border_style="magenta",
+        )
+    )
     data_dir = work / "diag" / "arith"
     try:
         if not data_dir.exists():
-            r.run("gen-tasks", CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"),
-                                      "--size", "300", "--seed", "7"])
-        argv = _train_argv(work, "e2e-resume", "standard", max_steps=steps_total,
-                           ckpt_interval=interval, data_dir=data_dir)
+            r.run(
+                "gen-tasks",
+                CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"), "--size", "300", "--seed", "7"],
+            )
+        argv = _train_argv(
+            work, "e2e-resume", "standard", max_steps=steps_total, ckpt_interval=interval, data_dir=data_dir
+        )
         _kill_train_mid_run(r, "train-kill", argv, _run_dir(work, "e2e-resume"), kill_at_step=kill_at)
-        _resume_and_verify(r, "train-resume", work, "e2e-resume", "standard",
-                           max_steps=steps_total, ckpt_interval=interval, data_dir=data_dir)
+        _resume_and_verify(
+            r,
+            "train-resume",
+            work,
+            "e2e-resume",
+            "standard",
+            max_steps=steps_total,
+            ckpt_interval=interval,
+            data_dir=data_dir,
+        )
     except StageFailure:
         pass
     return r.report()
 
 
-DETERMINISM_MECHS = ["standard", "ultrametric", "simplicial", "quaternion", "braid",
-                     "fractal", "surreal", "tropical", "reversible", "gauge"]
+DETERMINISM_MECHS = [
+    "standard",
+    "ultrametric",
+    "simplicial",
+    "quaternion",
+    "braid",
+    "fractal",
+    "surreal",
+    "tropical",
+    "reversible",
+    "gauge",
+]
 
 
 def scenario_determinism(work: Path) -> bool:
@@ -413,24 +588,43 @@ def scenario_determinism(work: Path) -> bool:
     rates: list[tuple[str, float]] = []
     try:
         if not data_dir.exists():
-            r.run("gen-tasks", CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"),
-                                      "--size", "300", "--seed", "7"])
+            r.run(
+                "gen-tasks",
+                CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"), "--size", "300", "--seed", "7"],
+            )
         r.skip("octonion", "excluded until 7b0.6 vectorizes the octonion loop (slow at any size)")
         for mech in DETERMINISM_MECHS:
-            r.run(f"train-{mech}", _train_argv(work, f"e2e-det-{mech}", mech, max_steps=12,
-                                               ckpt_interval=12, data_dir=data_dir), timeout=900)
+            r.run(
+                f"train-{mech}",
+                _train_argv(work, f"e2e-det-{mech}", mech, max_steps=12, ckpt_interval=12, data_dir=data_dir),
+                timeout=900,
+            )
             texts = []
             for rep in (1, 2):
-                out = r.run(f"sample-{mech}-{rep}",
-                            CLI + ["sample", "--checkpoint", str(_run_dir(work, f"e2e-det-{mech}") / "checkpoints"),
-                                   "--prompt", PROMPT, "--max-tokens", "8", "--seed", "3",
-                                   "--no-stop-at-separator", "--json"])
-                payload = json.loads(out[out.index("{"):])
+                out = r.run(
+                    f"sample-{mech}-{rep}",
+                    CLI
+                    + [
+                        "sample",
+                        "--checkpoint",
+                        str(_run_dir(work, f"e2e-det-{mech}") / "checkpoints"),
+                        "--prompt",
+                        PROMPT,
+                        "--max-tokens",
+                        "8",
+                        "--seed",
+                        "3",
+                        "--no-stop-at-separator",
+                        "--json",
+                    ],
+                )
+                payload = json.loads(out[out.index("{") :])
                 texts.append(payload["results"][0]["text"])
                 if rep == 2:
                     rates.append((mech, payload["results"][0]["tokens_per_s"]))
-            r.assert_true(f"determinism-{mech}", texts[0] == texts[1],
-                          f"{mech}: greedy same-seed outputs byte-identical")
+            r.assert_true(
+                f"determinism-{mech}", texts[0] == texts[1], f"{mech}: greedy same-seed outputs byte-identical"
+            )
         table = Table(title="greedy decode tokens/s by mechanism", border_style="cyan")
         table.add_column("mechanism")
         table.add_column("tokens/s", justify="right")
@@ -450,44 +644,89 @@ def scenario_word_problem(work: Path) -> bool:
     r = Runner(work, "word-problem")
     data_dir = work / "diag-group" / "group"
     try:
-        r.run("gen-tasks", CLI + ["gen-tasks", "--task", "group", "--out", str(work / "diag-group"),
-                                  "--size", "300", "--seed", "11", "--dial", "length=4"])
-        argv_rmx = _train_argv(work, "e2e-wp-rmatrix", "braid", max_steps=20, ckpt_interval=10,
-                               data_dir=data_dir) + ["--braid-crossing-law", "rmatrix", "--braid-verify"]
+        r.run(
+            "gen-tasks",
+            CLI
+            + [
+                "gen-tasks",
+                "--task",
+                "group",
+                "--out",
+                str(work / "diag-group"),
+                "--size",
+                "300",
+                "--seed",
+                "11",
+                "--dial",
+                "length=4",
+            ],
+        )
+        argv_rmx = _train_argv(work, "e2e-wp-rmatrix", "braid", max_steps=20, ckpt_interval=10, data_dir=data_dir) + [
+            "--braid-crossing-law",
+            "rmatrix",
+            "--braid-verify",
+        ]
         r.run("train-rmatrix", argv_rmx)
-        r.run("train-standard", _train_argv(work, "e2e-wp-standard", "standard", max_steps=20,
-                                            ckpt_interval=10, data_dir=data_dir))
+        r.run(
+            "train-standard",
+            _train_argv(work, "e2e-wp-standard", "standard", max_steps=20, ckpt_interval=10, data_dir=data_dir),
+        )
         # conserved-charge telemetry must land in the D2 metrics stream for the
         # rmatrix arm: Q1 (mass partition) at fp32 noise, Q2 (braid residual)
         # at fp64 noise - the integrable-vs-heuristic separation observable
-        charge_recs = [rec for rec in _metric_lines(_run_dir(work, "e2e-wp-rmatrix"))
-                       if rec.get("type") == "step" and "braid_q1_mass_defect_max" in rec]
-        r.assert_true("rmatrix-charge-telemetry",
-                      bool(charge_recs)
-                      and all(rec["braid_q1_mass_defect_max"] < 1e-5 for rec in charge_recs)
-                      and all(rec["braid_q2_braid_residual_max"] < 1e-10 for rec in charge_recs),
-                      f"{len(charge_recs)} step records carry Q1<1e-5 and Q2<1e-10 charge readings")
+        charge_recs = [
+            rec
+            for rec in _metric_lines(_run_dir(work, "e2e-wp-rmatrix"))
+            if rec.get("type") == "step" and "braid_q1_mass_defect_max" in rec
+        ]
+        r.assert_true(
+            "rmatrix-charge-telemetry",
+            bool(charge_recs)
+            and all(rec["braid_q1_mass_defect_max"] < 1e-5 for rec in charge_recs)
+            and all(rec["braid_q2_braid_residual_max"] < 1e-10 for rec in charge_recs),
+            f"{len(charge_recs)} step records carry Q1<1e-5 and Q2<1e-10 charge readings",
+        )
         for arm in ("rmatrix", "standard"):
-            r.run(f"eval-{arm}", CLI + ["eval-tasks",
-                                        "--checkpoint", str(_run_dir(work, f"e2e-wp-{arm}") / "checkpoints"),
-                                        "--task", "group", "--dial", "length=4",
-                                        "--seeds", "0", "--examples", "12",
-                                        "--artifacts-dir", str(work / "artifacts"),
-                                        "--run-id", f"e2e-wp-eval-{arm}"])
+            r.run(
+                f"eval-{arm}",
+                CLI
+                + [
+                    "eval-tasks",
+                    "--checkpoint",
+                    str(_run_dir(work, f"e2e-wp-{arm}") / "checkpoints"),
+                    "--task",
+                    "group",
+                    "--dial",
+                    "length=4",
+                    "--seeds",
+                    "0",
+                    "--examples",
+                    "12",
+                    "--artifacts-dir",
+                    str(work / "artifacts"),
+                    "--run-id",
+                    f"e2e-wp-eval-{arm}",
+                ],
+            )
             summary = work / "artifacts" / "evals" / "tasks" / f"e2e-wp-eval-{arm}" / "summary.json"
             rec = json.loads(summary.read_text())
             slope = rec["tasks"]["group"].get("length_slope")
             held = (slope or {}).get("held_out")
-            r.assert_true(f"eval-{arm}-slope-contract",
-                          isinstance(slope, dict) and isinstance(held, dict)
-                          and "slope" in held and "ci95" in held and held["n_docs"] >= 3
-                          and isinstance(slope.get("by_category"), dict),
-                          f"{arm}: length_slope.held_out fit present (n={held.get('n_docs') if held else 0}) "
-                          "with per-group by_category breakdown")
+            r.assert_true(
+                f"eval-{arm}-slope-contract",
+                isinstance(slope, dict)
+                and isinstance(held, dict)
+                and "slope" in held
+                and "ci95" in held
+                and held["n_docs"] >= 3
+                and isinstance(slope.get("by_category"), dict),
+                f"{arm}: length_slope.held_out fit present (n={held.get('n_docs') if held else 0}) "
+                "with per-group by_category breakdown",
+            )
             run_md = (summary.parent / "run.md").read_text()
-            r.assert_true(f"eval-{arm}-slope-table",
-                          "slope held-out" in run_md,
-                          f"{arm}: run.md renders the slope column")
+            r.assert_true(
+                f"eval-{arm}-slope-table", "slope held-out" in run_md, f"{arm}: run.md renders the slope column"
+            )
     except StageFailure:
         pass
     return r.report()
@@ -502,20 +741,33 @@ def scenario_symplectic(work: Path) -> bool:
     r = Runner(work, "symplectic")
     data_dir = work / "diag-hier" / "hier"
     try:
-        r.run("gen-tasks", CLI + ["gen-tasks", "--task", "hier", "--out", str(work / "diag-hier"),
-                                  "--size", "300", "--seed", "11"])
-        argv = _train_argv(work, "e2e-symplectic", "reversible", max_steps=24, ckpt_interval=12,
-                           data_dir=data_dir) + [
-            "--n-layer", "8", "--n-head", "4", "--n-kv-head", "2",  # depth 8; reversible halves heads
-            "--reversible-mode", "symplectic", "--reversible-tied",
-            "--reversible-lambda-min", "0.05", "--reversible-record-energy",
+        r.run(
+            "gen-tasks",
+            CLI + ["gen-tasks", "--task", "hier", "--out", str(work / "diag-hier"), "--size", "300", "--seed", "11"],
+        )
+        argv = _train_argv(work, "e2e-symplectic", "reversible", max_steps=24, ckpt_interval=12, data_dir=data_dir) + [
+            "--n-layer",
+            "8",
+            "--n-head",
+            "4",
+            "--n-kv-head",
+            "2",  # depth 8; reversible halves heads
+            "--reversible-mode",
+            "symplectic",
+            "--reversible-tied",
+            "--reversible-lambda-min",
+            "0.05",
+            "--reversible-record-energy",
         ]
         r.run("train-symplectic-tied", argv)
-        recs = [rec for rec in _metric_lines(_run_dir(work, "e2e-symplectic"))
-                if rec.get("type") == "step" and "symplectic_shadow_energy_mean" in rec]
-        r.assert_true("energy-telemetry-present",
-                      len(recs) >= 24,
-                      f"{len(recs)} step records carry shadow-energy telemetry")
+        recs = [
+            rec
+            for rec in _metric_lines(_run_dir(work, "e2e-symplectic"))
+            if rec.get("type") == "step" and "symplectic_shadow_energy_mean" in rec
+        ]
+        r.assert_true(
+            "energy-telemetry-present", len(recs) >= 24, f"{len(recs)} step records carry shadow-energy telemetry"
+        )
         finite = all(
             rec["symplectic_shadow_energy_mean"] == rec["symplectic_shadow_energy_mean"]
             and rec["symplectic_x_norm_mean"] == rec["symplectic_x_norm_mean"]
@@ -530,21 +782,26 @@ def scenario_symplectic(work: Path) -> bool:
             for rec in recs
         )
         worst = max(
-            rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"]))
-            for rec in recs
+            rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"])) for rec in recs
         )
-        r.assert_true("across-layer-energy-band", bands_ok,
-                      f"across-layer shadow-energy band <= 10% of scale at every step (worst {worst:.4f})")
+        r.assert_true(
+            "across-layer-energy-band",
+            bands_ok,
+            f"across-layer shadow-energy band <= 10% of scale at every step (worst {worst:.4f})",
+        )
         norms = [rec["symplectic_x_norm_mean"] for rec in recs]
-        r.assert_true("activation-norms-bounded",
-                      max(norms) <= 50.0 * max(norms[0], 1e-9),
-                      f"activation norms bounded: first {norms[0]:.4f}, max {max(norms):.4f}")
+        r.assert_true(
+            "activation-norms-bounded",
+            max(norms) <= 50.0 * max(norms[0], 1e-9),
+            f"activation norms bounded: first {norms[0]:.4f}, max {max(norms):.4f}",
+        )
         summary = json.loads((_run_dir(work, "e2e-symplectic") / "summary.json").read_text())
         res = summary.get("results", {})
-        r.assert_true("summary-energy-aggregates",
-                      all(k in res for k in ("symplectic_energy_first", "symplectic_energy_final",
-                                             "symplectic_x_norm_final")),
-                      "summary records symplectic energy/norm aggregates")
+        r.assert_true(
+            "summary-energy-aggregates",
+            all(k in res for k in ("symplectic_energy_first", "symplectic_energy_final", "symplectic_x_norm_final")),
+            "summary records symplectic energy/norm aggregates",
+        )
     except StageFailure:
         pass
     return r.report()
@@ -553,29 +810,76 @@ def scenario_symplectic(work: Path) -> bool:
 def scenario_regression_gate(work: Path) -> bool:
     r = Runner(work, "regression-gate")
     try:
-        r.run("bench", CLI + ["bench-fixed-flops", "--run-id", "e2e-bench", "--device", "cpu",
-                              "--target-flops", "2e9", "-a", "standard", "-a", "tropical",
-                              "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "32",
-                              "--sequence-len", "64", "--batch-size", "4",
-                              "--artifacts-dir", str(work / "artifacts")], timeout=1800)
+        r.run(
+            "bench",
+            CLI
+            + [
+                "bench-fixed-flops",
+                "--run-id",
+                "e2e-bench",
+                "--device",
+                "cpu",
+                "--target-flops",
+                "2e9",
+                "-a",
+                "standard",
+                "-a",
+                "tropical",
+                "--n-layer",
+                "1",
+                "--n-head",
+                "2",
+                "--n-kv-head",
+                "2",
+                "--n-embd",
+                "32",
+                "--sequence-len",
+                "64",
+                "--batch-size",
+                "4",
+                "--artifacts-dir",
+                str(work / "artifacts"),
+            ],
+            timeout=1800,
+        )
         bench_dirs = sorted((work / "artifacts").rglob("e2e-bench*/summary.json"))
         r.assert_true("bench-artifacts", bool(bench_dirs), f"bench summaries found: {len(bench_dirs)}")
         base = bench_dirs[0].parent
         # suite summaries hold one record per attention_type: variant selectors
         # pick the arm, and --fail-on-missing forbids a vacuous pass where
         # every metric reads 'missing' (the trap this stage originally fell in)
-        r.run("gate-self", CLI + ["regressions",
-                                  "--baseline", str(base), "--baseline-variant", "standard",
-                                  "--candidate", str(base), "--candidate-variant", "standard",
-                                  "--artifacts-dir", str(work / "artifacts"), "--run-id", "e2e-gate-self",
-                                  "--no-html", "--fail-on-regression"])
+        r.run(
+            "gate-self",
+            CLI
+            + [
+                "regressions",
+                "--baseline",
+                str(base),
+                "--baseline-variant",
+                "standard",
+                "--candidate",
+                str(base),
+                "--candidate-variant",
+                "standard",
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e-gate-self",
+                "--no-html",
+                "--fail-on-regression",
+            ],
+        )
         # vacuity guard without --fail-on-missing (peak memory is legitimately
         # null on CPU): the report must show the loss actually compared
         gate_report = json.loads((work / "artifacts" / "regressions" / "e2e-gate-self" / "summary.json").read_text())
         gate_text = json.dumps(gate_report)
-        r.assert_true("gate-self-not-vacuous", '"final_loss"' in gate_text and '"missing"' not in
-                      json.dumps([m for m in gate_report.get("metrics", []) if m.get("key") == "final_loss"]),
-                      "gate-self compared final_loss (a run of all-missing metrics would pass vacuously)")
+        r.assert_true(
+            "gate-self-not-vacuous",
+            '"final_loss"' in gate_text
+            and '"missing"'
+            not in json.dumps([m for m in gate_report.get("metrics", []) if m.get("key") == "final_loss"]),
+            "gate-self compared final_loss (a run of all-missing metrics would pass vacuously)",
+        )
         # deliberately degraded fixture must TRIP the gate (exit 1): the
         # candidate variant's loss is bumped 1.5x and throughput halved
         degraded = work / "degraded"
@@ -590,13 +894,28 @@ def scenario_regression_gate(work: Path) -> bool:
                     if isinstance(run.get(key), (int, float)):
                         run[key] = run[key] * 0.5
         (degraded / "summary.json").write_text(json.dumps(rec))
-        r.run("gate-trips-on-degraded",
-              CLI + ["regressions",
-                     "--baseline", str(base), "--baseline-variant", "tropical",
-                     "--candidate", str(degraded), "--candidate-variant", "tropical",
-                     "--artifacts-dir", str(work / "artifacts"), "--run-id", "e2e-gate-trip",
-                     "--no-html", "--fail-on-regression"],
-              expect_exit=1)
+        r.run(
+            "gate-trips-on-degraded",
+            CLI
+            + [
+                "regressions",
+                "--baseline",
+                str(base),
+                "--baseline-variant",
+                "tropical",
+                "--candidate",
+                str(degraded),
+                "--candidate-variant",
+                "tropical",
+                "--artifacts-dir",
+                str(work / "artifacts"),
+                "--run-id",
+                "e2e-gate-trip",
+                "--no-html",
+                "--fail-on-regression",
+            ],
+            expect_exit=1,
+        )
     except StageFailure:
         pass
     return r.report()
@@ -670,15 +989,33 @@ def scenario_scorecard(work: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--scenario",
-                        choices=["full-loop", "resume", "determinism", "regression-gate", "scorecard", "word-problem",
-                                 "symplectic", "all"],
-                        default="all")
-    parser.add_argument("--workdir", type=Path, default=None,
-                        help="Working directory (default: a fresh temp dir OUTSIDE the repo; kept on failure)")
+    parser.add_argument(
+        "--scenario",
+        choices=[
+            "full-loop",
+            "resume",
+            "determinism",
+            "regression-gate",
+            "scorecard",
+            "word-problem",
+            "symplectic",
+            "all",
+        ],
+        default="all",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        default=None,
+        help="Working directory (default: a fresh temp dir OUTSIDE the repo; kept on failure)",
+    )
     parser.add_argument("--keep", action="store_true", help="Keep the workdir even on success")
-    parser.add_argument("--resume-kill-seed", type=int, default=None,
-                        help="Pin the resume scenario's randomized kill step (logged either way)")
+    parser.add_argument(
+        "--resume-kill-seed",
+        type=int,
+        default=None,
+        help="Pin the resume scenario's randomized kill step (logged either way)",
+    )
     args = parser.parse_args()
 
     work = args.workdir or Path(tempfile.mkdtemp(prefix="mgr-e2e-"))
@@ -705,8 +1042,10 @@ def main() -> int:
     console.print(table)
     all_ok = all(results.values())
     if all_ok and not args.keep and args.workdir is None:
-        console.print(f"[dim]workdir retained at {work} (pass --keep to silence this note; "
-                      "temp dirs are never auto-deleted by this script)[/dim]")
+        console.print(
+            f"[dim]workdir retained at {work} (pass --keep to silence this note; "
+            "temp dirs are never auto-deleted by this script)[/dim]"
+        )
     return 0 if all_ok else 1
 
 

@@ -352,7 +352,14 @@ def activation_distance_matrix(seqs: list[list[int]], seed: int) -> np.ndarray:
     from nanochat.gpt import GPT, GPTConfig
 
     torch.manual_seed(seed)
-    cfg = GPTConfig(sequence_len=max(max((len(s) for s in seqs), default=8), 8), vocab_size=50304, n_layer=2, n_head=2, n_kv_head=2, n_embd=64)
+    cfg = GPTConfig(
+        sequence_len=max(max((len(s) for s in seqs), default=8), 8),
+        vocab_size=50304,
+        n_layer=2,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=64,
+    )
     with torch.no_grad():
         model = GPT(cfg).eval()
         feats = []
@@ -549,8 +556,13 @@ def profile_from_texts(texts: list[str], cfg: ProfileConfig) -> dict[str, Any]:
         "corpus": cfg.corpus_label,
         "mode": cfg.mode,
         "seed": cfg.seed,
-        "sample": {"docs": len(texts), "points": pts, "doc_tokens": cfg.doc_tokens,
-                   "quadruples": int(deltas.size), "triples": int(viol.size)},
+        "sample": {
+            "docs": len(texts),
+            "points": pts,
+            "doc_tokens": cfg.doc_tokens,
+            "quadruples": int(deltas.size),
+            "triples": int(viol.size),
+        },
         "distance_diagnostics": {"mean": mean_d, "coefficient_of_variation": cv, "concentrated": concentrated},
         "estimators": {
             "delta_hyperbolicity": {

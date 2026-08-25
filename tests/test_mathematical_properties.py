@@ -1237,7 +1237,9 @@ class TestSymplecticReversible:
         band_bad, peak_bad = run(+1.0)
         require(band_ok < 0.2 * band_bad, f"no conservation separation: {band_ok:.4f} vs {band_bad:.4f}")
         require(peak_ok < peak_bad, f"no norm separation: peak {peak_ok:.2f} vs {peak_bad:.2f}")
-        print(f"  ✅ corrected sign: energy band {band_ok:.4f} vs ++ sign {band_bad:.4f}; norm peak {peak_ok:.1f}x vs {peak_bad:.1f}x")
+        print(
+            f"  ✅ corrected sign: energy band {band_ok:.4f} vs ++ sign {band_bad:.4f}; norm peak {peak_ok:.1f}x vs {peak_bad:.1f}x"
+        )
 
     def test_coercivity_bound_holds_along_trajectory(self):
         """The note's explicit bound ||x||^2 <= (2/lambda)(H_max + 2 T V) with
@@ -1455,6 +1457,7 @@ class TestAdditiveReversibleWiring:
         exercised through the WIRED forward (values are identical either way)."""
 
         import torch
+
         dim = 2 * self.T * self.CH
         wired, _ = self._tiny_block(seed=13)
         z0 = torch.randn(dim, dtype=torch.float64)
@@ -1473,6 +1476,7 @@ class TestAdditiveReversibleWiring:
         err = float((x_rec - x).abs().max())
         require(err < 1e-12, f"fwd->inverse round trip exceeds machine epsilon: {err:.2e}")
         print(f"  ✅ det J = {det:.12f}; round-trip max err {err:.2e} (fp64)")
+
 
 class TestSurrealNumbers:
     """Test surreal number scaling and field properties."""
@@ -1942,9 +1946,7 @@ class TestCliffordAlgebra:
         key = jax.random.PRNGKey(11)
         qa = jax.random.normal(key, (64, 4))
         qb = jax.random.normal(jax.random.split(key)[1], (64, 4))
-        via_gp = clifford.clifford_to_quat(
-            clifford.gp(clifford.quat_to_clifford(qa), clifford.quat_to_clifford(qb))
-        )
+        via_gp = clifford.clifford_to_quat(clifford.gp(clifford.quat_to_clifford(qa), clifford.quat_to_clifford(qb)))
         direct = clifford.hamilton_qmul(qa, qb)
         gap = float(jnp.max(jnp.abs(via_gp - direct)))
         require(gap <= 1e-6, f"Cl+(3,0) reduction to Hamilton product broken: {gap:.3e}")
@@ -1957,9 +1959,7 @@ class TestCliffordAlgebra:
 
         key = jax.random.PRNGKey(12)
         a, b, c = (jax.random.normal(k, (64, 8)) for k in jax.random.split(key, 3))
-        assoc = float(
-            jnp.max(jnp.abs(clifford.gp(clifford.gp(a, b), c) - clifford.gp(a, clifford.gp(b, c))))
-        )
+        assoc = float(jnp.max(jnp.abs(clifford.gp(clifford.gp(a, b), c) - clifford.gp(a, clifford.gp(b, c)))))
         require(assoc < 1e-5, f"geometric product must be associative: {assoc:.3e}")
 
     def test_rotor_norm_and_composition(self):
@@ -2078,9 +2078,7 @@ class TestHossTorchParity:
         # gradient_norm_clip=None preserves ||g||: the OU-mean identity
         # assumes unclipped gradients (the JAX reference clips identically,
         # which rescales the step - mirroring is required, not identity).
-        opt = HOSS(
-            [p], lr=delta, lanczos_rank=2, noise_scale=0.0, isotropic_noise_var=0.0, gradient_norm_clip=None
-        )
+        opt = HOSS([p], lr=delta, lanczos_rank=2, noise_scale=0.0, isotropic_noise_var=0.0, gradient_norm_clip=None)
         closure = self._quadratic_closure(p, H)
         loss = opt.step(closure)
         require(loss is not None, "HOSS.step must return the closure's loss")
@@ -2185,10 +2183,7 @@ class TestHyperbolicLorentz:
         k1, k2, k3 = random.split(key, 3)
         pa = jax.vmap(lambda vv: hyp.exp_map_o(vv, 1.0))(jax.random.normal(k1, (16, 7)))
         pb = jax.vmap(lambda vv: hyp.exp_map_o(vv, 1.0))(jax.random.normal(k2, (16, 7)))
-        d_h_far = jnp.arccosh(
-            jnp.maximum(pa[:, 0][:, None] * pb[:, 0][None, :] - pa[:, 1:] @ pb[:, 1:].T,
-                        1.0 + 1e-12)
-        )
+        d_h_far = jnp.arccosh(jnp.maximum(pa[:, 0][:, None] * pb[:, 0][None, :] - pa[:, 1:] @ pb[:, 1:].T, 1.0 + 1e-12))
         d_e_far = jnp.linalg.norm(pa[:, 1:] - pb[:, 1:], axis=-1)
         # Radial isometry: d_H(o, exp_o(t u)) == t.
         u = jax.random.normal(k3, (7,))

@@ -315,9 +315,9 @@ def test_octonion_blade_fused_product_matches_omul_and_preserves_laws(seed: int)
         "alternativity broke in the fused blade product"
     )
     norm_xy = xy.norm(dim=-1)
-    assert float((norm_xy - xt.norm(dim=-1) * yt.norm(dim=-1)).abs().max()) <= _scaled_atol(
-        xy, base=1e-11
-    ), "norm multiplicativity broke in the fused blade product"
+    assert float((norm_xy - xt.norm(dim=-1) * yt.norm(dim=-1)).abs().max()) <= _scaled_atol(xy, base=1e-11), (
+        "norm multiplicativity broke in the fused blade product"
+    )
 
 
 def test_octonion_blade_sign_table_is_a_valid_multiplication_table():
@@ -346,9 +346,7 @@ def test_clifford_torch_table_matches_independent_oracle():
     import clifford_algebra_and_geometric_attention as demo
     from nanochat.clifford_attention_torch import _STRUCTURE, cgp, creverse
 
-    assert np.allclose(_STRUCTURE.numpy(), demo.STRUCTURE), (
-        "production and demo blade tables diverge"
-    )
+    assert np.allclose(_STRUCTURE.numpy(), demo.STRUCTURE), "production and demo blade tables diverge"
     e = torch.eye(8, dtype=torch.float64)
     rng = np.random.default_rng(5)
     x = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
@@ -483,11 +481,14 @@ def test_tropicalization_of_attention_with_exact_genericity_characterization(p, 
         return
     v_ip = _vp(ip, p, cap)
     assert v_ip >= m
-    lead_sum = sum(
-        ((a // p ** _vp(a, p, cap)) * (b // p ** _vp(b, p, cap))) % p
-        for (a, b), vt in zip(zip(q, k), v_terms)
-        if vt == m
-    ) % p
+    lead_sum = (
+        sum(
+            ((a // p ** _vp(a, p, cap)) * (b // p ** _vp(b, p, cap))) % p
+            for (a, b), vt in zip(zip(q, k), v_terms)
+            if vt == m
+        )
+        % p
+    )
     if lead_sum != 0:
         assert v_ip == m
     else:
@@ -563,9 +564,7 @@ def test_valued_bilinear_shadows_agree_with_direct_formula():
         ip = sum(a * b for a, b in zip(q_ints, k_ints))
         assert sh["inner_product"] == ip
         assert sh["v_exact"] == vp_int(ip, p, 2 * K)
-        assert sh["v_tropical"] == min(
-            vp_int(a, p, 2 * K) + vp_int(b, p, 2 * K) for a, b in zip(q_ints, k_ints)
-        )
+        assert sh["v_tropical"] == min(vp_int(a, p, 2 * K) + vp_int(b, p, 2 * K) for a, b in zip(q_ints, k_ints))
         assert sh["generic"] == (sh["v_exact"] == sh["v_tropical"])
 
 
@@ -621,7 +620,6 @@ def test_rope_pairwise_norm_preservation(angles, vals):
     pn_in = torch.sqrt(x[..., :d] ** 2 + x[..., d:] ** 2)
     pn_out = torch.sqrt(y[..., :d] ** 2 + y[..., d:] ** 2)
     assert float((pn_in - pn_out).abs().max()) <= 1e-9 * (1.0 + float(pn_in.max()))
-
 
 
 # ---------------------------------------------------------------------------
@@ -701,9 +699,7 @@ def test_maslov_attention_converges_to_tropical_endpoint():
     q = torch.randn(2, 2, 6, 8, dtype=torch.float64)
     k = torch.randn(2, 2, 6, 8, dtype=torch.float64)
     v = torch.randn(2, 2, 6, 8, dtype=torch.float64)
-    y_inf, _ = tropical_max_plus_attention(
-        q, k, v, gauge_fix=False, score_center=True, return_margins=False, beta=None
-    )
+    y_inf, _ = tropical_max_plus_attention(q, k, v, gauge_fix=False, score_center=True, return_margins=False, beta=None)
     prev_err = None
     for beta in (2.0, 8.0, 32.0, 128.0):
         y_b, _ = tropical_max_plus_attention(
@@ -727,9 +723,7 @@ def test_maslov_beta_none_is_the_untouched_tropical_path():
     q = torch.randn(1, 2, 5, 4, dtype=torch.float64)
     k = torch.randn(1, 2, 5, 4, dtype=torch.float64)
     v = torch.randn(1, 2, 5, 4, dtype=torch.float64)
-    y, gamma = tropical_max_plus_attention(
-        q, k, v, gauge_fix=False, score_center=False, return_margins=True, beta=None
-    )
+    y, gamma = tropical_max_plus_attention(q, k, v, gauge_fix=False, score_center=False, return_margins=True, beta=None)
     s = tropical_inner(q, k).masked_fill(~causal_attn_mask(5, 5, device=q.device), float("-inf"))
     y_ref = (s.unsqueeze(-1) + v.unsqueeze(2)).max(dim=3).values
     assert torch.equal(y, y_ref)
@@ -743,27 +737,26 @@ def test_set_semiring_beta_and_coverage_telemetry():
     from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, set_semiring_beta
 
     config = GPTConfig(
-        sequence_len=32, vocab_size=50304, n_layer=2, n_head=2, n_kv_head=2, n_embd=16,
-        attention_type="tropical", tropical_record_margins=True, semiring_beta=4.0,
+        sequence_len=32,
+        vocab_size=50304,
+        n_layer=2,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=16,
+        attention_type="tropical",
+        tropical_record_margins=True,
+        semiring_beta=4.0,
     )
     model = GPT(config)
     assert set_semiring_beta(model, 8.0) == 2  # one per layer
     x = torch.randint(0, 1000, (1, 16))
     model(x)
-    covs = [
-        float(m.tropical_route_coverage)
-        for m in model.modules()
-        if isinstance(m, TropicalCausalSelfAttention)
-    ]
+    covs = [float(m.tropical_route_coverage) for m in model.modules() if isinstance(m, TropicalCausalSelfAttention)]
     assert covs and all(math.isfinite(c) and 0.0 <= c <= 1.0 for c in covs)
     # back to the exact endpoint: coverage telemetry goes quiet (nan)
     set_semiring_beta(model, None)
     model(x)
-    covs = [
-        float(m.tropical_route_coverage)
-        for m in model.modules()
-        if isinstance(m, TropicalCausalSelfAttention)
-    ]
+    covs = [float(m.tropical_route_coverage) for m in model.modules() if isinstance(m, TropicalCausalSelfAttention)]
     assert covs and all(math.isnan(c) for c in covs)
 
 

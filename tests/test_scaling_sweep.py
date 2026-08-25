@@ -163,8 +163,16 @@ def _build_cmd(
 
 
 def test_command_targets_flops_for_research_ladder(tmp_path):
-    row = {"index": 1, "name": "14M", "n_layer": 4, "n_embd": 128, "n_head": 4, "n_kv_head": 4,
-           "planned_max_steps": 1000, "target_flops_est": 123456}
+    row = {
+        "index": 1,
+        "name": "14M",
+        "n_layer": 4,
+        "n_embd": 128,
+        "n_head": 4,
+        "n_kv_head": 4,
+        "planned_max_steps": 1000,
+        "target_flops_est": 123456,
+    }
     cmd = _build_cmd(row, tmp_path)
     assert cmd[:3] == [cmd[0], "-m", "nanochat.train"]
     assert _flag(cmd, "--target-flops") == "123456"
@@ -177,8 +185,16 @@ def test_command_targets_flops_for_research_ladder(tmp_path):
 
 
 def test_command_pins_steps_for_smoke_and_gates_val_and_resume(tmp_path):
-    row = {"index": 0, "name": "s", "n_layer": 2, "n_embd": 64, "n_head": 2, "n_kv_head": 1,
-           "planned_max_steps": 25, "target_flops_est": None}
+    row = {
+        "index": 0,
+        "name": "s",
+        "n_layer": 2,
+        "n_embd": 64,
+        "n_head": 2,
+        "n_kv_head": 1,
+        "planned_max_steps": 25,
+        "target_flops_est": None,
+    }
     cmd = _build_cmd(row, tmp_path)
     assert _flag(cmd, "--max-steps") == "25"
     assert "--target-flops" not in cmd
@@ -197,9 +213,20 @@ def test_command_pins_steps_for_smoke_and_gates_val_and_resume(tmp_path):
 
 def _sweep_argv(run_id: str, *, seeds=1, extra=()):
     return [
-        "--mechanism", "tropical", "--ladder", "smoke", "--device", "cpu",
-        "--seeds", str(seeds), "--artifacts-dir", "artifacts", "--run-id", run_id,
-        "--no-auto-download-data", *extra,
+        "--mechanism",
+        "tropical",
+        "--ladder",
+        "smoke",
+        "--device",
+        "cpu",
+        "--seeds",
+        str(seeds),
+        "--artifacts-dir",
+        "artifacts",
+        "--run-id",
+        run_id,
+        "--no-auto-download-data",
+        *extra,
     ]
 
 
@@ -293,13 +320,45 @@ def test_resume_skips_done_and_continues_interrupted_with_d1(tmp_path, monkeypat
 def test_resume_refuses_mismatched_sweep_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     launch = _ok_launcher(tmp_path / "artifacts")
-    result = _invoke(["--mechanism", "braid", "--ladder", "smoke", "--device", "cpu",
-                      "--seeds", "1", "--artifacts-dir", "artifacts", "--run-id", "MIX1",
-                      "--no-auto-download-data"], monkeypatch, launch)
+    result = _invoke(
+        [
+            "--mechanism",
+            "braid",
+            "--ladder",
+            "smoke",
+            "--device",
+            "cpu",
+            "--seeds",
+            "1",
+            "--artifacts-dir",
+            "artifacts",
+            "--run-id",
+            "MIX1",
+            "--no-auto-download-data",
+        ],
+        monkeypatch,
+        launch,
+    )
     assert result.exit_code == 0
-    result = _invoke(["--mechanism", "braid", "--ladder", "smoke", "--device", "cpu",
-                      "--batch-size", "16", "--artifacts-dir", "artifacts", "--run-id", "MIX1",
-                      "--no-auto-download-data"], monkeypatch, launch)
+    result = _invoke(
+        [
+            "--mechanism",
+            "braid",
+            "--ladder",
+            "smoke",
+            "--device",
+            "cpu",
+            "--batch-size",
+            "16",
+            "--artifacts-dir",
+            "artifacts",
+            "--run-id",
+            "MIX1",
+            "--no-auto-download-data",
+        ],
+        monkeypatch,
+        launch,
+    )
     assert result.exit_code == 2  # refuses to mix sweeps under one run-id
 
 

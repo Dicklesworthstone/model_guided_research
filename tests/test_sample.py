@@ -37,10 +37,20 @@ def test_sample_greedy_same_seed_byte_identical(tmp_path):
     ckpt = _build_golden_checkpoint(tmp_path)
     payloads = []
     for _ in range(2):
-        result = runner.invoke(cli.app, [
-            "sample", "--checkpoint", str(ckpt), "--prompt", PROMPT,
-            "--max-tokens", "16", "--no-stop-at-separator", "--json",
-        ])
+        result = runner.invoke(
+            cli.app,
+            [
+                "sample",
+                "--checkpoint",
+                str(ckpt),
+                "--prompt",
+                PROMPT,
+                "--max-tokens",
+                "16",
+                "--no-stop-at-separator",
+                "--json",
+            ],
+        )
         assert result.exit_code == 0, result.output
         payloads.append(json.loads(result.output))
     a, b = (p["results"][0] for p in payloads)
@@ -53,10 +63,22 @@ def test_sample_compare_mechanisms(monkeypatch, tmp_path):
     _tokenizer_or_skip()
     a = _train_tiny_checkpoint(tmp_path, "standard", monkeypatch)
     b = _train_tiny_checkpoint(tmp_path, "ultrametric", monkeypatch)
-    result = runner.invoke(cli.app, [
-        "sample", "--checkpoint", str(a), "--compare", str(b), "--prompt", "hello",
-        "--max-tokens", "8", "--no-stop-at-separator", "--json",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "sample",
+            "--checkpoint",
+            str(a),
+            "--compare",
+            str(b),
+            "--prompt",
+            "hello",
+            "--max-tokens",
+            "8",
+            "--no-stop-at-separator",
+            "--json",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert {r["attention_type"] for r in payload["results"]} == {"standard", "ultrametric"}
@@ -79,15 +101,27 @@ def test_sample_stream_stops_at_separator():
             yield ord("X")  # next-doc babble that must never be shown
 
     rec = cli._sample_stream(
-        _StopModel(""), _StopTok(), [1],
-        max_tokens=8, temperature=0.0, top_k=None, seed=0, stop_at_separator=True,
+        _StopModel(""),
+        _StopTok(),
+        [1],
+        max_tokens=8,
+        temperature=0.0,
+        top_k=None,
+        seed=0,
+        stop_at_separator=True,
     )
     assert rec["text"] == "hi", rec
     assert len(rec["tokens"]) == 2
 
     rec = cli._sample_stream(
-        _StopModel(""), _StopTok(), [1],
-        max_tokens=8, temperature=0.0, top_k=None, seed=0, stop_at_separator=False,
+        _StopModel(""),
+        _StopTok(),
+        [1],
+        max_tokens=8,
+        temperature=0.0,
+        top_k=None,
+        seed=0,
+        stop_at_separator=False,
     )
     assert chr(_StopTok.BOS) in rec["text"], "separator must pass through when stopping is disabled"
 

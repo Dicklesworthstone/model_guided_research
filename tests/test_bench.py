@@ -56,8 +56,17 @@ def test_welch_delta_zero_variance_different_means():
     assert d2["t_stat"] == float("-inf") and d2["p_value"] == 0.0
 
 
-def _write_bench_run(root: Path, suite: str, attn: str, seed: int, *, val_ce: float | None,
-                     losses: list[float], tokens_s: float = 1000.0, mem: float | None = None) -> None:
+def _write_bench_run(
+    root: Path,
+    suite: str,
+    attn: str,
+    seed: int,
+    *,
+    val_ce: float | None,
+    losses: list[float],
+    tokens_s: float = 1000.0,
+    mem: float | None = None,
+) -> None:
     """Emit a nanochat train summary where bench-fixed-flops expects it."""
     run_dir = root / "bench" / "fixed_flops" / "nanochat" / suite / attn / f"seed_{seed}"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -108,16 +117,32 @@ def test_aggregation_via_synthetic_summaries(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_sub, "run", _fake_run)
 
-    result = runner.invoke(cli.app, [
-        "bench-fixed-flops", "-a", "standard", "-a", "tropical", "-a", "ultrametric",
-        "--seeds", "0,1,2", "--device", "cpu", "--target-flops", "1e6",
-        "--no-auto-download-data", "--artifacts-dir", str(arts), "--run-id", suite,
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "bench-fixed-flops",
+            "-a",
+            "standard",
+            "-a",
+            "tropical",
+            "-a",
+            "ultrametric",
+            "--seeds",
+            "0,1,2",
+            "--device",
+            "cpu",
+            "--target-flops",
+            "1e6",
+            "--no-auto-download-data",
+            "--artifacts-dir",
+            str(arts),
+            "--run-id",
+            suite,
+        ],
+    )
     assert result.exit_code == 0, result.output
 
-    summary = json.loads(
-        (arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text()
-    )
+    summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
     assert summary["schema_version"] == "mgr.bench.fixed_flops.v2"
     assert summary["score_metric"] == "val_ce_final"
     agg = summary["aggregates"]
@@ -141,8 +166,7 @@ def test_score_metric_falls_back_to_train_tail_without_val(tmp_path, monkeypatch
     arts = tmp_path / "artifacts"
     for attn, base in (("standard", 3.0), ("tropical", 2.5)):
         for seed in (0, 1):
-            _write_bench_run(arts, suite, attn, seed, val_ce=None,
-                             losses=[base + 0.2, base + 0.1, base])
+            _write_bench_run(arts, suite, attn, seed, val_ce=None, losses=[base + 0.2, base + 0.1, base])
 
     import subprocess as _sub
 
@@ -153,15 +177,31 @@ def test_score_metric_falls_back_to_train_tail_without_val(tmp_path, monkeypatch
 
     monkeypatch.setattr(_sub, "run", lambda cmd, **kw: _FakeProc())
 
-    result = runner.invoke(cli.app, [
-        "bench-fixed-flops", "-a", "standard", "-a", "tropical",
-        "--seeds", "0,1", "--device", "cpu", "--target-flops", "1e6", "--val-interval", "0",
-        "--no-auto-download-data", "--artifacts-dir", str(arts), "--run-id", suite,
-    ])
-    assert result.exit_code == 0, result.output
-    summary = json.loads(
-        (arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text()
+    result = runner.invoke(
+        cli.app,
+        [
+            "bench-fixed-flops",
+            "-a",
+            "standard",
+            "-a",
+            "tropical",
+            "--seeds",
+            "0,1",
+            "--device",
+            "cpu",
+            "--target-flops",
+            "1e6",
+            "--val-interval",
+            "0",
+            "--no-auto-download-data",
+            "--artifacts-dir",
+            str(arts),
+            "--run-id",
+            suite,
+        ],
     )
+    assert result.exit_code == 0, result.output
+    summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
     assert summary["score_metric"] == "score"  # train-tail fallback
     assert summary["aggregates"]["tropical"]["metric_mean"] is not None
 
@@ -216,9 +256,7 @@ def test_schedule_arm_uses_attention_schedule_flag(tmp_path, monkeypatch):
     assert schedule_cmd[schedule_cmd.index("--attention-schedule") + 1] == "standard,tropical"
     assert "--attention-type" not in schedule_cmd
 
-    summary = json.loads(
-        (arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text()
-    )
+    summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
     assert "standard,tropical" in summary["aggregates"]
 
 

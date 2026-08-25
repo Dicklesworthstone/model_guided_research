@@ -428,9 +428,7 @@ class TropicalCausalSelfAttention(AttentionCore):
                 covered = (gamma_f > threshold.view(1, 1, -1)) & finite
                 total = finite.sum()
                 coverage = covered.sum().to(torch.float32) / total.clamp_min(1).to(torch.float32)
-                self.tropical_route_coverage.copy_(
-                    coverage if int(total) > 0 else torch.tensor(float("nan"))
-                )
+                self.tropical_route_coverage.copy_(coverage if int(total) > 0 else torch.tensor(float("nan")))
         else:
             # exact endpoint or margins off: no live reading - never leave a
             # stale coverage value behind for the telemetry collector

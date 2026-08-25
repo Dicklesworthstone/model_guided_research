@@ -254,8 +254,8 @@ class _CoverageBetaController:
     step whose observed coverage is below the floor or missing.
     """
 
-    UP = 1.02     # multiplicative climb per covered step (~35 steps per beta doubling)
-    DOWN = 1.05   # divisor per uncovered step (back-off is faster than climb)
+    UP = 1.02  # multiplicative climb per covered step (~35 steps per beta doubling)
+    DOWN = 1.05  # divisor per uncovered step (back-off is faster than climb)
 
     def __init__(self, b0: float, bmax: float, floor: float):
         self.beta = float(b0)
@@ -754,7 +754,8 @@ def train(args) -> None:
         resume_model_data = {k.removeprefix("_orig_mod."): v for k, v in resume_model_data.items()}
         if ddp_rank == 0:
             load_bytes = sum(
-                os.path.getsize(p) for p in checkpoint_file_paths(resume_dir, resume_step, rank=ddp_rank)
+                os.path.getsize(p)
+                for p in checkpoint_file_paths(resume_dir, resume_step, rank=ddp_rank)
                 if os.path.exists(p)
             )
             console.print(
@@ -906,7 +907,9 @@ def train(args) -> None:
             ) and ddp_rank == 0:
                 print0("[tropical] Ignoring tropical flags because the attention schedule has no tropical layers.")
             if tropical_log_margins and ddp_rank == 0:
-                print0("[tropical] Ignoring --tropical-log-margins because the attention schedule has no tropical layers.")
+                print0(
+                    "[tropical] Ignoring --tropical-log-margins because the attention schedule has no tropical layers."
+                )
         else:
             if tropical_gauge_fix is not None:
                 config.tropical_gauge_fix = bool(tropical_gauge_fix)
@@ -1282,17 +1285,13 @@ def train(args) -> None:
         # append on resume: truncating would erase the parent process's step
         # history (rz8.8 e2e finding); the splice is marked by a
         # "resume_header" record with this process's provenance
-        metrics_stream = MetricsStream(
-            run_dir / "metrics.jsonl", provenance=provenance, append=resume_meta is not None
-        )
+        metrics_stream = MetricsStream(run_dir / "metrics.jsonl", provenance=provenance, append=resume_meta is not None)
         if bool(getattr(args, "dashboard", False)):
             # Live rich dashboard (bead nyp): renders the SAME records the
             # metrics stream writes - zero overhead when the flag is off.
             dash_html = getattr(args, "dashboard_html", None)
             html_path = (
-                Path(dash_html)
-                if dash_html
-                else Path(args.artifacts_dir) / "dashboard" / f"{resolved_run_id}.html"
+                Path(dash_html) if dash_html else Path(args.artifacts_dir) / "dashboard" / f"{resolved_run_id}.html"
             )
             dash_flags: dict[str, Any] = {
                 "attention": attention_label,
@@ -1413,7 +1412,8 @@ def train(args) -> None:
         pruned = prune_checkpoints(checkpoint_dir, checkpoint_saved_steps, keep=checkpoint_keep, rank=ddp_rank)
         if ddp_rank == 0:
             saved_bytes = sum(
-                os.path.getsize(p) for p in checkpoint_file_paths(checkpoint_dir, step, rank=ddp_rank)
+                os.path.getsize(p)
+                for p in checkpoint_file_paths(checkpoint_dir, step, rank=ddp_rank)
                 if os.path.exists(p)
             )
             verify_note = " verify=ok" if checkpoint_verify else ""
@@ -1796,11 +1796,7 @@ def train(args) -> None:
                             record["tropical_gamma_min"] = trop_stats.get("gamma_min")
                             record["tropical_gamma_mean"] = trop_stats.get("gamma_mean")
                             record["tropical_gamma_head_mean"] = trop_stats.get("head_mean")
-                    if (
-                        model_type == "gpt"
-                        and "tropical" in attention_schedule
-                        and current_semiring_beta is not None
-                    ):
+                    if model_type == "gpt" and "tropical" in attention_schedule and current_semiring_beta is not None:
                         # D2 schema gains the annealing telemetry (8gk.1):
                         # the smoothing level and the certificate coverage
                         record["semiring_beta"] = float(current_semiring_beta)
@@ -2059,8 +2055,7 @@ def train(args) -> None:
             # fixed-beta, and endpoint runs are distinguishable as evidence
             "semiring_beta_spec": (
                 str(args.semiring_beta)
-                if getattr(args, "semiring_beta", None) is not None
-                and "tropical" in attention_schedule
+                if getattr(args, "semiring_beta", None) is not None and "tropical" in attention_schedule
                 else None
             ),
             "synaptic_config": (asdict(config.syn_cfg) if isinstance(config, GPTSynapticConfig) else None),
@@ -2623,8 +2618,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tokenizer-chunk depth for the dataloader's background prefetch thread "
         "(bead atkp; hides encode refill stalls behind GPU steps). 0 = synchronous loading.",
     )
-    parser.add_argument("--profile", action="store_true", help="Profile the last --profile-steps training steps (b1l torch.profiler hooks): aggregate op table + chrome trace under <run-dir>/profile/. Debug tool; zero overhead when off.")
-    parser.add_argument("--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on.")
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Profile the last --profile-steps training steps (b1l torch.profiler hooks): aggregate op table + chrome trace under <run-dir>/profile/. Debug tool; zero overhead when off.",
+    )
+    parser.add_argument(
+        "--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on."
+    )
     # Checkpoint/resume (bead rz8.1).
     parser.add_argument(
         "--checkpoint-interval",

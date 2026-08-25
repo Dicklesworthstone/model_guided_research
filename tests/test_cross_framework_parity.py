@@ -63,6 +63,7 @@ def _x64_if(dtype: type):
     test so the global fp32 default (which the demos rely on) is untouched."""
     return jax.enable_x64(True) if dtype == np.float64 else contextlib.nullcontext()
 
+
 import octonionic_quaternionic_signal_flow as oq_demo
 import tropical_geometry_and_idempotent_algebra as trop_demo
 import ultrametric_worlds_and_p_adic_computation as ultra_demo
@@ -280,8 +281,7 @@ def test_torch_packed_trie_matches_bruteforce_oracle() -> None:
         w = np.array([alpha ** _lcp_len(queries[qi], keys[i]) for i in range(n_keys)], dtype=np.float64)
         want = (w[:, None] * vals.astype(np.float64)).sum(axis=0) / w.sum()
         assert np.allclose(got, want, atol=1e-5, rtol=0), (
-            f"query {qi}: trie read disagrees with brute-force oracle; "
-            f"max|diff|={np.max(np.abs(got - want)):.3e}"
+            f"query {qi}: trie read disagrees with brute-force oracle; max|diff|={np.max(np.abs(got - want)):.3e}"
         )
 
 
@@ -300,8 +300,7 @@ def test_demo_headtrie_deepest_occupied_matches_oracle() -> None:
         d_got, _ = trie.deepest_occupied([int(x) for x in q])
         best_lcp = max(_lcp_len(q, k) for k in keys)
         assert d_got == best_lcp - 1, (
-            f"demo deepest_occupied={d_got} but oracle max-LCP depth={best_lcp - 1} "
-            f"(query={q.tolist()})"
+            f"demo deepest_occupied={d_got} but oracle max-LCP depth={best_lcp - 1} (query={q.tolist()})"
         )
 
 

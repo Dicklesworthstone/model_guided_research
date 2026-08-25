@@ -446,9 +446,7 @@ _ROT_GENERATORS: dict[str, tuple[tuple[int, ...], ...]] = {
 
 
 def _mat_mul(a: tuple[tuple[int, ...], ...], b: tuple[tuple[int, ...], ...]) -> tuple[tuple[int, ...], ...]:
-    return tuple(
-        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3)
-    )
+    return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
 
 
 def _octahedral_elements() -> list[tuple[tuple[int, ...], ...]]:

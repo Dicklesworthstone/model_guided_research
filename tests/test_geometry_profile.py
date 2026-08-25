@@ -48,7 +48,9 @@ def test_tree_distances_are_exactly_ultrametric_and_zero_delta() -> None:
     deltas = gp.four_point_delta(D, rng(), n_quadruples=1500)
     assert float(np.max(deltas)) < 1e-12, f"tree four-point delta must be exactly 0, got max {np.max(deltas):.3e}"
     viol, frac = gp.ultrametricity_violations(D, rng(), n_triples=1500)
-    assert float(np.max(viol)) < 1e-12, f"tree triples must satisfy the strong triangle inequality, got {np.max(viol):.3e}"
+    assert float(np.max(viol)) < 1e-12, (
+        f"tree triples must satisfy the strong triangle inequality, got {np.max(viol):.3e}"
+    )
     assert frac == 0.0
     coph = gp.cophenetic_correlation(D)
     assert coph > 0.999, f"cophenetic correlation on an ultrametric must be ~1, got {coph:.4f}"
@@ -264,9 +266,7 @@ def test_cli_profile_data_missing_data_actionable() -> None:
 def test_cli_profile_data_task_profiles_generated_corpus() -> None:
     # Until vdc.1 landed this asserted a stub rejection; --task now generates
     # the named diagnostic corpus in memory and profiles it.
-    result = runner.invoke(
-        cli.app, ["profile-data", "--task", "dyck", "--sample", "24", "--points", "16", "--json"]
-    )
+    result = runner.invoke(cli.app, ["profile-data", "--task", "dyck", "--sample", "24", "--points", "16", "--json"])
     assert result.exit_code == 0, result.output
     profile = json.loads(result.output)
     assert profile["corpus"] == "task:dyck"

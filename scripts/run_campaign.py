@@ -63,8 +63,9 @@ def freeze_worktree(sha: str, path: Path) -> str:
         if head != full:
             raise SystemExit(f"worktree {path} pinned at {head[:9]}, wanted {full[:9]}: pass a fresh --worktree path")
     else:
-        subprocess.run(["git", "worktree", "add", "--detach", str(path), full], cwd=MAIN, check=True,
-                       capture_output=True)
+        subprocess.run(
+            ["git", "worktree", "add", "--detach", str(path), full], cwd=MAIN, check=True, capture_output=True
+        )
     dirty = subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True, text=True).stdout
     if dirty.strip():
         raise SystemExit(f"frozen worktree {path} is DIRTY - campaigns demand clean provenance:\n{dirty}")
@@ -74,29 +75,56 @@ def freeze_worktree(sha: str, path: Path) -> str:
 def run_one(wt: Path, args: argparse.Namespace, task: str, mech: str, seed: int) -> tuple[str, int]:
     run_id = f"{task}-{mech}-s{seed}"
     log = Path(args.log_dir) / f"{run_id}.log"
-    cmd = [
-        str(MAIN / ".venv" / "bin" / "python"), "-m", "nanochat.train",
-        "--device", args.device, "--attention-type", mech,
-        "--data-dir", str(MAIN / args.data_root / task),
-        "--target-flops", str(args.target_flops),
-        "--n-layer", str(args.n_layer), "--n-head", str(args.n_head),
-        "--n-kv-head", str(args.n_kv_head), "--n-embd", str(args.n_embd),
-        "--sequence-len", str(args.sequence_len), "--batch-size", str(args.batch_size),
-        "--checkpoint-interval", str(args.checkpoint_interval),
-        "--seed", str(seed),
-        "--artifacts-dir", str(MAIN / "artifacts"),
-        "--artifacts-kind", "campaigns", "--artifacts-topic", args.topic,
-        "--run-id", run_id,
-    ] + (
-        # val cadence (z4xx fresh-eyes finding): train.py defaults
-        # val_interval to 0, so campaign artifacts recorded
-        # results.val_ce_final = null - any registration on that metric
-        # (hyp-symplectic-nonorm-*, hyp-ordinal-*) was unfulfillable by
-        # campaign evidence. Opt-in to preserve old campaign behavior.
-        ["--val-interval", str(args.val_interval), "--val-batches", str(args.val_batches)]
-        if args.val_interval > 0
-        else []
-    ) + (shlex.split(args.extra_args) if args.extra_args else [])
+    cmd = (
+        [
+            str(MAIN / ".venv" / "bin" / "python"),
+            "-m",
+            "nanochat.train",
+            "--device",
+            args.device,
+            "--attention-type",
+            mech,
+            "--data-dir",
+            str(MAIN / args.data_root / task),
+            "--target-flops",
+            str(args.target_flops),
+            "--n-layer",
+            str(args.n_layer),
+            "--n-head",
+            str(args.n_head),
+            "--n-kv-head",
+            str(args.n_kv_head),
+            "--n-embd",
+            str(args.n_embd),
+            "--sequence-len",
+            str(args.sequence_len),
+            "--batch-size",
+            str(args.batch_size),
+            "--checkpoint-interval",
+            str(args.checkpoint_interval),
+            "--seed",
+            str(seed),
+            "--artifacts-dir",
+            str(MAIN / "artifacts"),
+            "--artifacts-kind",
+            "campaigns",
+            "--artifacts-topic",
+            args.topic,
+            "--run-id",
+            run_id,
+        ]
+        + (
+            # val cadence (z4xx fresh-eyes finding): train.py defaults
+            # val_interval to 0, so campaign artifacts recorded
+            # results.val_ce_final = null - any registration on that metric
+            # (hyp-symplectic-nonorm-*, hyp-ordinal-*) was unfulfillable by
+            # campaign evidence. Opt-in to preserve old campaign behavior.
+            ["--val-interval", str(args.val_interval), "--val-batches", str(args.val_batches)]
+            if args.val_interval > 0
+            else []
+        )
+        + (shlex.split(args.extra_args) if args.extra_args else [])
+    )
     env = dict(os.environ)
     env["OMP_NUM_THREADS"] = str(args.threads)
     with log.open("w") as fh:
@@ -128,9 +156,13 @@ def main() -> int:
     parser.add_argument("--sequence-len", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--checkpoint-interval", type=int, default=100_000)  # >0: final checkpoint always
-    parser.add_argument("--val-interval", type=int, default=0,
-                        help="validation cadence in steps (0 = off, the historical campaign default; "
-                             "REQUIRED >0 for any registration on train:results.val_ce_final)")
+    parser.add_argument(
+        "--val-interval",
+        type=int,
+        default=0,
+        help="validation cadence in steps (0 = off, the historical campaign default; "
+        "REQUIRED >0 for any registration on train:results.val_ce_final)",
+    )
     parser.add_argument("--val-batches", type=int, default=16, help="batches per validation evaluation")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--threads", type=int, default=6, help="OMP threads per trainer")
@@ -154,8 +186,12 @@ def main() -> int:
     wt = args.worktree or Path(f"/data/tmp/wt-{args.topic}")
     sha = freeze_worktree(args.sha, wt)
     Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-    console.print(Panel(f"frozen worktree [bold]{wt}[/bold] @ {sha[:9]} (clean) · "
-                        f"{args.workers} workers × {args.threads} threads", border_style="green"))
+    console.print(
+        Panel(
+            f"frozen worktree [bold]{wt}[/bold] @ {sha[:9]} (clean) · {args.workers} workers × {args.threads} threads",
+            border_style="green",
+        )
+    )
 
     failures: list[str] = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -166,7 +202,9 @@ def main() -> int:
             ok = code == 0
             if ok and not first_verified:
                 if not verify_provenance(args.topic, run_id, sha):
-                    console.print(f"[bold red]PROVENANCE MISMATCH on {run_id} - aborting trust in this campaign[/bold red]")
+                    console.print(
+                        f"[bold red]PROVENANCE MISMATCH on {run_id} - aborting trust in this campaign[/bold red]"
+                    )
                     failures.append(f"{run_id} (provenance)")
                 first_verified = True
             console.print(f"[{'green' if ok else 'red'}]{run_id} exit={code}[/{'green' if ok else 'red'}]")
@@ -175,8 +213,11 @@ def main() -> int:
     if failures:
         console.print(Panel("\n".join(failures), title="[red]failures[/red]", border_style="red"))
         return 1
-    console.print(Panel(f"[bold green]{len(plan)} runs complete, provenance pinned at {sha[:9]}[/bold green]",
-                        border_style="green"))
+    console.print(
+        Panel(
+            f"[bold green]{len(plan)} runs complete, provenance pinned at {sha[:9]}[/bold green]", border_style="green"
+        )
+    )
     return 0
 
 

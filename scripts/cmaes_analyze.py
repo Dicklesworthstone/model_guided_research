@@ -87,13 +87,15 @@ def _collect_points(run_dir: Path, *, score_tail: int) -> list[dict[str, Any]]:
             continue
         parts = cand_dir.name.split("_")
         gen_parts = cand_dir.parent.name.split("_")
-        points.append({
-            "gen": int(gen_parts[-1]) if gen_parts[-1].isdigit() else -1,
-            "cand": int(parts[-1]) if parts[-1].isdigit() else -1,
-            "params": decoded,
-            "score": float(np.mean(seed_scores)),
-            "n_seeds": len(seed_scores),
-        })
+        points.append(
+            {
+                "gen": int(gen_parts[-1]) if gen_parts[-1].isdigit() else -1,
+                "cand": int(parts[-1]) if parts[-1].isdigit() else -1,
+                "params": decoded,
+                "score": float(np.mean(seed_scores)),
+                "n_seeds": len(seed_scores),
+            }
+        )
     return points
 
 
@@ -118,12 +120,16 @@ def _sensitivity(points: list[dict[str, Any]], specs: list[dict[str, str]], *, e
         if enabled and n >= 3 and np.std(col[ok]) > 0 and np.std(scores[ok]) > 0:
             spear = float(stats.spearmanr(col[ok], scores[ok]).statistic)
             pear = float(stats.pearsonr(col[ok], scores[ok]).statistic)
-        rows.append({
-            "name": name, "kind": kind, "n": n,
-            "spearman": None if math.isnan(spear) else spear,
-            "pearson": None if math.isnan(pear) else pear,
-            "abs_spearman": 0.0 if math.isnan(spear) else abs(spear),
-        })
+        rows.append(
+            {
+                "name": name,
+                "kind": kind,
+                "n": n,
+                "spearman": None if math.isnan(spear) else spear,
+                "pearson": None if math.isnan(pear) else pear,
+                "abs_spearman": 0.0 if math.isnan(spear) else abs(spear),
+            }
+        )
     rows.sort(key=lambda r: r["abs_spearman"], reverse=True)
     return rows
 
@@ -186,11 +192,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="CMA-ES result analysis & sensitivity (bead 0wn).")
     parser.add_argument("--run-id", type=str, required=True, help="CMA-ES run id under <artifacts>/cmaes/phase1/.")
     parser.add_argument("--artifacts-dir", type=str, default="artifacts")
-    parser.add_argument("--score-tail", type=int, default=3, help="Mean of last N losses used as score (match the search).")
-    parser.add_argument("--signal-threshold", type=float, default=1e-3,
-                        help="Min score std (in loss units) to treat the search as having usable signal. "
-                             "Below this, candidate differences are numerical noise and rankings are spurious.")
-    parser.add_argument("--out-dir", type=str, default=None, help="Output dir (default: <artifacts>/cmaes/analysis/<run-id>).")
+    parser.add_argument(
+        "--score-tail", type=int, default=3, help="Mean of last N losses used as score (match the search)."
+    )
+    parser.add_argument(
+        "--signal-threshold",
+        type=float,
+        default=1e-3,
+        help="Min score std (in loss units) to treat the search as having usable signal. "
+        "Below this, candidate differences are numerical noise and rankings are spurious.",
+    )
+    parser.add_argument(
+        "--out-dir", type=str, default=None, help="Output dir (default: <artifacts>/cmaes/analysis/<run-id>)."
+    )
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
@@ -221,8 +235,11 @@ def main() -> int:
         "run_id": args.run_id,
         "n_candidates": len(points),
         "score": {
-            "min": float(scores.min()), "max": float(scores.max()),
-            "mean": float(scores.mean()), "std": score_std, "range": score_range,
+            "min": float(scores.min()),
+            "max": float(scores.max()),
+            "mean": float(scores.mean()),
+            "std": score_std,
+            "range": score_range,
             "has_signal": has_signal,
         },
         "best": {"gen": best["gen"], "cand": best["cand"], "score": best["score"], "params": best["params"]},
@@ -233,18 +250,22 @@ def main() -> int:
     (out_dir / "sensitivity.json").write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     # report.md
-    lines: list[str] = [f"# CMA-ES analysis — `{args.run_id}`\n",
-                        "Bead model_guided_research-0wn. Parameter sensitivity and score distribution "
-                        f"over `{len(points)}` evaluated candidates.\n",
-                        "## Score distribution\n",
-                        f"- min `{scores.min():.5f}` · max `{scores.max():.5f}` · "
-                        f"mean `{scores.mean():.5f}` · std `{score_std:.2e}` · range `{score_range:.2e}`",
-                        f"- **{'signal present' if has_signal else 'FLAT — no usable signal'}** "
-                        f"(std {'>' if has_signal else '≤'} threshold {args.signal_threshold:g})\n"]
+    lines: list[str] = [
+        f"# CMA-ES analysis — `{args.run_id}`\n",
+        "Bead model_guided_research-0wn. Parameter sensitivity and score distribution "
+        f"over `{len(points)}` evaluated candidates.\n",
+        "## Score distribution\n",
+        f"- min `{scores.min():.5f}` · max `{scores.max():.5f}` · "
+        f"mean `{scores.mean():.5f}` · std `{score_std:.2e}` · range `{score_range:.2e}`",
+        f"- **{'signal present' if has_signal else 'FLAT — no usable signal'}** "
+        f"(std {'>' if has_signal else '≤'} threshold {args.signal_threshold:g})\n",
+    ]
     if not has_signal:
-        lines.append("> The objective is flat across candidates: the per-config budget is too small to "
-                     "separate them. Sensitivity below is therefore not meaningful — increase steps/FLOPs "
-                     "or widen the search before trusting parameter rankings.\n")
+        lines.append(
+            "> The objective is flat across candidates: the per-config budget is too small to "
+            "separate them. Sensitivity below is therefore not meaningful — increase steps/FLOPs "
+            "or widen the search before trusting parameter rankings.\n"
+        )
     lines.append("## Best candidate\n")
     lines.append(f"- gen `{best['gen']}` cand `{best['cand']}` · score `{best['score']:.5f}`")
     lines.append("\n| param | value |")
@@ -259,7 +280,9 @@ def main() -> int:
         pe = f"{r['pearson']:+.3f}" if r["pearson"] is not None else "—"
         lines.append(f"| `{r['name']}` | {r['kind']} | {r['n']} | {sp} | {pe} |")
     lines.append("\n_Positive Spearman ⇒ larger parameter correlates with **higher** (worse) loss._\n")
-    lines.append("## Plots\n- `sensitivity.png` — per-param Spearman bar chart\n- `param_corr.png` — param×param correlation heatmap\n")
+    lines.append(
+        "## Plots\n- `sensitivity.png` — per-param Spearman bar chart\n- `param_corr.png` — param×param correlation heatmap\n"
+    )
     (out_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
     # console
@@ -272,8 +295,10 @@ def main() -> int:
         pe = f"{r['pearson']:+.3f}" if r["pearson"] is not None else "—"
         table.add_row(r["name"], sp, pe)
     console.print(table)
-    console.print(f"score: min={scores.min():.5f} max={scores.max():.5f} std={score_std:.2e} "
-                  f"({'signal' if has_signal else 'FLAT'})")
+    console.print(
+        f"score: min={scores.min():.5f} max={scores.max():.5f} std={score_std:.2e} "
+        f"({'signal' if has_signal else 'FLAT'})"
+    )
     console.print(f"[bold green]done[/bold green] → {out_dir}")
     return 0
 

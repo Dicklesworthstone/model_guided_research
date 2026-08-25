@@ -50,9 +50,7 @@ _BLADES: tuple[tuple[int, ...], ...] = (
     (1, 2, 3),
 )
 _METRIC = {1: 1.0, 2: 1.0, 3: 1.0}
-_BLADE_INDEX: dict[tuple[int, ...], int] = {
-    blade: i for i, blade in enumerate(_BLADES)
-}
+_BLADE_INDEX: dict[tuple[int, ...], int] = {blade: i for i, blade in enumerate(_BLADES)}
 
 #: Grade of each canonical blade (for reversion signs).
 _GRADES = (0, 1, 1, 1, 2, 2, 2, 3)
@@ -91,9 +89,7 @@ def _build_structure_tensor() -> torch.Tensor:
 
 
 _STRUCTURE: torch.Tensor = _build_structure_tensor()
-_REVERSION_SIGNS: torch.Tensor = torch.tensor(
-    [1.0 if (g * (g - 1) // 2) % 2 == 0 else -1.0 for g in _GRADES]
-)
+_REVERSION_SIGNS: torch.Tensor = torch.tensor([1.0 if (g * (g - 1) // 2) % 2 == 0 else -1.0 for g in _GRADES])
 
 
 def cgp(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:

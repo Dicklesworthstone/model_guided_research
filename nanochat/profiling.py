@@ -153,15 +153,17 @@ def summarize_profile(prof: Any, *, row_limit: int = 15) -> dict[str, Any]:
     top = sorted(ka, key=sort_key, reverse=True)[: int(row_limit)]
     ops: list[dict[str, Any]] = []
     for e in top:
-        ops.append({
-            "op": str(e.key),
-            "count": int(e.count),
-            "self_cpu_us": float(e.self_cpu_time_total),
-            "cpu_total_us": float(e.cpu_time_total),
-            "self_device_us": _device_time_us(e),
-            "cpu_mem_bytes": int(getattr(e, "cpu_memory_usage", 0) or 0),
-            "device_mem_bytes": _device_mem_bytes(e),
-        })
+        ops.append(
+            {
+                "op": str(e.key),
+                "count": int(e.count),
+                "self_cpu_us": float(e.self_cpu_time_total),
+                "cpu_total_us": float(e.cpu_time_total),
+                "self_device_us": _device_time_us(e),
+                "cpu_mem_bytes": int(getattr(e, "cpu_memory_usage", 0) or 0),
+                "device_mem_bytes": _device_mem_bytes(e),
+            }
+        )
     return {
         "device": "cuda" if cuda else "cpu",
         "totals": {
@@ -210,7 +212,9 @@ def render_profile_table(summary: dict[str, Any], *, title: str, console: Any = 
     console.print(table)
     tot = summary["totals"]
     key_t = tot["self_device_us"] if dev == "cuda" else tot["self_cpu_us"]
-    console.print(f"[dim]total self {('CUDA' if dev == 'cuda' else 'CPU')} time across {tot['n_ops']} ops: {_fmt_us(key_t)}[/dim]")
+    console.print(
+        f"[dim]total self {('CUDA' if dev == 'cuda' else 'CPU')} time across {tot['n_ops']} ops: {_fmt_us(key_t)}[/dim]"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -250,14 +254,26 @@ def profile_model(
     if use_flex_attention:
         extra["use_flex_attention"] = True
     model, meta = build_probe_model(
-        attention_type, device=device, seed=seed, n_layer=n_layer, n_head=n_head,
-        n_kv_head=n_kv_head, n_embd=n_embd, sequence_len=seq_len, vocab_size=vocab_size,
+        attention_type,
+        device=device,
+        seed=seed,
+        n_layer=n_layer,
+        n_head=n_head,
+        n_kv_head=n_kv_head,
+        n_embd=n_embd,
+        sequence_len=seq_len,
+        vocab_size=vocab_size,
         extra_config=extra,
     )
     if backward:
         model.train()
     idx, _labels = sample_batch(
-        text=None, batch_size=batch_size, seq_len=seq_len, vocab_size=vocab_size, seed=seed, device=device,
+        text=None,
+        batch_size=batch_size,
+        seq_len=seq_len,
+        vocab_size=vocab_size,
+        seed=seed,
+        device=device,
     )
     targets = idx.clone()
 
@@ -328,11 +344,22 @@ def run_bench(args: argparse.Namespace) -> int:
         sub_dir = (out_dir / ("flex_on" if flex else "flex_off")) if multi else out_dir
         try:
             summary = profile_model(
-                attn, device=args.device, steps=args.steps, warmup=args.warmup,
-                backward=(not args.forward_only), use_flex_attention=flex, seed=args.seed,
-                n_layer=args.n_layer, n_head=args.n_head, n_kv_head=args.n_kv_head,
-                n_embd=args.n_embd, seq_len=args.seq_len, batch_size=args.batch_size,
-                vocab_size=args.vocab_size, trace_dir=sub_dir, row_limit=args.row_limit,
+                attn,
+                device=args.device,
+                steps=args.steps,
+                warmup=args.warmup,
+                backward=(not args.forward_only),
+                use_flex_attention=flex,
+                seed=args.seed,
+                n_layer=args.n_layer,
+                n_head=args.n_head,
+                n_kv_head=args.n_kv_head,
+                n_embd=args.n_embd,
+                seq_len=args.seq_len,
+                batch_size=args.batch_size,
+                vocab_size=args.vocab_size,
+                trace_dir=sub_dir,
+                row_limit=args.row_limit,
             )
         except ImportError as exc:  # FlexAttention unavailable: skip cleanly
             console.print(f"[yellow]skipped {label}: {exc}[/yellow]")

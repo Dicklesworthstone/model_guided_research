@@ -116,12 +116,7 @@ def energy_gromov_scores(q: torch.Tensor, k: torch.Tensor, c: torch.Tensor) -> t
     k_norm2 = k_f.square().sum(dim=-1, keepdim=True)
     r_q = torch.sqrt(1.0 + c_f * q_norm2)
     r_k = torch.sqrt(1.0 + c_f * k_norm2)
-    radial_correction = (
-        c_f
-        * q_norm2
-        * k_norm2.transpose(-1, -2)
-        / ((r_q + 1.0) * (r_k + 1.0).transpose(-1, -2))
-    )
+    radial_correction = c_f * q_norm2 * k_norm2.transpose(-1, -2) / ((r_q + 1.0) * (r_k + 1.0).transpose(-1, -2))
     return q_f @ k_f.transpose(-1, -2) - radial_correction
 
 
@@ -162,12 +157,8 @@ class HyperbolicCausalSelfAttention(AttentionCore):
         k_f = k.float()
         v_f = v.float()
         radial_scale = c / (1.0 + c)
-        q_signal = torch.tanh(
-            torch.einsum("bhtd,hd->bht", q_f, self.radial_q.float()).unsqueeze(-1) / math.sqrt(D)
-        )
-        k_signal = torch.tanh(
-            torch.einsum("bhtd,hd->bht", k_f, self.radial_k.float()).unsqueeze(-1) / math.sqrt(D)
-        )
+        q_signal = torch.tanh(torch.einsum("bhtd,hd->bht", q_f, self.radial_q.float()).unsqueeze(-1) / math.sqrt(D))
+        k_signal = torch.tanh(torch.einsum("bhtd,hd->bht", k_f, self.radial_k.float()).unsqueeze(-1) / math.sqrt(D))
         q_chart = q_f * torch.exp(radial_scale * q_signal)
         k_chart = k_f * torch.exp(radial_scale * k_signal)
         scores = energy_gromov_scores(q_chart, k_chart, c) * (1.0 / math.sqrt(D))

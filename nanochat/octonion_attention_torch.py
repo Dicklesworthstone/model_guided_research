@@ -190,9 +190,7 @@ def _tile_budget_bytes(device: torch.device) -> int:
     if env is not None:
         mb = float(env)
         if mb <= 0:
-            raise ValueError(
-                f"NANOCHAT_OCTONION_TILE_BUDGET_MB must be > 0, got {env!r}"
-            )
+            raise ValueError(f"NANOCHAT_OCTONION_TILE_BUDGET_MB must be > 0, got {env!r}")
         return int(mb * (1 << 20))
     if device.type == "cuda":
         free_bytes, _ = torch.cuda.mem_get_info(device)

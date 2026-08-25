@@ -51,9 +51,20 @@ def test_nvtx_range_is_safe_on_cpu():
 def test_profile_model_standard_writes_trace(tmp_path):
     out = tmp_path / "prof"
     summary = profiling.profile_model(
-        "standard", device="cpu", steps=1, warmup=0, backward=True,
-        n_layer=1, n_head=4, n_kv_head=4, n_embd=64, seq_len=16, batch_size=2,
-        vocab_size=128, trace_dir=out, row_limit=8,
+        "standard",
+        device="cpu",
+        steps=1,
+        warmup=0,
+        backward=True,
+        n_layer=1,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        seq_len=16,
+        batch_size=2,
+        vocab_size=128,
+        trace_dir=out,
+        row_limit=8,
     )
     assert summary["device"] == "cpu"
     assert summary["ops"], "expected at least one profiled op"
@@ -71,9 +82,20 @@ def test_profile_model_standard_writes_trace(tmp_path):
 
 def test_profile_model_forward_only_runs():
     summary = profiling.profile_model(
-        "tropical", device="cpu", steps=1, warmup=0, backward=False,
-        n_layer=1, n_head=4, n_kv_head=4, n_embd=64, seq_len=16, batch_size=2,
-        vocab_size=128, trace_dir=None, row_limit=5,
+        "tropical",
+        device="cpu",
+        steps=1,
+        warmup=0,
+        backward=False,
+        n_layer=1,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        seq_len=16,
+        batch_size=2,
+        vocab_size=128,
+        trace_dir=None,
+        row_limit=5,
     )
     assert summary["meta"]["backward"] is False
     assert summary["meta"]["trace"] is None
@@ -88,7 +110,8 @@ def test_mgr_profile_command(tmp_path):
 
     out = tmp_path / "prof"
     result = CliRunner().invoke(
-        cli.app, ["profile", "--attention", "standard", "--steps", "1", "--out", str(out)],
+        cli.app,
+        ["profile", "--attention", "standard", "--steps", "1", "--out", str(out)],
     )
     assert result.exit_code == 0, result.output
     assert (out / "summary.json").is_file()

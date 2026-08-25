@@ -174,8 +174,10 @@ def test_exact_match_prediction_without_floor_warns():
     assert any("floor gate" in w for w in warnings), warnings
 
     with_floor = _entry()
-    with_floor["prediction"] = {**with_floor["prediction"],
-                                "validity": {"baseline_floor": 0.512, "floor_source": "population prior (test)"}}
+    with_floor["prediction"] = {
+        **with_floor["prediction"],
+        "validity": {"baseline_floor": 0.512, "floor_source": "population prior (test)"},
+    }
     errors, warnings, _ = _validate(_registry(with_floor))
     assert errors == [] and not any("floor gate" in w for w in warnings)
 
@@ -206,7 +208,12 @@ def test_verdict_history_entry_shape_enforced():
     )
     errors, _, _ = _validate(_registry(bad))
     joined = "\n".join(errors)
-    for fragment in ("date must be YYYY-MM-DD", "verdict must be one of", "artifacts must be a non-empty", "adjudicator"):
+    for fragment in (
+        "date must be YYYY-MM-DD",
+        "verdict must be one of",
+        "artifacts must be a non-empty",
+        "adjudicator",
+    ):
         assert fragment in joined, f"missing {fragment!r} in: {errors}"
 
 
@@ -215,7 +222,12 @@ def test_verdict_history_entry_shape_enforced():
 
 
 def _verdict(date="2026-06-11", verdict="supported"):
-    return {"date": date, "verdict": verdict, "artifacts": ["artifacts/evals/tasks/x/summary.json"], "adjudicator": "human"}
+    return {
+        "date": date,
+        "verdict": verdict,
+        "artifacts": ["artifacts/evals/tasks/x/summary.json"],
+        "adjudicator": "human",
+    }
 
 
 def test_append_only_allows_appends():
@@ -297,13 +309,20 @@ def test_cli_add_appends_preserving_comments_and_rolls_back_on_error(tmp_path, m
     result = runner.invoke(
         cli.app,
         [
-            "hypotheses", "add",
-            "--id", "hyp-test-added",
-            "--statement", "added by the CLI test",
-            "--mechanism", "tropical",
-            "--source-kind", "human",
-            "--provenance", "tests/test_hypotheses_registry.py",
-            "--metric-path", "evaltasks:tasks.dyck.exact_match.greedy.held_out.mean",
+            "hypotheses",
+            "add",
+            "--id",
+            "hyp-test-added",
+            "--statement",
+            "added by the CLI test",
+            "--mechanism",
+            "tropical",
+            "--source-kind",
+            "human",
+            "--provenance",
+            "tests/test_hypotheses_registry.py",
+            "--metric-path",
+            "evaltasks:tasks.dyck.exact_match.greedy.held_out.mean",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -318,13 +337,20 @@ def test_cli_add_appends_preserving_comments_and_rolls_back_on_error(tmp_path, m
     result = runner.invoke(
         cli.app,
         [
-            "hypotheses", "add",
-            "--id", "hyp-test-added",  # duplicate -> must roll back
-            "--statement", "dup",
-            "--mechanism", "tropical",
-            "--source-kind", "human",
-            "--provenance", "x",
-            "--metric-path", "evaltasks:tasks.dyck.exact_match.greedy.held_out.mean",
+            "hypotheses",
+            "add",
+            "--id",
+            "hyp-test-added",  # duplicate -> must roll back
+            "--statement",
+            "dup",
+            "--mechanism",
+            "tropical",
+            "--source-kind",
+            "human",
+            "--provenance",
+            "x",
+            "--metric-path",
+            "evaltasks:tasks.dyck.exact_match.greedy.held_out.mean",
         ],
     )
     assert result.exit_code == 1
@@ -332,8 +358,20 @@ def test_cli_add_appends_preserving_comments_and_rolls_back_on_error(tmp_path, m
 
     result = runner.invoke(
         cli.app,
-        ["hypotheses", "add", "--id", "hyp-no-pred", "--statement", "x", "--mechanism", "tropical",
-         "--source-kind", "human", "--provenance", "y"],
+        [
+            "hypotheses",
+            "add",
+            "--id",
+            "hyp-no-pred",
+            "--statement",
+            "x",
+            "--mechanism",
+            "tropical",
+            "--source-kind",
+            "human",
+            "--provenance",
+            "y",
+        ],
     )
     assert result.exit_code == 2, "omitting both --metric-path and --note must be rejected"
 

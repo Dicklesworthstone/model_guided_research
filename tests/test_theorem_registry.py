@@ -88,20 +88,13 @@ def test_real_registry_spans_all_three_theory_pillars() -> None:
 def test_real_registry_pytest_refs_resolve_against_live_collection() -> None:
     data, _ = cli._load_theorem_registry(cli._theorems_registry_path())
     assert data is not None
-    refs = [
-        c["ref"]
-        for t in data["theorems"]
-        for c in (t.get("numerical_checks") or [])
-        if c.get("kind") == "pytest"
-    ]
+    refs = [c["ref"] for t in data["theorems"] for c in (t.get("numerical_checks") or []) if c.get("kind") == "pytest"]
     assert refs, "real registry should carry at least one pytest pointer"
     scope_files = sorted({r.split("::")[0] for r in refs})
     collected, problem = cli._collect_pytest_node_ids(REPO_ROOT, scope_files)
     assert problem is None, f"pytest collection failed: {problem}"
     unresolved = [r for r in refs if not cli._pytest_ref_resolves(r, collected)]
-    assert not unresolved, (
-        f"pytest refs that do not resolve against live collection over {scope_files}: {unresolved}"
-    )
+    assert not unresolved, f"pytest refs that do not resolve against live collection over {scope_files}: {unresolved}"
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +136,7 @@ def test_nonstring_mechanism_rejected() -> None:
 
 
 def test_unknown_certify_ref_rejected() -> None:
-    errors, _, _ = validate(
-        registry(entry(numerical_checks=[{"kind": "certify", "ref": "tropical.not_a_real_check"}]))
-    )
+    errors, _, _ = validate(registry(entry(numerical_checks=[{"kind": "certify", "ref": "tropical.not_a_real_check"}])))
     assert any("not a known check name" in e for e in errors), f"got: {errors}"
 
 
@@ -244,10 +235,7 @@ def test_pytest_ref_resolution_semantics() -> None:
 
 def test_certify_known_names_in_sync_with_cli_source() -> None:
     src = (REPO_ROOT / "cli.py").read_text(encoding="utf-8")
-    literal = {
-        f"{m}.{n}"
-        for m, n in re.findall(r'add_check\(\s*"([a-z_]+)"\s*,\s*"([a-z0-9_]+)"', src, re.S)
-    }
+    literal = {f"{m}.{n}" for m, n in re.findall(r'add_check\(\s*"([a-z_]+)"\s*,\s*"([a-z0-9_]+)"', src, re.S)}
     assert literal == set(cli._CERTIFY_NAMED_CHECKS), (
         "literal add_check names in cli.py and _CERTIFY_NAMED_CHECKS have drifted apart.\n"
         f"  in source but not constant: {sorted(literal - set(cli._CERTIFY_NAMED_CHECKS))}\n"

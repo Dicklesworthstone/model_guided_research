@@ -99,9 +99,7 @@ def one_particle_transfer(theta: float, u: torch.Tensor, eta: float) -> torch.Te
     u64 = u.detach().to(torch.float64)
     T = u64.numel()
     w = torch.as_tensor(theta, dtype=torch.float64) - u64
-    if bool(torch.any(torch.abs(torch.sinh(w)) < 1e-12)) or bool(
-        torch.any(torch.abs(torch.sinh(w + eta)) < 1e-12)
-    ):
+    if bool(torch.any(torch.abs(torch.sinh(w)) < 1e-12)) or bool(torch.any(torch.abs(torch.sinh(w + eta)) < 1e-12)):
         raise ValueError("one_particle_transfer: probe theta must avoid the rapidities and the pole at u_i - eta")
     bv, cv = rmatrix_bc(w, torch.as_tensor(eta, dtype=torch.float64))
     # prefix[k] = prod_{l<k} b_l, suffix[j] = prod_{l>j} b_l (exclusive products)
@@ -339,8 +337,7 @@ class BraidCausalSelfAttention(AttentionCore):
         u_all = self.rmatrix_rapidities()  # (H, S)
         if Tk > u_all.size(-1):
             raise ValueError(
-                f"rmatrix rapidity table covers {u_all.size(-1)} positions but Tk={Tk}; "
-                "increase config.sequence_len"
+                f"rmatrix rapidity table covers {u_all.size(-1)} positions but Tk={Tk}; increase config.sequence_len"
             )
         eta = self.rmatrix_eta().view(-1, 1, 1)  # (H, 1, 1)
         qpos = torch.arange(Tk - Tq, Tk, device=q.device)

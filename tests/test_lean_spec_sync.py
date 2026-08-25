@@ -16,10 +16,7 @@ from pathlib import Path
 
 import pytest
 
-LEAN_FILE = (
-    Path(__file__).resolve().parent.parent
-    / "proofs" / "MGRProofs" / "OrdinalTermination.lean"
-)
+LEAN_FILE = Path(__file__).resolve().parent.parent / "proofs" / "MGRProofs" / "OrdinalTermination.lean"
 
 
 def _lean_event_alphabet() -> list[str]:

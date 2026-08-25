@@ -109,9 +109,7 @@ def project_lorentz(z, c):
     """Project arbitrary z onto the hyperboloid: t = sqrt(1/c + |z_s|^2)."""
     z_s = z[..., 1:]
 
-    return jnp.concatenate(
-        [jnp.sqrt(1.0 / c + jnp.sum(z_s**2, -1, keepdims=True)), z_s], -1
-    )
+    return jnp.concatenate([jnp.sqrt(1.0 / c + jnp.sum(z_s**2, -1, keepdims=True)), z_s], -1)
 
 
 def euclidean_attention(q, k, v):
@@ -134,9 +132,7 @@ def hyperbolic_attention(q_tan, k_tan, v_tan, c):
 
     ql, kl, vl = lift_batch(q_tan), lift_batch(k_tan), lift_batch(v_tan)
 
-    dist = jax.vmap(
-        lambda qi: jax.vmap(lambda kj: hyp_distance(qi[None], kj[None], c)[0])(kl)
-    )(ql)
+    dist = jax.vmap(lambda qi: jax.vmap(lambda kj: hyp_distance(qi[None], kj[None], c)[0])(kl))(ql)
     weights = jnn.softmax(-dist / tau, -1)
 
     rows = []
@@ -204,9 +200,7 @@ def _embed_tree(key, tree_dist, *, dim, steps, curv, hyperbolic, lr=5e-3):
 
         def loss_fn(p):
             pts = jax.vmap(lambda v: exp_map_o(v, curv))(p)
-            dh = jax.vmap(lambda ij: hyp_distance(pts[ij[0]][None], pts[ij[1]][None], curv)[0])(
-                idx
-            )
+            dh = jax.vmap(lambda ij: hyp_distance(pts[ij[0]][None], pts[ij[1]][None], curv)[0])(idx)
 
             return jnp.mean((dh - target[idx]) ** 2)
 
@@ -246,9 +240,7 @@ def _embed_tree(key, tree_dist, *, dim, steps, curv, hyperbolic, lr=1e-3):
         def pair_loss(p):
             pts = jax.vmap(lambda v: exp_map_o(v, curv))(p)
 
-            return jax.vmap(
-                lambda ij: hyp_distance(pts[ij[0]][None], pts[ij[1]][None], curv)[0]
-            )(idx)
+            return jax.vmap(lambda ij: hyp_distance(pts[ij[0]][None], pts[ij[1]][None], curv)[0])(idx)
 
     else:
 
@@ -309,9 +301,7 @@ def run_property_checks(seed: int = 7) -> list[tuple[str, bool, str]]:
             vv = vv / jnp.linalg.norm(vv, axis=-1, keepdims=True) * radius
             y = jax.vmap(lambda vec: exp_map_o(vec.astype(dtype), 1.0))(vv.astype(dtype))
             back = jax.vmap(lambda yy: log_map_o(yy.astype(dtype), 1.0))(y)
-            rel = float(
-                jnp.max(jnp.abs(back - vv.astype(back.dtype))) / max(radius, 1.0)
-            )
+            rel = float(jnp.max(jnp.abs(back - vv.astype(back.dtype))) / max(radius, 1.0))
             rows.append(rel)
         return rows
 
@@ -343,8 +333,7 @@ def run_property_checks(seed: int = 7) -> list[tuple[str, bool, str]]:
         (
             "lorentz_constraint_maintenance",
             residual < 5e-6,
-            f"max |<x,x>_L + 1/c| after projection = {residual:.3e} "
-            "(fp32 noise floor; projection is exact over R)",
+            f"max |<x,x>_L + 1/c| after projection = {residual:.3e} (fp32 noise floor; projection is exact over R)",
         )
     )
 
@@ -507,8 +496,7 @@ def demo():
             print(f"{'PASS' if ok else 'FAIL'}  {name}: {detail}")
     say("")
 
-    say("[bold]Tree reconstruction from learned embeddings[/bold] (hyperbolic vs "
-        "Euclidean, equal dimension/budget)")
+    say("[bold]Tree reconstruction from learned embeddings[/bold] (hyperbolic vs Euclidean, equal dimension/budget)")
     res = run_tree_reconstruction_experiment(seed=7)
     try:
         from rich.table import Table as _Table

@@ -63,12 +63,18 @@ class ArchConfig:
 
     def flags(self) -> list[str]:
         return [
-            "--n-layer", str(self.n_layer),
-            "--n-head", str(self.n_head),
-            "--n-kv-head", str(self.n_kv_head),
-            "--n-embd", str(self.n_embd),
-            "--sequence-len", str(self.sequence_len),
-            "--batch-size", str(self.batch_size),
+            "--n-layer",
+            str(self.n_layer),
+            "--n-head",
+            str(self.n_head),
+            "--n-kv-head",
+            str(self.n_kv_head),
+            "--n-embd",
+            str(self.n_embd),
+            "--sequence-len",
+            str(self.sequence_len),
+            "--batch-size",
+            str(self.batch_size),
         ]
 
 
@@ -85,8 +91,10 @@ class InitVariant:
         if self.ca_rule is None:
             return ["--ca-init-rule", "none"]
         return [
-            "--ca-init-rule", str(self.ca_rule),
-            "--ca-init-alpha", f"{self.ca_alpha:g}",
+            "--ca-init-rule",
+            str(self.ca_rule),
+            "--ca-init-alpha",
+            f"{self.ca_alpha:g}",
         ]
 
 
@@ -101,13 +109,23 @@ class InitVariant:
 # probe of the initializer itself.
 ARCH_CONFIGS: dict[str, ArchConfig] = {
     "attn_heavy": ArchConfig(
-        name="attn_heavy", n_layer=4, n_head=8, n_kv_head=8, n_embd=128,
-        sequence_len=256, batch_size=4,
+        name="attn_heavy",
+        n_layer=4,
+        n_head=8,
+        n_kv_head=8,
+        n_embd=128,
+        sequence_len=256,
+        batch_size=4,
         note="8 heads / 256-token window: attention + qkv projections dominate",
     ),
     "mlp_heavy": ArchConfig(
-        name="mlp_heavy", n_layer=6, n_head=2, n_kv_head=2, n_embd=128,
-        sequence_len=32, batch_size=8,
+        name="mlp_heavy",
+        n_layer=6,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=128,
+        sequence_len=32,
+        batch_size=8,
         note="6 layers / 32-token window: FFN per-block work dominates, attention negligible",
     ),
 }
@@ -221,6 +239,7 @@ def _probe_init_activations(
             t = out[0] if isinstance(out, tuple) else out
             if isinstance(t, torch.Tensor) and t.is_floating_point():
                 block_rms.append(_rms(t))
+
         return _hook
 
     def _mk_linear_hook(qual: str) -> Any:
@@ -228,6 +247,7 @@ def _probe_init_activations(
             t = out[0] if isinstance(out, tuple) else out
             if isinstance(t, torch.Tensor) and t.is_floating_point():
                 proj_rms[qual] = _rms(t)
+
         return _hook
 
     for block in model._blocks():
@@ -254,15 +274,14 @@ def _probe_init_activations(
 
     finite_rms = [r for r in block_rms if math.isfinite(r)]
     # mean output RMS over the non-zeroed input/expansion projections
-    input_proj = [v for k, v in proj_rms.items()
-                  if any(s in k for s in ("c_q", "c_k", "c_v", "c_fc")) and math.isfinite(v)]
+    input_proj = [
+        v for k, v in proj_rms.items() if any(s in k for s in ("c_q", "c_k", "c_v", "c_fc")) and math.isfinite(v)
+    ]
     return {
         "block_residual_rms": block_rms,
         "block_residual_rms_mean": (sum(finite_rms) / len(finite_rms)) if finite_rms else None,
         "block_residual_rms_max": (max(finite_rms) if finite_rms else None),
-        "depth_rms_ratio": (
-            (block_rms[-1] / block_rms[0]) if len(block_rms) >= 2 and block_rms[0] > 0 else None
-        ),
+        "depth_rms_ratio": ((block_rms[-1] / block_rms[0]) if len(block_rms) >= 2 and block_rms[0] > 0 else None),
         "input_proj_rms_mean": (sum(input_proj) / len(input_proj)) if input_proj else None,
         "weight_std_mean": weight_std_mean,
         "all_finite": (all(math.isfinite(r) for r in block_rms) if block_rms else False)
@@ -283,22 +302,37 @@ def _run_train_cell(
     topic = f"{run_dir.name}/runs/{arch.name}__{variant.name}"
     cell_run_id = f"seed{seed}"
     train_cmd = [
-        sys.executable, "-m", "nanochat.train",
-        "--device", str(args.device),
-        "--seed", str(seed),
-        "--attention-type", "standard",
-        "--optimizer-type", str(args.optimizer_type),
-        "--learning-rate", str(args.learning_rate),
-        "--max-steps", str(args.max_steps),
-        "--warmup-steps", str(args.warmup_steps),
-        "--log-interval", "1",
-        "--vocab-size", str(args.vocab_size),
+        sys.executable,
+        "-m",
+        "nanochat.train",
+        "--device",
+        str(args.device),
+        "--seed",
+        str(seed),
+        "--attention-type",
+        "standard",
+        "--optimizer-type",
+        str(args.optimizer_type),
+        "--learning-rate",
+        str(args.learning_rate),
+        "--max-steps",
+        str(args.max_steps),
+        "--warmup-steps",
+        str(args.warmup_steps),
+        "--log-interval",
+        "1",
+        "--vocab-size",
+        str(args.vocab_size),
         *arch.flags(),
         *variant.flags(),
-        "--artifacts-dir", str(artifacts_dir),
-        "--artifacts-kind", "ca_init",
-        "--artifacts-topic", topic,
-        "--run-id", cell_run_id,
+        "--artifacts-dir",
+        str(artifacts_dir),
+        "--artifacts-kind",
+        "ca_init",
+        "--artifacts-topic",
+        topic,
+        "--run-id",
+        cell_run_id,
     ]
     if checkpoint:
         # save the final model so retention can compare trained vs init weights
@@ -313,8 +347,12 @@ def _run_train_cell(
     timed_out = False
     try:
         proc = subprocess.run(
-            train_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, timeout=float(args.timeout_s), check=False,
+            train_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=float(args.timeout_s),
+            check=False,
         )
         returncode = int(proc.returncode)
         stderr_tail = proc.stderr
@@ -428,24 +466,31 @@ def _render_report(run_id: str, args: argparse.Namespace, cells: list[CellResult
     agg = _aggregate(cells)
     lines: list[str] = []
     lines.append(f"# CA-init early-phase benchmark — `{run_id}`\n")
-    lines.append("Bead model_guided_research-m32. Compares CA weight init "
-                 "(`--ca-init-rule`) vs the standard init vs an alpha-blended mix on small "
-                 "attention-heavy and MLP-heavy models, at matched steps/seeds.\n")
-    lines.append(f"- Device: `{args.device}`  ·  steps: `{args.max_steps}`  ·  "
-                 f"warmup: `{args.warmup_steps}`  ·  lr: `{args.learning_rate}`  ·  "
-                 f"optimizer: `{args.optimizer_type}`  ·  seeds: `{list(args.seeds)}`\n")
+    lines.append(
+        "Bead model_guided_research-m32. Compares CA weight init "
+        "(`--ca-init-rule`) vs the standard init vs an alpha-blended mix on small "
+        "attention-heavy and MLP-heavy models, at matched steps/seeds.\n"
+    )
+    lines.append(
+        f"- Device: `{args.device}`  ·  steps: `{args.max_steps}`  ·  "
+        f"warmup: `{args.warmup_steps}`  ·  lr: `{args.learning_rate}`  ·  "
+        f"optimizer: `{args.optimizer_type}`  ·  seeds: `{list(args.seeds)}`\n"
+    )
 
     lines.append("## Architectures\n")
     for name in args.configs:
         a = ARCH_CONFIGS[name]
-        lines.append(f"- **{name}** — L{a.n_layer} H{a.n_head} d{a.n_embd} "
-                     f"T{a.sequence_len} B{a.batch_size}: {a.note}")
+        lines.append(f"- **{name}** — L{a.n_layer} H{a.n_head} d{a.n_embd} T{a.sequence_len} B{a.batch_size}: {a.note}")
     lines.append("")
 
     lines.append("## Results (mean over seeds)\n")
-    lines.append("Loss/grad columns aggregate trained cells; activation/weight columns come "
-                 "from the in-process init-time probe (runs for every cell).\n")
-    lines.append("| config | variant | ok | final loss | loss drop | grad‖·‖ mean | grad‖·‖ max | in-proj act RMS | resid RMS | depth ratio | init w-std |")
+    lines.append(
+        "Loss/grad columns aggregate trained cells; activation/weight columns come "
+        "from the in-process init-time probe (runs for every cell).\n"
+    )
+    lines.append(
+        "| config | variant | ok | final loss | loss drop | grad‖·‖ mean | grad‖·‖ max | in-proj act RMS | resid RMS | depth ratio | init w-std |"
+    )
     lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for cfg in args.configs:
         for var in args.variants:
@@ -500,8 +545,9 @@ def _render_report(run_id: str, args: argparse.Namespace, cells: list[CellResult
     if failures:
         lines.append("## Failures\n")
         for c in failures:
-            lines.append(f"- {c.config}/{c.variant}/seed{c.seed}: `{c.status}` "
-                         f"{('— ' + '; '.join(c.notes)) if c.notes else ''}")
+            lines.append(
+                f"- {c.config}/{c.variant}/seed{c.seed}: `{c.status}` {('— ' + '; '.join(c.notes)) if c.notes else ''}"
+            )
         lines.append("")
     return "\n".join(lines)
 
@@ -527,11 +573,20 @@ def _print_table(cells: list[CellResult]) -> None:
             loss_final = m.get("loss_final")
             base_loss_final = base.get("loss_final") if base else None
             if var != "standard" and loss_final is not None and base_loss_final is not None:
-                style = "green" if loss_final < base_loss_final - 0.01 else (
-                    "red" if loss_final > base_loss_final + 0.01 else "yellow")
+                style = (
+                    "green"
+                    if loss_final < base_loss_final - 0.01
+                    else ("red" if loss_final > base_loss_final + 0.01 else "yellow")
+                )
             table.add_row(
-                cfg, var, f"{m['n_ok']}/{m['n_total']}", f(m["loss_final"]), f(m["loss_drop"]),
-                f(m["grad_norm_mean"]), f(m["act_input_proj_rms"]), f(m["weight_std_mean"]),
+                cfg,
+                var,
+                f"{m['n_ok']}/{m['n_total']}",
+                f(m["loss_final"]),
+                f(m["loss_drop"]),
+                f(m["grad_norm_mean"]),
+                f(m["act_input_proj_rms"]),
+                f(m["weight_std_mean"]),
                 style=style,
             )
     console.print(table)
@@ -611,14 +666,20 @@ def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path)
     """
     run_id = run_dir.name
     console.rule(f"[bold magenta]CA-init retention[/bold magenta] · {run_id}")
-    console.print(f"configs={args.configs}  variants={RETENTION_VARIANTS}  seeds={args.seeds}  "
-                  f"steps={args.max_steps}  device={args.device}")
+    console.print(
+        f"configs={args.configs}  variants={RETENTION_VARIANTS}  seeds={args.seeds}  "
+        f"steps={args.max_steps}  device={args.device}"
+    )
 
     rows: list[dict[str, Any]] = []
     total = len(args.configs) * len(RETENTION_VARIANTS) * len(args.seeds)
     with Progress(
-        TextColumn("[bold magenta]retention[/bold magenta]"), BarColumn(), MofNCompleteColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(), console=console,
+        TextColumn("[bold magenta]retention[/bold magenta]"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
     ) as prog:
         task = prog.add_task("cells", total=total)
         for cfg_name in args.configs:
@@ -627,25 +688,38 @@ def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path)
                 variant = INIT_VARIANTS[var_name]
                 for seed in args.seeds:
                     cell = _run_train_cell(
-                        arch=arch, variant=variant, seed=seed, run_dir=run_dir,
-                        artifacts_dir=artifacts_dir, args=args, checkpoint=True,
+                        arch=arch,
+                        variant=variant,
+                        seed=seed,
+                        run_dir=run_dir,
+                        artifacts_dir=artifacts_dir,
+                        args=args,
+                        checkpoint=True,
                     )
                     ret: dict[str, Any] = {"error": f"train status={cell.status}"}
                     if cell.status == "ok" and cell.train_dir is not None:
                         try:
                             ret = _measure_retention(
-                                arch, variant, seed,
+                                arch,
+                                variant,
+                                seed,
                                 cell_train_dir=artifacts_dir / cell.train_dir,
-                                device=args.device, vocab_size=args.vocab_size,
+                                device=args.device,
+                                vocab_size=args.vocab_size,
                             )
                         except Exception as exc:  # noqa: BLE001
                             ret = {"error": f"{type(exc).__name__}: {exc}"}
-                    rows.append({
-                        "config": cfg_name, "variant": var_name, "seed": seed,
-                        "alpha": variant.ca_alpha if variant.ca_rule else 0.0,
-                        "status": cell.status, "loss_final": cell.loss_final(),
-                        "retention": ret,
-                    })
+                    rows.append(
+                        {
+                            "config": cfg_name,
+                            "variant": var_name,
+                            "seed": seed,
+                            "alpha": variant.ca_alpha if variant.ca_rule else 0.0,
+                            "status": cell.status,
+                            "loss_final": cell.loss_final(),
+                            "retention": ret,
+                        }
+                    )
                     prog.advance(task)
 
     # aggregate per (config, variant): mean cosine + rel drift + final loss
@@ -666,29 +740,39 @@ def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path)
                 "n_total": len(grp),
             }
 
-    _write_json(run_dir / "retention_summary.json", {
-        "schema_version": "mgr.ca_init.retention.v1",
-        "run_id": run_id,
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "command": shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:]),
-        "settings": {"max_steps": args.max_steps, "seeds": list(args.seeds),
-                     "configs": args.configs, "variants": RETENTION_VARIANTS,
-                     "learning_rate": args.learning_rate, "device": args.device},
-        "rows": rows,
-    })
+    _write_json(
+        run_dir / "retention_summary.json",
+        {
+            "schema_version": "mgr.ca_init.retention.v1",
+            "run_id": run_id,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "command": shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:]),
+            "settings": {
+                "max_steps": args.max_steps,
+                "seeds": list(args.seeds),
+                "configs": args.configs,
+                "variants": RETENTION_VARIANTS,
+                "learning_rate": args.learning_rate,
+                "device": args.device,
+            },
+            "rows": rows,
+        },
+    )
 
     # report
-    lines = [f"# CA-init structure retention — `{run_id}`\n",
-             "Bead model_guided_research-827. After training, how much of the init's weight "
-             "structure survives? Cosine similarity between the (deterministically reconstructed) "
-             "init weights and the trained checkpoint, over the CA-initialized tensors "
-             "(c_q/c_k/c_v/c_fc + wte). Higher cosine = more structure retained.\n",
-             f"- Device `{args.device}` · steps `{args.max_steps}` · lr `{args.learning_rate}` · "
-             f"seeds `{list(args.seeds)}`\n",
-             "Bias axis: `ca_rule30` (alpha=1.0 pure CA) → `ca_mix0.5` → `ca_mix0.25` "
-             "(more bias-like) → `standard` (random-init baseline).\n",
-             "| config | variant | alpha | ok | retention cosine | rel L2 drift | final loss |",
-             "|---|---|---|---|---|---|---|"]
+    lines = [
+        f"# CA-init structure retention — `{run_id}`\n",
+        "Bead model_guided_research-827. After training, how much of the init's weight "
+        "structure survives? Cosine similarity between the (deterministically reconstructed) "
+        "init weights and the trained checkpoint, over the CA-initialized tensors "
+        "(c_q/c_k/c_v/c_fc + wte). Higher cosine = more structure retained.\n",
+        f"- Device `{args.device}` · steps `{args.max_steps}` · lr `{args.learning_rate}` · "
+        f"seeds `{list(args.seeds)}`\n",
+        "Bias axis: `ca_rule30` (alpha=1.0 pure CA) → `ca_mix0.5` → `ca_mix0.25` "
+        "(more bias-like) → `standard` (random-init baseline).\n",
+        "| config | variant | alpha | ok | retention cosine | rel L2 drift | final loss |",
+        "|---|---|---|---|---|---|---|",
+    ]
 
     def f(x: float | None) -> str:
         return f"{x:.4f}" if isinstance(x, (int, float)) else "—"
@@ -696,22 +780,35 @@ def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path)
     for cfg_name in args.configs:
         for var_name in RETENTION_VARIANTS:
             m = agg[(cfg_name, var_name)]
-            lines.append(f"| {cfg_name} | {var_name} | {m['alpha']:.2f} | {m['n_ok']}/{m['n_total']} | "
-                         f"{f(m['cosine_mean'])} | {f(m['rel_drift_mean'])} | {f(m['loss_final'])} |")
+            lines.append(
+                f"| {cfg_name} | {var_name} | {m['alpha']:.2f} | {m['n_ok']}/{m['n_total']} | "
+                f"{f(m['cosine_mean'])} | {f(m['rel_drift_mean'])} | {f(m['loss_final'])} |"
+            )
     lines.append("")
     lines.append("## Reading it\n")
-    lines.append("- **Cosine → 1.0**: the trained weights still point the same way as init → CA "
-                 "structure is retained; SGD only nudged magnitudes.")
-    lines.append("- **Cosine ≪ 1.0**: training reoriented the weights → the init structure washed "
-                 "out (CA-init then acts as a fancy random seed, not a lasting prior).")
-    lines.append("- Compare across the alpha axis: if lower-alpha (more bias-like) variants retain "
-                 "MORE structure at equal/again-better loss, the bias framing helps; if not, pure CA "
-                 "is as good as any blend.\n")
-    lines.append("The freeze-channel arm (freeze CA channels for N warmup steps) is left as a "
-                 "follow-up: it needs a `train.py --freeze-init-steps` feature and is out of scope "
-                 "for a no-default-change experiment.\n")
-    lines.append("## Reproduction\n```\n" +
-                 shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:]) + "\n```\n")
+    lines.append(
+        "- **Cosine → 1.0**: the trained weights still point the same way as init → CA "
+        "structure is retained; SGD only nudged magnitudes."
+    )
+    lines.append(
+        "- **Cosine ≪ 1.0**: training reoriented the weights → the init structure washed "
+        "out (CA-init then acts as a fancy random seed, not a lasting prior)."
+    )
+    lines.append(
+        "- Compare across the alpha axis: if lower-alpha (more bias-like) variants retain "
+        "MORE structure at equal/again-better loss, the bias framing helps; if not, pure CA "
+        "is as good as any blend.\n"
+    )
+    lines.append(
+        "The freeze-channel arm (freeze CA channels for N warmup steps) is left as a "
+        "follow-up: it needs a `train.py --freeze-init-steps` feature and is out of scope "
+        "for a no-default-change experiment.\n"
+    )
+    lines.append(
+        "## Reproduction\n```\n"
+        + shlex.join(["uv", "run", "python", "scripts/ca_init_bench.py"] + sys.argv[1:])
+        + "\n```\n"
+    )
     _write_text(run_dir / "retention.md", "\n".join(lines))
 
     table = Table(title=f"CA-init structure retention — {run_id}", header_style="bold")
@@ -720,8 +817,15 @@ def _run_retention(args: argparse.Namespace, run_dir: Path, artifacts_dir: Path)
     for cfg_name in args.configs:
         for var_name in RETENTION_VARIANTS:
             m = agg[(cfg_name, var_name)]
-            table.add_row(cfg_name, var_name, f"{m['alpha']:.2f}", f"{m['n_ok']}/{m['n_total']}",
-                          f(m["cosine_mean"]), f(m["rel_drift_mean"]), f(m["loss_final"]))
+            table.add_row(
+                cfg_name,
+                var_name,
+                f"{m['alpha']:.2f}",
+                f"{m['n_ok']}/{m['n_total']}",
+                f(m["cosine_mean"]),
+                f(m["rel_drift_mean"]),
+                f(m["loss_final"]),
+            )
     console.print(table)
     n_ok = sum(1 for r in rows if r["status"] == "ok")
     console.print(f"[bold green]done[/bold green] {n_ok}/{len(rows)} cells ok → {run_dir}")
@@ -739,16 +843,21 @@ def main() -> int:
     parser.add_argument("--optimizer-type", type=str, default="adamw")
     parser.add_argument("--vocab-size", type=int, default=50304)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1])
-    parser.add_argument("--mode", choices=["bench", "retention"], default="bench",
-                        help="bench: m32 early-phase loss/grad/activation sweep. "
-                             "retention: 827 structure-retention (init vs trained weight cosine).")
+    parser.add_argument(
+        "--mode",
+        choices=["bench", "retention"],
+        default="bench",
+        help="bench: m32 early-phase loss/grad/activation sweep. "
+        "retention: 827 structure-retention (init vs trained weight cosine).",
+    )
     parser.add_argument("--configs", type=str, nargs="+", default=list(ARCH_CONFIGS), choices=list(ARCH_CONFIGS))
     parser.add_argument("--variants", type=str, nargs="+", default=BENCH_VARIANTS, choices=list(INIT_VARIANTS))
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--auto-download-data", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--min-parquet-files", type=int, default=2)
-    parser.add_argument("--skip-train", action="store_true",
-                        help="Only run the in-process activation probe (no training subprocess).")
+    parser.add_argument(
+        "--skip-train", action="store_true", help="Only run the in-process activation probe (no training subprocess)."
+    )
     args = parser.parse_args()
 
     if args.max_steps < 1:
@@ -765,14 +874,20 @@ def main() -> int:
         return _run_retention(args, run_dir, artifacts_dir)
 
     console.rule(f"[bold cyan]CA-init benchmark[/bold cyan] · {run_id}")
-    console.print(f"configs={args.configs}  variants={args.variants}  seeds={args.seeds}  "
-                  f"steps={args.max_steps}  device={args.device}")
+    console.print(
+        f"configs={args.configs}  variants={args.variants}  seeds={args.seeds}  "
+        f"steps={args.max_steps}  device={args.device}"
+    )
 
     cells: list[CellResult] = []
     total = len(args.configs) * len(args.variants) * len(args.seeds)
     with Progress(
-        TextColumn("[bold cyan]ca-init[/bold cyan]"), BarColumn(), MofNCompleteColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(), console=console,
+        TextColumn("[bold cyan]ca-init[/bold cyan]"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
     ) as prog:
         task = prog.add_task("cells", total=total)
         for cfg_name in args.configs:
@@ -790,13 +905,20 @@ def main() -> int:
 
                     if args.skip_train:
                         cell = CellResult(
-                            config=cfg_name, variant=var_name, seed=seed,
-                            status="probe_only", command="(skip-train)",
+                            config=cfg_name,
+                            variant=var_name,
+                            seed=seed,
+                            status="probe_only",
+                            command="(skip-train)",
                         )
                     else:
                         cell = _run_train_cell(
-                            arch=arch, variant=variant, seed=seed, run_dir=run_dir,
-                            artifacts_dir=artifacts_dir, args=args,
+                            arch=arch,
+                            variant=variant,
+                            seed=seed,
+                            run_dir=run_dir,
+                            artifacts_dir=artifacts_dir,
+                            args=args,
                         )
                     cell.activation = act
                     cells.append(cell)

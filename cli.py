@@ -328,9 +328,7 @@ def _certify_comparisons(
     cli.py requires an explicit justification note in the bead/commit.
     """
     base_checks: dict[tuple[str, str], dict[str, Any]] = {
-        (str(c.get("mechanism")), str(c.get("check"))): c
-        for c in baseline_obj.get("checks", [])
-        if isinstance(c, dict)
+        (str(c.get("mechanism")), str(c.get("check"))): c for c in baseline_obj.get("checks", []) if isinstance(c, dict)
     }
     cand_checks: dict[tuple[str, str], dict[str, Any]] = {
         (str(c.get("mechanism")), str(c.get("check"))): c
@@ -1719,9 +1717,7 @@ def bench_fixed_flops(
         task = prog.add_task("runs", total=total)
         for attn in attention_types:
             for run_seed in seed_list:
-                console.print(
-                    Panel(f"[bold]nanochat[/bold] variant={attn!r} seed={run_seed}", box=box.ROUNDED)
-                )
+                console.print(Panel(f"[bold]nanochat[/bold] variant={attn!r} seed={run_seed}", box=box.ROUNDED))
                 results.append(_run_train(attn, run_seed))
                 prog.advance(task)
 
@@ -1803,9 +1799,7 @@ def bench_fixed_flops(
 
     # the A/B score metric: val CE when every arm recorded it, else train-tail
     arms_ok = [a for a in attention_types if _finite(a, "score")]
-    metric_key = (
-        "val_ce_final" if arms_ok and all(_finite(a, "val_ce_final") for a in arms_ok) else "score"
-    )
+    metric_key = "val_ce_final" if arms_ok and all(_finite(a, "val_ce_final") for a in arms_ok) else "score"
     metric_label = "val CE" if metric_key == "val_ce_final" else "train-loss tail"
 
     def _mean_std(vals: list[float]) -> tuple[float | None, float | None]:
@@ -1922,9 +1916,7 @@ def bench_fixed_flops(
                     f"{ci[1]:.6f}" if ci else "",
                     f"{p:.6f}" if isinstance(p, float) else "",
                     agg["nan_inf_total"],
-                    f"{agg['tokens_per_second_mean']:.3f}"
-                    if isinstance(agg["tokens_per_second_mean"], float)
-                    else "",
+                    f"{agg['tokens_per_second_mean']:.3f}" if isinstance(agg["tokens_per_second_mean"], float) else "",
                 ]
             )
         )
@@ -1953,8 +1945,19 @@ def bench_fixed_flops(
     md_lines.append("## A/B vs baseline (mean ± std over seeds, Welch t-test)")
     md_lines.append("")
     md_lines.append(
-        _md_row([f"attention_type ({metric_label})", "n_ok", "mean±std", "Δ vs base", "95% CI", "Welch p",
-                 "tokens/s", "mem GB", "NaN/Inf"])
+        _md_row(
+            [
+                f"attention_type ({metric_label})",
+                "n_ok",
+                "mean±std",
+                "Δ vs base",
+                "95% CI",
+                "Welch p",
+                "tokens/s",
+                "mem GB",
+                "NaN/Inf",
+            ]
+        )
     )
     md_lines.append(_md_row(["---"] * 9))
 
@@ -1991,18 +1994,18 @@ def bench_fixed_flops(
         )
 
     md_lines.append("")
-    md_lines.append("`\\*` = Welch two-sample p < 0.05 vs baseline. This is a descriptive A/B benchmark, "
-                    "deliberately distinct from the preregistered `mgr adjudicate` engine (which tests a "
-                    "registered threshold with floor/power gates). Per-feature deltas in `feature_ablate.csv`.")
+    md_lines.append(
+        "`\\*` = Welch two-sample p < 0.05 vs baseline. This is a descriptive A/B benchmark, "
+        "deliberately distinct from the preregistered `mgr adjudicate` engine (which tests a "
+        "registered threshold with floor/power gates). Per-feature deltas in `feature_ablate.csv`."
+    )
     md_lines.append("")
     md_lines.append("## Conclusions")
     md_lines.append("")
     if best is None:
         md_lines.append("- No successful runs; see `logs/` for stdout/stderr.")
     else:
-        md_lines.append(
-            f"- Best (lowest {metric_label}): `{best['attention_type']}` mean=`{best['metric_mean']:.6f}`"
-        )
+        md_lines.append(f"- Best (lowest {metric_label}): `{best['attention_type']}` mean=`{best['metric_mean']:.6f}`")
         sig_better, sig_worse = [], []
         for attn in attention_types:
             cmp = comparisons.get(attn)
@@ -2011,14 +2014,20 @@ def bench_fixed_flops(
             if cmp["p_value"] < 0.05:
                 (sig_better if cmp["delta"] < 0 else sig_worse).append((attn, cmp["delta"], cmp["p_value"]))
         if sig_better:
-            md_lines.append("- Significantly BETTER than baseline (p<0.05): "
-                            + ", ".join(f"`{a}` (Δ{d:+.4f}, p={p:.3f})" for a, d, p in sig_better))
+            md_lines.append(
+                "- Significantly BETTER than baseline (p<0.05): "
+                + ", ".join(f"`{a}` (Δ{d:+.4f}, p={p:.3f})" for a, d, p in sig_better)
+            )
         if sig_worse:
-            md_lines.append("- Significantly WORSE than baseline (p<0.05): "
-                            + ", ".join(f"`{a}` (Δ{d:+.4f}, p={p:.3f})" for a, d, p in sig_worse))
+            md_lines.append(
+                "- Significantly WORSE than baseline (p<0.05): "
+                + ", ".join(f"`{a}` (Δ{d:+.4f}, p={p:.3f})" for a, d, p in sig_worse)
+            )
         if not sig_better and not sig_worse:
-            md_lines.append("- No arm differs significantly from baseline at p<0.05 "
-                            f"(n={len(seed_list)} seed(s); widen seeds to gain power).")
+            md_lines.append(
+                "- No arm differs significantly from baseline at p<0.05 "
+                f"(n={len(seed_list)} seed(s); widen seeds to gain power)."
+            )
         unstable = [a for a in attention_types if aggregates[a]["nan_inf_total"] > 0]
         if unstable:
             md_lines.append("- Instability (NaN/Inf in train stream): " + ", ".join(f"`{a}`" for a in unstable))
@@ -2125,8 +2134,7 @@ _SCALING_MECHANISM_NOTES: dict[str, str] = {
         "comparable to other dense mechanisms at research-scale rungs"
     ),
     "gauge": "cached eval unsupported until A5; TRAINING runs are unaffected",
-    "clifford": "chunked geometric-product aggregate (mnn.3); same tiling "
-    "budget pattern as octonion post-7b0.6",
+    "clifford": "chunked geometric-product aggregate (mnn.3); same tiling budget pattern as octonion post-7b0.6",
 }
 
 
@@ -2310,7 +2318,9 @@ def _scaling_write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def _scaling_manifest_rung(row: dict[str, Any], seeds: list[int], prior_runs: dict[tuple[int, int], dict[str, Any]]) -> dict[str, Any]:
+def _scaling_manifest_rung(
+    row: dict[str, Any], seeds: list[int], prior_runs: dict[tuple[int, int], dict[str, Any]]
+) -> dict[str, Any]:
     """Fresh manifest entry for one feasibility row, adopting prior per-seed
     run records (status/metrics) when a run (index, seed) was seen before."""
     runs = []
@@ -2410,7 +2420,9 @@ def _scaling_load_manifest_for_resume(
     if problems:
         details = "\n".join(f"  - {p}" for p in problems)
         console.print(f"[bold red]manifest mismatch under --run-id[/bold red]\n{details}")
-        console.print("[bold red]Refusing to mix sweeps; choose a new --run-id or delete the stale manifest.[/bold red]")
+        console.print(
+            "[bold red]Refusing to mix sweeps; choose a new --run-id or delete the stale manifest.[/bold red]"
+        )
         raise typer.Exit(code=2)
     warnings: list[str] = []
     old_fp = existing.get("dataset_fingerprint") or {}
@@ -2448,7 +2460,13 @@ def _scaling_report_md(manifest: dict[str, Any]) -> str:
             f"{fmt(r['flops_per_token_est'])} | {fmt(r['token_budget'])} | {fmt(r['planned_max_steps'])} | "
             f"{fmt(r['target_flops_est'])} | {r['status'] if not r['feasible'] else 'yes'} |"
         )
-    lines += ["", "## Runs", "", "| rung | seed | status | final loss | val CE | tok/s | wall s | summary |", "|---|---|---|---|---|---|---|---|"]
+    lines += [
+        "",
+        "## Runs",
+        "",
+        "| rung | seed | status | final loss | val CE | tok/s | wall s | summary |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
     any_notes = False
     for r in m["rungs"]:
         if r.get("notes"):
@@ -2561,10 +2579,7 @@ def scaling_sweep(
         int,
         typer.Option(
             "--checkpoint-interval",
-            help=(
-                "Steps between D1 checkpoints (enables MID-RUNG resume on retry). "
-                "0 disables checkpointing."
-            ),
+            help=("Steps between D1 checkpoints (enables MID-RUNG resume on retry). 0 disables checkpointing."),
             min=0,
         ),
     ] = 500,
@@ -2576,13 +2591,17 @@ def scaling_sweep(
         Path | None,
         typer.Option(
             "--data-dir",
-            help=("Parquet corpus dir (sorted files, LAST file = val split). Default: the FineWeb cache. "
-                  "Point at an `mgr gen-tasks` output for fast CPU smoke runs."),
+            help=(
+                "Parquet corpus dir (sorted files, LAST file = val split). Default: the FineWeb cache. "
+                "Point at an `mgr gen-tasks` output for fast CPU smoke runs."
+            ),
         ),
     ] = None,
     auto_download_data: Annotated[
         bool,
-        typer.Option("--auto-download-data/--no-auto-download-data", help="Auto-download minimal dataset shards if missing."),
+        typer.Option(
+            "--auto-download-data/--no-auto-download-data", help="Auto-download minimal dataset shards if missing."
+        ),
     ] = True,
     min_parquet_files: Annotated[
         int,
@@ -2594,7 +2613,9 @@ def scaling_sweep(
     ] = Path("artifacts"),
     run_id: Annotated[
         str | None,
-        typer.Option("--run-id", help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS. Reuse to RESUME."),
+        typer.Option(
+            "--run-id", help="Suite run identifier (directory name). Defaults to YYYYMMDD_HHMMSS. Reuse to RESUME."
+        ),
     ] = None,
     timeout_s: Annotated[
         float,
@@ -2616,7 +2637,9 @@ def scaling_sweep(
     ] = True,
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Print the feasibility table and planned commands; launch NOTHING, write NOTHING."),
+        typer.Option(
+            "--dry-run", help="Print the feasibility table and planned commands; launch NOTHING, write NOTHING."
+        ),
     ] = False,
 ):
     """Train one attention mechanism across a resumable model-size ladder.
@@ -2738,7 +2761,9 @@ def scaling_sweep(
         )
         # Structural drift (ladder redefined in-code) invalidates old indexes.
         if [r["name"] for r in manifest["rungs"]] != [r["name"] for r in rows]:
-            console.print("[bold red]ladder definition changed since the manifest was written; start a new --run-id.[/bold red]")
+            console.print(
+                "[bold red]ladder definition changed since the manifest was written; start a new --run-id.[/bold red]"
+            )
             raise typer.Exit(code=2)
         prior_runs = {(int(r["index"]), int(run["seed"])): run for r in manifest["rungs"] for run in r["runs"]}
         manifest["rungs"] = [_scaling_manifest_rung(row, seed_list, prior_runs) for row in rows]
@@ -2961,9 +2986,7 @@ def _scaling_report_load_series(run_path: Path, tail_fraction: float) -> dict[st
             if summary_path:
                 seed_dir = Path(summary_path).parent
             else:
-                seed_dir = (
-                    manifest_path.parent / f"rung_{rung['index']}" / f"seed_{run.get('seed', 0)}"
-                )
+                seed_dir = manifest_path.parent / f"rung_{rung['index']}" / f"seed_{run.get('seed', 0)}"
             tail, src = _scaling_report_read_losses(seed_dir, tail_fraction)
             if tail is not None:
                 tails.append(tail)
@@ -3132,7 +3155,9 @@ def scaling_report(
     ] = Path("artifacts/scaling/report"),
     tail_fraction: Annotated[
         float,
-        typer.Option("--tail-fraction", help="Loss = mean of the last N-fraction of each run's loss stream.", min=0.01, max=1.0),
+        typer.Option(
+            "--tail-fraction", help="Loss = mean of the last N-fraction of each run's loss stream.", min=0.01, max=1.0
+        ),
     ] = 0.1,
     bootstrap: Annotated[
         int,
@@ -3245,7 +3270,12 @@ def scaling_report(
             for mech, entry in mech_fits.items()
         },
         "pairwise_exponent_tests": [
-            {"pair": row["pair"], "delta_b": _clean(row["delta_b"]), "ci95": _clean(row["ci"]), "significant": row["significant"]}
+            {
+                "pair": row["pair"],
+                "delta_b": _clean(row["delta_b"]),
+                "ci95": _clean(row["ci"]),
+                "significant": row["significant"],
+            }
             for row in pairwise
         ],
     }
@@ -4132,9 +4162,7 @@ def regressions(
 
     comparisons: list[_RegressionComparison]
     if base_obj.get("kind") == "certify":
-        comparisons = _certify_comparisons(
-            base_obj, cand_obj, degrade_factor=cert_degrade_factor
-        )
+        comparisons = _certify_comparisons(base_obj, cand_obj, degrade_factor=cert_degrade_factor)
     else:
         metrics = [
             ("final_loss", "Final loss", "lower"),
@@ -4189,7 +4217,6 @@ def regressions(
                     "status": status,
                 }
             )
-
 
     # Rich output
     header = Table.grid(padding=(0, 2))
@@ -4411,6 +4438,8 @@ _CERTIFY_MECHANISMS: list[str] = [
     "clifford",
     "hyperbolic",
 ]
+
+
 def _certify_tiny_config(mechanism: str):
     """Build a tiny GPTConfig for `mechanism` satisfying its structural constraints."""
     from nanochat.gpt import GPTConfig
@@ -4865,9 +4894,7 @@ def _run_certify_checks(
                 return out
 
             def extract(m):
-                return torch.stack(
-                    [m[..., 0], -m[..., 6], m[..., 5], -m[..., 4]], dim=-1
-                )
+                return torch.stack([m[..., 0], -m[..., 6], m[..., 5], -m[..., 4]], dim=-1)
 
             aw, ax, ay, az = qa.unbind(-1)
             bw, bx, by, bz = qb.unbind(-1)
@@ -5007,7 +5034,6 @@ def _run_certify_checks(
             scalar_err = (prod[..., 0] - a.norm(dim=-1) ** 2).abs().max()
             imag_err = prod[..., 1:].abs().max()
             return float(torch.maximum(scalar_err, imag_err))
-
 
         def o_reduces_to_quaternion_measure() -> float:
             # Reduction-to-a-known-mechanism anchor (bead uvjq / the
@@ -5171,9 +5197,7 @@ def _run_certify_checks(
                     y2 = x2 + sign * g_kick(y1)
                     x1, x2 = y1.detach(), y2.detach()
                     with torch.no_grad():
-                        energies.append(
-                            float(f_kick.energy(x2, cos_sin, None).mean() + g_kick.energy(x1).mean())
-                        )
+                        energies.append(float(f_kick.energy(x2, cos_sin, None).mean() + g_kick.energy(x1).mean()))
                 e = torch.tensor(energies)
                 return float(e.max() - e.min())
 
@@ -5328,14 +5352,24 @@ def _run_certify_checks(
 
             def _run(mode: str) -> Any:
                 cfg = _GPTConfig(
-                    sequence_len=32, vocab_size=128, n_layer=2, n_head=4, n_kv_head=2, n_embd=64,
-                    attention_type="ultrametric", ultrametric_mode=mode,
-                    ultrametric_hard_digits=True, ultrametric_lcp_beta=128.0,
+                    sequence_len=32,
+                    vocab_size=128,
+                    n_layer=2,
+                    n_head=4,
+                    n_kv_head=2,
+                    n_embd=64,
+                    attention_type="ultrametric",
+                    ultrametric_mode=mode,
+                    ultrametric_hard_digits=True,
+                    ultrametric_lcp_beta=128.0,
                 )
                 model = _GPT(cfg).train(False)
                 kv = KVCache(
-                    batch_size=1, num_heads=cfg.n_kv_head, seq_len=ids.size(1),
-                    head_dim=cfg.n_embd // cfg.n_head, num_layers=cfg.n_layer,
+                    batch_size=1,
+                    num_heads=cfg.n_kv_head,
+                    seq_len=ids.size(1),
+                    head_dim=cfg.n_embd // cfg.n_head,
+                    num_layers=cfg.n_layer,
                 )
                 with torch.inference_mode():
                     _ = model(ids[:, :-1], kv_cache=kv)
@@ -6302,15 +6336,15 @@ def doctor(
 
 @app.command("gen-tasks")
 def gen_tasks(
-    task: Annotated[str, typer.Option(help="Task name or 'all' (synthetic battery; realhier is --include-real)")] = "all",
+    task: Annotated[
+        str, typer.Option(help="Task name or 'all' (synthetic battery; realhier is --include-real)")
+    ] = "all",
     out: Annotated[Path, typer.Option(help="Output root; datasets land in <out>/<task>/")] = Path(
         "artifacts/diagnostics"
     ),
     size: Annotated[int, typer.Option(help="Documents per task (split ~80/10/10 train/val/heldout-test)")] = 2000,
     seed: Annotated[int, typer.Option(help="Generator seed (same seed -> byte-identical parquet)")] = 42,
-    dial: Annotated[
-        list[str] | None, typer.Option(help="Difficulty dial override name=value (repeatable)")
-    ] = None,
+    dial: Annotated[list[str] | None, typer.Option(help="Difficulty dial override name=value (repeatable)")] = None,
     include_real: Annotated[
         bool, typer.Option("--include-real", help="Include the realhier task in --task all")
     ] = False,
@@ -6366,9 +6400,7 @@ def gen_tasks(
     t0 = time.perf_counter()
     for name in names:
         with console.status(f"[bold cyan]generating {name}…[/bold cyan]"):
-            manifest = generate_task(
-                name, out_dir=out, size=size, seed=seed, dial_overrides=dial_overrides or None
-            )
+            manifest = generate_task(name, out_dir=out, size=size, seed=seed, dial_overrides=dial_overrides or None)
         import pyarrow.parquet as _pq
 
         train_path = out / name / "train_000.parquet"
@@ -6773,12 +6805,8 @@ def eval_tasks(
                 # the train-regime boundary is the max over EVERY seed's train split
                 if seed_in_range_max is not None:
                     in_range_max = seed_in_range_max if in_range_max is None else max(in_range_max, seed_in_range_max)
-                ppl_in.append(
-                    stats_mod.mean(_eval_doc_perplexity(model, tok, d, device) for d in in_docs)
-                )
-                ppl_out.append(
-                    stats_mod.mean(_eval_doc_perplexity(model, tok, d, device) for d in out_docs)
-                )
+                ppl_in.append(stats_mod.mean(_eval_doc_perplexity(model, tok, d, device) for d in in_docs))
+                ppl_out.append(stats_mod.mean(_eval_doc_perplexity(model, tok, d, device) for d in out_docs))
                 if spec.answer_marker is None:
                     continue
                 for mode, temp in decode_modes:
@@ -6822,8 +6850,7 @@ def eval_tasks(
                             if verbose and not correct and failures_logged < failure_log_cap:
                                 failures_logged += 1
                                 console.print(
-                                    f"[yellow]{name} fail[/yellow] [{mode}/{region}] "
-                                    f"expected={expected!r} got={got!r}"
+                                    f"[yellow]{name} fail[/yellow] [{mode}/{region}] expected={expected!r} got={got!r}"
                                 )
                         per_seed_em[mode][region].append(correct_n / scored_n if scored_n else None)
                         if mode == "greedy":
@@ -6843,8 +6870,7 @@ def eval_tasks(
         exact_match: dict[str, Any] | None = None
         if spec.answer_marker is not None:
             exact_match = {
-                mode: {region: agg(vals) for region, vals in regions.items()}
-                for mode, regions in per_seed_em.items()
+                mode: {region: agg(vals) for region, vals in regions.items()} for mode, regions in per_seed_em.items()
             }
 
         def prior_agg(counters: list[dict[str, int]]) -> dict[str, Any] | None:
@@ -7276,10 +7302,11 @@ def _scorecard_cell_table(manifest: dict[str, Any]) -> Table:
     table.add_column("loss", justify="right")
     visible = cells if len(cells) <= 40 else cells[-40:]
     if len(cells) > len(visible):
-        counts = {status: sum(c["status"] == status for c in cells) for status in ("done", "failed", "running", "pending")}
-        table.caption = (
-            f"showing final {len(visible)} of {len(cells)} cells · "
-            + " · ".join(f"{key}={value}" for key, value in counts.items())
+        counts = {
+            status: sum(c["status"] == status for c in cells) for status in ("done", "failed", "running", "pending")
+        }
+        table.caption = f"showing final {len(visible)} of {len(cells)} cells · " + " · ".join(
+            f"{key}={value}" for key, value in counts.items()
         )
     styles = {
         "done": "green",
@@ -7489,7 +7516,9 @@ def _scorecard_report_html(summary: dict[str, Any]) -> str:
         )
     placebo = summary["adjudications"].get("placebo") or {}
     gate_class = "refuted" if placebo.get("publication_blocked") else "supported"
-    gate_text = "PUBLICATION BLOCKED" if placebo.get("publication_blocked") else "placebo gate clear on available evidence"
+    gate_text = (
+        "PUBLICATION BLOCKED" if placebo.get("publication_blocked") else "placebo gate clear on available evidence"
+    )
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Mechanism scorecard</title>
 <style>
@@ -7498,23 +7527,27 @@ table{{border-collapse:collapse;width:100%;background:#111a2e}}th,td{{padding:.6
 th{{background:#17233d}}code{{white-space:pre-wrap}}.supported{{color:#67e8a5}}.refuted{{color:#ff7b86}}
 .inconclusive{{color:#ffd166}}.blocked{{color:#9aa7bd}}.gate{{padding:1rem;border:1px solid #405174;background:#111a2e}}
 </style></head><body>
-<h1>Mechanism scorecard — {html.escape(str(summary['manifest']['run_id']))}</h1>
+<h1>Mechanism scorecard — {html.escape(str(summary["manifest"]["run_id"]))}</h1>
 <p class="gate"><strong class="{gate_class}">{html.escape(gate_text)}</strong></p>
-<p>{sum(c['status'] == 'done' for c in summary['manifest']['cells'])}/{len(summary['manifest']['cells'])} cells done ·
-policy {html.escape(str(summary['adjudications'].get('policy_version')))}</p>
+<p>{sum(c["status"] == "done" for c in summary["manifest"]["cells"])}/{len(summary["manifest"]["cells"])} cells done ·
+policy {html.escape(str(summary["adjudications"].get("policy_version")))}</p>
 <table><thead><tr><th>Hypothesis</th><th>Verdict</th><th>Reason / effect</th></tr></thead>
-<tbody>{''.join(rows)}</tbody></table></body></html>"""
+<tbody>{"".join(rows)}</tbody></table></body></html>"""
 
 
 @app.command("scorecard")
 def scorecard(
     budget: Annotated[
         list[float] | None,
-        typer.Option("--budget", help="Fixed FLOPs budget per cell (repeatable; two values enable verdict-flip reporting)"),
+        typer.Option(
+            "--budget", help="Fixed FLOPs budget per cell (repeatable; two values enable verdict-flip reporting)"
+        ),
     ] = None,
     mechanism: Annotated[
         list[str] | None,
-        typer.Option("--mechanism", "-m", help="Attention mechanism (repeatable; standard baseline is added automatically)"),
+        typer.Option(
+            "--mechanism", "-m", help="Attention mechanism (repeatable; standard baseline is added automatically)"
+        ),
     ] = None,
     task: Annotated[
         list[str] | None,
@@ -7538,7 +7571,9 @@ def scorecard(
     log_interval: Annotated[int, typer.Option(help="Training log cadence", min=1)] = 1,
     val_interval: Annotated[int, typer.Option(help="Training validation cadence; 0 disables it", min=0)] = 0,
     val_batches: Annotated[int, typer.Option(help="Validation batches", min=1)] = 10,
-    checkpoint_interval: Annotated[int, typer.Option(help="Checkpoint cadence; final checkpoint is always saved", min=1)] = 1000,
+    checkpoint_interval: Annotated[
+        int, typer.Option(help="Checkpoint cadence; final checkpoint is always saved", min=1)
+    ] = 1000,
     min_evidence_steps: Annotated[
         int,
         typer.Option(help="Cells below this planned optimizer-step count are smoke-only and quarantined", min=1),
@@ -7546,8 +7581,12 @@ def scorecard(
     timeout_s: Annotated[float, typer.Option(help="Timeout per train or eval subprocess", min=1.0)] = 3600.0,
     artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
     run_id: Annotated[str | None, typer.Option(help="Run id; reuse to resume exactly matching cells")] = None,
-    resume: Annotated[bool, typer.Option("--resume/--fresh", help="Resume done cells from an existing manifest")] = True,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print the cell plan without writing or launching")] = False,
+    resume: Annotated[
+        bool, typer.Option("--resume/--fresh", help="Resume done cells from an existing manifest")
+    ] = True,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the cell plan without writing or launching")
+    ] = False,
 ) -> None:
     """Run the preregistered fixed-FLOPs mechanism scorecard (bead vdc.4).
 
@@ -7805,9 +7844,7 @@ def scorecard(
                 cell["stdout_path"] = str(eval_out.relative_to(suite_dir))
                 cell["stderr_path"] = str(eval_err.relative_to(suite_dir))
                 cell["returncode"] = returncode
-                cell["eval_summary_path"] = (
-                    str(eval_summary.relative_to(suite_dir)) if eval_summary.exists() else None
-                )
+                cell["eval_summary_path"] = str(eval_summary.relative_to(suite_dir)) if eval_summary.exists() else None
                 cell["wall_seconds"] = round(time.perf_counter() - cell_t0, 2)
                 if returncode == 0 and eval_summary.exists():
                     cell["status"] = "done"
@@ -7850,7 +7887,10 @@ def scorecard(
     (suite_dir / "report.md").write_text(_scorecard_report_markdown(summary), encoding="utf-8")
     (suite_dir / "report.html").write_text(_scorecard_report_html(summary), encoding="utf-8")
 
-    counts = {status: sum(cell["status"] == status for cell in cells) for status in ("done", "failed", "interrupted", "pending")}
+    counts = {
+        status: sum(cell["status"] == status for cell in cells)
+        for status in ("done", "failed", "interrupted", "pending")
+    }
     console.print(
         Panel(
             f"done={counts['done']} failed={counts['failed']} interrupted={counts['interrupted']} "
@@ -7873,9 +7913,7 @@ def probe_charges(
     examples: Annotated[int, typer.Option(help="Documents to probe (split 80/20 train/test per category)")] = 240,
     seed: Annotated[int, typer.Option(help="Generator + probe-fit seed")] = 0,
     device_str: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
-    dial: Annotated[
-        list[str] | None, typer.Option(help="Difficulty dial override name=value (repeatable)")
-    ] = None,
+    dial: Annotated[list[str] | None, typer.Option(help="Difficulty dial override name=value (repeatable)")] = None,
     artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
     run_id: Annotated[str | None, typer.Option(help="Run identifier (default: timestamp)")] = None,
 ) -> None:
@@ -8235,12 +8273,18 @@ def _curve_auc(curve: list[tuple[float, float]], window_lo: float, window_hi: fl
 
 @app.command("precision-curve")
 def precision_curve(
-    digit_run: Annotated[list[str], typer.Option(help="eval-tasks run-id of one digit-truncation sweep point (repeatable)")],
-    float_run: Annotated[list[str], typer.Option(help="eval-tasks run-id of one float-quantization sweep point (repeatable)")],
+    digit_run: Annotated[
+        list[str], typer.Option(help="eval-tasks run-id of one digit-truncation sweep point (repeatable)")
+    ],
+    float_run: Annotated[
+        list[str], typer.Option(help="eval-tasks run-id of one float-quantization sweep point (repeatable)")
+    ],
     digit_full: Annotated[str, typer.Option(help="run-id of the digit arm's FULL-precision eval (the anchor)")],
     float_full: Annotated[str, typer.Option(help="run-id of the float arm's FULL-precision eval (the anchor)")],
     task: Annotated[str, typer.Option(help="Task whose in-range perplexity is the quality metric")] = "hier",
-    seed: Annotated[int, typer.Option(help="Checkpoint-seed pairing this artifact represents (one artifact per seed)")] = 0,
+    seed: Annotated[
+        int, typer.Option(help="Checkpoint-seed pairing this artifact represents (one artifact per seed)")
+    ] = 0,
     window_hi: Annotated[
         float,
         typer.Option(
@@ -8648,8 +8692,9 @@ def bench_ultrametric(
         dec = decode_by_t.get(t)
         md_lines.append(
             f"| {t} | {1000 * row['kernel_s']:.1f} | {1000 * row['balltree_s']:.1f} "
-            f"| {row['speedup']:.1f}x | {dec['speedup']:.1f}x |" if dec else
-            f"| {t} | {1000 * row['kernel_s']:.1f} | {1000 * row['balltree_s']:.1f} | {row['speedup']:.1f}x | - |"
+            f"| {row['speedup']:.1f}x | {dec['speedup']:.1f}x |"
+            if dec
+            else f"| {t} | {1000 * row['kernel_s']:.1f} | {1000 * row['balltree_s']:.1f} | {row['speedup']:.1f}x | - |"
         )
     (run_dir / "run.md").write_text("\n".join(md_lines) + "\n")
     console.print(f"[bold green]Wrote bench artifacts[/bold green] → {run_dir}")
@@ -8713,7 +8758,9 @@ def sample(
     ] = None,
     prompt: Annotated[
         str,
-        typer.Option(help="Prompt text. Diagnostic-task formats work best, e.g. 'TASK arith CMP 1.00e-02 2.00e+03 OUT'"),
+        typer.Option(
+            help="Prompt text. Diagnostic-task formats work best, e.g. 'TASK arith CMP 1.00e-02 2.00e+03 OUT'"
+        ),
     ] = "",
     max_tokens: Annotated[int, typer.Option(help="Max new tokens")] = 64,
     temperature: Annotated[float, typer.Option(help="0 = greedy (deterministic); >0 samples")] = 0.0,
@@ -8765,8 +8812,14 @@ def sample(
         title = f"{attn} · {ckpt_dir} @ step {resolved_step}"
         if json_out:
             rec = _sample_stream(
-                model, tok, prompt_ids, max_tokens=max_tokens, temperature=temperature,
-                top_k=top_k, seed=seed, stop_at_separator=stop_at_separator,
+                model,
+                tok,
+                prompt_ids,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                seed=seed,
+                stop_at_separator=stop_at_separator,
             )
         else:
             from rich.live import Live
@@ -8783,8 +8836,15 @@ def sample(
                     live.update(render())
 
                 rec = _sample_stream(
-                    model, tok, prompt_ids, max_tokens=max_tokens, temperature=temperature,
-                    top_k=top_k, seed=seed, stop_at_separator=stop_at_separator, on_token=on_token,
+                    model,
+                    tok,
+                    prompt_ids,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    seed=seed,
+                    stop_at_separator=stop_at_separator,
+                    on_token=on_token,
                 )
         rec.update(
             {
@@ -8822,8 +8882,12 @@ def sample(
     table.add_column("peak memory", justify="right")
     for r in results:
         table.add_row(
-            r["attention_type"], f"{r['checkpoint']} @ {r['step']}", f"{r['n_params']:,}",
-            str(len(r["tokens"])), f"{r['tokens_per_s']:.1f}", r["peak_memory"],
+            r["attention_type"],
+            f"{r['checkpoint']} @ {r['step']}",
+            f"{r['n_params']:,}",
+            str(len(r["tokens"])),
+            f"{r['tokens_per_s']:.1f}",
+            r["peak_memory"],
         )
     console.print(table)
     if len(results) > 1:
@@ -8844,7 +8908,9 @@ def sample(
 @app.command("profile-data")
 def profile_data(
     data: Annotated[Path | None, typer.Option(help="Directory (or file) of .txt/.md/.parquet documents")] = None,
-    task: Annotated[str | None, typer.Option(help="Profile a generated diagnostic task (requires vdc.1 gen-tasks)")] = None,
+    task: Annotated[
+        str | None, typer.Option(help="Profile a generated diagnostic task (requires vdc.1 gen-tasks)")
+    ] = None,
     mode: Annotated[str, typer.Option(help="Representation mode: tokens | activations")] = "tokens",
     sample: Annotated[int, typer.Option(help="Max documents to sample")] = 256,
     points: Annotated[int, typer.Option(help="Points in the distance matrix (cost is O(points^2))")] = 96,
@@ -8962,8 +9028,7 @@ def profile_data(
             Panel(
                 f"[dim]{profile['interpretation_note']}[/dim]\n"
                 f"docs={profile['sample']['docs']} points={profile['sample']['points']} "
-                f"seed={seed} elapsed={elapsed:.1f}s"
-                + (f" · written to {out}" if out else ""),
+                f"seed={seed} elapsed={elapsed:.1f}s" + (f" · written to {out}" if out else ""),
                 border_style="blue",
             )
         )
@@ -9126,7 +9191,12 @@ def _validate_theorem_registry(
 
     errors: list[str] = list(load_errors)
     warnings: list[str] = []
-    summary: dict[str, Any] = {"entries": 0, "by_status": {}, "pending_notes": 0, "checks": {"certify": 0, "pytest": 0, "demo": 0}}
+    summary: dict[str, Any] = {
+        "entries": 0,
+        "by_status": {},
+        "pending_notes": 0,
+        "checks": {"certify": 0, "pytest": 0, "demo": 0},
+    }
     if data is None:
         return errors, warnings, summary
 
@@ -9263,7 +9333,9 @@ def _theorems_load_or_exit() -> dict[str, Any]:
 
 @theorems_app.command("list")
 def theorems_list(
-    status: Annotated[str | None, typer.Option(help="Filter by status: conjecture | proved-on-paper | lean-checked")] = None,
+    status: Annotated[
+        str | None, typer.Option(help="Filter by status: conjecture | proved-on-paper | lean-checked")
+    ] = None,
     mechanism: Annotated[str | None, typer.Option(help="Filter by mechanism (e.g. tropical)")] = None,
     json_out: Annotated[bool, typer.Option("--json", help="Emit JSON instead of a table")] = False,
 ) -> None:
@@ -9301,7 +9373,10 @@ def theorems_list(
         by_status[t.get("status", "?")] = by_status.get(t.get("status", "?"), 0) + 1
     console.print(
         Panel(
-            " · ".join(f"[{_STATUS_STYLE.get(k, 'white')}]{k}: {v}[/{_STATUS_STYLE.get(k, 'white')}]" for k, v in sorted(by_status.items()))
+            " · ".join(
+                f"[{_STATUS_STYLE.get(k, 'white')}]{k}: {v}[/{_STATUS_STYLE.get(k, 'white')}]"
+                for k, v in sorted(by_status.items())
+            )
             or "no entries",
             border_style="blue",
         )
@@ -9336,12 +9411,16 @@ def theorems_show(
         f"used by: {', '.join(match.get('used_by') or []) or '—'}",
         f"depends on: {', '.join(match.get('depends_on') or []) or '—'}",
     ]
-    console.print(Panel("\n".join(lines), title=f"[bold]{theorem_id}[/bold]", border_style=_STATUS_STYLE.get(st, "white")))
+    console.print(
+        Panel("\n".join(lines), title=f"[bold]{theorem_id}[/bold]", border_style=_STATUS_STYLE.get(st, "white"))
+    )
 
 
 @theorems_app.command("validate")
 def theorems_validate(
-    deep: Annotated[bool, typer.Option("--deep", help="Also resolve pytest refs against a live pytest --collect-only")] = False,
+    deep: Annotated[
+        bool, typer.Option("--deep", help="Also resolve pytest refs against a live pytest --collect-only")
+    ] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit JSON report")] = False,
 ) -> None:
     """Validate the registry: schema, anchors, pointer integrity. Exit 1 on errors."""
@@ -9509,9 +9588,7 @@ def _validate_hypothesis_prediction(pred: Any, where: str, errors: list[str], wa
                 errors.append(f"{where}: certify metric_path names unknown check {segs[0]}.{segs[1]!r}")
         elif schema == "chargeprobe":
             if not (dotted.startswith("categories.") or dotted.startswith("dissociation.")):
-                errors.append(
-                    f"{where}: chargeprobe metric_path must start with 'categories.' or 'dissociation.'"
-                )
+                errors.append(f"{where}: chargeprobe metric_path must start with 'categories.' or 'dissociation.'")
     if pred.get("comparator") not in _HYP_COMPARATORS:
         errors.append(f"{where}: prediction.comparator must be one of {_HYP_COMPARATORS}")
     if pred.get("threshold_kind") not in _HYP_THRESHOLD_KINDS:
@@ -9521,6 +9598,7 @@ def _validate_hypothesis_prediction(pred: Any, where: str, errors: list[str], wa
         errors.append(f"{where}: prediction.threshold must be a number")
     elif pred.get("threshold_kind") == "ratio" and threshold <= 0:
         errors.append(f"{where}: ratio threshold must be > 0, got {threshold}")
+
     def _check_variant(variant: Any, label: str) -> None:
         # rgyl: a variant selector restricts an arm WITHIN a mechanism by
         # recorded hparams/config values; scalars only (matched by equality)
@@ -9723,7 +9801,9 @@ def _validate_hypothesis_registry(
                 if not isinstance(hold.get("held"), bool):
                     errors.append(f"{where}: manual_hold.held must be a boolean")
                 if hold.get("held") and (not isinstance(hold.get("reason"), str) or not hold["reason"].strip()):
-                    errors.append(f"{where}: manual_hold.held=true requires a non-empty reason (why the verdict is frozen)")
+                    errors.append(
+                        f"{where}: manual_hold.held=true requires a non-empty reason (why the verdict is frozen)"
+                    )
                 hd = hold.get("date")
                 if hd is not None and (not isinstance(hd, str) or not date_re.match(hd)):
                     errors.append(f"{where}: manual_hold.date must be YYYY-MM-DD")
@@ -9971,7 +10051,8 @@ def hypotheses_add(
         float | None, typer.Option(help="validity.floor_margin (default 0.0 when floor registered)")
     ] = None,
     floor_source: Annotated[
-        str | None, typer.Option(help="validity.floor_source - how the floor was computed (required with --baseline-floor)")
+        str | None,
+        typer.Option(help="validity.floor_source - how the floor was computed (required with --baseline-floor)"),
     ] = None,
     note: Annotated[
         str | None, typer.Option(help="operationalization_note (required when --metric-path is omitted)")
@@ -10148,9 +10229,7 @@ def hypotheses_power(
     hypothesis: Annotated[
         list[str] | None, typer.Option("--hypothesis", "-H", help="Hypothesis id (repeatable; default: all)")
     ] = None,
-    artifacts: Annotated[
-        list[Path] | None, typer.Option(help="Artifact root(s) to scan (repeatable)")
-    ] = None,
+    artifacts: Annotated[list[Path] | None, typer.Option(help="Artifact root(s) to scan (repeatable)")] = None,
 ) -> None:
     """Power analysis per hypothesis (bead hij.4): achieved power to detect
     the REGISTERED effect size at the current evidence's variance and seed
@@ -10358,11 +10437,26 @@ _ADJ_POLICY_VERSION = "ci-v6"
 _ADJ_BUDGET_RTOL = 0.05
 _ADJ_BOOTSTRAP_SEED = 1234
 _ADJ_BOOTSTRAP_N = 10_000
-_ADJ_POWER_FLOOR = 0.5  # below this, SUPPORTED arms carry the UNDERPOWERED qualifier (ci-v6; supported/refuted in ci-v4)
+_ADJ_POWER_FLOOR = (
+    0.5  # below this, SUPPORTED arms carry the UNDERPOWERED qualifier (ci-v6; supported/refuted in ci-v4)
+)
 _ADJ_POWER_TARGET = 0.8  # the n_for_80pct column solves for this
 _ADJ_FDR_Q = 0.10  # Benjamini-Hochberg level for the ledger-family headline (ci-v4)
 _ADJ_ATTENTION_MECHS = frozenset(
-    {"standard", "tropical", "ultrametric", "simplicial", "quaternion", "braid", "fractal", "octonion", "surreal", "reversible", "gauge", "hyperbolic"}
+    {
+        "standard",
+        "tropical",
+        "ultrametric",
+        "simplicial",
+        "quaternion",
+        "braid",
+        "fractal",
+        "octonion",
+        "surreal",
+        "reversible",
+        "gauge",
+        "hyperbolic",
+    }
 )
 
 _ADJ_BLOCK_REASONS = {
@@ -10505,9 +10599,7 @@ def _adj_artifact_matches_arm(art: dict[str, Any], mechanism: str, variant: dict
         # check records (variant selectors do not apply - the law is encoded
         # in the check NAME, e.g. braid.rmatrix_*).
         checks = data.get("checks")
-        return isinstance(checks, list) and any(
-            isinstance(c, dict) and c.get("mechanism") == mechanism for c in checks
-        )
+        return isinstance(checks, list) and any(isinstance(c, dict) and c.get("mechanism") == mechanism for c in checks)
     if art["schema"] == "bench":
         # path benchmarks record the mechanism they exercise top-level; the
         # variant selector separates protocol variants sharing a metric path
@@ -10582,9 +10674,11 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     out.append(a)  # no lineage -> cannot dedupe; keep as-is
                     continue
             else:
-                key = (a["schema"], run_id, ckpt.get("step"), meta.get("task"), meta.get("seed")) if a[
-                    "schema"
-                ] == "chargeprobe" else (run_id, ckpt.get("step"))
+                key = (
+                    (a["schema"], run_id, ckpt.get("step"), meta.get("task"), meta.get("seed"))
+                    if a["schema"] == "chargeprobe"
+                    else (run_id, ckpt.get("step"))
+                )
             rank = (
                 str(a["data"].get("schema_version", "")),  # "...v2" > "...v1"
                 str(meta.get("generated_at", "")),
@@ -10758,11 +10852,7 @@ def _adj_p_value(
             vc, vb = stats_mod.variance(cand), stats_mod.variance(base)
             nc, nb = len(cand), len(base)
             se = (vc / nc + vb / nb) ** 0.5
-            df = (
-                (vc / nc + vb / nb) ** 2 / ((vc / nc) ** 2 / (nc - 1) + (vb / nb) ** 2 / (nb - 1))
-                if se > 0.0
-                else 1.0
-            )
+            df = (vc / nc + vb / nb) ** 2 / ((vc / nc) ** 2 / (nc - 1) + (vb / nb) ** 2 / (nb - 1)) if se > 0.0 else 1.0
         if se == 0.0:
             ok = effect >= threshold if comparator == ">=" else effect <= threshold
             return 0.0 if ok else 1.0
@@ -10856,12 +10946,21 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
     # are left untouched - for both `-H` and `--all` - until a human releases.
     hold = hyp.get("manual_hold")
     if isinstance(hold, dict) and bool(hold.get("held")):
-        return {"id": hid, "verdict": "blocked", "reason_code": "manual_hold",
-                "reason": _ADJ_BLOCK_REASONS["manual_hold"], "hold_reason": str(hold.get("reason", ""))}
+        return {
+            "id": hid,
+            "verdict": "blocked",
+            "reason_code": "manual_hold",
+            "reason": _ADJ_BLOCK_REASONS["manual_hold"],
+            "hold_reason": str(hold.get("reason", "")),
+        }
     pred = hyp.get("prediction")
     if not isinstance(pred, dict):
-        return {"id": hid, "verdict": "blocked", "reason_code": "prediction_not_operationalized",
-                "reason": _ADJ_BLOCK_REASONS["prediction_not_operationalized"]}
+        return {
+            "id": hid,
+            "verdict": "blocked",
+            "reason_code": "prediction_not_operationalized",
+            "reason": _ADJ_BLOCK_REASONS["prediction_not_operationalized"],
+        }
     schema, _, dotted = str(pred.get("metric_path", "")).partition(":")
     # ci-v3 single-arm predictions: an explicit `baseline: null` makes the
     # claim a threshold on the candidate arm alone (no contrast, no floor gate)
@@ -10892,27 +10991,40 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
     # adjudicate; the overall verdict is the worst case across arms.
     for mech in hyp.get("mechanisms") or []:
         cand_all = [a for a in pool if _adj_artifact_matches_arm(a, mech, cand_variant)]
-        base_all = (
-            [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, baseline_mech, base_variant)]
-        )
+        base_all = [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, baseline_mech, base_variant)]
         saw_tainted = saw_tainted or any(a["tainted"] for a in cand_all + base_all)
         cand = _adj_dedupe_evaltasks([a for a in cand_all if not a["tainted"]])
         base = _adj_dedupe_evaltasks([a for a in base_all if not a["tainted"]])
         if not cand:
             code = "tainted_evidence" if cand_all else "no_candidate_artifacts"
-            return {"id": hid, "verdict": "blocked", "reason_code": code, "mechanism": mech,
-                    "reason": _ADJ_BLOCK_REASONS[code]}
+            return {
+                "id": hid,
+                "verdict": "blocked",
+                "reason_code": code,
+                "mechanism": mech,
+                "reason": _ADJ_BLOCK_REASONS[code],
+            }
         if not base and not single_arm:
             code = "tainted_evidence" if base_all else "no_baseline_artifacts"
-            return {"id": hid, "verdict": "blocked", "reason_code": code, "mechanism": mech,
-                    "reason": _ADJ_BLOCK_REASONS[code]}
+            return {
+                "id": hid,
+                "verdict": "blocked",
+                "reason_code": code,
+                "mechanism": mech,
+                "reason": _ADJ_BLOCK_REASONS[code],
+            }
         # qualifying = carries the registered metric (keeps evidence lists
         # honest: an arith-trained model's eval cannot witness a hier claim)
         cand_m = [a for a in cand if _adj_observations(a, dotted)]
         base_m = [a for a in base if _adj_observations(a, dotted)]
         if not cand_m or (not base_m and not single_arm):
-            return {"id": hid, "verdict": "blocked", "reason_code": "metric_missing", "mechanism": mech,
-                    "reason": _ADJ_BLOCK_REASONS["metric_missing"]}
+            return {
+                "id": hid,
+                "verdict": "blocked",
+                "reason_code": "metric_missing",
+                "mechanism": mech,
+                "reason": _ADJ_BLOCK_REASONS["metric_missing"],
+            }
         # budget cohorts: every artifact must prove its planned FLOPs; the
         # verdict uses the LARGEST cohort where both arms reach min_seeds.
         # certify artifacts are budget-exempt (ci-v3): mathematical invariant
@@ -10928,15 +11040,25 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
             n_c = sum(len(_adj_observations(a, dotted) or []) for a in cand_m)
             n_b = need if single_arm else sum(len(_adj_observations(a, dotted) or []) for a in base_m)
             if n_c < need or n_b < need:
-                return {"id": hid, "verdict": "blocked", "reason_code": "insufficient_seeds", "mechanism": mech,
-                        "reason": _ADJ_BLOCK_REASONS["insufficient_seeds"]}
+                return {
+                    "id": hid,
+                    "verdict": "blocked",
+                    "reason_code": "insufficient_seeds",
+                    "mechanism": mech,
+                    "reason": _ADJ_BLOCK_REASONS["insufficient_seeds"],
+                }
             anchor, cc, bb = None, cand_m, ([] if single_arm else base_m)
         else:
             cand_f = [(a, f) for a in cand_m if (f := _adj_planned_flops(a)) is not None]
             base_f = [(a, f) for a in base_m if (f := _adj_planned_flops(a)) is not None]
             if not cand_f or (not base_f and not single_arm):
-                return {"id": hid, "verdict": "blocked", "reason_code": "budget_mismatch", "mechanism": mech,
-                        "reason": _ADJ_BLOCK_REASONS["budget_mismatch"]}
+                return {
+                    "id": hid,
+                    "verdict": "blocked",
+                    "reason_code": "budget_mismatch",
+                    "mechanism": mech,
+                    "reason": _ADJ_BLOCK_REASONS["budget_mismatch"],
+                }
             anchors = sorted({f for _, f in cand_f + base_f}, reverse=True)
             chosen: tuple[float, list[dict[str, Any]], list[dict[str, Any]]] | None = None
             both_arms_seen = False
@@ -10954,8 +11076,13 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
                     break
             if chosen is None:
                 code = "insufficient_seeds" if both_arms_seen else "budget_mismatch"
-                return {"id": hid, "verdict": "blocked", "reason_code": code, "mechanism": mech,
-                        "reason": _ADJ_BLOCK_REASONS[code]}
+                return {
+                    "id": hid,
+                    "verdict": "blocked",
+                    "reason_code": code,
+                    "mechanism": mech,
+                    "reason": _ADJ_BLOCK_REASONS[code],
+                }
             anchor, cc, bb = chosen
         cand_obs = [v for a in cc for v in (_adj_observations(a, dotted) or [])]
         base_obs = [v for a in bb for v in (_adj_observations(a, dotted) or [])]
@@ -11038,9 +11165,7 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
                 arm["em_floor"] = em_floor
                 floor_gated = True
         # ---- ci-v4 statistical integrity: p-value + power per arm ----
-        arm["p_value"] = _adj_p_value(
-            cand_obs, base_obs, threshold, threshold_kind, str(comparator), single_arm
-        )
+        arm["p_value"] = _adj_p_value(cand_obs, base_obs, threshold, threshold_kind, str(comparator), single_arm)
         power_info = _adj_power(cand_obs, base_obs, threshold, threshold_kind, single_arm)
         if power_info is not None:
             arm["power"] = power_info["power"]
@@ -11078,9 +11203,7 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
     }
     # ci-v4: a for-all claim is as strong as its weakest arm
     arm_ps = [a.get("p_value") for a in arms.values()]
-    record["p_value"] = (
-        None if any(p is None for p in arm_ps) else max(p for p in arm_ps if p is not None)
-    )
+    record["p_value"] = None if any(p is None for p in arm_ps) else max(p for p in arm_ps if p is not None)
     if any(a.get("underpowered") for a in arms.values()):
         record["underpowered"] = True
     if floor_gated:
@@ -11106,9 +11229,7 @@ def _registry_append_verdict(path: Path, hyp_id: str, entry_line: str, new_statu
     else:
         # append AFTER the last existing item (history is chronological)
         insert_at = vh_idx + 1
-        while insert_at < end and (
-            lines[insert_at].startswith("      - ") or lines[insert_at].startswith("        ")
-        ):
+        while insert_at < end and (lines[insert_at].startswith("      - ") or lines[insert_at].startswith("        ")):
             insert_at += 1
         lines.insert(insert_at, entry_line)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -11150,16 +11271,18 @@ def _report_eval_rows(art: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         em = ((rec.get("exact_match") or {}).get("greedy") or {}).get("held_out") or {}
         prior = (rec.get("answer_prior") or {}).get("held_out") or {}
-        rows.append({
-            "run_id": str(lineage.get("run_id") or "?"),
-            "step": ckpt.get("step"),
-            "task": str(task),
-            "mechanism": str(ckpt.get("attention_type") or "?"),
-            "target_flops": (ckpt.get("budget") or {}).get("target_flops"),
-            "em_held_out": em.get("mean"),
-            "answer_prior": prior.get("mean"),
-            "tainted": bool(art["tainted"]),
-        })
+        rows.append(
+            {
+                "run_id": str(lineage.get("run_id") or "?"),
+                "step": ckpt.get("step"),
+                "task": str(task),
+                "mechanism": str(ckpt.get("attention_type") or "?"),
+                "target_flops": (ckpt.get("budget") or {}).get("target_flops"),
+                "em_held_out": em.get("mean"),
+                "answer_prior": prior.get("mean"),
+                "tainted": bool(art["tainted"]),
+            }
+        )
     return rows
 
 
@@ -11184,9 +11307,7 @@ def _report_mean_sd(vals: list[float]) -> str:
 
 @app.command("report")
 def report(
-    artifacts: Annotated[
-        list[Path] | None, typer.Option(help="Artifact root(s) to scan (repeatable)")
-    ] = None,
+    artifacts: Annotated[list[Path] | None, typer.Option(help="Artifact root(s) to scan (repeatable)")] = None,
     out: Annotated[Path, typer.Option(help="Output root for the roll-up")] = Path("artifacts/reports"),
     run_id: Annotated[str | None, typer.Option(help="Report id (default: UTC timestamp)")] = None,
 ) -> None:
@@ -11204,9 +11325,7 @@ def report(
         c = counts.setdefault(a["schema"], {"total": 0, "tainted": 0})
         c["total"] += 1
         c["tainted"] += int(a["tainted"])
-    console.print(
-        f"[bold cyan]report[/bold cyan] {len(index)} artifact(s) indexed from {[str(r) for r in roots]}"
-    )
+    console.print(f"[bold cyan]report[/bold cyan] {len(index)} artifact(s) indexed from {[str(r) for r in roots]}")
 
     # ---- train runs ----
     train_rows = sorted(
@@ -11218,8 +11337,15 @@ def report(
     for r in train_rows:
         g = seen_tg.setdefault(
             (r["task"], r["mechanism"], r["target_flops"]),
-            {"task": r["task"], "mechanism": r["mechanism"], "target_flops": r["target_flops"],
-             "n": 0, "n_tainted": 0, "ce": [], "minutes": 0.0},
+            {
+                "task": r["task"],
+                "mechanism": r["mechanism"],
+                "target_flops": r["target_flops"],
+                "n": 0,
+                "n_tainted": 0,
+                "ce": [],
+                "minutes": 0.0,
+            },
         )
         g["n"] += 1
         g["minutes"] += r["minutes"]
@@ -11227,6 +11353,7 @@ def report(
             g["n_tainted"] += 1
         elif isinstance(r["train_ce_final"], (int, float)):
             g["ce"].append(float(r["train_ce_final"]))
+
     # None-safe ordering: legacy artifacts may lack budget.target_flops
     def _group_order(k: tuple[str, str, Any]) -> tuple[str, str, float]:
         return (k[0], k[1], k[2] if k[2] is not None else -1.0)
@@ -11249,8 +11376,14 @@ def report(
     for r in eval_rows:
         g = seen_eg.setdefault(
             (r["task"], r["mechanism"], r["target_flops"]),
-            {"task": r["task"], "mechanism": r["mechanism"], "target_flops": r["target_flops"],
-             "n_models": 0, "em": [], "prior": []},
+            {
+                "task": r["task"],
+                "mechanism": r["mechanism"],
+                "target_flops": r["target_flops"],
+                "n_models": 0,
+                "em": [],
+                "prior": [],
+            },
         )
         g["n_models"] += 1
         if isinstance(r["em_held_out"], (int, float)):
@@ -11278,20 +11411,27 @@ def report(
         tg_table.add_column(col)
     for g in train_groups:
         tg_table.add_row(
-            g["task"], g["mechanism"], _report_fmt(g["target_flops"], ".3g"), str(g["n"]),
-            str(g["n_tainted"]), g["train_ce_final"], f"{g['minutes']:.0f}",
+            g["task"],
+            g["mechanism"],
+            _report_fmt(g["target_flops"], ".3g"),
+            str(g["n"]),
+            str(g["n_tainted"]),
+            g["train_ce_final"],
+            f"{g['minutes']:.0f}",
         )
     console.print(tg_table)
 
-    eg_table = Table(
-        title="eval evidence by arm (held-out EM over clean deduped checkpoints)", box=box.SIMPLE_HEAVY
-    )
+    eg_table = Table(title="eval evidence by arm (held-out EM over clean deduped checkpoints)", box=box.SIMPLE_HEAVY)
     for col in ("task", "mechanism", "FLOPs", "n models", "EM held-out (mean ± sd)", "answer prior"):
         eg_table.add_column(col)
     for g in eval_groups:
         eg_table.add_row(
-            g["task"], g["mechanism"], _report_fmt(g["target_flops"], ".3g"),
-            str(g["n_models"]), g["em_held_out"], g["answer_prior"],
+            g["task"],
+            g["mechanism"],
+            _report_fmt(g["target_flops"], ".3g"),
+            str(g["n_models"]),
+            g["em_held_out"],
+            g["answer_prior"],
         )
     console.print(eg_table)
     if n_eval_tainted:
@@ -11417,12 +11557,14 @@ def status(
         stale: bool | None = None
         if mech_file.exists():
             stale = mech_file.stat().st_mtime > st["cert_mtime"]
-        certs.append({
-            "mechanism": mech,
-            "cert_age": _status_age(st["cert_mtime"], now),
-            "stale": stale,  # null = no per-mechanism source file to compare
-            "cert_path": st["cert_path"],
-        })
+        certs.append(
+            {
+                "mechanism": mech,
+                "cert_age": _status_age(st["cert_mtime"], now),
+                "stale": stale,  # null = no per-mechanism source file to compare
+                "cert_path": st["cert_path"],
+            }
+        )
 
     # ---- what would the engine rule on today? ----
     reg_data, _load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
@@ -11450,10 +11592,7 @@ def status(
         "evidence_pool": {
             "indexed": len(index),
             "tainted": sum(1 for a in index if a["tainted"]),
-            "by_schema": {
-                s: sum(1 for a in index if a["schema"] == s)
-                for s in sorted({a["schema"] for a in index})
-            },
+            "by_schema": {s: sum(1 for a in index if a["schema"] == s) for s in sorted({a["schema"] for a in index})},
         },
         "certificates": certs,
         "ledger": ledger_counts,
@@ -11476,8 +11615,12 @@ def status(
         for k in sorted(kinds):
             v = kinds[k]
             md_lines.append(f"| {k} | {v['count']} | {v['newest_path']} | {v['newest_age']} |")
-        md_lines += ["", f"Evidence pool: {payload['evidence_pool']['indexed']} indexed, "
-                         f"{payload['evidence_pool']['tainted']} tainted.", ""]
+        md_lines += [
+            "",
+            f"Evidence pool: {payload['evidence_pool']['indexed']} indexed, "
+            f"{payload['evidence_pool']['tainted']} tainted.",
+            "",
+        ]
         (artifacts_dir / "index.md").write_text("\n".join(md_lines))
 
     if json_out:
@@ -11518,7 +11661,9 @@ def status(
 
 @app.command("adjudicate")
 def adjudicate(
-    hypothesis: Annotated[list[str] | None, typer.Option("--hypothesis", "-H", help="Hypothesis id (repeatable)")] = None,
+    hypothesis: Annotated[
+        list[str] | None, typer.Option("--hypothesis", "-H", help="Hypothesis id (repeatable)")
+    ] = None,
     adjudicate_all: Annotated[bool, typer.Option("--all", help="Adjudicate every operationalized hypothesis")] = False,
     artifacts: Annotated[list[Path] | None, typer.Option(help="Artifact root(s) to scan (repeatable)")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report verdicts without touching the registry")] = False,
@@ -11567,9 +11712,7 @@ def adjudicate(
         for v in family:
             v["q_value"] = qmap[str(v["id"])]
     n_supported = sum(1 for v in verdicts if v["verdict"] == "supported")
-    fdr_survivors = sorted(
-        str(v["id"]) for v in family if v["verdict"] == "supported" and v["q_value"] <= _ADJ_FDR_Q
-    )
+    fdr_survivors = sorted(str(v["id"]) for v in family if v["verdict"] == "supported" and v["q_value"] <= _ADJ_FDR_Q)
     # flag families aggregating heterogeneous statistical machinery: the
     # ledger's latest recorded verdicts may predate this policy version
     ledger_policies = sorted(
@@ -11660,11 +11803,7 @@ def adjudicate(
                 f"{m}: effect={a['effect']:.4g} ci95=[{a['ci95'][0]:.4g},{a['ci95'][1]:.4g}] "
                 f"(n={a['n_candidate']}/{a['n_baseline']})"
                 + (f" power={a['power']:.0%}" if a.get("power") is not None else "")
-                + (
-                    f" UNDERPOWERED(need n≈{a['n_for_80pct']})"
-                    if a.get("underpowered")
-                    else ""
-                )
+                + (f" UNDERPOWERED(need n≈{a['n_for_80pct']})" if a.get("underpowered") else "")
                 + (
                     # ci-v6: a refutation's decisiveness is its CI-half-widths
                     # past the threshold, not the (irrelevant) confirm-power
@@ -11695,9 +11834,7 @@ def adjudicate(
     # the mandatory two-number headline (ci-v4): the gap IS the honesty
     fdr_line = (
         f"{n_supported} supported, of which {len(fdr_survivors)} survive FDR at q={_ADJ_FDR_Q:g} "
-        f"(family: {len(family)} adjudicated"
-        + ("" if adjudicate_all else " - PARTIAL run, not the whole ledger")
-        + ")"
+        f"(family: {len(family)} adjudicated" + ("" if adjudicate_all else " - PARTIAL run, not the whole ledger") + ")"
     )
     policy_note = (
         f"ledger note: latest recorded verdicts span policies {ledger_policies}; q-values here "
@@ -11713,7 +11850,9 @@ def adjudicate(
         f"- verdicts: {summary_line}\n"
         f"- **{fdr_line}**\n"
         + (f"- {policy_note}\n" if policy_note else "")
-        + "\n| hypothesis | verdict | q | detail |\n|---|---|---|---|\n" + "\n".join(md_rows) + "\n\n"
+        + "\n| hypothesis | verdict | q | detail |\n|---|---|---|---|\n"
+        + "\n".join(md_rows)
+        + "\n\n"
         "BLOCKED rows are refusals, not adjudications: the engine declines to rule on weak, "
         "mismatched, or tainted evidence. UNDERPOWERED verdicts cleared their threshold at a test "
         "with under 50% power to detect the registered effect - an asterisk, not a clean verdict. "
@@ -11737,11 +11876,14 @@ def visualize(
         str,
         typer.Argument(help="'state' (hi3: model-state visuals) or 'entropy' (7ow: per-head entropy/diversity)"),
     ] = "state",
-    attention: Annotated[str, typer.Option("--attention", help="Attention type for a fresh probe (state mode)")] = "standard",
+    attention: Annotated[
+        str, typer.Option("--attention", help="Attention type for a fresh probe (state mode)")
+    ] = "standard",
     baseline: Annotated[str, typer.Option("--baseline", help="Baseline mechanism (entropy mode)")] = "standard",
     feature: Annotated[str, typer.Option("--feature", help="Math-feature mechanism (entropy mode)")] = "tropical",
     checkpoint: Annotated[
-        Path | None, typer.Option("--checkpoint", help="Load a trained checkpoint dir instead of a fresh probe (state mode)")
+        Path | None,
+        typer.Option("--checkpoint", help="Load a trained checkpoint dir instead of a fresh probe (state mode)"),
     ] = None,
     out: Annotated[Path | None, typer.Option("--out", help="Output dir (default under artifacts/vis/)")] = None,
     device: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
@@ -11760,13 +11902,37 @@ def visualize(
     from nanochat import viz
 
     if mode == "state":
-        argv = ["state", "--attention", attention, "--device", device, "--seed", str(seed),
-                "--seq-len", str(seq_len), "--batch-size", str(batch_size)]
+        argv = [
+            "state",
+            "--attention",
+            attention,
+            "--device",
+            device,
+            "--seed",
+            str(seed),
+            "--seq-len",
+            str(seq_len),
+            "--batch-size",
+            str(batch_size),
+        ]
         if checkpoint is not None:
             argv += ["--checkpoint", str(checkpoint)]
     elif mode == "entropy":
-        argv = ["entropy", "--baseline", baseline, "--feature", feature, "--device", device,
-                "--seed", str(seed), "--seq-len", str(seq_len), "--batch-size", str(batch_size)]
+        argv = [
+            "entropy",
+            "--baseline",
+            baseline,
+            "--feature",
+            feature,
+            "--device",
+            device,
+            "--seed",
+            str(seed),
+            "--seq-len",
+            str(seq_len),
+            "--batch-size",
+            str(batch_size),
+        ]
     else:
         console.print(f"[bold red]Unknown mode {mode!r}. Use 'state' or 'entropy'.[/bold red]")
         raise typer.Exit(code=2)
@@ -11778,11 +11944,17 @@ def visualize(
 @app.command("profile")
 def profile(
     attention: Annotated[str, typer.Option("--attention", help="Attention type to profile")] = "standard",
-    compare_flex: Annotated[bool, typer.Option("--compare-flex", help="standard only: FlexAttention on vs off")] = False,
-    forward_only: Annotated[bool, typer.Option("--forward-only", help="Profile forward only (default: fwd+bwd)")] = False,
+    compare_flex: Annotated[
+        bool, typer.Option("--compare-flex", help="standard only: FlexAttention on vs off")
+    ] = False,
+    forward_only: Annotated[
+        bool, typer.Option("--forward-only", help="Profile forward only (default: fwd+bwd)")
+    ] = False,
     device: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
     steps: Annotated[int, typer.Option("--steps", help="Profiled steps (excludes warmup)")] = 5,
-    out: Annotated[Path | None, typer.Option("--out", help="Output dir (default artifacts/profiles/<attention>)")] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Output dir (default artifacts/profiles/<attention>)")
+    ] = None,
 ) -> None:
     """Profile a mechanism's attention/optimizer hot path (bead b1l).
 

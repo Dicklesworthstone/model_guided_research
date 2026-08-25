@@ -153,9 +153,7 @@ def test_interrupted_run_resumes_bitwise(monkeypatch, tmp_path):
     assert len(losses_a) == 12
 
     hashes_b1: list[str] = []
-    summary_b1 = _run_train(
-        monkeypatch, tmp_path, "parent", record=hashes_b1, checkpoint_interval=6
-    )
+    summary_b1 = _run_train(monkeypatch, tmp_path, "parent", record=hashes_b1, checkpoint_interval=6)
     assert summary_b1["checkpointing"]["saved_steps"] == [5, 11]
     # Checkpointing must not perturb the trajectory itself.
     _assert_bitwise_trajectory(summary_b1["results"]["losses"], losses_a, offset=0)
@@ -208,12 +206,8 @@ def test_resume_with_ordinal_scheduler_round_trips_counters(monkeypatch, tmp_pat
     no longer frozen at construction values.
     """
     summary_a = _run_train(monkeypatch, tmp_path, "sched-uninterrupted", scheduler_type="ordinal")
-    summary_b1 = _run_train(
-        monkeypatch, tmp_path, "sched-parent", scheduler_type="ordinal", checkpoint_interval=6
-    )
-    state = torch.load(
-        _ckpt_dir(tmp_path, "sched-parent") / "optim_000005_rank0.pt", weights_only=False
-    )
+    summary_b1 = _run_train(monkeypatch, tmp_path, "sched-parent", scheduler_type="ordinal", checkpoint_interval=6)
+    state = torch.load(_ckpt_dir(tmp_path, "sched-parent") / "optim_000005_rank0.pt", weights_only=False)
     assert len(state["schedulers"]) == len(state["optimizers"]) > 0
     sched_state = state["schedulers"][0]
     assert sched_state["ema_loss"] is not None, "scheduler was never stepped - the orphan bug is back"
@@ -225,16 +219,12 @@ def test_resume_with_ordinal_scheduler_round_trips_counters(monkeypatch, tmp_pat
         resume_from=str(_ckpt_dir(tmp_path, "sched-parent")),
         resume_step=5,
     )
-    _assert_bitwise_trajectory(
-        summary_b2["results"]["losses"], summary_a["results"]["losses"][6:], offset=6
-    )
+    _assert_bitwise_trajectory(summary_b2["results"]["losses"], summary_a["results"]["losses"][6:], offset=6)
     assert summary_b1["checkpointing"]["saved_steps"] == [5, 11]
 
 
 def test_checkpoint_retention_prunes_oldest(monkeypatch, tmp_path):
-    summary = _run_train(
-        monkeypatch, tmp_path, "retention", checkpoint_interval=2, checkpoint_keep=2, max_steps=8
-    )
+    summary = _run_train(monkeypatch, tmp_path, "retention", checkpoint_interval=2, checkpoint_keep=2, max_steps=8)
     ckpt = _ckpt_dir(tmp_path, "retention")
     # Saves at steps 1,3,5,7; keep=2 retains only the newest two.
     assert summary["checkpointing"]["saved_steps"] == [5, 7]
@@ -248,9 +238,7 @@ def test_checkpoint_retention_prunes_oldest(monkeypatch, tmp_path):
 
 
 def test_checkpoint_verify_happy_path(monkeypatch, tmp_path):
-    summary = _run_train(
-        monkeypatch, tmp_path, "verified", checkpoint_interval=6, checkpoint_verify=None
-    )
+    summary = _run_train(monkeypatch, tmp_path, "verified", checkpoint_interval=6, checkpoint_verify=None)
     assert summary["checkpointing"]["verify"] is True
     assert summary["checkpointing"]["saved_steps"] == [5, 11]
 
@@ -300,9 +288,7 @@ def test_resume_under_torch_compile_round_trips(monkeypatch, tmp_path):
         checkpoint_interval=3,
         max_steps=6,
     )
-    model_sd = torch.load(
-        _ckpt_dir(tmp_path, "compile-parent") / "model_000002.pt", weights_only=True
-    )
+    model_sd = torch.load(_ckpt_dir(tmp_path, "compile-parent") / "model_000002.pt", weights_only=True)
     assert not any(k.startswith("_orig_mod.") for k in model_sd), "checkpoint keys must be clean under compile"
     summary_b = _run_train(
         monkeypatch,
@@ -314,9 +300,7 @@ def test_resume_under_torch_compile_round_trips(monkeypatch, tmp_path):
         resume_step=2,
         max_steps=6,
     )
-    _assert_bitwise_trajectory(
-        summary_b["results"]["losses"], summary_a["results"]["losses"][3:], offset=3
-    )
+    _assert_bitwise_trajectory(summary_b["results"]["losses"], summary_a["results"]["losses"][3:], offset=3)
 
 
 def test_validation_loss_evaluated_and_recorded(monkeypatch, tmp_path):
@@ -403,7 +387,16 @@ def test_metrics_reader_tolerates_malformed_lines(tmp_path):
 
     path = tmp_path / "metrics.jsonl"
     path.write_text(
-        json.dumps({"type": "header", "schema_version": METRICS_SCHEMA_VERSION, "git_sha": "x", "git_dirty": False, "config_hash": "y", "tainted": False})
+        json.dumps(
+            {
+                "type": "header",
+                "schema_version": METRICS_SCHEMA_VERSION,
+                "git_sha": "x",
+                "git_dirty": False,
+                "config_hash": "y",
+                "tainted": False,
+            }
+        )
         + "\n"
         + '{"type": "step", "step": 0, "loss": 1.0}\n'
         + "{not json at all\n"
@@ -435,9 +428,10 @@ def test_provenance_taint_semantics(monkeypatch):
     assert nogit["tainted"] is True and nogit["git_sha"] is None
 
     # config_hash is canonical: key order must not matter
-    assert report_mod.build_provenance({"a": 1, "b": 2})["config_hash"] == report_mod.build_provenance(
-        {"b": 2, "a": 1}
-    )["config_hash"]
+    assert (
+        report_mod.build_provenance({"a": 1, "b": 2})["config_hash"]
+        == report_mod.build_provenance({"b": 2, "a": 1})["config_hash"]
+    )
 
 
 def test_data_dir_trains_on_generated_task_corpus(tmp_path):
@@ -456,16 +450,40 @@ def test_data_dir_trains_on_generated_task_corpus(tmp_path):
     generate_task("arith", out_dir=tmp_path / "corpus", size=200, seed=7)
     args = train_mod.build_parser().parse_args(
         [
-            "--device", "cpu", "--max-steps", "3", "--batch-size", "2", "--sequence-len", "64",
-            "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "32", "--seed", "7",
-            "--warmup-steps", "0", "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "datadir",
-            "--data-dir", str(tmp_path / "corpus" / "arith"), "--val-interval", "2", "--val-batches", "1",
+            "--device",
+            "cpu",
+            "--max-steps",
+            "3",
+            "--batch-size",
+            "2",
+            "--sequence-len",
+            "64",
+            "--n-layer",
+            "1",
+            "--n-head",
+            "2",
+            "--n-kv-head",
+            "2",
+            "--n-embd",
+            "32",
+            "--seed",
+            "7",
+            "--warmup-steps",
+            "0",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "datadir",
+            "--data-dir",
+            str(tmp_path / "corpus" / "arith"),
+            "--val-interval",
+            "2",
+            "--val-batches",
+            "1",
         ]
     )
     train_mod.train(args)
-    summary = json.loads(
-        (tmp_path / "artifacts" / "baseline" / "nanochat" / "datadir" / "summary.json").read_text()
-    )
+    summary = json.loads((tmp_path / "artifacts" / "baseline" / "nanochat" / "datadir" / "summary.json").read_text())
     ds = summary["dataset"]
     assert ds["data_dir"] == str(tmp_path / "corpus" / "arith")
     assert [Path(p).name for p in ds["parquet_files"]] == ["train_000.parquet", "val_000.parquet"]
@@ -522,8 +540,14 @@ def test_metrics_stream_append_preserves_history_across_resume(tmp_path):
     from nanochat.report import MetricsStream, read_metrics_jsonl
 
     path = tmp_path / "metrics.jsonl"
-    prov = {"schema_version": "mgr.metrics.v1", "git_sha": "aaa", "git_dirty": False,
-            "config_hash": "h1", "data_snapshot_hash": None, "tainted": False}
+    prov = {
+        "schema_version": "mgr.metrics.v1",
+        "git_sha": "aaa",
+        "git_dirty": False,
+        "config_hash": "h1",
+        "data_snapshot_hash": None,
+        "tainted": False,
+    }
     first = MetricsStream(path, provenance=prov, flush_every=1)
     for step in range(3):
         first.write({"type": "step", "step": step, "loss": 1.0})
@@ -548,12 +572,11 @@ def test_dequantization_annealing_schedule_telemetry(monkeypatch, tmp_path):
     schedule actually reaches its endpoint."""
     import json as json_mod
 
-    monkeypatch.setattr(
-        train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory()
-    )
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory())
     monkeypatch.setattr(train_mod, "list_parquet_files", lambda data_dir=None: ["a.parquet", "b.parquet"])
     args = _train_args(
-        tmp_path, "anneal-smoke",
+        tmp_path,
+        "anneal-smoke",
         attention_type="tropical",
         semiring_beta="linear:1:32",
         tropical_record_margins=None,  # store_true flag
@@ -586,7 +609,9 @@ def test_annealed_checkpoint_reloads_at_live_beta(monkeypatch, tmp_path):
     live value (with the artifact-recorded model_config reflecting it); an
     explicit model_overrides semiring_beta still wins."""
     summary = _run_train(
-        monkeypatch, tmp_path, "anneal-reload",
+        monkeypatch,
+        tmp_path,
+        "anneal-reload",
         attention_type="tropical",
         semiring_beta="linear:1:32",
         checkpoint_interval="6",
@@ -625,13 +650,13 @@ def test_coverage_beta_controller_transitions_exact():
     ctl = train_mod._CoverageBetaController(1.0, 64.0, 0.7)
     up, down = ctl.UP, ctl.DOWN
 
-    assert ctl.step(None) == 1.0                      # no reading -> hold
-    assert ctl.step(0.9) == 1.0 * up                  # covered -> raise
-    assert ctl.step(0.7) == 1.0 * up * up             # floor is inclusive
+    assert ctl.step(None) == 1.0  # no reading -> hold
+    assert ctl.step(0.9) == 1.0 * up  # covered -> raise
+    assert ctl.step(0.7) == 1.0 * up * up  # floor is inclusive
     b = ctl.beta
-    assert ctl.step(0.69) == max(b / down, ctl.b0)    # dip -> back off, clamped at B0
+    assert ctl.step(0.69) == max(b / down, ctl.b0)  # dip -> back off, clamped at B0
     held = ctl.beta
-    assert ctl.step(None) == held                     # missing -> hold
+    assert ctl.step(None) == held  # missing -> hold
 
     # never-raise-below-floor invariant over an adversarial random stream
     import random as _random
@@ -666,12 +691,11 @@ def test_closed_loop_schedule_e2e_invariant(monkeypatch, tmp_path):
     step whose PREVIOUS coverage reading was below the floor."""
     import json as json_mod
 
-    monkeypatch.setattr(
-        train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory()
-    )
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory())
     monkeypatch.setattr(train_mod, "list_parquet_files", lambda data_dir=None: ["a.parquet", "b.parquet"])
     args = _train_args(
-        tmp_path, "coverage-smoke",
+        tmp_path,
+        "coverage-smoke",
         attention_type="tropical",
         semiring_beta="coverage:1:16:0.5",
         tropical_record_margins=None,
@@ -694,12 +718,11 @@ def test_closed_loop_schedule_e2e_invariant(monkeypatch, tmp_path):
 
 
 def test_coverage_spec_requires_margins(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory()
-    )
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory())
     monkeypatch.setattr(train_mod, "list_parquet_files", lambda data_dir=None: ["a.parquet", "b.parquet"])
     args = _train_args(
-        tmp_path, "coverage-no-margins",
+        tmp_path,
+        "coverage-no-margins",
         attention_type="tropical",
         semiring_beta="coverage:1:16:0.5",
     )
@@ -711,20 +734,18 @@ def test_ordinal_beta_ladder_transitions_exact():
     """9jzb ordinal mode: beta doubles (capped) exactly on (A, B) descents -
     the ordinal scheduler's anneal/restart events - and holds otherwise."""
     ladder = train_mod._OrdinalBetaLadder(1.0, 8.0)
-    assert ladder.step(2, 3) == 1.0      # first observation initializes, no event
-    assert ladder.step(2, 3) == 1.0      # no descent -> hold
-    assert ladder.step(2, 2) == 2.0      # anneal (B descent) -> double
-    assert ladder.step(2, 2) == 2.0      # hold
-    assert ladder.step(1, 3) == 4.0      # restart (A descent, B reset) -> double
-    assert ladder.step(1, 2) == 8.0      # anneal -> double, hits cap
-    assert ladder.step(1, 1) == 8.0      # capped at BMAX
+    assert ladder.step(2, 3) == 1.0  # first observation initializes, no event
+    assert ladder.step(2, 3) == 1.0  # no descent -> hold
+    assert ladder.step(2, 2) == 2.0  # anneal (B descent) -> double
+    assert ladder.step(2, 2) == 2.0  # hold
+    assert ladder.step(1, 3) == 4.0  # restart (A descent, B reset) -> double
+    assert ladder.step(1, 2) == 8.0  # anneal -> double, hits cap
+    assert ladder.step(1, 1) == 8.0  # capped at BMAX
     assert train_mod._parse_semiring_beta_spec("ordinal:1:8") == ("ordinal", 1.0, 8.0)
 
 
 def test_ordinal_beta_mode_requires_ordinal_scheduler(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory()
-    )
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory())
     monkeypatch.setattr(train_mod, "list_parquet_files", lambda data_dir=None: ["a.parquet", "b.parquet"])
     args = _train_args(tmp_path, "ord-beta-no-sched", attention_type="tropical", semiring_beta="ordinal:1:8")
     with pytest.raises(ValueError, match="scheduler-type ordinal"):
@@ -736,12 +757,11 @@ def test_ordinal_beta_mode_e2e_holds_absent_transitions(monkeypatch, tmp_path):
     hold at B0 the whole run (the transfinite clock, not the step clock)."""
     import json as json_mod
 
-    monkeypatch.setattr(
-        train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory()
-    )
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader_factory())
     monkeypatch.setattr(train_mod, "list_parquet_files", lambda data_dir=None: ["a.parquet", "b.parquet"])
     args = _train_args(
-        tmp_path, "ord-beta-smoke",
+        tmp_path,
+        "ord-beta-smoke",
         attention_type="tropical",
         semiring_beta="ordinal:2:16",
         scheduler_type="ordinal",
@@ -829,14 +849,14 @@ def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
     betas_a = beta_series("cov-uninterrupted")
     assert len(set(betas_a.values())) > 1, "fake coverage must move beta or this test is vacuous"
 
-    state = torch.load(
-        _ckpt_dir(tmp_path, "cov-parent") / "optim_000005_rank0.pt", weights_only=False
-    )
+    state = torch.load(_ckpt_dir(tmp_path, "cov-parent") / "optim_000005_rank0.pt", weights_only=False)
     assert "beta" in state["semiring_controller"]
     assert "semiring_pending_coverage" in state
 
     summary_b = _run_train(
-        monkeypatch, tmp_path, "cov-resumed",
+        monkeypatch,
+        tmp_path,
+        "cov-resumed",
         resume_from=str(_ckpt_dir(tmp_path, "cov-parent")),
         resume_step=5,
         attention_type="tropical",
@@ -858,21 +878,36 @@ def test_stateful_beta_resume_refuses_missing_controller_state(monkeypatch, tmp_
     """efzy: resuming a coverage/ordinal beta run from a checkpoint saved under
     a DIFFERENT --semiring-beta mode (no controller state in the payload) must
     fail loudly, not silently restart the beta trajectory at b0."""
-    _run_train(monkeypatch, tmp_path, "stateless-parent", checkpoint_interval=6,
-               attention_type="tropical", semiring_beta="linear:1:8",
-               tropical_record_margins=None)
-    _run_train(monkeypatch, tmp_path, "stateless-parent-ord", checkpoint_interval=6,
-               attention_type="tropical", semiring_beta="linear:1:8",
-               scheduler_type="ordinal")
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "stateless-parent",
+        checkpoint_interval=6,
+        attention_type="tropical",
+        semiring_beta="linear:1:8",
+        tropical_record_margins=None,
+    )
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "stateless-parent-ord",
+        checkpoint_interval=6,
+        attention_type="tropical",
+        semiring_beta="linear:1:8",
+        scheduler_type="ordinal",
+    )
     cases = (
         ("coverage:1:8:0.5", "stateless-parent", {"tropical_record_margins": None}),
         ("ordinal:1:8", "stateless-parent-ord", {"scheduler_type": "ordinal"}),
     )
     for spec, parent, extra in cases:
         args = _train_args(
-            tmp_path, f"stateful-resume-{spec.split(':')[0]}",
-            attention_type="tropical", semiring_beta=spec,
-            resume_from=str(_ckpt_dir(tmp_path, parent)), resume_step=5,
+            tmp_path,
+            f"stateful-resume-{spec.split(':')[0]}",
+            attention_type="tropical",
+            semiring_beta=spec,
+            resume_from=str(_ckpt_dir(tmp_path, parent)),
+            resume_step=5,
             **extra,
         )
         with pytest.raises(RuntimeError, match="no semiring_"):
@@ -900,7 +935,9 @@ def test_lr_warmdown_tail_lands_in_metrics(monkeypatch, tmp_path):
     assert len(summary["results"]["losses"]) == 12
     metrics = [
         json.loads(line)
-        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "warmdown-run" / "metrics.jsonl").read_text().splitlines()
+        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "warmdown-run" / "metrics.jsonl")
+        .read_text()
+        .splitlines()
     ]
     lrs = [rec["lr"] for rec in metrics if rec.get("type") == "step"]
     base = lrs[0]
@@ -913,7 +950,9 @@ def test_lr_warmdown_tail_lands_in_metrics(monkeypatch, tmp_path):
     _run_train(monkeypatch, tmp_path, "flat-run")
     flat = [
         json.loads(line)["lr"]
-        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "flat-run" / "metrics.jsonl").read_text().splitlines()
+        for line in (tmp_path / "artifacts" / "baseline" / "nanochat" / "flat-run" / "metrics.jsonl")
+        .read_text()
+        .splitlines()
         if json.loads(line).get("type") == "step"
     ]
     assert len(set(flat)) == 1, f"default must remain flat LR: {set(flat)}"
@@ -925,10 +964,28 @@ def test_lr_warmdown_conflicts_with_ordinal_scheduler(tmp_path):
     argv_extra = ["--lr-warmdown-ratio", "0.2", "--scheduler-type", "ordinal"]
     args = train_mod.build_parser().parse_args(
         [
-            "--device", "cpu", "--max-steps", "2", "--batch-size", "2",
-            "--sequence-len", "32", "--n-layer", "1", "--n-head", "2",
-            "--n-kv-head", "2", "--n-embd", "32", "--seed", "7",
-            "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "conflict",
+            "--device",
+            "cpu",
+            "--max-steps",
+            "2",
+            "--batch-size",
+            "2",
+            "--sequence-len",
+            "32",
+            "--n-layer",
+            "1",
+            "--n-head",
+            "2",
+            "--n-kv-head",
+            "2",
+            "--n-embd",
+            "32",
+            "--seed",
+            "7",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "conflict",
             *argv_extra,
         ]
     )

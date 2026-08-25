@@ -18,8 +18,14 @@ from nanochat import viz
 
 def _standard_diag(seed: int = 0, seq_len: int = 16):
     model, _meta = viz.build_probe_model(
-        "standard", seed=seed, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=seq_len, vocab_size=128,
+        "standard",
+        seed=seed,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=seq_len,
+        vocab_size=128,
     )
     idx, labels = viz.sample_batch(text=None, batch_size=2, seq_len=seq_len, vocab_size=128, seed=seed)
     return viz.collect_state(model, idx, token_labels=labels)
@@ -44,8 +50,14 @@ def test_standard_collects_entropy_and_maps():
 
 def test_tropical_collects_margins():
     model, _meta = viz.build_probe_model(
-        "tropical", seed=0, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=16, vocab_size=128,
+        "tropical",
+        seed=0,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=16,
+        vocab_size=128,
     )
     idx, _ = viz.sample_batch(text=None, batch_size=2, seq_len=16, vocab_size=128, seed=0)
     diag = viz.collect_state(model, idx)
@@ -58,8 +70,14 @@ def test_tropical_collects_margins():
 
 def test_mixed_schedule_collects_per_mechanism_diagnostics():
     model, meta = viz.build_probe_model(
-        "standard,tropical", seed=0, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=16, vocab_size=128,
+        "standard,tropical",
+        seed=0,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=16,
+        vocab_size=128,
     )
     assert meta["config"]["standard_record_attn_entropy"] is True
     assert meta["config"]["tropical_record_margins"] is True
@@ -84,8 +102,14 @@ def test_mixed_schedule_rows_carry_real_layer_indices(tmp_path):
     from rich.console import Console
 
     model, _ = viz.build_probe_model(
-        "standard,tropical", seed=0, n_layer=4, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=16, vocab_size=128,
+        "standard,tropical",
+        seed=0,
+        n_layer=4,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=16,
+        vocab_size=128,
     )
     kinds = [b.attention_type for b in model.transformer.h]
     std = [i for i, k in enumerate(kinds) if k == "standard"]
@@ -124,8 +148,14 @@ def test_capture_patch_is_reversible_and_output_unchanged():
     from nanochat.gpt import CausalSelfAttention
 
     model, _ = viz.build_probe_model(
-        "standard", seed=1, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=16, vocab_size=128,
+        "standard",
+        seed=1,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=16,
+        vocab_size=128,
     )
     idx, _ = viz.sample_batch(text=None, batch_size=2, seq_len=16, vocab_size=128, seed=1)
     with torch.no_grad():
@@ -144,8 +174,14 @@ def test_capture_patch_is_reversible_and_output_unchanged():
 
 def test_capture_preserves_existing_instance_attend_wrapper():
     model, _ = viz.build_probe_model(
-        "standard", seed=2, n_layer=1, n_head=4, n_kv_head=4, n_embd=64,
-        sequence_len=8, vocab_size=64,
+        "standard",
+        seed=2,
+        n_layer=1,
+        n_head=4,
+        n_kv_head=4,
+        n_embd=64,
+        sequence_len=8,
+        vocab_size=64,
     )
     idx, _ = viz.sample_batch(text=None, batch_size=1, seq_len=8, vocab_size=64, seed=2)
     attn0 = model.transformer.h[0].attn
@@ -199,8 +235,14 @@ def test_render_entropy_diversity_writes_artifacts(tmp_path):
     configs = []
     for name in ("standard", "tropical"):
         model, meta = viz.build_probe_model(
-            name, seed=0, n_layer=2, n_head=4, n_kv_head=4, n_embd=64,
-            sequence_len=16, vocab_size=128,
+            name,
+            seed=0,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=4,
+            n_embd=64,
+            sequence_len=16,
+            vocab_size=128,
         )
         idx, labels = viz.sample_batch(text=None, batch_size=2, seq_len=16, vocab_size=128, seed=0)
         diag = viz.collect_state(model, idx, token_labels=labels)
@@ -228,8 +270,7 @@ def test_mgr_visualize_state_command(tmp_path):
     out = tmp_path / "state"
     result = CliRunner().invoke(
         cli.app,
-        ["visualize", "state", "--attention", "standard", "--seq-len", "16",
-         "--batch-size", "2", "--out", str(out)],
+        ["visualize", "state", "--attention", "standard", "--seq-len", "16", "--batch-size", "2", "--out", str(out)],
     )
     assert result.exit_code == 0, result.output
     assert (out / "summary.json").is_file()
@@ -244,8 +285,20 @@ def test_mgr_visualize_entropy_command(tmp_path):
     out = tmp_path / "entropy"
     result = CliRunner().invoke(
         cli.app,
-        ["visualize", "entropy", "--baseline", "standard", "--feature", "tropical",
-         "--seq-len", "16", "--batch-size", "2", "--out", str(out)],
+        [
+            "visualize",
+            "entropy",
+            "--baseline",
+            "standard",
+            "--feature",
+            "tropical",
+            "--seq-len",
+            "16",
+            "--batch-size",
+            "2",
+            "--out",
+            str(out),
+        ],
     )
     assert result.exit_code == 0, result.output
     assert (out / "summary.json").is_file()

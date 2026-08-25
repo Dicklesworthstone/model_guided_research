@@ -895,9 +895,7 @@ def test_kv_cache_prefill_expands_batch_dimension():
     expanded = KVCache(batch_size=2, num_heads=2, seq_len=8, head_dim=4, num_layers=2)
     expanded.prefill(other)
     require(expanded.get_pos() == other.get_pos(), "Prefilled KVCache pos mismatch")
-    assert expanded.kv_cache is not None and other.kv_cache is not None, (
-        "KV caches must be initialized after prefill"
-    )
+    assert expanded.kv_cache is not None and other.kv_cache is not None, "KV caches must be initialized after prefill"
 
     # Both batch rows should match the single source prefix exactly.
     torch.testing.assert_close(

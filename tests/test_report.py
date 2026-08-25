@@ -14,49 +14,86 @@ import cli
 
 runner = CliRunner()
 
-CLEAN_PROV = {"schema_version": "mgr.metrics.v1", "git_sha": "deadbeef", "git_dirty": False,
-              "config_hash": "abc", "data_snapshot_hash": None, "tainted": False}
+CLEAN_PROV = {
+    "schema_version": "mgr.metrics.v1",
+    "git_sha": "deadbeef",
+    "git_dirty": False,
+    "config_hash": "abc",
+    "data_snapshot_hash": None,
+    "tainted": False,
+}
 TAINTED_PROV = {**CLEAN_PROV, "git_dirty": True, "tainted": True}
 
 
-def _train_summary(root: Path, name: str, *, mechanism: str, task: str, seed: int,
-                   ce: float, flops: float = 3e14, tainted: bool = False) -> None:
+def _train_summary(
+    root: Path,
+    name: str,
+    *,
+    mechanism: str,
+    task: str,
+    seed: int,
+    ce: float,
+    flops: float = 3e14,
+    tainted: bool = False,
+) -> None:
     run_dir = root / "campaigns" / "t" / name
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "summary.json").write_text(json.dumps({
-        "schema_version": "mgr.telemetry.v1",
-        "meta": {"run_id": name, "argv": ["train.py", "--seed", str(seed)]},
-        "config": {"attention_type": mechanism},
-        "dataset": {"data_dir": f"artifacts/diagnostics_e1/{task}"},
-        "budget": {"target_flops": flops},
-        "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
-        "results": {"train_ce_final": ce, "val_ce_final": None, "measured_time_s": 600.0},
-    }))
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mgr.telemetry.v1",
+                "meta": {"run_id": name, "argv": ["train.py", "--seed", str(seed)]},
+                "config": {"attention_type": mechanism},
+                "dataset": {"data_dir": f"artifacts/diagnostics_e1/{task}"},
+                "budget": {"target_flops": flops},
+                "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
+                "results": {"train_ce_final": ce, "val_ce_final": None, "measured_time_s": 600.0},
+            }
+        )
+    )
 
 
-def _eval_summary(root: Path, name: str, *, mechanism: str, task: str, em: float,
-                  run_id: str | None = None, step: int = 100, prior: float = 0.625,
-                  flops: float = 3e14, tainted: bool = False,
-                  generated_at: str = "2026-06-12T00:00:00Z") -> None:
+def _eval_summary(
+    root: Path,
+    name: str,
+    *,
+    mechanism: str,
+    task: str,
+    em: float,
+    run_id: str | None = None,
+    step: int = 100,
+    prior: float = 0.625,
+    flops: float = 3e14,
+    tainted: bool = False,
+    generated_at: str = "2026-06-12T00:00:00Z",
+) -> None:
     run_dir = root / "evals" / "tasks" / name
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "summary.json").write_text(json.dumps({
-        "schema_version": "mgr.evaltasks.v2",
-        "kind": "eval-tasks",
-        "meta": {
-            "generated_at": generated_at,
-            "checkpoint": {"attention_type": mechanism, "step": step,
-                           "budget": {"target_flops": flops},
-                           "lineage": {"run_id": run_id or name, "parent_run_ids": []}},
-            "seeds": [0, 1, 2],
-        },
-        "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
-        "tasks": {task: {
-            "exact_match": {"greedy": {"held_out": {"mean": em, "per_seed": [em] * 3}}},
-            "answer_prior": {"held_out": {"mean": prior, "per_seed": [prior] * 3,
-                                          "majority_answer": "x"}},
-        }},
-    }))
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mgr.evaltasks.v2",
+                "kind": "eval-tasks",
+                "meta": {
+                    "generated_at": generated_at,
+                    "checkpoint": {
+                        "attention_type": mechanism,
+                        "step": step,
+                        "budget": {"target_flops": flops},
+                        "lineage": {"run_id": run_id or name, "parent_run_ids": []},
+                    },
+                    "seeds": [0, 1, 2],
+                },
+                "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
+                "tasks": {
+                    task: {
+                        "exact_match": {"greedy": {"held_out": {"mean": em, "per_seed": [em] * 3}}},
+                        "answer_prior": {"held_out": {"mean": prior, "per_seed": [prior] * 3, "majority_answer": "x"}},
+                    }
+                },
+            }
+        )
+    )
 
 
 def test_report_rolls_up_arms_with_engine_semantics(tmp_path):
@@ -66,22 +103,42 @@ def test_report_rolls_up_arms_with_engine_semantics(tmp_path):
     arts = tmp_path / "artifacts"
     _train_summary(arts, "dyck-braid-s30", mechanism="braid", task="dyck", seed=30, ce=0.80)
     _train_summary(arts, "dyck-braid-s31", mechanism="braid", task="dyck", seed=31, ce=0.90)
-    _train_summary(arts, "dyck-standard-s30", mechanism="standard", task="dyck", seed=30,
-                   ce=1.20, tainted=True)
-    _eval_summary(arts, "e2-dyck-braid-s30", mechanism="braid", task="dyck", em=0.95,
-                  run_id="dyck-braid-s30")
-    _eval_summary(arts, "e2-dyck-braid-s31", mechanism="braid", task="dyck", em=0.97,
-                  run_id="dyck-braid-s31")
+    _train_summary(arts, "dyck-standard-s30", mechanism="standard", task="dyck", seed=30, ce=1.20, tainted=True)
+    _eval_summary(arts, "e2-dyck-braid-s30", mechanism="braid", task="dyck", em=0.95, run_id="dyck-braid-s30")
+    _eval_summary(arts, "e2-dyck-braid-s31", mechanism="braid", task="dyck", em=0.97, run_id="dyck-braid-s31")
     # re-eval of the SAME checkpoint: deduped, never a second observation
-    _eval_summary(arts, "e2-dyck-braid-s30-r2", mechanism="braid", task="dyck", em=0.10,
-                  run_id="dyck-braid-s30", generated_at="2026-06-11T00:00:00Z")
+    _eval_summary(
+        arts,
+        "e2-dyck-braid-s30-r2",
+        mechanism="braid",
+        task="dyck",
+        em=0.10,
+        run_id="dyck-braid-s30",
+        generated_at="2026-06-11T00:00:00Z",
+    )
     # tainted eval: counted, excluded from stats
-    _eval_summary(arts, "e2-dyck-standard-s30", mechanism="standard", task="dyck", em=0.91,
-                  run_id="dyck-standard-s30", tainted=True)
+    _eval_summary(
+        arts,
+        "e2-dyck-standard-s30",
+        mechanism="standard",
+        task="dyck",
+        em=0.91,
+        run_id="dyck-standard-s30",
+        tainted=True,
+    )
 
-    result = runner.invoke(cli.app, [
-        "report", "--artifacts", str(arts), "--out", str(tmp_path / "reports"), "--run-id", "r1",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "report",
+            "--artifacts",
+            str(arts),
+            "--out",
+            str(tmp_path / "reports"),
+            "--run-id",
+            "r1",
+        ],
+    )
     assert result.exit_code == 0, result.output
 
     payload = json.loads((tmp_path / "reports" / "r1" / "report.json").read_text())
@@ -116,10 +173,18 @@ def test_report_rolls_up_arms_with_engine_semantics(tmp_path):
 
 def test_report_handles_empty_tree(tmp_path):
     """An empty root produces an empty (but valid) report, not a crash."""
-    result = runner.invoke(cli.app, [
-        "report", "--artifacts", str(tmp_path / "nothing"),
-        "--out", str(tmp_path / "reports"), "--run-id", "empty",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "report",
+            "--artifacts",
+            str(tmp_path / "nothing"),
+            "--out",
+            str(tmp_path / "reports"),
+            "--run-id",
+            "empty",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads((tmp_path / "reports" / "empty" / "report.json").read_text())
     assert payload["counts"] == {} and payload["train_groups"] == [] and payload["eval_groups"] == []
@@ -129,11 +194,16 @@ def _cert_summary(root: Path, name: str, *, mechanism: str) -> Path:
     run_dir = root / "certs" / name
     run_dir.mkdir(parents=True, exist_ok=True)
     p = run_dir / "summary.json"
-    p.write_text(json.dumps({
-        "schema_version": 1, "kind": "certify",
-        "git": {"dirty": False, "sha": "deadbeef"},
-        "checks": [{"mechanism": mechanism, "name": f"{mechanism}.smoke", "measured": 0.0}],
-    }))
+    p.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "certify",
+                "git": {"dirty": False, "sha": "deadbeef"},
+                "checks": [{"mechanism": mechanism, "name": f"{mechanism}.smoke", "measured": 0.0}],
+            }
+        )
+    )
     return p
 
 
@@ -163,14 +233,20 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     blocked["id"] = "hyp-status-blocked"
     blocked["mechanisms"] = ["braid"]  # no braid eval artifacts -> blocked
     registry.write_text(
-        "schema_version: 1\nhypotheses:\n" + _yaml_entry_status(_hyp_status())
-        + _yaml_entry_status(blocked)
+        "schema_version: 1\nhypotheses:\n" + _yaml_entry_status(_hyp_status()) + _yaml_entry_status(blocked)
     )
     monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
 
-    result = runner.invoke(cli.app, [
-        "status", "--artifacts-dir", str(arts), "--json", "--write-index",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "status",
+            "--artifacts-dir",
+            str(arts),
+            "--json",
+            "--write-index",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads((arts / "index.json").read_text())
     assert payload["schema_version"] == "mgr.status.v1"
@@ -195,8 +271,11 @@ def _hyp_status():
         "mechanisms": ["ultrametric"],
         "prediction": {
             "metric_path": "evaltasks:tasks.hier.exact_match.greedy.held_out.mean",
-            "comparator": ">=", "threshold_kind": "absolute_delta", "threshold": 0.05,
-            "baseline": {"mechanism": "standard", "equal_flops": True}, "min_seeds": 1,
+            "comparator": ">=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 0.05,
+            "baseline": {"mechanism": "standard", "equal_flops": True},
+            "min_seeds": 1,
         },
         "status": "open",
     }
@@ -204,24 +283,26 @@ def _hyp_status():
 
 def _yaml_entry_status(h) -> str:
     pred = h["prediction"]
-    return "\n".join([
-        f"  - id: {h['id']}",
-        f"    statement: {json.dumps(h['statement'])}",
-        f"    mechanisms: [{', '.join(h['mechanisms'])}]",
-        "    source: {kind: human, provenance: test}",
-        '    date_registered: "2026-06-12"',
-        "    prediction:",
-        f"      metric_path: {json.dumps(pred['metric_path'])}",
-        f"      comparator: \"{pred['comparator']}\"",
-        f"      threshold_kind: {pred['threshold_kind']}",
-        f"      threshold: {pred['threshold']}",
-        f"      baseline: {{mechanism: {pred['baseline']['mechanism']}, equal_flops: true}}",
-        f"      min_seeds: {pred['min_seeds']}",
-        "    status: open",
-        "    evidence: []",
-        "    verdict_history: []",
-        "",
-    ])
+    return "\n".join(
+        [
+            f"  - id: {h['id']}",
+            f"    statement: {json.dumps(h['statement'])}",
+            f"    mechanisms: [{', '.join(h['mechanisms'])}]",
+            "    source: {kind: human, provenance: test}",
+            '    date_registered: "2026-06-12"',
+            "    prediction:",
+            f"      metric_path: {json.dumps(pred['metric_path'])}",
+            f'      comparator: "{pred["comparator"]}"',
+            f"      threshold_kind: {pred['threshold_kind']}",
+            f"      threshold: {pred['threshold']}",
+            f"      baseline: {{mechanism: {pred['baseline']['mechanism']}, equal_flops: true}}",
+            f"      min_seeds: {pred['min_seeds']}",
+            "    status: open",
+            "    evidence: []",
+            "    verdict_history: []",
+            "",
+        ]
+    )
 
 
 def test_report_survives_mixed_none_flops(tmp_path):
@@ -232,18 +313,31 @@ def test_report_survives_mixed_none_flops(tmp_path):
     # same (task, mechanism) with a missing budget -> None group key member
     run_dir = arts / "campaigns" / "t" / "b"
     run_dir.mkdir(parents=True)
-    (run_dir / "summary.json").write_text(json.dumps({
-        "schema_version": "mgr.telemetry.v1",
-        "meta": {"run_id": "b", "argv": []},
-        "config": {"attention_type": "braid"},
-        "dataset": {"data_dir": "artifacts/diagnostics_e1/dyck"},
-        "budget": {},
-        "provenance": CLEAN_PROV,
-        "results": {"train_ce_final": 1.0, "measured_time_s": 60.0},
-    }))
-    result = runner.invoke(cli.app, [
-        "report", "--artifacts", str(arts), "--out", str(tmp_path / "r"), "--run-id", "mix",
-    ])
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mgr.telemetry.v1",
+                "meta": {"run_id": "b", "argv": []},
+                "config": {"attention_type": "braid"},
+                "dataset": {"data_dir": "artifacts/diagnostics_e1/dyck"},
+                "budget": {},
+                "provenance": CLEAN_PROV,
+                "results": {"train_ce_final": 1.0, "measured_time_s": 60.0},
+            }
+        )
+    )
+    result = runner.invoke(
+        cli.app,
+        [
+            "report",
+            "--artifacts",
+            str(arts),
+            "--out",
+            str(tmp_path / "r"),
+            "--run-id",
+            "mix",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads((tmp_path / "r" / "mix" / "report.json").read_text())
     flops_seen = {g["target_flops"] for g in payload["train_groups"]}
@@ -285,29 +379,57 @@ def test_training_dashboard_renders_and_exports_html(tmp_path):
 
     html = tmp_path / "dash" / "run-x.html"
     dash = TrainingDashboard(
-        run_id="run-x", mechanism="reversible", max_steps=10,
+        run_id="run-x",
+        mechanism="reversible",
+        max_steps=10,
         flags={"attention": "reversible", "mode": "symplectic", "tied": True},
         html_path=html,
     )
     for step in range(10):
-        dash.observe({
-            "type": "step", "step": step, "loss": 4.0 - 0.1 * step, "lr": 1e-3,
-            "grad_norm": 0.5, "tokens_per_s": 1000.0, "tflops": 0.04, "peak_mem_gb": None,
-            "elapsed_s": float(step), "symplectic_shadow_energy_mean": 0.01 * step,
-        })
+        dash.observe(
+            {
+                "type": "step",
+                "step": step,
+                "loss": 4.0 - 0.1 * step,
+                "lr": 1e-3,
+                "grad_norm": 0.5,
+                "tokens_per_s": 1000.0,
+                "tflops": 0.04,
+                "peak_mem_gb": None,
+                "elapsed_s": float(step),
+                "symplectic_shadow_energy_mean": 0.01 * step,
+            }
+        )
     dash.observe({"type": "val", "step": 9, "val_loss": 3.2, "train_loss": 3.1})
 
     console = Console(record=True, width=120, force_terminal=True)
     console.print(dash._render())
     text = console.export_text()
-    for needle in ("run-x", "loss", "val_ce", "grad_norm", "feature flags",
-                   "symplectic_shadow_energy_mean", "invariants"):
+    for needle in (
+        "run-x",
+        "loss",
+        "val_ce",
+        "grad_norm",
+        "feature flags",
+        "symplectic_shadow_energy_mean",
+        "invariants",
+    ):
         assert needle in text, f"missing {needle!r} in rendered dashboard"
     assert "NaN" not in text  # finite run shows the green check, not the NaN flag
 
-    dash.observe({"type": "step", "step": 10, "loss": float("nan"), "lr": 1e-3,
-                  "grad_norm": 0.5, "tokens_per_s": 1000.0, "tflops": 0.04,
-                  "peak_mem_gb": None, "elapsed_s": 10.0})
+    dash.observe(
+        {
+            "type": "step",
+            "step": 10,
+            "loss": float("nan"),
+            "lr": 1e-3,
+            "grad_norm": 0.5,
+            "tokens_per_s": 1000.0,
+            "tflops": 0.04,
+            "peak_mem_gb": None,
+            "elapsed_s": 10.0,
+        }
+    )
     console2 = Console(record=True, width=120, force_terminal=True)
     console2.print(dash._render())
     assert "NaN" in console2.export_text()  # the NaN flag latches visibly
@@ -328,15 +450,23 @@ def test_dashboard_per_head_heatmap(tmp_path):
     html = tmp_path / "dash" / "trop.html"
     dash = TrainingDashboard(run_id="trop", mechanism="tropical", max_steps=4, html_path=html)
     for step in range(4):
-        dash.observe({
-            "type": "step", "step": step, "loss": 4.0 - step, "lr": 1e-3,
-            "grad_norm": 0.5, "tokens_per_s": 1000.0, "tflops": 0.04, "peak_mem_gb": None,
-            "elapsed_s": float(step),
-            # per-head vector (4 heads) — the field train.py already emits
-            "tropical_gamma_head_mean": [0.10 + 0.01 * step, 0.05, 0.20, 0.02],
-            "attn_entropy_head_mean": [2.1, 2.0, 1.5, 2.2],
-            "lr_groups": [1e-3, 1e-3],  # a core list field: must NOT become a heat row
-        })
+        dash.observe(
+            {
+                "type": "step",
+                "step": step,
+                "loss": 4.0 - step,
+                "lr": 1e-3,
+                "grad_norm": 0.5,
+                "tokens_per_s": 1000.0,
+                "tflops": 0.04,
+                "peak_mem_gb": None,
+                "elapsed_s": float(step),
+                # per-head vector (4 heads) — the field train.py already emits
+                "tropical_gamma_head_mean": [0.10 + 0.01 * step, 0.05, 0.20, 0.02],
+                "attn_entropy_head_mean": [2.1, 2.0, 1.5, 2.2],
+                "lr_groups": [1e-3, 1e-3],  # a core list field: must NOT become a heat row
+            }
+        )
 
     assert "tropical_gamma_head_mean" in dash._head_latest
     assert "attn_entropy_head_mean" in dash._head_latest
@@ -361,11 +491,20 @@ def test_dashboard_head_heatmap_toggle_off():
     from nanochat.report import TrainingDashboard
 
     dash = TrainingDashboard(run_id="x", mechanism="tropical", max_steps=2, show_head_heatmaps=False)
-    dash.observe({
-        "type": "step", "step": 0, "loss": 3.0, "lr": 1e-3, "grad_norm": 0.5,
-        "tokens_per_s": 1.0, "tflops": 0.0, "peak_mem_gb": None, "elapsed_s": 0.0,
-        "tropical_gamma_head_mean": [0.1, 0.2, 0.3, 0.4],
-    })
+    dash.observe(
+        {
+            "type": "step",
+            "step": 0,
+            "loss": 3.0,
+            "lr": 1e-3,
+            "grad_norm": 0.5,
+            "tokens_per_s": 1.0,
+            "tflops": 0.0,
+            "peak_mem_gb": None,
+            "elapsed_s": 0.0,
+            "tropical_gamma_head_mean": [0.1, 0.2, 0.3, 0.4],
+        }
+    )
     assert dash._head_latest == {}
     console = Console(record=True, width=120, force_terminal=True)
     console.print(dash._render())

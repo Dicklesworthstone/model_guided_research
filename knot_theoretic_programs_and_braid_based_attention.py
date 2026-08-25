@@ -525,9 +525,7 @@ def main(seed: int = 0, steps: int = 250, crossing_law: str | None = None):
     word = BraidWord(n=L, k=k_i)
     ok_allowed = word.verify_allowed()
     ok_normal = word.normalize_local().k == word.k
-    params_display = {
-        name: value.tolist() if hasattr(value, "tolist") else value for name, value in p.__dict__.items()
-    }
+    params_display = {name: value.tolist() if hasattr(value, "tolist") else value for name, value in p.__dict__.items()}
 
     if config.use_rich_output:
         from rich import box

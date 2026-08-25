@@ -301,9 +301,7 @@ class KVCache:
                         .to(device=device)
                     )
                 else:
-                    raise ValueError(
-                        f"Cannot expand gauge_cum_angles batch dim {other_angles.size(1)} -> {target_B}"
-                    )
+                    raise ValueError(f"Cannot expand gauge_cum_angles batch dim {other_angles.size(1)} -> {target_B}")
 
     def ensure_gauge_angle_cache(self, *, n_pairs: int, device: torch.device) -> None:
         if self.gauge_cum_angles is not None:

@@ -878,9 +878,7 @@ def smoke_demo_small():
     acc0 = model.eval_acc(qs, ys)
     acc_train, created = model.train_epoch(qs, ys, shuffle=True)
     acc_test = model.eval_acc(qst, yst)
-    _console.print(
-        f"[cyan]Small A:[/cyan] pre={acc0:.3f} post={acc_train:.3f} test={acc_test:.3f} created={created}"
-    )
+    _console.print(f"[cyan]Small A:[/cyan] pre={acc0:.3f} post={acc_train:.3f} test={acc_test:.3f} created={created}")
 
 
 def demo():
@@ -1277,9 +1275,7 @@ def valued_bilinear_shadows(q_digits: np.ndarray, k_digits: np.ndarray, p: int, 
     ip = sum(a * b for a, b in zip(q_ints, k_ints))  # exact over Z, no truncation
     cap = 2 * K  # products of K-digit elements have valuation < 2K unless zero
     v_exact = vp_int(ip, p, cap)
-    v_trop = min(
-        vp_int(a, p, cap) + vp_int(b, p, cap) for a, b in zip(q_ints, k_ints)
-    )
+    v_trop = min(vp_int(a, p, cap) + vp_int(b, p, cap) for a, b in zip(q_ints, k_ints))
     lead_coeff = (ip // p**v_exact) % p if ip != 0 else 0
     return {
         "inner_product": ip,
@@ -1412,7 +1408,15 @@ def run_valued_attention_section() -> dict:
             show_header=True,
             header_style="bold magenta",
         )
-        for col in ("key", "<q,k> digits (LSB->MSB)", "v_p exact", "(min,+) shadow", "generic?", "leading term", "score 2^-v"):
+        for col in (
+            "key",
+            "<q,k> digits (LSB->MSB)",
+            "v_p exact",
+            "(min,+) shadow",
+            "generic?",
+            "leading term",
+            "score 2^-v",
+        ):
             tab.add_column(col, justify="right")
         for r in rows:
             tab.add_row(*r)
@@ -1568,7 +1572,7 @@ def hensel_lift_model(src: "LCPTreeAttention", K_new: int) -> "LCPTreeAttention"
     lifted_heads = _dict_backed_heads(lifted)
     for h in range(src.H):
         src_head, new_head = src_heads[h], lifted_heads[h]
-        new_head.U = list(src_head.U) + list(new_head.U[src.K:])  # reuse stage maps verbatim
+        new_head.U = list(src_head.U) + list(new_head.U[src.K :])  # reuse stage maps verbatim
         for d in range(src.K):
             L = src_head.levels[d]
             new_head.levels[d] = DepthArrays(dict(L.res2idx), list(L.residues), L.S, L.R)
@@ -1601,8 +1605,9 @@ def _assert_residues_preserved(model: "LCPTreeAttention", snap: list[list[tuple]
             assert np.array_equal(np.asarray(L.R[:n]), R), f"head {h} depth {d}: R counters violated"
 
 
-def run_hensel_curriculum_section(*, K_coarse: int = 2, K_full: int = 4, epochs: int = 6,
-                                  n_train: int = 3000, n_test: int = 800, seed: int = 17) -> dict:
+def run_hensel_curriculum_section(
+    *, K_coarse: int = 2, K_full: int = 4, epochs: int = 6, n_train: int = 3000, n_test: int = 800, seed: int = 17
+) -> dict:
     """Hensel curriculum vs end-to-end at equal total budget, on Task A."""
     print("\n[Hensel-Lift Curriculum - residue-preserving digit refinement (8gk.4)]")
     p, m = 5, 8
@@ -1638,8 +1643,9 @@ def run_hensel_curriculum_section(*, K_coarse: int = 2, K_full: int = 4, epochs:
         from rich.console import Console as _Console
         from rich.table import Table as _Table
 
-        tab = _Table(title=f"Hensel curriculum (K {K_coarse} -> {K_full}, p={p})",
-                     show_header=True, header_style="bold magenta")
+        tab = _Table(
+            title=f"Hensel curriculum (K {K_coarse} -> {K_full}, p={p})", show_header=True, header_style="bold magenta"
+        )
         for col in ("arm", "test acc", "residue invariant"):
             tab.add_column(col, justify="right")
         tab.add_row("curriculum (lift)", f"{acc_curr:.3f}", "EXACT (asserted)")
@@ -1728,8 +1734,9 @@ def run_mahler_section(*, p: int = 3, prec: int = 6, N: int = 24, seed: int = 23
         from rich.console import Console as _Console
         from rich.table import Table as _Table
 
-        tab = _Table(title=f"Mahler truncation certificate (p={p}, mod p^{prec})",
-                     show_header=True, header_style="bold magenta")
+        tab = _Table(
+            title=f"Mahler truncation certificate (p={p}, mod p^{prec})", show_header=True, header_style="bold magenta"
+        )
         for col in ("truncate at N", "certified v_p(error) >=", "measured min v_p(error)", "certificate holds"):
             tab.add_column(col, justify="right")
         for cut, cert, worst, ok in rows:

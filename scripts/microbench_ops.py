@@ -266,7 +266,7 @@ def main() -> int:
         type=int,
         default=min(8, os.cpu_count() or 1),
         help="torch CPU thread cap for the --octonion-tile arm (per-op thread-sync storms on a "
-             "shared box otherwise swamp both arms; ratios stay honest either way)",
+        "shared box otherwise swamp both arms; ratios stay honest either way)",
     )
     args = ap.parse_args()
 

@@ -103,6 +103,7 @@ def tokenizing_distributed_data_loader_with_state(
         inputs = inputs_cpu.view(B, T).to(device=device, non_blocking=use_cuda_optimizations)
         targets = targets_cpu.view(B, T).to(device=device, non_blocking=use_cuda_optimizations)
         return inputs, targets, state_dict
+
     if prefetch_chunks and prefetch_chunks > 0:
         # Prefetch mode (bead atkp): a daemon thread tokenizes ahead of the
         # consumer into a bounded pending-queue of (token_list, position)

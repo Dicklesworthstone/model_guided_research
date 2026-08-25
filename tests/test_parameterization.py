@@ -105,8 +105,14 @@ def test_nsa_mlp_bias_uses_exact_emax_constants():
     def stage1_bias(mode):
         torch.manual_seed(0)
         cfg = GPTConfig(
-            n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8,
-            vocab_size=32, attention_type="tropical", ffn_type="tropical",
+            n_layer=1,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=16,
+            sequence_len=8,
+            vocab_size=32,
+            attention_type="tropical",
+            ffn_type="tropical",
             parameterization=mode,
         )
         model = GPT(cfg)
@@ -178,9 +184,17 @@ def test_parameterization_validation():
     from nanochat.gpt import GPT, GPTConfig
 
     with pytest.raises(ValueError, match="parameterization"):
-        GPT(GPTConfig(n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=32, parameterization="bogus"))
+        GPT(
+            GPTConfig(
+                n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=32, parameterization="bogus"
+            )
+        )
     with pytest.raises(ValueError, match="silent no-op|parameterization"):
-        GPT(GPTConfig(n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=32, parameterization="nsa"))
+        GPT(
+            GPTConfig(
+                n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=32, parameterization="nsa"
+            )
+        )
 
 
 def test_coord_check_artifact_schema(tmp_path):
@@ -190,7 +204,13 @@ def test_coord_check_artifact_schema(tmp_path):
     and `bench:results.*` metric paths work unchanged."""
     import json
 
-    res = {"attention_type": "standard", "widths": [16, 32], "activation_rms": {"16": 1.0, "32": 1.01}, "loglog_slope": 0.006, "r_squared": 0.9}
+    res = {
+        "attention_type": "standard",
+        "widths": [16, 32],
+        "activation_rms": {"16": 1.0, "32": 1.01},
+        "loglog_slope": 0.006,
+        "r_squared": 0.9,
+    }
     path = tmp_path / "coord" / "standard_current"
     out = P.write_coord_check_artifact(res, path, parameterization="current", seed=7)
     assert out == path / "summary.json" and out.exists()

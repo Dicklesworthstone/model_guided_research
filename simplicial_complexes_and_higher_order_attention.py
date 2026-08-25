@@ -11,7 +11,6 @@ L\_bdry = Σ\_k || D\_k h\_k − h\_{k−1} ||² + Σ\_k || D\_{k+1}^T h\_k − 
 
 # Docs: markdown_documentation/simplicial_complexes_and_higher_order_attention.md
 
-
 import jax
 import jax.numpy as jnp
 import numpy as np

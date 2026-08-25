@@ -134,8 +134,13 @@ def test_parser_stops_at_document_separator():
 
     spec = TASKS["arith"]
     out = _eval_score_doc(
-        _StopModel(" lt"), _StopTok(), spec, "TASK arith CMP 1.00e-02 2.00e+03 OUT lt",
-        device=torch.device("cpu"), temperature=0.0, seed=0,
+        _StopModel(" lt"),
+        _StopTok(),
+        spec,
+        "TASK arith CMP 1.00e-02 2.00e+03 OUT lt",
+        device=torch.device("cpu"),
+        temperature=0.0,
+        seed=0,
     )
     assert out is not None
     correct, expected, got = out
@@ -149,8 +154,13 @@ def test_parser_skips_prompts_exceeding_rotary_cache():
     spec = TASKS["arith"]
     tiny = _StubModel(" lt", rotary_seq_len=8)
     out = _eval_score_doc(
-        tiny, _StubTok(), spec, "TASK arith CMP 1.00e-02 2.00e+03 OUT lt",
-        device=torch.device("cpu"), temperature=0.0, seed=0,
+        tiny,
+        _StubTok(),
+        spec,
+        "TASK arith CMP 1.00e-02 2.00e+03 OUT lt",
+        device=torch.device("cpu"),
+        temperature=0.0,
+        seed=0,
     )
     assert out is None, "over-long prompts must be reported as skipped, not crash"
 
@@ -210,8 +220,19 @@ def _run_golden_eval(tmp_path: Path) -> dict:
 
     ckpt = _build_golden_checkpoint(tmp_path)
     runner = CliRunner()
-    args = ["eval-tasks", "--checkpoint", str(ckpt), "--examples", "8", "--seeds", "0",
-            "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "golden"]
+    args = [
+        "eval-tasks",
+        "--checkpoint",
+        str(ckpt),
+        "--examples",
+        "8",
+        "--seeds",
+        "0",
+        "--artifacts-dir",
+        str(tmp_path / "artifacts"),
+        "--run-id",
+        "golden",
+    ]
     for t in GOLDEN_TASKS:
         args.extend(["--task", t])
     result = runner.invoke(mgr_cli.app, args)
@@ -273,10 +294,34 @@ def _train_tiny_checkpoint(tmp_path: Path, attention_type: str, monkeypatch) -> 
     run_id = f"e2e-{attention_type}"
     args = train_mod.build_parser().parse_args(
         [
-            "--device", "cpu", "--max-steps", "4", "--batch-size", "2", "--sequence-len", "32",
-            "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "32", "--seed", "7",
-            "--warmup-steps", "0", "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", run_id,
-            "--checkpoint-interval", "4", "--attention-type", attention_type,
+            "--device",
+            "cpu",
+            "--max-steps",
+            "4",
+            "--batch-size",
+            "2",
+            "--sequence-len",
+            "32",
+            "--n-layer",
+            "1",
+            "--n-head",
+            "2",
+            "--n-kv-head",
+            "2",
+            "--n-embd",
+            "32",
+            "--seed",
+            "7",
+            "--warmup-steps",
+            "0",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            run_id,
+            "--checkpoint-interval",
+            "4",
+            "--attention-type",
+            attention_type,
         ]
     )
     train_mod.train(args)
@@ -298,8 +343,21 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     runner = CliRunner()
     result = runner.invoke(
         mgr_cli.app,
-        ["eval-tasks", "--checkpoint", str(ckpt), "--task", "arith", "--examples", "4",
-         "--seeds", "0", "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", f"eval-{attention_type}"],
+        [
+            "eval-tasks",
+            "--checkpoint",
+            str(ckpt),
+            "--task",
+            "arith",
+            "--examples",
+            "4",
+            "--seeds",
+            "0",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            f"eval-{attention_type}",
+        ],
     )
     assert result.exit_code == 0, result.output
     run_dir = tmp_path / "artifacts" / "evals" / "tasks" / f"eval-{attention_type}"
@@ -339,14 +397,27 @@ def test_e2e_lm_only_task_and_sampled_mode(monkeypatch, tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         mgr_cli.app,
-        ["eval-tasks", "--checkpoint", str(ckpt), "--task", "regime", "--task", "dyck", "--sampled",
-         "--examples", "4", "--seeds", "0,1", "--artifacts-dir", str(tmp_path / "artifacts"),
-         "--run-id", "eval-mixed"],
+        [
+            "eval-tasks",
+            "--checkpoint",
+            str(ckpt),
+            "--task",
+            "regime",
+            "--task",
+            "dyck",
+            "--sampled",
+            "--examples",
+            "4",
+            "--seeds",
+            "0,1",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "eval-mixed",
+        ],
     )
     assert result.exit_code == 0, result.output
-    summary = json.loads(
-        (tmp_path / "artifacts" / "evals" / "tasks" / "eval-mixed" / "summary.json").read_text()
-    )
+    summary = json.loads((tmp_path / "artifacts" / "evals" / "tasks" / "eval-mixed" / "summary.json").read_text())
     regime = summary["tasks"]["regime"]
     assert regime["exact_match"] is None and regime["curve"] is None  # LM-only: perplexity is the metric
     assert regime["answer_prior"] is None  # no answers -> no constant-answer floor
@@ -366,7 +437,5 @@ def test_eval_cli_argument_errors(tmp_path):
     runner = CliRunner()
     result = runner.invoke(mgr_cli.app, ["eval-tasks", "--checkpoint", str(tmp_path)])
     assert result.exit_code == 2  # neither --task nor --all-tasks
-    result = runner.invoke(
-        mgr_cli.app, ["eval-tasks", "--checkpoint", str(tmp_path), "--task", "not-a-task"]
-    )
+    result = runner.invoke(mgr_cli.app, ["eval-tasks", "--checkpoint", str(tmp_path), "--task", "not-a-task"])
     assert result.exit_code == 2

@@ -21,8 +21,14 @@ import cli
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-CLEAN_PROV = {"schema_version": "mgr.metrics.v1", "git_sha": "deadbeef", "git_dirty": False,
-              "config_hash": "abc", "data_snapshot_hash": None, "tainted": False}
+CLEAN_PROV = {
+    "schema_version": "mgr.metrics.v1",
+    "git_sha": "deadbeef",
+    "git_dirty": False,
+    "config_hash": "abc",
+    "data_snapshot_hash": None,
+    "tainted": False,
+}
 TAINTED_PROV = {**CLEAN_PROV, "git_dirty": True, "tainted": True}
 
 
@@ -48,16 +54,18 @@ def _evaltasks_artifact(
     run_dir.mkdir(parents=True, exist_ok=True)
     mean = sum(per_seed) / len(per_seed)
     task_rec: dict = {
-        "exact_match": {"greedy": {"held_out": {"mean": mean, "per_seed": per_seed},
-                                    "in_range": {"mean": mean, "per_seed": per_seed}}},
+        "exact_match": {
+            "greedy": {
+                "held_out": {"mean": mean, "per_seed": per_seed},
+                "in_range": {"mean": mean, "per_seed": per_seed},
+            }
+        },
         "perplexity": {"in_range": mean, "held_out": mean},
     }
     if answer_prior is not None:
         task_rec["answer_prior"] = {
-            "held_out": {"mean": answer_prior, "per_seed": [answer_prior] * len(per_seed),
-                          "majority_answer": "x"},
-            "in_range": {"mean": answer_prior, "per_seed": [answer_prior] * len(per_seed),
-                          "majority_answer": "x"},
+            "held_out": {"mean": answer_prior, "per_seed": [answer_prior] * len(per_seed), "majority_answer": "x"},
+            "in_range": {"mean": answer_prior, "per_seed": [answer_prior] * len(per_seed), "majority_answer": "x"},
         }
     summary = {
         "schema_version": schema_version,
@@ -209,8 +217,14 @@ def test_welch_t_not_normal_critical_value(tmp_path):
 
 
 def test_ratio_threshold_kind_supported(tmp_path):
-    hyp = _hyp({"comparator": "<=", "threshold_kind": "ratio", "threshold": 0.7,
-                "metric_path": "evaltasks:tasks.hier.perplexity.held_out"})
+    hyp = _hyp(
+        {
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 0.7,
+            "metric_path": "evaltasks:tasks.hier.perplexity.held_out",
+        }
+    )
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.30, 0.31, 0.29])
     _arm_artifacts(tmp_path, "base", "standard", [0.60, 0.61, 0.59])
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -310,22 +324,25 @@ def test_train_schema_arm_detection(tmp_path):
     def train_artifact(name, *, scheduler="none", optimizer="adamw", val_ce=2.0):
         run = tmp_path / name
         run.mkdir(parents=True)
-        (run / "summary.json").write_text(json.dumps({
-            "schema_version": "mgr.telemetry.v1",
-            "config": {"attention_type": "standard", "optimizer_type": optimizer},
-            "hparams": {"scheduler_type": scheduler},
-            "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
-            "provenance": CLEAN_PROV,
-            "results": {"val_ce_final": val_ce},
-        }))
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "mgr.telemetry.v1",
+                    "config": {"attention_type": "standard", "optimizer_type": optimizer},
+                    "hparams": {"scheduler_type": scheduler},
+                    "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
+                    "provenance": CLEAN_PROV,
+                    "results": {"val_ce_final": val_ce},
+                }
+            )
+        )
 
     for i, ce in enumerate([1.90, 1.92, 1.91]):
         train_artifact(f"ord{i}", scheduler="ordinal", val_ce=ce)
     for i, ce in enumerate([2.00, 2.02, 2.01]):
         train_artifact(f"std{i}", val_ce=ce)
     hyp = _hyp(
-        {"metric_path": "train:results.val_ce_final", "comparator": "<=",
-         "threshold_kind": "ratio", "threshold": 0.98},
+        {"metric_path": "train:results.val_ce_final", "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98},
         mechanisms=["ordinal"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -400,16 +417,42 @@ def test_lineage_dedupe_re_evals_never_double_count(tmp_path):
     """Re-evaluating the same checkpoints (e.g. after an eval upgrade) must
     not inflate n; the newest/richest artifact per training run wins."""
     for s in range(3):
-        _evaltasks_artifact(tmp_path, f"old-c{s}", mechanism="ultrametric", per_seed=[0.0208] * 3,
-                            run_id=f"u{s}", schema_version="mgr.evaltasks.v1",
-                            generated_at="2026-06-10T18:00:00Z")
-        _evaltasks_artifact(tmp_path, f"new-c{s}", mechanism="ultrametric", per_seed=[0.0208] * 3,
-                            run_id=f"u{s}", answer_prior=0.0208, generated_at="2026-06-10T23:00:00Z")
-        _evaltasks_artifact(tmp_path, f"old-b{s}", mechanism="standard", per_seed=[0.0208] * 3,
-                            run_id=f"s{s}", schema_version="mgr.evaltasks.v1",
-                            generated_at="2026-06-10T18:00:00Z")
-        _evaltasks_artifact(tmp_path, f"new-b{s}", mechanism="standard", per_seed=[0.0208] * 3,
-                            run_id=f"s{s}", answer_prior=0.0208, generated_at="2026-06-10T23:00:00Z")
+        _evaltasks_artifact(
+            tmp_path,
+            f"old-c{s}",
+            mechanism="ultrametric",
+            per_seed=[0.0208] * 3,
+            run_id=f"u{s}",
+            schema_version="mgr.evaltasks.v1",
+            generated_at="2026-06-10T18:00:00Z",
+        )
+        _evaltasks_artifact(
+            tmp_path,
+            f"new-c{s}",
+            mechanism="ultrametric",
+            per_seed=[0.0208] * 3,
+            run_id=f"u{s}",
+            answer_prior=0.0208,
+            generated_at="2026-06-10T23:00:00Z",
+        )
+        _evaltasks_artifact(
+            tmp_path,
+            f"old-b{s}",
+            mechanism="standard",
+            per_seed=[0.0208] * 3,
+            run_id=f"s{s}",
+            schema_version="mgr.evaltasks.v1",
+            generated_at="2026-06-10T18:00:00Z",
+        )
+        _evaltasks_artifact(
+            tmp_path,
+            f"new-b{s}",
+            mechanism="standard",
+            per_seed=[0.0208] * 3,
+            run_id=f"s{s}",
+            answer_prior=0.0208,
+            generated_at="2026-06-10T23:00:00Z",
+        )
     v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
     arm = v["arms"]["ultrametric"]
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3, arm
@@ -427,18 +470,27 @@ def test_determinism_byte_identical_verdicts(tmp_path, monkeypatch):
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.55, 0.52])
     registry = tmp_path / "registry.yaml"
     registry.write_text(
-        "schema_version: 1\nhypotheses:\n"
-        + _yaml_entry(_hyp({"threshold_kind": "ratio", "threshold": 1.05}))
+        "schema_version: 1\nhypotheses:\n" + _yaml_entry(_hyp({"threshold_kind": "ratio", "threshold": 1.05}))
     )
     monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
 
     outs = []
     for run in ("r1", "r2"):
-        result = runner.invoke(cli.app, [
-            "adjudicate", "--all", "--dry-run", "--artifacts", str(tmp_path / "a"),
-            "--artifacts-dir", str(tmp_path / run), "--run-id", "x",
-        ])
+        result = runner.invoke(
+            cli.app,
+            [
+                "adjudicate",
+                "--all",
+                "--dry-run",
+                "--artifacts",
+                str(tmp_path / "a"),
+                "--artifacts-dir",
+                str(tmp_path / run),
+                "--run-id",
+                "x",
+            ],
+        )
         assert result.exit_code == 0, result.output
         outs.append((tmp_path / run / "adjudications" / "x" / "verdicts.json").read_bytes())
     assert outs[0] == outs[1], "same artifacts must produce byte-identical verdicts (fixed bootstrap seed)"
@@ -451,7 +503,7 @@ def _yaml_entry(h):
         f"    statement: {json.dumps(h['statement'])}",
         f"    mechanisms: [{', '.join(h['mechanisms'])}]",
         "    source: {kind: human, provenance: test}",
-        f"    date_registered: \"{h['date_registered']}\"",
+        f'    date_registered: "{h["date_registered"]}"',
     ]
     if pred is None:
         lines += ["    prediction: null", "    operationalization_note: test", "    status: blocked"]
@@ -459,7 +511,7 @@ def _yaml_entry(h):
         lines += [
             "    prediction:",
             f"      metric_path: {json.dumps(pred['metric_path'])}",
-            f"      comparator: \"{pred['comparator']}\"",
+            f'      comparator: "{pred["comparator"]}"',
             f"      threshold_kind: {pred['threshold_kind']}",
             f"      threshold: {pred['threshold']}",
             f"      baseline: {{mechanism: {pred['baseline']['mechanism']}, equal_flops: true}}",
@@ -481,10 +533,19 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.8, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.51, 0.52])
 
-    result = runner.invoke(cli.app, [
-        "adjudicate", "--all", "--artifacts", str(tmp_path / "a"),
-        "--artifacts-dir", str(tmp_path / "out"), "--run-id", "x",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "adjudicate",
+            "--all",
+            "--artifacts",
+            str(tmp_path / "a"),
+            "--artifacts-dir",
+            str(tmp_path / "out"),
+            "--run-id",
+            "x",
+        ],
+    )
     assert result.exit_code == 0, result.output
     text = registry.read_text()
     assert "HAND-WRITTEN HEADER COMMENT" in text, "ledger surgery must preserve comments"
@@ -498,10 +559,19 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert first["policy_version"] == "ci-v6" and first["artifacts"]
 
     # second adjudication APPENDS; the first entry is untouched
-    result = runner.invoke(cli.app, [
-        "adjudicate", "--all", "--artifacts", str(tmp_path / "a"),
-        "--artifacts-dir", str(tmp_path / "out2"), "--run-id", "x",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "adjudicate",
+            "--all",
+            "--artifacts",
+            str(tmp_path / "a"),
+            "--artifacts-dir",
+            str(tmp_path / "out2"),
+            "--run-id",
+            "x",
+        ],
+    )
     assert result.exit_code == 0, result.output
     data, load_errors = cli._load_hypothesis_registry(registry)
     assert data is not None, load_errors
@@ -520,10 +590,20 @@ def test_dry_run_leaves_registry_untouched(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.8, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.51, 0.52])
-    result = runner.invoke(cli.app, [
-        "adjudicate", "--all", "--dry-run", "--artifacts", str(tmp_path / "a"),
-        "--artifacts-dir", str(tmp_path / "out"), "--run-id", "x",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "adjudicate",
+            "--all",
+            "--dry-run",
+            "--artifacts",
+            str(tmp_path / "a"),
+            "--artifacts-dir",
+            str(tmp_path / "out"),
+            "--run-id",
+            "x",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert registry.read_text() == before
 
@@ -534,10 +614,19 @@ def test_blocked_refusals_do_not_touch_the_ledger(tmp_path, monkeypatch):
     before = registry.read_text()
     monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
-    result = runner.invoke(cli.app, [
-        "adjudicate", "--all", "--artifacts", str(tmp_path / "empty"),
-        "--artifacts-dir", str(tmp_path / "out"), "--run-id", "x",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "adjudicate",
+            "--all",
+            "--artifacts",
+            str(tmp_path / "empty"),
+            "--artifacts-dir",
+            str(tmp_path / "out"),
+            "--run-id",
+            "x",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert registry.read_text() == before, "refusals are report-only"
     verdicts = json.loads((tmp_path / "out" / "adjudications" / "x" / "verdicts.json").read_text())
@@ -568,14 +657,18 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
         hparams = {"scheduler_type": "none"}
         if record_key:
             hparams["semiring_beta_spec"] = spec
-        (run / "summary.json").write_text(json.dumps({
-            "schema_version": "mgr.telemetry.v1",
-            "config": {"attention_type": "tropical", "optimizer_type": "adamw"},
-            "hparams": hparams,
-            "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
-            "provenance": CLEAN_PROV,
-            "results": {"val_ce_final": val_ce},
-        }))
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "mgr.telemetry.v1",
+                    "config": {"attention_type": "tropical", "optimizer_type": "adamw"},
+                    "hparams": hparams,
+                    "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
+                    "provenance": CLEAN_PROV,
+                    "results": {"val_ce_final": val_ce},
+                }
+            )
+        )
 
     for i, ce in enumerate([1.90, 1.92, 1.91]):
         train_artifact(f"anneal{i}", spec="linear:1:32", val_ce=ce)
@@ -588,9 +681,10 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
     hyp = _hyp(
         {
             "metric_path": "train:results.val_ce_final",
-            "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98,
-            "baseline": {"mechanism": "tropical", "equal_flops": True,
-                          "variant": {"semiring_beta_spec": "1.0"}},
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 0.98,
+            "baseline": {"mechanism": "tropical", "equal_flops": True, "variant": {"semiring_beta_spec": "1.0"}},
             "candidate_variant": {"semiring_beta_spec": "linear:1:32"},
         },
         mechanisms=["tropical"],
@@ -606,9 +700,10 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
     hyp_null = _hyp(
         {
             "metric_path": "train:results.val_ce_final",
-            "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98,
-            "baseline": {"mechanism": "tropical", "equal_flops": True,
-                          "variant": {"semiring_beta_spec": None}},
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 0.98,
+            "baseline": {"mechanism": "tropical", "equal_flops": True, "variant": {"semiring_beta_spec": None}},
             "candidate_variant": {"semiring_beta_spec": "linear:1:32"},
         },
         mechanisms=["tropical"],
@@ -620,8 +715,7 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
 
     # no selector = pre-rgyl behavior: every tropical run pools into one arm
     hyp_plain = _hyp(
-        {"metric_path": "train:results.val_ce_final",
-         "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98},
+        {"metric_path": "train:results.val_ce_final", "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98},
         mechanisms=["tropical"],
     )
     hyp_plain["prediction"]["baseline"] = {"mechanism": "tropical", "equal_flops": True}
@@ -633,56 +727,98 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
 # ci-v3 (bead xas7): certify + chargeprobe schemas, single-arm predictions
 
 
-def _certify_artifact(root: Path, name: str, *, seed: int = 0, measured: float = 1e-6,
-                      heuristic_measured: float = 1.2, dirty: bool = False) -> None:
+def _certify_artifact(
+    root: Path,
+    name: str,
+    *,
+    seed: int = 0,
+    measured: float = 1e-6,
+    heuristic_measured: float = 1.2,
+    dirty: bool = False,
+) -> None:
     run = root / name
     run.mkdir(parents=True, exist_ok=True)
-    (run / "summary.json").write_text(json.dumps({
-        "schema_version": 1,
-        "kind": "certify",
-        "run_id": name,
-        "seed": seed,
-        "device": "cpu",
-        "dtype": "fp32",
-        "git": {"commit": "deadbeef", "dirty": dirty},
-        "mechanisms": ["braid"],
-        "checks": [
-            {"mechanism": "braid", "check": "rmatrix_mass_partition_charge_conserved",
-             "family": "classical", "status": "pass", "measured": measured,
-             "tolerance": 1e-5, "comparator": "le", "duration_ms": 1.0, "detail": ""},
-            {"mechanism": "braid", "check": "heuristic_mass_partition_violated",
-             "family": "classical", "status": "pass", "measured": heuristic_measured,
-             "tolerance": 1e-3, "comparator": "ge", "duration_ms": 1.0, "detail": ""},
-        ],
-        "counts": {"pass": 2, "fail": 0, "error": 0},
-    }))
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "certify",
+                "run_id": name,
+                "seed": seed,
+                "device": "cpu",
+                "dtype": "fp32",
+                "git": {"commit": "deadbeef", "dirty": dirty},
+                "mechanisms": ["braid"],
+                "checks": [
+                    {
+                        "mechanism": "braid",
+                        "check": "rmatrix_mass_partition_charge_conserved",
+                        "family": "classical",
+                        "status": "pass",
+                        "measured": measured,
+                        "tolerance": 1e-5,
+                        "comparator": "le",
+                        "duration_ms": 1.0,
+                        "detail": "",
+                    },
+                    {
+                        "mechanism": "braid",
+                        "check": "heuristic_mass_partition_violated",
+                        "family": "classical",
+                        "status": "pass",
+                        "measured": heuristic_measured,
+                        "tolerance": 1e-3,
+                        "comparator": "ge",
+                        "duration_ms": 1.0,
+                        "detail": "",
+                    },
+                ],
+                "counts": {"pass": 2, "fail": 0, "error": 0},
+            }
+        )
+    )
 
 
-def _chargeprobe_artifact(root: Path, name: str, *, ratio: float, seed: int = 0,
-                          run_id: str | None = None, target_flops: float = 1e14,
-                          crossing_law: str = "rmatrix") -> None:
+def _chargeprobe_artifact(
+    root: Path,
+    name: str,
+    *,
+    ratio: float,
+    seed: int = 0,
+    run_id: str | None = None,
+    target_flops: float = 1e14,
+    crossing_law: str = "rmatrix",
+) -> None:
     run = root / name
     run.mkdir(parents=True, exist_ok=True)
-    (run / "summary.json").write_text(json.dumps({
-        "schema_version": "mgr.chargeprobe.v1",
-        "kind": "probe-charges",
-        "meta": {
-            "run_id": name,
-            "generated_at": "2026-06-11T20:00:00Z",
-            "checkpoint": {"dir": f"ck/{name}", "step": 100, "attention_type": "braid",
-                            "braid_crossing_law": crossing_law, "n_params": 1000,
-                            "budget": {"max_steps": 100, "target_flops": target_flops,
-                                        "flops_per_step_est": 1e12},
-                            "lineage": {"run_id": run_id or name, "parent_run_ids": []}},
-            "task": "group",
-            "seed": seed,
-        },
-        "provenance": CLEAN_PROV,
-        "categories": {"z60": {"chance": 0.017, "floor_used": 0.1,
-                                "linear": {"test_acc": 0.2}, "mlp": {"test_acc": 0.25}}},
-        "dissociation": {"abelian_over_chance": ratio, "nonsolvable_over_chance": 1.0,
-                          "ratio": ratio},
-    }))
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mgr.chargeprobe.v1",
+                "kind": "probe-charges",
+                "meta": {
+                    "run_id": name,
+                    "generated_at": "2026-06-11T20:00:00Z",
+                    "checkpoint": {
+                        "dir": f"ck/{name}",
+                        "step": 100,
+                        "attention_type": "braid",
+                        "braid_crossing_law": crossing_law,
+                        "n_params": 1000,
+                        "budget": {"max_steps": 100, "target_flops": target_flops, "flops_per_step_est": 1e12},
+                        "lineage": {"run_id": run_id or name, "parent_run_ids": []},
+                    },
+                    "task": "group",
+                    "seed": seed,
+                },
+                "provenance": CLEAN_PROV,
+                "categories": {
+                    "z60": {"chance": 0.017, "floor_used": 0.1, "linear": {"test_acc": 0.2}, "mlp": {"test_acc": 0.25}}
+                },
+                "dissociation": {"abelian_over_chance": ratio, "nonsolvable_over_chance": 1.0, "ratio": ratio},
+            }
+        )
+    )
 
 
 def test_single_arm_certify_supported_budget_exempt(tmp_path):
@@ -691,9 +827,13 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     for s in range(3):
         _certify_artifact(tmp_path, f"cert{s}", seed=s, measured=1e-6 + s * 1e-8)
     hyp = _hyp(
-        {"metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
-         "comparator": "<=", "threshold_kind": "absolute_delta", "threshold": 1e-5,
-         "baseline": None},
+        {
+            "metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
+            "comparator": "<=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 1e-5,
+            "baseline": None,
+        },
         mechanisms=["braid"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -711,9 +851,13 @@ def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
     for s in range(3):
         _certify_artifact(tmp_path, f"bad{s}", seed=s, measured=2e-3)
     hyp = _hyp(
-        {"metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
-         "comparator": "<=", "threshold_kind": "absolute_delta", "threshold": 1e-5,
-         "baseline": None},
+        {
+            "metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
+            "comparator": "<=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 1e-5,
+            "baseline": None,
+        },
         mechanisms=["braid"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -732,9 +876,13 @@ def test_certify_taint_derives_from_git_dirty(tmp_path):
     for s in range(3):
         _certify_artifact(tmp_path, f"dirty{s}", seed=s, measured=1e-6, dirty=True)
     hyp = _hyp(
-        {"metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
-         "comparator": "<=", "threshold_kind": "absolute_delta", "threshold": 1e-5,
-         "baseline": None},
+        {
+            "metric_path": "certify:braid.rmatrix_mass_partition_charge_conserved.measured",
+            "comparator": "<=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 1e-5,
+            "baseline": None,
+        },
         mechanisms=["braid"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -751,9 +899,14 @@ def test_single_arm_chargeprobe_dissociation_with_variant_and_cohorts(tmp_path):
     _chargeprobe_artifact(tmp_path, "probe-soft", ratio=50.0, seed=9, crossing_law="restricted")
     _chargeprobe_artifact(tmp_path, "probe-small", ratio=50.0, seed=10, target_flops=1e9)
     hyp = _hyp(
-        {"metric_path": "chargeprobe:dissociation.ratio",
-         "comparator": ">=", "threshold_kind": "absolute_delta", "threshold": 2.0,
-         "baseline": None, "candidate_variant": {"braid_crossing_law": "rmatrix"}},
+        {
+            "metric_path": "chargeprobe:dissociation.ratio",
+            "comparator": ">=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 2.0,
+            "baseline": None,
+            "candidate_variant": {"braid_crossing_law": "rmatrix"},
+        },
         mechanisms=["braid"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -770,19 +923,30 @@ def test_single_arm_train_trend_route_coverage_delta(tmp_path):
     for i, delta in enumerate([0.21, 0.18, 0.25]):
         run = tmp_path / f"trend{i}"
         run.mkdir(parents=True)
-        (run / "summary.json").write_text(json.dumps({
-            "schema_version": "mgr.telemetry.v1",
-            "config": {"attention_type": "tropical", "optimizer_type": "adamw"},
-            "hparams": {"scheduler_type": "none"},
-            "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
-            "provenance": CLEAN_PROV,
-            "results": {"route_coverage_first": 0.0, "route_coverage_final": delta,
-                         "route_coverage_delta": delta},
-        }))
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "mgr.telemetry.v1",
+                    "config": {"attention_type": "tropical", "optimizer_type": "adamw"},
+                    "hparams": {"scheduler_type": "none"},
+                    "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
+                    "provenance": CLEAN_PROV,
+                    "results": {
+                        "route_coverage_first": 0.0,
+                        "route_coverage_final": delta,
+                        "route_coverage_delta": delta,
+                    },
+                }
+            )
+        )
     hyp = _hyp(
-        {"metric_path": "train:results.route_coverage_delta",
-         "comparator": ">=", "threshold_kind": "absolute_delta", "threshold": 0.05,
-         "baseline": None},
+        {
+            "metric_path": "train:results.route_coverage_delta",
+            "comparator": ">=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 0.05,
+            "baseline": None,
+        },
         mechanisms=["tropical"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -815,10 +979,24 @@ def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
         path = _evaltasks_artifact(tmp_path, name, mechanism="braid", per_seed=[0.5, 0.5, 0.5])
         data = json.loads(path.read_text())
         data["tasks"]["group"] = {
-            "length_slope": {"held_out": {"slope": slope, "ci95": [slope - 0.001, slope + 0.001],
-                                            "intercept": 1.0, "n_docs": 50, "basis": "test"},
-                              "by_category": {"s5": {"slope": slope, "ci95": [slope - 0.001, slope + 0.001],
-                                                       "intercept": 1.0, "n_docs": 20, "basis": "test"}}},
+            "length_slope": {
+                "held_out": {
+                    "slope": slope,
+                    "ci95": [slope - 0.001, slope + 0.001],
+                    "intercept": 1.0,
+                    "n_docs": 50,
+                    "basis": "test",
+                },
+                "by_category": {
+                    "s5": {
+                        "slope": slope,
+                        "ci95": [slope - 0.001, slope + 0.001],
+                        "intercept": 1.0,
+                        "n_docs": 20,
+                        "basis": "test",
+                    }
+                },
+            },
         }
         if with_model_config:
             data["meta"]["checkpoint"]["model_config"] = {"attention_type": "braid", "braid_crossing_law": law}
@@ -831,19 +1009,25 @@ def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
     for p in sorted(tmp_path.glob("std*/summary.json")):
         data = json.loads(p.read_text())
         data["tasks"]["group"] = {
-            "length_slope": {"held_out": {"slope": -0.01, "ci95": [-0.011, -0.009],
-                                            "intercept": 1.0, "n_docs": 50, "basis": "test"},
-                              "by_category": {"s5": {"slope": -0.01, "ci95": [-0.011, -0.009],
-                                                       "intercept": 1.0, "n_docs": 20, "basis": "test"}}},
+            "length_slope": {
+                "held_out": {"slope": -0.01, "ci95": [-0.011, -0.009], "intercept": 1.0, "n_docs": 50, "basis": "test"},
+                "by_category": {
+                    "s5": {"slope": -0.01, "ci95": [-0.011, -0.009], "intercept": 1.0, "n_docs": 20, "basis": "test"}
+                },
+            },
         }
         p.write_text(json.dumps(data))
 
     # ratio-space semantics: both slopes negative, "2x flatter" is M/B <= 0.5
     # (the registered convention; ">=" would invert under the negative baseline)
     hyp = _hyp(
-        {"metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
-         "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.5,
-         "candidate_variant": {"braid_crossing_law": "rmatrix"}},
+        {
+            "metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 0.5,
+            "candidate_variant": {"braid_crossing_law": "rmatrix"},
+        },
         mechanisms=["braid"],
     )
     v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
@@ -856,9 +1040,13 @@ def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
     # the inverted form must NOT support a 5x-flatter candidate (the bug the
     # fresh-eyes review caught in the originally drafted registrations)
     hyp_bad = _hyp(
-        {"metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
-         "comparator": ">=", "threshold_kind": "ratio", "threshold": 0.5,
-         "candidate_variant": {"braid_crossing_law": "rmatrix"}},
+        {
+            "metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
+            "comparator": ">=",
+            "threshold_kind": "ratio",
+            "threshold": 0.5,
+            "candidate_variant": {"braid_crossing_law": "rmatrix"},
+        },
         mechanisms=["braid"],
     )
     hyp_bad["id"] = "hyp-inverted"
@@ -884,14 +1072,31 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
         path = _evaltasks_artifact(root, name, mechanism=mechanism, per_seed=[em] * 3)
         data = json.loads(path.read_text())
         data["tasks"]["group"] = {
-            "exact_match": {"greedy": {"held_out": {"mean": em, "per_seed": [em] * 3},
-                                        "in_range": {"mean": em, "per_seed": [em] * 3}}},
+            "exact_match": {
+                "greedy": {
+                    "held_out": {"mean": em, "per_seed": [em] * 3},
+                    "in_range": {"mean": em, "per_seed": [em] * 3},
+                }
+            },
             "answer_prior": {"held_out": {"mean": prior}, "in_range": {"mean": prior}},
-            "length_slope": {"held_out": {"slope": slope, "ci95": [slope - 0.001, slope + 0.001],
-                                            "intercept": 1.0, "n_docs": 50, "basis": "test"},
-                              "by_category": {"s5": {"slope": slope,
-                                                       "ci95": [slope - 0.001, slope + 0.001],
-                                                       "intercept": 1.0, "n_docs": 20, "basis": "test"}}},
+            "length_slope": {
+                "held_out": {
+                    "slope": slope,
+                    "ci95": [slope - 0.001, slope + 0.001],
+                    "intercept": 1.0,
+                    "n_docs": 50,
+                    "basis": "test",
+                },
+                "by_category": {
+                    "s5": {
+                        "slope": slope,
+                        "ci95": [slope - 0.001, slope + 0.001],
+                        "intercept": 1.0,
+                        "n_docs": 20,
+                        "basis": "test",
+                    }
+                },
+            },
         }
         path.write_text(json.dumps(data))
 
@@ -901,8 +1106,12 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
         slope_eval(tmp_path, f"cand{i}", mechanism="braid", slope=0.0, em=0.01, prior=0.097)
         slope_eval(tmp_path, f"base{i}", mechanism="standard", slope=-0.002, em=0.008, prior=0.097)
 
-    spec = {"metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
-            "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.5}
+    spec = {
+        "metric_path": "evaltasks:tasks.group.length_slope.by_category.s5.slope",
+        "comparator": "<=",
+        "threshold_kind": "ratio",
+        "threshold": 0.5,
+    }
     v = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["braid"]), _index(tmp_path))
     arm = v["arms"]["braid"]
     assert v["verdict"] == "inconclusive", v
@@ -963,10 +1172,18 @@ def test_training_taint_propagates_through_eval_artifacts(tmp_path):
 # tcuy: precision-curve artifacts (the graceful-vs-cliff evidence producer)
 
 
-def _precision_eval_artifact(root: Path, rid: str, *, ppl: float, knob: str | None = None,
-                             value: float | None = None, K: int = 8,
-                             attention: str = "ultrametric", hard_digits: bool | None = None,
-                             n_layer: int | None = None) -> None:
+def _precision_eval_artifact(
+    root: Path,
+    rid: str,
+    *,
+    ppl: float,
+    knob: str | None = None,
+    value: float | None = None,
+    K: int = 8,
+    attention: str = "ultrametric",
+    hard_digits: bool | None = None,
+    n_layer: int | None = None,
+) -> None:
     run = root / "evals" / "tasks" / rid
     run.mkdir(parents=True, exist_ok=True)
     mc: dict = {"attention_type": attention, "ultrametric_K": K}
@@ -976,11 +1193,15 @@ def _precision_eval_artifact(root: Path, rid: str, *, ppl: float, knob: str | No
         mc["n_layer"] = n_layer
     if knob:
         mc[knob] = value
-    (run / "summary.json").write_text(json.dumps({
-        "schema_version": "mgr.evaltasks.v3",
-        "meta": {"checkpoint": {"model_config": mc}},
-        "tasks": {"hier": {"perplexity": {"in_range": ppl, "held_out": ppl}}},
-    }))
+    (run / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mgr.evaltasks.v3",
+                "meta": {"checkpoint": {"model_config": mc}},
+                "tasks": {"hier": {"perplexity": {"in_range": ppl, "held_out": ppl}}},
+            }
+        )
+    )
 
 
 def test_precision_curve_auc_math_and_engine_ingestion(tmp_path, monkeypatch):
@@ -997,14 +1218,32 @@ def test_precision_curve_auc_math_and_engine_ingestion(tmp_path, monkeypatch):
     _precision_eval_artifact(tmp_path, "f-b8", ppl=2.0e9, knob="eval_weight_quant_bits", value=8)
     _precision_eval_artifact(tmp_path, "f-b16", ppl=2.0e9, knob="eval_weight_quant_bits", value=16)
 
-    result = runner.invoke(cli.app, [
-        "precision-curve",
-        "--digit-run", "d-k4", "--digit-run", "d-k2",
-        "--float-run", "f-b8", "--float-run", "f-b16",
-        "--digit-full", "dfull", "--float-full", "ffull",
-        "--task", "hier", "--seed", "0",
-        "--artifacts-dir", str(tmp_path), "--run-id", "pc-test",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "precision-curve",
+            "--digit-run",
+            "d-k4",
+            "--digit-run",
+            "d-k2",
+            "--float-run",
+            "f-b8",
+            "--float-run",
+            "f-b16",
+            "--digit-full",
+            "dfull",
+            "--float-full",
+            "ffull",
+            "--task",
+            "hier",
+            "--seed",
+            "0",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "pc-test",
+        ],
+    )
     assert result.exit_code == 0, result.output
     art = json.loads((tmp_path / "bench" / "precision_curves" / "pc-test" / "summary.json").read_text())
     r = art["results"]
@@ -1055,14 +1294,30 @@ def test_precision_curve_common_window_kills_span_bias(tmp_path):
     _precision_eval_artifact(tmp_path, "f2-b16", ppl=2.0, knob="eval_weight_quant_bits", value=16)
     _precision_eval_artifact(tmp_path, "f2-b2", ppl=2.0e9, knob="eval_weight_quant_bits", value=2)
 
-    result = runner.invoke(cli.app, [
-        "precision-curve",
-        "--digit-run", "d2-k4",
-        "--float-run", "f2-b16", "--float-run", "f2-b2",
-        "--digit-full", "dfull2", "--float-full", "ffull2",
-        "--task", "hier", "--seed", "1",
-        "--artifacts-dir", str(tmp_path), "--run-id", "pc-window",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "precision-curve",
+            "--digit-run",
+            "d2-k4",
+            "--float-run",
+            "f2-b16",
+            "--float-run",
+            "f2-b2",
+            "--digit-full",
+            "dfull2",
+            "--float-full",
+            "ffull2",
+            "--task",
+            "hier",
+            "--seed",
+            "1",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "pc-window",
+        ],
+    )
     assert result.exit_code == 0, result.output
     r = json.loads((tmp_path / "bench" / "precision_curves" / "pc-window" / "summary.json").read_text())["results"]
     assert abs(r["common_window_lo"] - 0.5) < 1e-9
@@ -1085,14 +1340,34 @@ def test_precision_curve_window_hi_isolates_deep_compression(tmp_path):
     _precision_eval_artifact(tmp_path, "f3-b16", ppl=2.0, knob="eval_weight_quant_bits", value=16)
     _precision_eval_artifact(tmp_path, "f3-b2", ppl=2.0e9, knob="eval_weight_quant_bits", value=2)
 
-    result = runner.invoke(cli.app, [
-        "precision-curve",
-        "--digit-run", "d3-k4", "--digit-run", "d3-k2",
-        "--float-run", "f3-b16", "--float-run", "f3-b2",
-        "--digit-full", "dfull3", "--float-full", "ffull3",
-        "--task", "hier", "--seed", "2", "--window-hi", "0.5",
-        "--artifacts-dir", str(tmp_path), "--run-id", "pc-deepwin",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "precision-curve",
+            "--digit-run",
+            "d3-k4",
+            "--digit-run",
+            "d3-k2",
+            "--float-run",
+            "f3-b16",
+            "--float-run",
+            "f3-b2",
+            "--digit-full",
+            "dfull3",
+            "--float-full",
+            "ffull3",
+            "--task",
+            "hier",
+            "--seed",
+            "2",
+            "--window-hi",
+            "0.5",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "pc-deepwin",
+        ],
+    )
     assert result.exit_code == 0, result.output
     r = json.loads((tmp_path / "bench" / "precision_curves" / "pc-deepwin" / "summary.json").read_text())["results"]
     assert (r["common_window_lo"], r["common_window_hi"]) == (0.25, 0.5)
@@ -1109,14 +1384,34 @@ def test_precision_curve_window_hi_isolates_deep_compression(tmp_path):
     assert cli._adj_observations(arts[0], "results.auc_ratio_deepwindow")
 
     # a window edge at or below the data-dependent lo refuses loudly
-    result = runner.invoke(cli.app, [
-        "precision-curve",
-        "--digit-run", "d3-k4", "--digit-run", "d3-k2",
-        "--float-run", "f3-b16", "--float-run", "f3-b2",
-        "--digit-full", "dfull3", "--float-full", "ffull3",
-        "--task", "hier", "--seed", "2", "--window-hi", "0.25",
-        "--artifacts-dir", str(tmp_path), "--run-id", "pc-badwin",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "precision-curve",
+            "--digit-run",
+            "d3-k4",
+            "--digit-run",
+            "d3-k2",
+            "--float-run",
+            "f3-b16",
+            "--float-run",
+            "f3-b2",
+            "--digit-full",
+            "dfull3",
+            "--float-full",
+            "ffull3",
+            "--task",
+            "hier",
+            "--seed",
+            "2",
+            "--window-hi",
+            "0.25",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "pc-badwin",
+        ],
+    )
     assert result.exit_code != 0
 
 
@@ -1125,14 +1420,18 @@ def test_bench_arm_matching_honors_variant_selectors():
     by variant selectors - knobs are looked up in results then meta. Before
     this, the bench branch ignored selectors entirely and disjointness relied
     on per-protocol observable keys (kgj1's auc_ratio_deepwindow workaround)."""
+
     def bench_art(task: str, window_hi: float | None = None) -> dict:
         results: dict = {"auc_ratio": 1.5}
         if window_hi is not None:
             results["common_window_hi"] = window_hi
         return {
-            "path": f"mem://{task}-{window_hi}", "schema": "bench", "tainted": False,
+            "path": f"mem://{task}-{window_hi}",
+            "schema": "bench",
+            "tainted": False,
             "data": {
-                "schema_version": "mgr.bench.precision_curves.v1", "kind": "precision_curve",
+                "schema_version": "mgr.bench.precision_curves.v1",
+                "kind": "precision_curve",
                 "mechanism": "ultrametric",
                 "meta": {"task": task, "seed": 0},
                 "results": results,
@@ -1168,8 +1467,9 @@ def _depth_eval_set(root: Path, prefix: str, *, n_layer: int, ppl_full: float, p
     """One depth's digit-arm eval set: full anchor + k = 4, 2 of K = 8."""
     _precision_eval_artifact(root, f"{prefix}-full", ppl=ppl_full, hard_digits=True, n_layer=n_layer)
     for k in (4, 2):
-        _precision_eval_artifact(root, f"{prefix}-k{k}", ppl=ppl_k, knob="ultrametric_digits_k",
-                                 value=k, hard_digits=True, n_layer=n_layer)
+        _precision_eval_artifact(
+            root, f"{prefix}-k{k}", ppl=ppl_k, knob="ultrametric_digits_k", value=k, hard_digits=True, n_layer=n_layer
+        )
 
 
 def test_depth_curve_flat_across_depths_and_engine_ingestion(tmp_path):
@@ -1179,13 +1479,32 @@ def test_depth_curve_flat_across_depths_and_engine_ingestion(tmp_path):
     _depth_eval_set(tmp_path, "l2", n_layer=2, ppl_full=2.0, ppl_k=2.0)
     _depth_eval_set(tmp_path, "l8", n_layer=8, ppl_full=2.0, ppl_k=2.0)
 
-    result = runner.invoke(cli.app, [
-        "depth-curve",
-        "--shallow-run", "l2-k4", "--shallow-run", "l2-k2", "--shallow-full", "l2-full",
-        "--deep-run", "l8-k4", "--deep-run", "l8-k2", "--deep-full", "l8-full",
-        "--task", "hier", "--seed", "0",
-        "--artifacts-dir", str(tmp_path), "--run-id", "dc-flat",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "depth-curve",
+            "--shallow-run",
+            "l2-k4",
+            "--shallow-run",
+            "l2-k2",
+            "--shallow-full",
+            "l2-full",
+            "--deep-run",
+            "l8-k4",
+            "--deep-run",
+            "l8-k2",
+            "--deep-full",
+            "l8-full",
+            "--task",
+            "hier",
+            "--seed",
+            "0",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "dc-flat",
+        ],
+    )
     assert result.exit_code == 0, result.output
     r = json.loads((tmp_path / "bench" / "depth_curves" / "dc-flat" / "summary.json").read_text())["results"]
     assert (r["n_layer_shallow"], r["n_layer_deep"]) == (2, 8)
@@ -1211,20 +1530,63 @@ def test_depth_curve_detects_depth_dependence_with_float_diagnostic(tmp_path):
     _depth_eval_set(tmp_path, "d", n_layer=8, ppl_full=2.0, ppl_k=4.0)
     for prefix, nl, b8_ppl in (("fs", 2, 2.0), ("fd", 8, 2.0e9)):
         _precision_eval_artifact(tmp_path, f"{prefix}-full", ppl=2.0, attention="standard", n_layer=nl)
-        _precision_eval_artifact(tmp_path, f"{prefix}-b16", ppl=2.0, knob="eval_weight_quant_bits",
-                                 value=16, attention="standard", n_layer=nl)
-        _precision_eval_artifact(tmp_path, f"{prefix}-b8", ppl=b8_ppl, knob="eval_weight_quant_bits",
-                                 value=8, attention="standard", n_layer=nl)
+        _precision_eval_artifact(
+            tmp_path,
+            f"{prefix}-b16",
+            ppl=2.0,
+            knob="eval_weight_quant_bits",
+            value=16,
+            attention="standard",
+            n_layer=nl,
+        )
+        _precision_eval_artifact(
+            tmp_path,
+            f"{prefix}-b8",
+            ppl=b8_ppl,
+            knob="eval_weight_quant_bits",
+            value=8,
+            attention="standard",
+            n_layer=nl,
+        )
 
-    result = runner.invoke(cli.app, [
-        "depth-curve",
-        "--shallow-run", "s-k4", "--shallow-run", "s-k2", "--shallow-full", "s-full",
-        "--deep-run", "d-k4", "--deep-run", "d-k2", "--deep-full", "d-full",
-        "--float-shallow-run", "fs-b16", "--float-shallow-run", "fs-b8", "--float-shallow-full", "fs-full",
-        "--float-deep-run", "fd-b16", "--float-deep-run", "fd-b8", "--float-deep-full", "fd-full",
-        "--task", "hier", "--seed", "1",
-        "--artifacts-dir", str(tmp_path), "--run-id", "dc-contrast",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "depth-curve",
+            "--shallow-run",
+            "s-k4",
+            "--shallow-run",
+            "s-k2",
+            "--shallow-full",
+            "s-full",
+            "--deep-run",
+            "d-k4",
+            "--deep-run",
+            "d-k2",
+            "--deep-full",
+            "d-full",
+            "--float-shallow-run",
+            "fs-b16",
+            "--float-shallow-run",
+            "fs-b8",
+            "--float-shallow-full",
+            "fs-full",
+            "--float-deep-run",
+            "fd-b16",
+            "--float-deep-run",
+            "fd-b8",
+            "--float-deep-full",
+            "fd-full",
+            "--task",
+            "hier",
+            "--seed",
+            "1",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "dc-contrast",
+        ],
+    )
     assert result.exit_code == 0, result.output
     r = json.loads((tmp_path / "bench" / "depth_curves" / "dc-contrast" / "summary.json").read_text())["results"]
     # deep curve (0.25, 0.5), (0.5, 0.5), (1.0, 1.0) over window [0.25, 1.0]:
@@ -1244,33 +1606,72 @@ def test_depth_curve_hygiene_rejects_mislabeled_groups(tmp_path):
     _depth_eval_set(tmp_path, "g8", n_layer=8, ppl_full=2.0, ppl_k=2.0)
 
     # mixed depths inside the shallow group
-    result = runner.invoke(cli.app, [
-        "depth-curve",
-        "--shallow-run", "g2-k4", "--shallow-run", "g8-k2", "--shallow-full", "g2-full",
-        "--deep-run", "g8-k4", "--deep-full", "g8-full",
-        "--artifacts-dir", str(tmp_path), "--run-id", "dc-mixed",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "depth-curve",
+            "--shallow-run",
+            "g2-k4",
+            "--shallow-run",
+            "g8-k2",
+            "--shallow-full",
+            "g2-full",
+            "--deep-run",
+            "g8-k4",
+            "--deep-full",
+            "g8-full",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "dc-mixed",
+        ],
+    )
     assert result.exit_code != 0
 
     # soft-digit checkpoint in the digit arm (the wave-1 trap: a soft-digit
     # eval is a channel drop, not a valuation truncation)
-    _precision_eval_artifact(tmp_path, "soft-k4", ppl=2.0, knob="ultrametric_digits_k",
-                             value=4, hard_digits=False, n_layer=2)
-    result = runner.invoke(cli.app, [
-        "depth-curve",
-        "--shallow-run", "soft-k4", "--shallow-full", "g2-full",
-        "--deep-run", "g8-k4", "--deep-full", "g8-full",
-        "--artifacts-dir", str(tmp_path), "--run-id", "dc-soft",
-    ])
+    _precision_eval_artifact(
+        tmp_path, "soft-k4", ppl=2.0, knob="ultrametric_digits_k", value=4, hard_digits=False, n_layer=2
+    )
+    result = runner.invoke(
+        cli.app,
+        [
+            "depth-curve",
+            "--shallow-run",
+            "soft-k4",
+            "--shallow-full",
+            "g2-full",
+            "--deep-run",
+            "g8-k4",
+            "--deep-full",
+            "g8-full",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "dc-soft",
+        ],
+    )
     assert result.exit_code != 0
 
     # shallow depth must be strictly less than deep
-    result = runner.invoke(cli.app, [
-        "depth-curve",
-        "--shallow-run", "g8-k4", "--shallow-full", "g8-full",
-        "--deep-run", "g2-k4", "--deep-full", "g2-full",
-        "--artifacts-dir", str(tmp_path), "--run-id", "dc-inverted",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "depth-curve",
+            "--shallow-run",
+            "g8-k4",
+            "--shallow-full",
+            "g8-full",
+            "--deep-run",
+            "g2-k4",
+            "--deep-full",
+            "g2-full",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "dc-inverted",
+        ],
+    )
     assert result.exit_code != 0
 
 
@@ -1390,18 +1791,26 @@ def test_fdr_headline_and_qvalues_in_run_report(tmp_path, monkeypatch):
     h2 = _hyp()
     h2["id"] = "hyp-engine-test-2"
     h2["prediction"]["metric_path"] = "evaltasks:tasks.hier.exact_match.greedy.in_range.mean"
-    registry.write_text(
-        "schema_version: 1\nhypotheses:\n" + _yaml_entry(h1) + _yaml_entry(h2)
-    )
+    registry.write_text("schema_version: 1\nhypotheses:\n" + _yaml_entry(h1) + _yaml_entry(h2))
     monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.50, 0.51, 0.52])
 
-    result = runner.invoke(cli.app, [
-        "adjudicate", "--all", "--dry-run", "--artifacts", str(tmp_path / "a"),
-        "--artifacts-dir", str(tmp_path / "out"), "--run-id", "fdr",
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "adjudicate",
+            "--all",
+            "--dry-run",
+            "--artifacts",
+            str(tmp_path / "a"),
+            "--artifacts-dir",
+            str(tmp_path / "out"),
+            "--run-id",
+            "fdr",
+        ],
+    )
     assert result.exit_code == 0, result.output
     payload = json.loads((tmp_path / "out" / "adjudications" / "fdr" / "verdicts.json").read_text())
     fdr = payload["fdr"]
@@ -1417,10 +1826,10 @@ def test_sizing_probe_quarantine_excluded_from_pools(tmp_path):
     """dzor: artifacts under probes/sizing/ never enter evidence pools - the
     runs that SELECT a rung must not adjudicate it. probes/charges (chargeprobe
     instruments) remains readable evidence."""
-    _evaltasks_artifact(tmp_path / "evals" / "tasks", "real", mechanism="ultrametric",
-                        per_seed=[0.8, 0.8, 0.8])
-    _evaltasks_artifact(tmp_path / "probes" / "sizing" / "e2-probe", "probe-eval",
-                        mechanism="standard", per_seed=[0.9, 0.9, 0.9])
+    _evaltasks_artifact(tmp_path / "evals" / "tasks", "real", mechanism="ultrametric", per_seed=[0.8, 0.8, 0.8])
+    _evaltasks_artifact(
+        tmp_path / "probes" / "sizing" / "e2-probe", "probe-eval", mechanism="standard", per_seed=[0.9, 0.9, 0.9]
+    )
     arts = cli._adj_collect_artifacts([tmp_path])
     paths = [a["path"] for a in arts]
     assert len(arts) == 1 and paths[0].endswith("real/summary.json"), paths
@@ -1450,7 +1859,9 @@ def test_coord_curves_ingest_as_bench_with_arm_selectors(tmp_path):
     for arm, slope in (("current", 0.12), ("nsa", 0.014)):
         _coord_artifact(tmp_path, arm, seed=0, slope=slope)
     idx = cli._adj_collect_artifacts([tmp_path])
-    coord = [a for a in idx if a["schema"] == "bench" and a["data"].get("schema_version") == "mgr.bench.coord_curves.v1"]
+    coord = [
+        a for a in idx if a["schema"] == "bench" and a["data"].get("schema_version") == "mgr.bench.coord_curves.v1"
+    ]
     assert len(coord) == 2, "coord-curves artifacts must ingest with schema=bench"
 
     cur = [a for a in coord if cli._adj_variant_matches(a, {"parameterization": "current"})]

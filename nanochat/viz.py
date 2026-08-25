@@ -364,7 +364,9 @@ class StateDiagnostics:
         return any(any(math.isfinite(x) for x in row) for row in self.margin_layer_head)
 
 
-def collect_state(model: Any, idx: Any, *, example_idx: int = 0, token_labels: list[str] | None = None) -> StateDiagnostics:
+def collect_state(
+    model: Any, idx: Any, *, example_idx: int = 0, token_labels: list[str] | None = None
+) -> StateDiagnostics:
     """Run one forward and harvest entropy / margins / attention maps."""
     import torch
 
@@ -576,34 +578,62 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
     if diag.has_entropy():
         png = out_dir / "attention_entropy_heatmap.png"
         _heatmap_png(
-            diag.entropy_layer_head, png,
+            diag.entropy_layer_head,
+            png,
             title=f"Per-head attention entropy ({diag.attention_type})",
-            xlabel="head", ylabel="layer", cmap="magma", yticklabels=ent_labels,
+            xlabel="head",
+            ylabel="layer",
+            cmap="magma",
+            yticklabels=ent_labels,
         )
         images.append(png)
         visuals.append("attention_entropy_heatmap")
-        console.print(Panel(_rich_heatmap(diag.entropy_layer_head, row_labels=ent_labels), title="attention entropy (nats) · layer×head", border_style="magenta"))
+        console.print(
+            Panel(
+                _rich_heatmap(diag.entropy_layer_head, row_labels=ent_labels),
+                title="attention entropy (nats) · layer×head",
+                border_style="magenta",
+            )
+        )
 
     # (2) Per-head softmax attention maps for one example (grid for first layer).
     if diag.attn_maps:
         layer0 = sorted(diag.attn_maps)[0]
         png = out_dir / "attention_maps.png"
-        _attention_maps_png(diag.attn_maps[layer0], png, layer=layer0, token_labels=diag.token_labels, attention_type=diag.attention_type)
+        _attention_maps_png(
+            diag.attn_maps[layer0],
+            png,
+            layer=layer0,
+            token_labels=diag.token_labels,
+            attention_type=diag.attention_type,
+        )
         images.append(png)
         visuals.append("attention_maps")
-        console.print(f"[green]✓[/green] attention maps for layer {layer0}: {diag.attn_maps[layer0].shape} -> {png.name}")
+        console.print(
+            f"[green]✓[/green] attention maps for layer {layer0}: {diag.attn_maps[layer0].shape} -> {png.name}"
+        )
 
     # (3) Tropical route-margin heatmap (REAL layer index x heads).
     if diag.has_margins():
         png = out_dir / "tropical_route_margins.png"
         _heatmap_png(
-            diag.margin_layer_head, png,
+            diag.margin_layer_head,
+            png,
             title=f"Tropical runner-up margins ({diag.attention_type})",
-            xlabel="head", ylabel="layer", cmap="viridis", yticklabels=margin_labels,
+            xlabel="head",
+            ylabel="layer",
+            cmap="viridis",
+            yticklabels=margin_labels,
         )
         images.append(png)
         visuals.append("tropical_route_margins")
-        console.print(Panel(_rich_heatmap(diag.margin_layer_head, row_labels=margin_labels), title="tropical route margins · layer×head", border_style="green"))
+        console.print(
+            Panel(
+                _rich_heatmap(diag.margin_layer_head, row_labels=margin_labels),
+                title="tropical route margins · layer×head",
+                border_style="green",
+            )
+        )
         if diag.route_coverage is not None:
             console.print(f"[dim]route coverage (β-thresholded): {diag.route_coverage:.4f}[/dim]")
 
@@ -624,7 +654,9 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     idx_html = _write_index_html(out_dir, f"model-state · {diag.attention_type}", images, summary)
-    console.print(f"\n[bold]wrote[/bold] {len(images)} visualization(s) + manifest -> [cyan]{out_dir}/[/cyan] (open {idx_html.name})")
+    console.print(
+        f"\n[bold]wrote[/bold] {len(images)} visualization(s) + manifest -> [cyan]{out_dir}/[/cyan] (open {idx_html.name})"
+    )
     if len(visuals) < 3:
         console.print(
             f"[yellow]note:[/yellow] {len(visuals)} visual(s) for '{diag.attention_type}'. "
@@ -634,7 +666,9 @@ def render_state(diag: StateDiagnostics, out_dir: Path, *, console: Any = None) 
     return summary
 
 
-def _attention_maps_png(maps: Any, out: Path, *, layer: int, token_labels: list[str] | None, attention_type: str) -> None:
+def _attention_maps_png(
+    maps: Any, out: Path, *, layer: int, token_labels: list[str] | None, attention_type: str
+) -> None:
     """Grid of per-head softmax attention matrices for one example."""
     import matplotlib
 
@@ -680,18 +714,30 @@ def run_state(args: argparse.Namespace) -> int:
         seq_len = min(int(args.seq_len), int(meta["config"].get("sequence_len", args.seq_len)))
     else:
         model, meta = build_probe_model(
-            args.attention, device=args.device, seed=args.seed, n_layer=args.n_layer,
-            n_head=args.n_head, n_kv_head=args.n_kv_head, n_embd=args.n_embd,
-            sequence_len=args.seq_len, vocab_size=args.vocab_size,
+            args.attention,
+            device=args.device,
+            seed=args.seed,
+            n_layer=args.n_layer,
+            n_head=args.n_head,
+            n_kv_head=args.n_kv_head,
+            n_embd=args.n_embd,
+            sequence_len=args.seq_len,
+            vocab_size=args.vocab_size,
         )
         attention_type = args.attention
         vocab = int(args.vocab_size)
         seq_len = int(args.seq_len)
     idx, labels = sample_batch(
-        text=(None if args.random_input else args.text), batch_size=args.batch_size,
-        seq_len=seq_len, vocab_size=vocab, seed=args.seed, device=args.device,
+        text=(None if args.random_input else args.text),
+        batch_size=args.batch_size,
+        seq_len=seq_len,
+        vocab_size=vocab,
+        seed=args.seed,
+        device=args.device,
     )
-    console.print(f"[dim]model={meta['source']} attention={attention_type} input={tuple(idx.shape)} seed={args.seed}[/dim]")
+    console.print(
+        f"[dim]model={meta['source']} attention={attention_type} input={tuple(idx.shape)} seed={args.seed}[/dim]"
+    )
     diag = collect_state(model, idx, example_idx=0, token_labels=labels)
     diag.attention_type = attention_type
     summary = render_state(diag, out_dir, console=console)
@@ -728,10 +774,7 @@ def _per_head_entropy_summary(diag: StateDiagnostics) -> dict[str, Any]:
     # standard sub-layers; 'signal' says so explicitly (which tropical layers
     # are omitted) rather than silently presenting it as the whole config.
     if diag.entropy_layer_head and diag.margin_layer_head:
-        signal = (
-            f"attention_entropy_nats (mixed: tropical layers "
-            f"{diag.margin_layers} omitted from this mean)"
-        )
+        signal = f"attention_entropy_nats (mixed: tropical layers {diag.margin_layers} omitted from this mean)"
     elif diag.entropy_layer_head:
         signal = "attention_entropy_nats"
     elif diag.margin_layer_head:
@@ -772,8 +815,14 @@ def render_entropy_diversity(
         return format(v, spec) if isinstance(v, (int, float)) else "—"
 
     for name, s in rows.items():
-        table.add_row(name, str(s["signal"]), _f(s["signal_mean"]), _f(s["signal_std"]),
-                      _f(s["route_diversity_js"]), _f(s["route_coverage"]))
+        table.add_row(
+            name,
+            str(s["signal"]),
+            _f(s["signal_mean"]),
+            _f(s["signal_std"]),
+            _f(s["route_diversity_js"]),
+            _f(s["route_coverage"]),
+        )
     console.print(table)
 
     # grouped bar plot of per-head signal for each config
@@ -833,14 +882,24 @@ def run_entropy(args: argparse.Namespace) -> int:
     configs: list[tuple[str, StateDiagnostics]] = []
     for name in (args.baseline, args.feature):
         model, meta = build_probe_model(
-            name, device=args.device, seed=args.seed, n_layer=args.n_layer,
-            n_head=args.n_head, n_kv_head=args.n_kv_head, n_embd=args.n_embd,
-            sequence_len=args.seq_len, vocab_size=args.vocab_size,
+            name,
+            device=args.device,
+            seed=args.seed,
+            n_layer=args.n_layer,
+            n_head=args.n_head,
+            n_kv_head=args.n_kv_head,
+            n_embd=args.n_embd,
+            sequence_len=args.seq_len,
+            vocab_size=args.vocab_size,
         )
         vocab = int(meta["config"]["vocab_size"])
         idx, labels = sample_batch(
-            text=(None if args.random_input else args.text), batch_size=args.batch_size,
-            seq_len=args.seq_len, vocab_size=vocab, seed=args.seed, device=args.device,
+            text=(None if args.random_input else args.text),
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            vocab_size=vocab,
+            seed=args.seed,
+            device=args.device,
         )
         diag = collect_state(model, idx, example_idx=0, token_labels=labels)
         diag.attention_type = name

@@ -1290,9 +1290,7 @@ def demo():
                 ),
             ),
         )
-        delta_rows = [
-            ("curvature", f"{curv_mean_comm - curv_mean_def:.4f}", f"{curv_alt - curv_mean_def:.4f}")
-        ]
+        delta_rows = [("curvature", f"{curv_mean_comm - curv_mean_def:.4f}", f"{curv_alt - curv_mean_def:.4f}")]
         for name in ("so_spd", "so_sp", "spd_sp"):
             delta_rows.append(
                 (name, f"{sums_comm[name] - sums_def[name]:.2e}", f"{sums_alt[name] - sums_def[name]:.2e}")

@@ -147,9 +147,7 @@ def _mean_tail(values: list[float], *, tail: int) -> float:
     return float(sum(window) / len(window))
 
 
-def _score_summary(
-    summary: dict[str, Any], *, metric: ObjectiveMetric, score_tail: int
-) -> tuple[float, list[float]]:
+def _score_summary(summary: dict[str, Any], *, metric: ObjectiveMetric, score_tail: int) -> tuple[float, list[float]]:
     """Extract one finite objective score and the training-loss diagnostics."""
     results = summary.get("results")
     if not isinstance(results, dict):
@@ -269,9 +267,7 @@ def _train_eval(
     decoded: dict[str, float],
     args: argparse.Namespace,
 ) -> CellEval:
-    candidate_dir = (
-        artifacts_dir / "cmaes" / "phase1" / search_run_id / "eval" / f"gen_{gen:04d}" / f"cand_{cand:04d}"
-    )
+    candidate_dir = artifacts_dir / "cmaes" / "phase1" / search_run_id / "eval" / f"gen_{gen:04d}" / f"cand_{cand:04d}"
     candidate_dir.mkdir(parents=True, exist_ok=True)
 
     syn_cfg_path = candidate_dir / "synaptic_config.json"
@@ -279,28 +275,51 @@ def _train_eval(
 
     eval_id = f"seed_{eval_seed}"
     train_cmd = [
-        sys.executable, "-m", "nanochat.train",
-        "--model-type", "synaptic",
-        "--synaptic-config", str(syn_cfg_path),
-        "--device", str(args.device),
-        "--seed", str(eval_seed),
-        "--batch-size", str(args.batch_size),
-        "--sequence-len", str(args.sequence_len),
-        "--vocab-size", str(args.vocab_size),
-        "--n-layer", str(args.n_layer),
-        "--n-head", str(args.n_head),
-        "--n-kv-head", str(args.n_kv_head),
-        "--n-embd", str(args.n_embd),
-        "--learning-rate", str(args.learning_rate),
-        "--target-flops", str(args.target_flops),
-        "--warmup-steps", str(args.warmup_steps),
-        "--log-interval", str(args.log_interval),
-        "--val-interval", str(args.val_interval),
-        "--val-batches", str(args.val_batches),
-        "--artifacts-dir", str(artifacts_dir),
-        "--artifacts-kind", "cmaes",
-        "--artifacts-topic", f"phase1/{search_run_id}/eval/gen_{gen:04d}/cand_{cand:04d}",
-        "--run-id", eval_id,
+        sys.executable,
+        "-m",
+        "nanochat.train",
+        "--model-type",
+        "synaptic",
+        "--synaptic-config",
+        str(syn_cfg_path),
+        "--device",
+        str(args.device),
+        "--seed",
+        str(eval_seed),
+        "--batch-size",
+        str(args.batch_size),
+        "--sequence-len",
+        str(args.sequence_len),
+        "--vocab-size",
+        str(args.vocab_size),
+        "--n-layer",
+        str(args.n_layer),
+        "--n-head",
+        str(args.n_head),
+        "--n-kv-head",
+        str(args.n_kv_head),
+        "--n-embd",
+        str(args.n_embd),
+        "--learning-rate",
+        str(args.learning_rate),
+        "--target-flops",
+        str(args.target_flops),
+        "--warmup-steps",
+        str(args.warmup_steps),
+        "--log-interval",
+        str(args.log_interval),
+        "--val-interval",
+        str(args.val_interval),
+        "--val-batches",
+        str(args.val_batches),
+        "--artifacts-dir",
+        str(artifacts_dir),
+        "--artifacts-kind",
+        "cmaes",
+        "--artifacts-topic",
+        f"phase1/{search_run_id}/eval/gen_{gen:04d}/cand_{cand:04d}",
+        "--run-id",
+        eval_id,
     ]
     if args.data_dir is not None:
         train_cmd += ["--data-dir", str(args.data_dir)]
@@ -312,8 +331,12 @@ def _train_eval(
     timed_out = False
     try:
         proc = subprocess.run(
-            train_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, timeout=float(args.timeout_s), check=False,
+            train_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=float(args.timeout_s),
+            check=False,
         )
         proc_stdout, proc_stderr = proc.stdout, proc.stderr
         returncode = int(proc.returncode)
@@ -355,7 +378,7 @@ def _train_eval(
         command=cmd_str,
         returncode=returncode,
         train_summary_path=str(summary_path.relative_to(artifacts_dir)) if summary_path.exists() else None,
-        losses_tail=losses[-min(len(losses), int(args.score_tail)):],
+        losses_tail=losses[-min(len(losses), int(args.score_tail)) :],
     )
 
 
@@ -468,7 +491,13 @@ def _load_optimizer_state(path: Path) -> CMA:
     attrs = {name: _decode_cma_attribute(name, payload) for name, payload in raw_attrs.items()}
 
     required_constructor_attrs = {
-        "_mean", "_sigma", "_bounds", "_n_max_resampling", "_popsize", "_C", "_lr_adapt",
+        "_mean",
+        "_sigma",
+        "_bounds",
+        "_n_max_resampling",
+        "_popsize",
+        "_C",
+        "_lr_adapt",
     }
     missing = required_constructor_attrs - attrs.keys()
     if missing:
@@ -529,9 +558,7 @@ def _load_optimizer_state(path: Path) -> CMA:
 def _load_checkpoint(state_dir: Path) -> tuple[CMA, SearchState]:
     optimizer_path = state_dir / OPTIMIZER_STATE_FILENAME
     if not optimizer_path.exists() and (state_dir / LEGACY_OPTIMIZER_STATE_FILENAME).exists():
-        raise ValueError(
-            "legacy pickle CMA checkpoint cannot be resumed safely or reproducibly; start a new run"
-        )
+        raise ValueError("legacy pickle CMA checkpoint cannot be resumed safely or reproducibly; start a new run")
     opt = _load_optimizer_state(optimizer_path)
     raw = json.loads((state_dir / "search_state.json").read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or raw.get("schema_version") != STATE_SCHEMA:
@@ -575,8 +602,7 @@ def _restore_args_from_run_json(args: argparse.Namespace, prev: dict[str, Any], 
     ta = obj.get("train_args", {})
     if "metric" not in obj:
         raise ValueError(
-            "run.json lacks objective.metric and cannot be resumed safely; "
-            "start a new validation-objective run"
+            "run.json lacks objective.metric and cannot be resumed safely; start a new validation-objective run"
         )
 
     # always-restore (search identity): changing these mid-run is incoherent
@@ -593,9 +619,20 @@ def _restore_args_from_run_json(args: argparse.Namespace, prev: dict[str, Any], 
     ds_dir = (prev.get("dataset") or {}).get("data_dir")
     if "--data-dir" not in " ".join(argv):
         args.data_dir = ds_dir
-    for k in ("batch_size", "sequence_len", "vocab_size", "n_layer", "n_head",
-              "n_kv_head", "n_embd", "learning_rate", "warmup_steps", "log_interval",
-              "val_interval", "val_batches"):
+    for k in (
+        "batch_size",
+        "sequence_len",
+        "vocab_size",
+        "n_layer",
+        "n_head",
+        "n_kv_head",
+        "n_embd",
+        "learning_rate",
+        "warmup_steps",
+        "log_interval",
+        "val_interval",
+        "val_batches",
+    ):
         if k in ta:
             setattr(args, k, ta[k])
 
@@ -619,28 +656,49 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CMA-ES Phase 1 search for nanochat synaptic knobs.")
     parser.add_argument("--run-id", type=str, default=None, help="Run identifier (directory name).")
     parser.add_argument("--artifacts-dir", type=str, default="artifacts", help="Base directory for artifacts.")
-    parser.add_argument("--resume", action="store_true",
-                        help="Resume an interrupted run from its saved CMA + ledger checkpoint.")
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume an interrupted run from its saved CMA + ledger checkpoint."
+    )
 
     parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
-    parser.add_argument("--generations", type=int, default=2, help="Maximum number of generations (a budget guard may stop earlier).")
+    parser.add_argument(
+        "--generations", type=int, default=2, help="Maximum number of generations (a budget guard may stop earlier)."
+    )
     parser.add_argument("--population-size", type=int, default=4)
     parser.add_argument("--sigma", type=float, default=0.30)
 
     parser.add_argument("--search-seed", type=int, default=0)
-    parser.add_argument("--eval-seeds", type=int, nargs="+", default=[123],
-                        help="Per-candidate training seed(s); >1 enables robust multi-seed averaging (bead q8f).")
-    parser.add_argument("--seed-agg", choices=["mean", "worst", "mean_std"], default="mean",
-                        help="How to combine per-seed scores into the CMA-ES objective.")
-    parser.add_argument("--seed-agg-lambda", type=float, default=1.0,
-                        help="Std penalty weight when --seed-agg=mean_std.")
+    parser.add_argument(
+        "--eval-seeds",
+        type=int,
+        nargs="+",
+        default=[123],
+        help="Per-candidate training seed(s); >1 enables robust multi-seed averaging (bead q8f).",
+    )
+    parser.add_argument(
+        "--seed-agg",
+        choices=["mean", "worst", "mean_std"],
+        default="mean",
+        help="How to combine per-seed scores into the CMA-ES objective.",
+    )
+    parser.add_argument(
+        "--seed-agg-lambda", type=float, default=1.0, help="Std penalty weight when --seed-agg=mean_std."
+    )
 
     # Budget / auto-stop guard (bead 2mj)
     parser.add_argument("--max-evals", type=int, default=None, help="Stop after this many per-seed training evals.")
-    parser.add_argument("--max-wall-seconds", type=float, default=None, help="Stop once cumulative wall time exceeds this.")
-    parser.add_argument("--patience", type=int, default=None, help="Stop after N generations without best-score improvement.")
-    parser.add_argument("--min-improve", type=float, default=1e-4, help="Improvement smaller than this does not reset patience.")
-    parser.add_argument("--max-crash-rate", type=float, default=None, help="Stop if the fraction of failed evals exceeds this (0..1).")
+    parser.add_argument(
+        "--max-wall-seconds", type=float, default=None, help="Stop once cumulative wall time exceeds this."
+    )
+    parser.add_argument(
+        "--patience", type=int, default=None, help="Stop after N generations without best-score improvement."
+    )
+    parser.add_argument(
+        "--min-improve", type=float, default=1e-4, help="Improvement smaller than this does not reset patience."
+    )
+    parser.add_argument(
+        "--max-crash-rate", type=float, default=None, help="Stop if the fraction of failed evals exceeds this (0..1)."
+    )
 
     parser.add_argument("--target-flops", type=float, default=1e10)
     parser.add_argument("--warmup-steps", type=int, default=1)
@@ -665,10 +723,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-embd", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=6e-4)
 
-    parser.add_argument("--data-dir", type=str, default=None,
-                        help="Pin training to a specific parquet corpus (default: the FineWeb cache).")
     parser.add_argument(
-        "--auto-download-data", action=argparse.BooleanOptionalAction, default=True,
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Pin training to a specific parquet corpus (default: the FineWeb cache).",
+    )
+    parser.add_argument(
+        "--auto-download-data",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Download minimal dataset shards if missing (recommended for reproducibility).",
     )
     parser.add_argument("--min-parquet-files", type=int, default=2)
@@ -713,13 +777,21 @@ def main() -> int:
 
     # ---- fresh vs resume ---------------------------------------------------
     progress_fields = [
-        "gen", "cand", "eval_seeds", "n_ok", "n_fail", "agg_score",
-        "per_seed_scores", "duration_s", "best_summary_path",
+        "gen",
+        "cand",
+        "eval_seeds",
+        "n_ok",
+        "n_fail",
+        "agg_score",
+        "per_seed_scores",
+        "duration_s",
+        "best_summary_path",
     ]
     if args.resume:
-        if not (state_dir / OPTIMIZER_STATE_FILENAME).exists() and not (
-            state_dir / LEGACY_OPTIMIZER_STATE_FILENAME
-        ).exists():
+        if (
+            not (state_dir / OPTIMIZER_STATE_FILENAME).exists()
+            and not (state_dir / LEGACY_OPTIMIZER_STATE_FILENAME).exists()
+        ):
             raise FileNotFoundError(f"--resume given but no checkpoint at {state_dir}")
         opt, state = _load_checkpoint(state_dir)
         prev = json.loads((run_dir / "run.json").read_text(encoding="utf-8")) if (run_dir / "run.json").exists() else {}
@@ -730,11 +802,15 @@ def main() -> int:
         fingerprint = _dataset_fingerprint(args.data_dir)
         prev_fp = (prev.get("dataset") or {}).get("digest")
         if prev_fp and fingerprint.get("digest") and prev_fp != fingerprint["digest"]:
-            console.print("[bold red]⚠ DATASET DRIFT[/bold red]: parquet fingerprint changed since the "
-                          f"original run ({prev_fp[:12]} → {fingerprint['digest'][:12]}). "
-                          "Resumed candidates are NOT comparable to earlier ones.")
-        console.print(f"[bold cyan]resume[/bold cyan] gen={state.generation} eval_count={state.eval_count} "
-                      f"best={(state.best or {}).get('score')}")
+            console.print(
+                "[bold red]⚠ DATASET DRIFT[/bold red]: parquet fingerprint changed since the "
+                f"original run ({prev_fp[:12]} → {fingerprint['digest'][:12]}). "
+                "Resumed candidates are NOT comparable to earlier ones."
+            )
+        console.print(
+            f"[bold cyan]resume[/bold cyan] gen={state.generation} eval_count={state.eval_count} "
+            f"best={(state.best or {}).get('score')}"
+        )
         csv_handle = progress_path.open("a", newline="", encoding="utf-8")
         writer = csv.DictWriter(csv_handle, fieldnames=progress_fields)
     else:
@@ -742,43 +818,61 @@ def main() -> int:
             raise FileExistsError(f"Run dir already exists and is non-empty: {run_dir} (use --resume to continue)")
         run_dir.mkdir(parents=True, exist_ok=True)
         opt = CMA(
-            mean=_encode_syn_defaults(), sigma=float(args.sigma), bounds=bounds,
-            seed=int(args.search_seed), population_size=int(args.population_size),
+            mean=_encode_syn_defaults(),
+            sigma=float(args.sigma),
+            bounds=bounds,
+            seed=int(args.search_seed),
+            population_size=int(args.population_size),
         )
-        state = SearchState(generation=0, eval_count=0, crash_count=0,
-                            wall_accum_s=0.0, no_improve_streak=0, best=None)
-        _write_json(run_dir / "run.json", {
-            "schema_version": "mgr.cmaes.phase1.v1",
-            "run_id": run_id,
-            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "command": shlex.join(["uv", "run", "python", "scripts/cmaes_phase1.py"] + sys.argv[1:]),
-            "cmaes": {
-                "library": "cmaes", "population_size": int(args.population_size),
-                "sigma": float(args.sigma), "search_seed": int(args.search_seed),
-            },
-            "objective": {
-                "model_type": "synaptic", "device": str(args.device),
-                "metric": str(args.objective_metric),
-                "target_flops": float(args.target_flops),
-                "eval_seeds": list(args.eval_seeds), "seed_agg": str(args.seed_agg),
-                "seed_agg_lambda": float(args.seed_agg_lambda), "score_tail": int(args.score_tail),
-                "train_args": {
-                    "batch_size": int(args.batch_size), "sequence_len": int(args.sequence_len),
-                    "vocab_size": int(args.vocab_size), "n_layer": int(args.n_layer),
-                    "n_head": int(args.n_head), "n_kv_head": int(args.n_kv_head),
-                    "n_embd": int(args.n_embd), "learning_rate": float(args.learning_rate),
-                    "warmup_steps": int(args.warmup_steps), "log_interval": int(args.log_interval),
-                    "val_interval": int(args.val_interval), "val_batches": int(args.val_batches),
+        state = SearchState(generation=0, eval_count=0, crash_count=0, wall_accum_s=0.0, no_improve_streak=0, best=None)
+        _write_json(
+            run_dir / "run.json",
+            {
+                "schema_version": "mgr.cmaes.phase1.v1",
+                "run_id": run_id,
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "command": shlex.join(["uv", "run", "python", "scripts/cmaes_phase1.py"] + sys.argv[1:]),
+                "cmaes": {
+                    "library": "cmaes",
+                    "population_size": int(args.population_size),
+                    "sigma": float(args.sigma),
+                    "search_seed": int(args.search_seed),
                 },
+                "objective": {
+                    "model_type": "synaptic",
+                    "device": str(args.device),
+                    "metric": str(args.objective_metric),
+                    "target_flops": float(args.target_flops),
+                    "eval_seeds": list(args.eval_seeds),
+                    "seed_agg": str(args.seed_agg),
+                    "seed_agg_lambda": float(args.seed_agg_lambda),
+                    "score_tail": int(args.score_tail),
+                    "train_args": {
+                        "batch_size": int(args.batch_size),
+                        "sequence_len": int(args.sequence_len),
+                        "vocab_size": int(args.vocab_size),
+                        "n_layer": int(args.n_layer),
+                        "n_head": int(args.n_head),
+                        "n_kv_head": int(args.n_kv_head),
+                        "n_embd": int(args.n_embd),
+                        "learning_rate": float(args.learning_rate),
+                        "warmup_steps": int(args.warmup_steps),
+                        "log_interval": int(args.log_interval),
+                        "val_interval": int(args.val_interval),
+                        "val_batches": int(args.val_batches),
+                    },
+                },
+                "budget": {
+                    "generations": int(args.generations),
+                    "max_evals": args.max_evals,
+                    "max_wall_seconds": args.max_wall_seconds,
+                    "patience": args.patience,
+                    "max_crash_rate": args.max_crash_rate,
+                },
+                "dataset": fingerprint,
+                "param_space": {"dim": len(PARAM_SPECS), "specs": [asdict(p) for p in PARAM_SPECS]},
             },
-            "budget": {
-                "generations": int(args.generations), "max_evals": args.max_evals,
-                "max_wall_seconds": args.max_wall_seconds, "patience": args.patience,
-                "max_crash_rate": args.max_crash_rate,
-            },
-            "dataset": fingerprint,
-            "param_space": {"dim": len(PARAM_SPECS), "specs": [asdict(p) for p in PARAM_SPECS]},
-        })
+        )
         csv_handle = progress_path.open("w", newline="", encoding="utf-8")
         writer = csv.DictWriter(csv_handle, fieldnames=progress_fields)
         writer.writeheader()
@@ -792,8 +886,12 @@ def main() -> int:
     console.rule(f"[bold cyan]CMA-ES phase1[/bold cyan] · {run_id}")
     remaining_gens = max(0, int(args.generations) - state.generation)
     with Progress(
-        TextColumn("[bold cyan]cmaes[/bold cyan]"), BarColumn(), MofNCompleteColumn(),
-        TaskProgressColumn(), TimeElapsedColumn(), console=console,
+        TextColumn("[bold cyan]cmaes[/bold cyan]"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
     ) as prog:
         task = prog.add_task("eval", total=remaining_gens * int(args.population_size))
 
@@ -815,37 +913,48 @@ def main() -> int:
                 seed_evals: list[CellEval] = []
                 for eval_seed in args.eval_seeds:
                     ev = _train_eval(
-                        artifacts_dir=artifacts_dir, search_run_id=run_id, gen=gen, cand=cand,
-                        eval_seed=int(eval_seed), decoded=decoded, args=args,
+                        artifacts_dir=artifacts_dir,
+                        search_run_id=run_id,
+                        gen=gen,
+                        cand=cand,
+                        eval_seed=int(eval_seed),
+                        decoded=decoded,
+                        args=args,
                     )
                     seed_evals.append(ev)
                     state.eval_count += 1
                     if ev.status != "ok":
                         state.crash_count += 1
 
-                agg_score = _aggregate_seed_scores(
-                    seed_evals, how=args.seed_agg, lam=float(args.seed_agg_lambda)
-                )
+                agg_score = _aggregate_seed_scores(seed_evals, how=args.seed_agg, lam=float(args.seed_agg_lambda))
                 solutions.append((x, agg_score))
 
                 n_ok = sum(1 for e in seed_evals if e.status == "ok")
                 cand_summary = next((e.train_summary_path for e in seed_evals if e.train_summary_path), None)
-                writer.writerow({
-                    "gen": gen, "cand": cand,
-                    "eval_seeds": ";".join(str(s) for s in args.eval_seeds),
-                    "n_ok": n_ok, "n_fail": n_seeds - n_ok,
-                    "agg_score": agg_score,
-                    "per_seed_scores": ";".join(f"{e.score:.6g}" for e in seed_evals),
-                    "duration_s": sum(e.duration_s for e in seed_evals),
-                    "best_summary_path": cand_summary,
-                })
+                writer.writerow(
+                    {
+                        "gen": gen,
+                        "cand": cand,
+                        "eval_seeds": ";".join(str(s) for s in args.eval_seeds),
+                        "n_ok": n_ok,
+                        "n_fail": n_seeds - n_ok,
+                        "agg_score": agg_score,
+                        "per_seed_scores": ";".join(f"{e.score:.6g}" for e in seed_evals),
+                        "duration_s": sum(e.duration_s for e in seed_evals),
+                        "best_summary_path": cand_summary,
+                    }
+                )
                 csv_handle.flush()
 
                 if state.best is None or agg_score < float(state.best["score"]):
                     state.best = {
-                        "score": agg_score, "gen": gen, "cand": cand,
-                        "x": [float(v) for v in x.tolist()], "decoded": decoded,
-                        "eval_seeds": list(args.eval_seeds), "seed_agg": str(args.seed_agg),
+                        "score": agg_score,
+                        "gen": gen,
+                        "cand": cand,
+                        "x": [float(v) for v in x.tolist()],
+                        "decoded": decoded,
+                        "eval_seeds": list(args.eval_seeds),
+                        "seed_agg": str(args.seed_agg),
                         "per_seed_scores": [e.score for e in seed_evals],
                         "train_summary_path": cand_summary,
                     }
@@ -870,9 +979,12 @@ def main() -> int:
             # the budget rather than restarting it.
             seg_elapsed = time.perf_counter() - segment_start
             chk = SearchState(
-                generation=state.generation, eval_count=state.eval_count,
-                crash_count=state.crash_count, wall_accum_s=state.wall_accum_s + seg_elapsed,
-                no_improve_streak=state.no_improve_streak, best=state.best,
+                generation=state.generation,
+                eval_count=state.eval_count,
+                crash_count=state.crash_count,
+                wall_accum_s=state.wall_accum_s + seg_elapsed,
+                no_improve_streak=state.no_improve_streak,
+                best=state.best,
             )
             _save_checkpoint(state_dir, opt, chk)
 
@@ -889,9 +1001,13 @@ def main() -> int:
     return 0
 
 
-def _finalize(run_dir: Path, run_id: str, args: argparse.Namespace, state: SearchState, stop_reason: str | None) -> None:
+def _finalize(
+    run_dir: Path, run_id: str, args: argparse.Namespace, state: SearchState, stop_reason: str | None
+) -> None:
     if not state.best:
-        _write_text(run_dir / "summary.md", f"# CMA-ES Phase 1 ({run_id})\n\nNo successful candidates. Stop: {stop_reason}\n")
+        _write_text(
+            run_dir / "summary.md", f"# CMA-ES Phase 1 ({run_id})\n\nNo successful candidates. Stop: {stop_reason}\n"
+        )
         return
 
     table = Table(title="CMA-ES Phase 1 best", show_header=True, header_style="bold")

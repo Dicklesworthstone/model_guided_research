@@ -103,12 +103,7 @@ def test_additive_reversible_charges_wired_recompute():
     nemb = _embedding_size(m)
     nblock = sum(p.numel() for p in _blocks(m).parameters())
     h, q, t = cfg.n_head, cfg.n_embd // cfg.n_head, cfg.sequence_len
-    expected = (
-        6 * (nparams - nemb - nblock)
-        + 9 * nblock
-        + 12 * h * q * t * cfg.n_layer
-        + 4 * h * q * t * cfg.n_layer
-    )
+    expected = 6 * (nparams - nemb - nblock) + 9 * nblock + 12 * h * q * t * cfg.n_layer + 4 * h * q * t * cfg.n_layer
     assert GPT(cfg).estimate_flops() == expected
 
 

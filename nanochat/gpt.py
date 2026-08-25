@@ -652,8 +652,10 @@ class GPT(nn.Module):
         parameterization = getattr(self.config, "parameterization", "current")
         if parameterization not in ("current", "nsa"):
             raise ValueError(f"parameterization must be current | nsa, got {parameterization!r}")
-        if parameterization == "nsa" and "tropical" not in attention_schedule and not any(
-            m in attention_schedule for m in ("quaternion", "octonion")
+        if (
+            parameterization == "nsa"
+            and "tropical" not in attention_schedule
+            and not any(m in attention_schedule for m in ("quaternion", "octonion"))
         ):
             raise ValueError(
                 "parameterization='nsa' currently changes only the tropical (E[max] constants) "
@@ -744,9 +746,7 @@ class GPT(nn.Module):
         ca_gen = self._ca_init_generator
         ca_alpha = float(getattr(self.config, "ca_init_alpha", 1.0))
         ca_state = (
-            (ca_rule_number, ca_gen)
-            if ca_rule_number is not None and ca_gen is not None and ca_alpha > 0.0
-            else None
+            (ca_rule_number, ca_gen) if ca_rule_number is not None and ca_gen is not None and ca_alpha > 0.0 else None
         )
 
         if isinstance(module, nn.Linear):
@@ -1089,12 +1089,7 @@ class GPT(nn.Module):
         x = norm(x)
         ckpt_mode = str(getattr(self.config, "activation_ckpt", "none"))
         ckpt_k = max(1, int(getattr(self.config, "activation_ckpt_every_k", 1)))
-        use_ckpt = (
-            self.training
-            and kv_cache is None
-            and torch.is_grad_enabled()
-            and ckpt_mode != "none"
-        )
+        use_ckpt = self.training and kv_cache is None and torch.is_grad_enabled() and ckpt_mode != "none"
         for i, block in enumerate(self._blocks()):
             if use_ckpt and (ckpt_mode == "full" or i % ckpt_k == 0):
                 # use_reentrant=False: composes with kwargs/tensors-only args,

@@ -287,8 +287,16 @@ def _cm():
 
 def _cell(seed: int, status: str, score: float):
     cm = _cm()
-    return cm.CellEval(seed=seed, status=status, score=score, duration_s=1.0,
-                       command="", returncode=0, train_summary_path=None, losses_tail=[score])
+    return cm.CellEval(
+        seed=seed,
+        status=status,
+        score=score,
+        duration_s=1.0,
+        command="",
+        returncode=0,
+        train_summary_path=None,
+        losses_tail=[score],
+    )
 
 
 def test_cmaes_objective_score_extraction() -> None:
@@ -352,8 +360,7 @@ def test_cmaes_seed_aggregation() -> None:
 
 def test_cmaes_budget_guards() -> None:
     cm = _cm()
-    a = argparse.Namespace(max_evals=8, max_wall_seconds=100.0, patience=2,
-                           max_crash_rate=0.5, population_size=4)
+    a = argparse.Namespace(max_evals=8, max_wall_seconds=100.0, patience=2, max_crash_rate=0.5, population_size=4)
     assert cm._check_budget(cm.SearchState(1, 8, 0, 0.0, 0, None), a, 1.0) is not None  # max_evals
     assert cm._check_budget(cm.SearchState(1, 4, 3, 0.0, 0, None), a, 1.0) is not None  # crash rate 75%
     assert cm._check_budget(cm.SearchState(3, 4, 0, 0.0, 2, None), a, 1.0) is not None  # patience
@@ -366,8 +373,9 @@ def test_cmaes_checkpoint_roundtrip(tmp_path: Path) -> None:
     bounds = np.array([[-1.0, 1.0]] * 10)
     opt = CMA(mean=np.zeros(10), sigma=0.3, bounds=bounds, seed=0, population_size=4)
     opt.tell([(opt.ask(), 1.0) for _ in range(4)])
-    state = cm.SearchState(generation=2, eval_count=8, crash_count=1,
-                           wall_accum_s=42.0, no_improve_streak=1, best={"score": 1.23})
+    state = cm.SearchState(
+        generation=2, eval_count=8, crash_count=1, wall_accum_s=42.0, no_improve_streak=1, best={"score": 1.23}
+    )
     cm._save_checkpoint(tmp_path, opt, state)
     expected_next_population = [opt.ask() for _ in range(opt.population_size)]
     opt2, st = cm._load_checkpoint(tmp_path)
@@ -390,9 +398,7 @@ def test_cmaes_checkpoint_rejects_legacy_pickle(tmp_path: Path) -> None:
 
 def test_cmaes_checkpoint_rejects_unknown_schema(tmp_path: Path) -> None:
     cm = _cm()
-    (tmp_path / cm.OPTIMIZER_STATE_FILENAME).write_text(
-        json.dumps({"schema_version": "unknown"}), encoding="utf-8"
-    )
+    (tmp_path / cm.OPTIMIZER_STATE_FILENAME).write_text(json.dumps({"schema_version": "unknown"}), encoding="utf-8")
     with pytest.raises(ValueError, match="Unsupported CMA optimizer checkpoint schema"):
         cm._load_checkpoint(tmp_path)
 
@@ -414,22 +420,49 @@ def test_cmaes_resume_arg_restore() -> None:
     cm = _cm()
     prev = {
         "cmaes": {"population_size": 6, "sigma": 0.4, "search_seed": 2},
-        "objective": {"metric": "val_ce", "target_flops": 5e9, "eval_seeds": [0, 1], "seed_agg": "mean_std",
-                      "seed_agg_lambda": 2.0, "score_tail": 5, "device": "cpu",
-                      "train_args": {"n_layer": 6, "n_embd": 256, "batch_size": 16,
-                                     "val_interval": 20, "val_batches": 4}},
-        "budget": {"generations": 10, "max_evals": 100, "max_wall_seconds": None,
-                   "patience": 3, "max_crash_rate": 0.1},
+        "objective": {
+            "metric": "val_ce",
+            "target_flops": 5e9,
+            "eval_seeds": [0, 1],
+            "seed_agg": "mean_std",
+            "seed_agg_lambda": 2.0,
+            "score_tail": 5,
+            "device": "cpu",
+            "train_args": {"n_layer": 6, "n_embd": 256, "batch_size": 16, "val_interval": 20, "val_batches": 4},
+        },
+        "budget": {"generations": 10, "max_evals": 100, "max_wall_seconds": None, "patience": 3, "max_crash_rate": 0.1},
         "dataset": {"data_dir": None},
     }
-    a = argparse.Namespace(population_size=4, sigma=0.3, search_seed=0, target_flops=1e10,
-                           eval_seeds=[123], seed_agg="mean", seed_agg_lambda=1.0, score_tail=3,
-                           objective_metric="train_tail", val_interval=0, val_batches=1,
-                           device="cpu", data_dir=None, n_layer=4, n_embd=128, batch_size=8,
-                           sequence_len=256, vocab_size=50304, n_head=4, n_kv_head=4,
-                           learning_rate=6e-4, warmup_steps=1, log_interval=1,
-                           generations=2, max_evals=999, max_wall_seconds=None,
-                           patience=None, max_crash_rate=None)
+    a = argparse.Namespace(
+        population_size=4,
+        sigma=0.3,
+        search_seed=0,
+        target_flops=1e10,
+        eval_seeds=[123],
+        seed_agg="mean",
+        seed_agg_lambda=1.0,
+        score_tail=3,
+        objective_metric="train_tail",
+        val_interval=0,
+        val_batches=1,
+        device="cpu",
+        data_dir=None,
+        n_layer=4,
+        n_embd=128,
+        batch_size=8,
+        sequence_len=256,
+        vocab_size=50304,
+        n_head=4,
+        n_kv_head=4,
+        learning_rate=6e-4,
+        warmup_steps=1,
+        log_interval=1,
+        generations=2,
+        max_evals=999,
+        max_wall_seconds=None,
+        patience=None,
+        max_crash_rate=None,
+    )
     # resume command explicitly extends --max-evals only
     cm._restore_args_from_run_json(a, prev, ["scripts/cmaes_phase1.py", "--resume", "--max-evals", "999"])
     assert a.population_size == 6 and a.eval_seeds == [0, 1] and a.seed_agg == "mean_std"
@@ -470,19 +503,23 @@ def _write_fake_cmaes_run(run_dir: Path, *, scores: list[float], param_name: str
     detectable correlation.
     """
     (run_dir).mkdir(parents=True, exist_ok=True)
-    (run_dir / "run.json").write_text(json.dumps({
-        "param_space": {"specs": [{"name": param_name, "kind": "linear"},
-                                  {"name": "alpha_c", "kind": "linear"}]}
-    }), encoding="utf-8")
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {"param_space": {"specs": [{"name": param_name, "kind": "linear"}, {"name": "alpha_c", "kind": "linear"}]}}
+        ),
+        encoding="utf-8",
+    )
     for i, sc in enumerate(scores):
         cand = run_dir / "eval" / "gen_0000" / f"cand_{i:04d}"
         cand.mkdir(parents=True, exist_ok=True)
         (cand / "synaptic_config.json").write_text(
-            json.dumps({param_name: float(sc), "alpha_c": 0.5}), encoding="utf-8")
+            json.dumps({param_name: float(sc), "alpha_c": 0.5}), encoding="utf-8"
+        )
         sd = cand / "seed_123"
         sd.mkdir(parents=True, exist_ok=True)
         (sd / "summary.json").write_text(
-            json.dumps({"results": {"losses": [sc + 0.5, sc + 0.2, sc]}}), encoding="utf-8")
+            json.dumps({"results": {"losses": [sc + 0.5, sc + 0.2, sc]}}), encoding="utf-8"
+        )
 
 
 def test_cmaes_analyze_flat_suppresses_correlations(tmp_path: Path) -> None:
@@ -520,8 +557,9 @@ def test_cmaes_analyze_signal_recovers_correlation(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 def test_ca_init_bench_activation_probe() -> None:
     cb = _load_script("ca_init_bench_under_test", "ca_init_bench.py")
-    arch = cb.ArchConfig(name="t", n_layer=2, n_head=2, n_kv_head=2, n_embd=32,
-                         sequence_len=16, batch_size=2, note="tiny")
+    arch = cb.ArchConfig(
+        name="t", n_layer=2, n_head=2, n_kv_head=2, n_embd=32, sequence_len=16, batch_size=2, note="tiny"
+    )
     std = cb.INIT_VARIANTS["standard"]
     ca = cb.INIT_VARIANTS["ca_rule30"]
     a_std = cb._probe_init_activations(arch, std, seed=0, device="cpu", vocab_size=256)

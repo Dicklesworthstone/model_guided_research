@@ -83,11 +83,16 @@ class MechanismNote:
 
 MECHANISM_NOTES: dict[str, MechanismNote] = {
     "standard": MechanismNote(
-        key="standard", title="Softmax attention (baseline)",
+        key="standard",
+        title="Softmax attention (baseline)",
         idea="Content-based mixing: each token's query scores every key, softmax turns scores into a convex mixture of values.",
         doc="../README.md",
         steps=[
-            ("scores", "S = Q Kᵀ / √d_head", "Dot-product similarity; the √d scale keeps logits O(1) so softmax doesn't saturate."),
+            (
+                "scores",
+                "S = Q Kᵀ / √d_head",
+                "Dot-product similarity; the √d scale keeps logits O(1) so softmax doesn't saturate.",
+            ),
             ("mask", "S ← S + causal_mask", "Future keys get −∞ so a position can only attend to its past."),
             ("weights", "A = softmax(S)", "Rows are probability distributions over keys (the attention map)."),
             ("mix", "Y = A V", "Each token becomes a convex combination of value vectors."),
@@ -95,55 +100,108 @@ MECHANISM_NOTES: dict[str, MechanismNote] = {
         observable="per-head attention entropy H(A) — low = a selective/induction head, high = a broad/mixing head.",
     ),
     "tropical": MechanismNote(
-        key="tropical", title="Tropical (max-plus) attention",
+        key="tropical",
+        title="Tropical (max-plus) attention",
         idea="Replace (+,×) with (max,+): attention becomes a piecewise-linear selection with a certifiable winner.",
         doc="tropical_geometry_and_idempotent_algebra.md",
         steps=[
             ("scores", "S_ij = ⟨q_i, k_j⟩ + b_j", "Additive scores in the max-plus semiring (⊗ = +, ⊕ = max)."),
-            ("route", "y_i = argmax_j S_ij", "The 'sum' is a max: each token routes to its single best key (a hard, interpretable route)."),
-            ("margin", "γ_i = S_(1) − S_(2)", "Gap between best and runner-up. γ/2 is a robustness certificate: perturbations below it can't flip the route."),
-            ("maslov", "max_β(a,b) = (1/β)·log(e^{βa}+e^{βb})", "Maslov dequantization: β→∞ recovers exact max (tropical), finite β is a smooth surrogate."),
+            (
+                "route",
+                "y_i = argmax_j S_ij",
+                "The 'sum' is a max: each token routes to its single best key (a hard, interpretable route).",
+            ),
+            (
+                "margin",
+                "γ_i = S_(1) − S_(2)",
+                "Gap between best and runner-up. γ/2 is a robustness certificate: perturbations below it can't flip the route.",
+            ),
+            (
+                "maslov",
+                "max_β(a,b) = (1/β)·log(e^{βa}+e^{βb})",
+                "Maslov dequantization: β→∞ recovers exact max (tropical), finite β is a smooth surrogate.",
+            ),
         ],
         observable="runner-up margin γ per head — large = confident certifiable route, ~0 = a tie on the PL decision boundary.",
     ),
     "ultrametric": MechanismNote(
-        key="ultrametric", title="Ultrametric / p-adic attention",
+        key="ultrametric",
+        title="Ultrametric / p-adic attention",
         idea="Distance obeys the STRONG triangle inequality d(x,z) ≤ max(d(x,y),d(y,z)); routing by longest common prefix is tree-structured and sub-quadratic.",
         doc="ultrametric_worlds_and_p_adic_computation.md",
         steps=[
             ("digits", "x ↦ (d_1,…,d_K)", "Hash each token to K base-p digits (a path in a depth-K p-ary tree)."),
-            ("lcp", "ℓ(x,y) = longest common prefix", "Similarity = shared prefix length; nearness is hierarchical, not Euclidean."),
-            ("route", "attend within the deepest shared bucket", "O(N log N): bucketed prefix lookup instead of an N×N score matrix."),
-            ("ultra", "d(x,z) ≤ max(d(x,y), d(y,z))", "Every triangle is isosceles — the geometry of tries/taxonomies."),
+            (
+                "lcp",
+                "ℓ(x,y) = longest common prefix",
+                "Similarity = shared prefix length; nearness is hierarchical, not Euclidean.",
+            ),
+            (
+                "route",
+                "attend within the deepest shared bucket",
+                "O(N log N): bucketed prefix lookup instead of an N×N score matrix.",
+            ),
+            (
+                "ultra",
+                "d(x,z) ≤ max(d(x,y), d(y,z))",
+                "Every triangle is isosceles — the geometry of tries/taxonomies.",
+            ),
         ],
         observable="bucket occupancy — how tokens distribute across the prefix tree (balanced vs collapsed).",
     ),
     "reversible": MechanismNote(
-        key="reversible", title="Reversible / measure-preserving block",
+        key="reversible",
+        title="Reversible / measure-preserving block",
         idea="Additive coupling is exactly invertible, so activations need not be stored — recompute them in the backward pass (O(1) activation memory).",
         doc="reversible_computation_and_measure_preserving_learning.md",
         steps=[
             ("split", "x = [x₁, x₂]", "Split channels in half."),
-            ("forward", "y₁ = x₁ + F(x₂);  y₂ = x₂ + G(y₁)", "Each half updates using the other — an invertible coupling."),
-            ("inverse", "x₂ = y₂ − G(y₁);  x₁ = y₁ − F(x₂)", "Exact inverse: no activations stored, recompute on demand."),
-            ("volume", "det(∂y/∂x) = 1", "Volume-preserving (Liouville): the map is a measure-preserving diffeomorphism."),
+            (
+                "forward",
+                "y₁ = x₁ + F(x₂);  y₂ = x₂ + G(y₁)",
+                "Each half updates using the other — an invertible coupling.",
+            ),
+            (
+                "inverse",
+                "x₂ = y₂ − G(y₁);  x₁ = y₁ − F(x₂)",
+                "Exact inverse: no activations stored, recompute on demand.",
+            ),
+            (
+                "volume",
+                "det(∂y/∂x) = 1",
+                "Volume-preserving (Liouville): the map is a measure-preserving diffeomorphism.",
+            ),
         ],
         observable="shadow energy / det≈1 — conservation diagnostics of the (symplectic) flow.",
     ),
     "gauge": MechanismNote(
-        key="gauge", title="Matrix-exponential gauge block",
+        key="gauge",
+        title="Matrix-exponential gauge block",
         idea="Parameterize layer maps as exp(A) of structured generators: skew→rotation (orthogonal), symmetric→scaling (SPD) — stable by construction.",
         doc="matrix_exponential_gauge_learning.md",
         steps=[
             ("generator", "A ∈ 𝔤  (Lie algebra)", "Learn the infinitesimal generator, not the matrix directly."),
-            ("exp", "U = exp(A)", "The exponential map sends the algebra to the group: skew A ⇒ orthogonal U (‖Ux‖=‖x‖)."),
-            ("cayley", "U = (I−A)(I+A)⁻¹", "Cayley transform: a rational exact-orthogonal parameterization (no series truncation)."),
-            ("transport", "parallel transport with cumulative gauge field", "Curvature bounds give provable gradient stability."),
+            (
+                "exp",
+                "U = exp(A)",
+                "The exponential map sends the algebra to the group: skew A ⇒ orthogonal U (‖Ux‖=‖x‖).",
+            ),
+            (
+                "cayley",
+                "U = (I−A)(I+A)⁻¹",
+                "Cayley transform: a rational exact-orthogonal parameterization (no series truncation).",
+            ),
+            (
+                "transport",
+                "parallel transport with cumulative gauge field",
+                "Curvature bounds give provable gradient stability.",
+            ),
         ],
         observable="per-block curvature / rotation angle — geometric health of the transport.",
     ),
     "quaternion": MechanismNote(
-        key="quaternion", title="Quaternion (ℍ) attention",
+        key="quaternion",
+        title="Quaternion (ℍ) attention",
         idea="4-D hypercomplex numbers encode 3-D rotations; the Hamilton product composes them with 4× parameter sharing.",
         doc="octonionic_quaternionic_signal_flow.md",
         steps=[
@@ -154,49 +212,74 @@ MECHANISM_NOTES: dict[str, MechanismNote] = {
         observable="value-norm preservation ‖y‖≈‖v‖ — rotations don't change magnitude.",
     ),
     "octonion": MechanismNote(
-        key="octonion", title="Octonion (𝕆) attention",
+        key="octonion",
+        title="Octonion (𝕆) attention",
         idea="8-D non-associative division algebra; explicit parenthesization makes (ab)c ≠ a(bc) a usable structural prior.",
         doc="octonionic_quaternionic_signal_flow.md",
         steps=[
-            ("number", "Cayley–Dickson double of ℍ → 𝕆", "8-D, alternative, NON-associative — the largest normed division algebra (Hurwitz)."),
-            ("mix", "y = (q ⊗ k) ⊗ v  vs  q ⊗ (k ⊗ v)", "The two bracketings differ; the model learns which association to use."),
+            (
+                "number",
+                "Cayley–Dickson double of ℍ → 𝕆",
+                "8-D, alternative, NON-associative — the largest normed division algebra (Hurwitz).",
+            ),
+            (
+                "mix",
+                "y = (q ⊗ k) ⊗ v  vs  q ⊗ (k ⊗ v)",
+                "The two bracketings differ; the model learns which association to use.",
+            ),
         ],
         observable="associator ‖(ab)c − a(bc)‖ — the non-associativity the layer exploits.",
     ),
     "braid": MechanismNote(
-        key="braid", title="Braid / knot-theoretic attention",
+        key="braid",
+        title="Braid / knot-theoretic attention",
         idea="Tokens are strands; attention applies braid-group crossings σᵢ. Topological invariants are robust to deformation.",
         doc="knot_theoretic_programs_and_braid_based_attention.md",
         steps=[
             ("generators", "B_n = ⟨σ₁,…,σ_{n−1}⟩", "Each σᵢ swaps adjacent strands with an over/under crossing."),
-            ("artin", "σᵢσⱼ = σⱼσᵢ for |i−j|≥2", "Far-apart crossings commute; adjacent ones satisfy the braid relation σᵢσ_{i+1}σᵢ = σ_{i+1}σᵢσ_{i+1}."),
+            (
+                "artin",
+                "σᵢσⱼ = σⱼσᵢ for |i−j|≥2",
+                "Far-apart crossings commute; adjacent ones satisfy the braid relation σᵢσ_{i+1}σᵢ = σ_{i+1}σᵢσ_{i+1}.",
+            ),
             ("ybe", "R₁₂R₁₃R₂₃ = R₂₃R₁₃R₁₂", "Yang–Baxter consistency makes the crossing schedule order-independent."),
         ],
         observable="braid charges Q1 (mass defect), Q2 (relation residual) — how well invariants are conserved.",
     ),
     "simplicial": MechanismNote(
-        key="simplicial", title="Simplicial / higher-order attention",
+        key="simplicial",
+        title="Simplicial / higher-order attention",
         idea="Go beyond pairwise: aggregate over edges (1-simplices) and triangles (2-simplices) for genuine k-way interactions.",
         doc="simplicial_complexes_and_higher_order_attention.md",
         steps=[
             ("complex", "vertices ⊂ edges ⊂ triangles", "Build a simplicial complex over tokens."),
             ("hodge", "Δ_k = ∂ᵀ∂ + ∂∂ᵀ", "Higher Laplacians; Hodge decomposition = gradient ⊕ curl ⊕ harmonic."),
-            ("aggregate", "mix 1-hop (edges) and 2-hop (triangles)", "Triangles capture 3-body structure a pairwise map cannot."),
+            (
+                "aggregate",
+                "mix 1-hop (edges) and 2-hop (triangles)",
+                "Triangles capture 3-body structure a pairwise map cannot.",
+            ),
         ],
         observable="Hodge spectrum — the cycle/void structure the layer sees.",
     ),
     "surreal": MechanismNote(
-        key="surreal", title="Surreal / transseries scaling",
+        key="surreal",
+        title="Surreal / transseries scaling",
         idea="Carry magnitude and direction separately on a log scale, so infinitely large and small scales coexist.",
         doc="surreal_numbers_transseries_and_scaling.md",
         steps=[
             ("decompose", "w = exp(s)·v̂,  v̂ = v/‖v‖", "Scale s (log-magnitude) and unit direction v̂."),
-            ("dominance", "compare by leading scale first", "Transseries dominance: the biggest scale wins, then the next — exact asymptotics."),
+            (
+                "dominance",
+                "compare by leading scale first",
+                "Transseries dominance: the biggest scale wins, then the next — exact asymptotics.",
+            ),
         ],
         observable="scale spectrum s — the dynamic range the representation spans.",
     ),
     "fractal": MechanismNote(
-        key="fractal", title="IFS / fractal memory attention",
+        key="fractal",
+        title="IFS / fractal memory attention",
         idea="Self-similar addressing via an iterated function system: an m-ary tree of contraction maps gives hierarchical, recursive memory.",
         doc="iterated_function_systems_and_fractal_memory.md",
         steps=[
@@ -212,7 +295,11 @@ MECHANISM_NOTES: dict[str, MechanismNote] = {
 PIPELINE_STAGES: list[tuple[str, str, str]] = [
     ("embed", "h = Wₑ[idx]", "Look up a learned vector per token id."),
     ("norm", "ĥ = h / RMS(h)", "RMSNorm: scale to unit root-mean-square (no mean subtraction) for stable scale."),
-    ("rope", "q,k ← RoPE(q,k, pos)", "Rotary position embedding: rotate q,k by an angle ∝ position so dot-products encode relative offset."),
+    (
+        "rope",
+        "q,k ← RoPE(q,k, pos)",
+        "Rotary position embedding: rotate q,k by an angle ∝ position so dot-products encode relative offset.",
+    ),
     ("attention", "y = Attention(ĥ)", "The mechanism-specific mixing step (see below)."),
     ("residual", "h ← h + y", "Residual add: the block learns a correction to the stream."),
     ("mlp", "h ← h + W₂·relu(W₁·norm(h))²", "Per-token ReLU² MLP (or the tropical max-plus FFN)."),
@@ -250,17 +337,26 @@ def narrate_run(
     title = note.title if note else f"{attention_type} attention"
     console.rule(f"[bold cyan]Walkthrough · {title}")
     if note:
-        console.print(Panel(
-            Text.assemble(("Idea: ", "bold"), (note.idea, "")),
-            border_style="cyan", title="the big picture",
-            subtitle=f"[dim]read more → {note.doc_path()}[/dim]",
-        ))
+        console.print(
+            Panel(
+                Text.assemble(("Idea: ", "bold"), (note.idea, "")),
+                border_style="cyan",
+                title="the big picture",
+                subtitle=f"[dim]read more → {note.doc_path()}[/dim]",
+            )
+        )
 
     # 1) Build a tiny model and explain the config.
     model, meta = build_probe_model(
-        attention_type, device=device, seed=seed, n_layer=2, n_head=4,
-        n_kv_head=4 if attention_type != "reversible" else 2, n_embd=64,
-        sequence_len=32, vocab_size=128,
+        attention_type,
+        device=device,
+        seed=seed,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=4 if attention_type != "reversible" else 2,
+        n_embd=64,
+        sequence_len=32,
+        vocab_size=128,
     )
     cfg = meta["config"]
     n_params = sum(p.numel() for p in model.parameters())
@@ -278,7 +374,9 @@ def narrate_run(
         console.print(f"      [dim]{escape(why)}[/dim]")
         if label == "attention" and note:
             for slabel, seq, swhy in note.steps:
-                console.print(f"        [magenta]{slabel:8s}[/magenta] [cyan]{escape(seq)}[/cyan]  [dim]{escape(swhy)}[/dim]")
+                console.print(
+                    f"        [magenta]{slabel:8s}[/magenta] [cyan]{escape(seq)}[/cyan]  [dim]{escape(swhy)}[/dim]"
+                )
 
     # 3) Live observable from a real forward.
     diag = collect_state(model, idx)
@@ -292,7 +390,9 @@ def narrate_run(
         )
     if diag.has_margins():
         flat = [v for row in diag.margin_layer_head for v in row if math.isfinite(v)]
-        console.print(f"  tropical runner-up margin γ ≈ [bold]{sum(flat) / len(flat):.4f}[/bold] [dim](larger = more certifiable routes)[/dim]")
+        console.print(
+            f"  tropical runner-up margin γ ≈ [bold]{sum(flat) / len(flat):.4f}[/bold] [dim](larger = more certifiable routes)[/dim]"
+        )
     if note and note.observable:
         console.print(f"  [dim]what to watch: {escape(note.observable)}[/dim]")
 
@@ -309,13 +409,17 @@ def narrate_run(
         gnorm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")))
         opt.step()
         losses.append(float(loss.detach()))
-        console.print(f"  step {s}: L = [bold]{losses[-1]:.4f}[/bold]   ‖∇L‖ = {gnorm:.3f}   [dim](AdamW: θ ← θ − η·m̂/(√v̂+ε))[/dim]")
+        console.print(
+            f"  step {s}: L = [bold]{losses[-1]:.4f}[/bold]   ‖∇L‖ = {gnorm:.3f}   [dim](AdamW: θ ← θ − η·m̂/(√v̂+ε))[/dim]"
+        )
     trend = "↓ learning" if len(losses) > 1 and losses[-1] < losses[0] else "≈ (more steps needed)"
     console.print(
         f"  [dim]cross-entropy L = −log p(correct token); minimizing it raises the model's probability "
         f"on the true next token. Trend: {trend}.[/dim]"
     )
-    console.print(f"\n[bold green]done[/bold green] — read the full theory: [cyan]{note.doc_path() if note else 'README.md'}[/cyan]")
+    console.print(
+        f"\n[bold green]done[/bold green] — read the full theory: [cyan]{note.doc_path() if note else 'README.md'}[/cyan]"
+    )
     return {"attention_type": attention_type, "n_params": n_params, "losses": losses}
 
 
@@ -344,7 +448,9 @@ def _illustrate_reversible(console: Any) -> None:
     err = float((torch.cat([x1, x2]) - torch.cat([rx1, rx2])).abs().max())
     console.print("  forward:  y₁ = x₁ + F(x₂),  y₂ = x₂ + G(y₁)")
     console.print("  inverse:  x₂ = y₂ − G(y₁),  x₁ = y₁ − F(x₂)")
-    console.print(f"  [bold]reconstruction error = {err:.2e}[/bold] [green](exactly invertible → no stored activations)[/green]")
+    console.print(
+        f"  [bold]reconstruction error = {err:.2e}[/bold] [green](exactly invertible → no stored activations)[/green]"
+    )
 
 
 def _illustrate_tropical(console: Any) -> None:
@@ -357,7 +463,9 @@ def _illustrate_tropical(console: Any) -> None:
     soft = torch.softmax(scores, 0)
     console.print(f"  scores = {_vec(scores.tolist())}")
     console.print(f"  tropical 'sum' = max = [bold]{tmax:.2f}[/bold] → route to key {int(arg)} (hard, single winner)")
-    console.print(f"  margin γ = best − runner-up = {tmax:.2f} − {runner:.2f} = [bold]{(tmax - runner):.2f}[/bold] [dim](certificate radius γ/2)[/dim]")
+    console.print(
+        f"  margin γ = best − runner-up = {tmax:.2f} − {runner:.2f} = [bold]{(tmax - runner):.2f}[/bold] [dim](certificate radius γ/2)[/dim]"
+    )
     console.print(f"  softmax(scores) = {_vec(soft.tolist(), 3)} [dim](the smooth, classical counterpart)[/dim]")
 
 
@@ -389,12 +497,14 @@ def _illustrate_standard(console: Any) -> None:
     torch.manual_seed(0)
     q = torch.randn(1, 4)
     k = torch.randn(5, 4)
-    s = (q @ k.t()).squeeze(0) / (4 ** 0.5)
+    s = (q @ k.t()).squeeze(0) / (4**0.5)
     a = torch.softmax(s, 0)
     ent = float(-(a * (a + 1e-12).log()).sum())
     console.print(f"  scores S = qKᵀ/√d = {_vec(s.tolist())}")
     console.print(f"  A = softmax(S) = {_vec(a.tolist(), 3)}")
-    console.print(f"  entropy H(A) = [bold]{ent:.3f}[/bold] nats [dim](0 = one-hot/selective, log5≈1.61 = uniform/mixing)[/dim]")
+    console.print(
+        f"  entropy H(A) = [bold]{ent:.3f}[/bold] nats [dim](0 = one-hot/selective, log5≈1.61 = uniform/mixing)[/dim]"
+    )
 
 
 _ILLUSTRATIONS: dict[str, Callable[[Any], None]] = {
@@ -429,7 +539,9 @@ def narrate_demo(topic: str = "tropical", *, console: Any = None) -> dict[str, A
         console.print("\n[bold]Live illustration:[/bold]")
         illustrate(console)
     else:
-        console.print(f"\n[dim](no numeric illustration for '{topic}'; the equations above + the doc tell the story.)[/dim]")
+        console.print(
+            f"\n[dim](no numeric illustration for '{topic}'; the equations above + the doc tell the story.)[/dim]"
+        )
     console.print(f"\n[bold green]done[/bold green] — full theory: [cyan]{note.doc_path()}[/cyan]")
     return {"topic": topic, "ok": True}
 
@@ -455,16 +567,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     mechanisms = sorted(MECHANISM_NOTES)
     pr = sub.add_parser("run", help="narrate a live nanochat mini-run for a mechanism")
-    pr.add_argument("--attention", default="standard", choices=mechanisms, metavar="MECH",
-                    help=f"one of: {', '.join(mechanisms)}")
+    pr.add_argument(
+        "--attention", default="standard", choices=mechanisms, metavar="MECH", help=f"one of: {', '.join(mechanisms)}"
+    )
     pr.add_argument("--device", default="cpu")
     pr.add_argument("--seed", type=int, default=0)
     pr.add_argument("--steps", type=int, default=3)
     pr.set_defaults(func=run_run)
 
     pd = sub.add_parser("demo", help="conceptual walkthrough of a framework's math")
-    pd.add_argument("--topic", default="tropical", choices=mechanisms, metavar="MECH",
-                    help=f"one of: {', '.join(mechanisms)}")
+    pd.add_argument(
+        "--topic", default="tropical", choices=mechanisms, metavar="MECH", help=f"one of: {', '.join(mechanisms)}"
+    )
     pd.set_defaults(func=run_demo)
     return parser
 

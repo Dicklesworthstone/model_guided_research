@@ -175,9 +175,7 @@ class UltrametricCausalSelfAttention(AttentionCore):
         digits_k = getattr(config, "ultrametric_digits_k", None)
         self.digits_k: int | None = None if digits_k is None else int(digits_k)
         if self.digits_k is not None and not (1 <= self.digits_k <= self.K):
-            raise ValueError(
-                f"ultrametric_digits_k must be in [1, K={self.K}] or None, got {self.digits_k}"
-            )
+            raise ValueError(f"ultrametric_digits_k must be in [1, K={self.K}] or None, got {self.digits_k}")
         mode = (
             str(getattr(config, "ultrametric_mode", os.environ.get("NANOCHAT_ULTRAMETRIC_MODE", "kernel")))
             .strip()
@@ -195,9 +193,7 @@ class UltrametricCausalSelfAttention(AttentionCore):
         if not (self.lcp_beta > 0.0 and math.isfinite(self.lcp_beta)):
             raise ValueError(f"ultrametric_lcp_beta must be finite and > 0, got {self.lcp_beta}")
         if self.ultrametric_mode not in {"kernel", "trie", "balltree"}:
-            raise ValueError(
-                f"ultrametric_mode must be 'kernel', 'trie', or 'balltree', got {self.ultrametric_mode!r}"
-            )
+            raise ValueError(f"ultrametric_mode must be 'kernel', 'trie', or 'balltree', got {self.ultrametric_mode!r}")
         self._log_alpha = math.log(self.alpha)
         if self.ultrametric_mode == "balltree":
             # int64 sort keys: ((p+1)^K * 2T) * 2 must not overflow; guard at
@@ -324,9 +320,7 @@ class UltrametricCausalSelfAttention(AttentionCore):
         )
         # event weights: zero rows for query events (no masking needed post-sort)
         ev_w = torch.cat([vv, torch.zeros(G, Tq, D, device=device)], dim=1)
-        ev_is_key = torch.cat(
-            [torch.ones(Tk, device=device), torch.zeros(Tq, device=device)]
-        )
+        ev_is_key = torch.cat([torch.ones(Tk, device=device), torch.zeros(Tq, device=device)])
         positions = torch.arange(n_ev, device=device).expand(G, -1)
 
         qc = torch.zeros(G, Tq, dtype=torch.int64, device=device)

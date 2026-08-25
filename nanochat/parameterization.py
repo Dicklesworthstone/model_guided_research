@@ -95,11 +95,19 @@ class ScalingRule:
 # CLT-muP rule is correct for this layer".
 WIDTH_SCALING_TABLE: dict[str, ScalingRule] = {
     "standard": ScalingRule(
-        "standard", "CLT (Gaussian sum)", 0.0, 0.0, "1/sqrt(d_head)",
+        "standard",
+        "CLT (Gaussian sum)",
+        0.0,
+        0.0,
+        "1/sqrt(d_head)",
         "the baseline; softmax logits are an iid-sum, CLT-muP is correct as-is",
     ),
     "tropical": ScalingRule(
-        "tropical", "EVT (Gumbel max)", 0.0, 0.0, "subtract a_N (per-stage)",
+        "tropical",
+        "EVT (Gumbel max)",
+        0.0,
+        0.0,
+        "subtract a_N (per-stage)",
         "max over scores is Gumbel, not Gaussian: the score scale GROWS as "
         "sqrt(2 ln N) over each max-axis (head_dim, context T). The correction "
         "is an ADDITIVE per-stage location shift (subtract the exact E[max]), "
@@ -107,21 +115,33 @@ WIDTH_SCALING_TABLE: dict[str, ScalingRule] = {
         "residual stream); a post-max stage needs only a 2nd-order correction.",
     ),
     "ultrametric": ScalingRule(
-        "ultrametric", "branching / geometric (LCP depth)", 0.0, 0.0, "1 (LCP-weighted)",
+        "ultrametric",
+        "branching / geometric (LCP depth)",
+        0.0,
+        0.0,
+        "1 (LCP-weighted)",
         "digit-match indicators multiply along depth-K prefixes; expected LCP "
         "depth grows ~log(number of distinguishable keys). Digit projections "
         "scale CLT-normally; the alpha/beta temperature must track the log-depth "
         "so the weighting stays Theta(1) as the key population grows.",
     ),
     "hyperbolic": ScalingRule(
-        "hyperbolic", "radial / curvature-gated Lorentz energy", 0.0, 0.0, "1/sqrt(d_head)",
+        "hyperbolic",
+        "radial / curvature-gated Lorentz energy",
+        0.0,
+        0.0,
+        "1/sqrt(d_head)",
         "the energy-Gromov score has the dot-product CLT limit at c -> 0; "
         "finite curvature adds a bounded radial correction after QK norm. "
         "Curvature is a per-head scalar coordinate and keeps the baseline "
         "projection/LR scaling until the coordinate-check evidence says otherwise.",
     ),
     "quaternion": ScalingRule(
-        "quaternion", "isometry (normed algebra)", 0.0, -1.0, "1 (norm-preserving)",
+        "quaternion",
+        "isometry (normed algebra)",
+        0.0,
+        -1.0,
+        "1 (norm-preserving)",
         "unit-rotor products are exact isometries (forward scale is "
         "width-independent, benign). But rotor PARAMETERS take gradients "
         "through the normalization/exp map, so their LR exponent splits from "
@@ -129,12 +149,20 @@ WIDTH_SCALING_TABLE: dict[str, ScalingRule] = {
         "optimizer setup, here given its derivation.",
     ),
     "octonion": ScalingRule(
-        "octonion", "isometry (normed algebra)", 0.0, -1.0, "1 (norm-preserving)",
+        "octonion",
+        "isometry (normed algebra)",
+        0.0,
+        -1.0,
+        "1 (norm-preserving)",
         "same isometry class as quaternion (non-associative but still "
         "norm-multiplicative); the rotor-parameter LR split applies identically.",
     ),
     "reversible": ScalingRule(
-        "reversible", "CLT (volume-preserving)", 0.0, 0.0, "1/sqrt(d_head)",
+        "reversible",
+        "CLT (volume-preserving)",
+        0.0,
+        0.0,
+        "1/sqrt(d_head)",
         "additive/symplectic coupling of CLT-class sub-blocks; the coupling is "
         "measure-preserving so it does not change the concentration class of "
         "its F/G sub-layers -- CLT-muP applies to each half-stream.",
@@ -147,8 +175,14 @@ def scaling_rule(mechanism: str) -> ScalingRule:
     conservative default: treat as CLT and let the coordinate check flag drift)."""
     return WIDTH_SCALING_TABLE.get(
         mechanism,
-        ScalingRule(mechanism, "CLT (assumed)", 0.0, 0.0, "1/sqrt(d_head)",
-                    "unclassified mechanism; CLT-muP assumed -- run the coordinate check"),
+        ScalingRule(
+            mechanism,
+            "CLT (assumed)",
+            0.0,
+            0.0,
+            "1/sqrt(d_head)",
+            "unclassified mechanism; CLT-muP assumed -- run the coordinate check",
+        ),
     )
 
 
@@ -228,9 +262,7 @@ def measure_activation_scale(
         raise TypeError(f"GPT transformer 'h' must be a ModuleList, got {type(blocks).__name__}")
     if len(blocks) == 0:
         raise RuntimeError("GPT transformer must contain at least one block")
-    handle = blocks[0].register_forward_hook(
-        lambda mod, inp, out: acts.__setitem__("y", out.detach())
-    )
+    handle = blocks[0].register_forward_hook(lambda mod, inp, out: acts.__setitem__("y", out.detach()))
     try:
         with torch.no_grad():
             model(idx)

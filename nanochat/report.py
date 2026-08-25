@@ -128,9 +128,7 @@ def build_provenance(config_dict: dict[str, Any]) -> dict[str, Any]:
     sha = git.get("commit_full") or "unknown"
     git_available = sha != "unknown"
     dirty = bool(git.get("dirty", False))
-    config_hash = hashlib.sha256(
-        json_mod.dumps(config_dict, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    config_hash = hashlib.sha256(json_mod.dumps(config_dict, sort_keys=True, default=str).encode()).hexdigest()
     return {
         "schema_version": METRICS_SCHEMA_VERSION,
         "git_sha": sha if git_available else None,
@@ -422,8 +420,12 @@ class TrainingDashboard:
         if rtype == "step":
             self._step = int(record.get("step", self._step))
             self._latest = record
-            for key, series in (("loss", self._loss), ("grad_norm", self._grad),
-                                ("tokens_per_s", self._toks), ("tflops", self._tflops)):
+            for key, series in (
+                ("loss", self._loss),
+                ("grad_norm", self._grad),
+                ("tokens_per_s", self._toks),
+                ("tflops", self._tflops),
+            ):
                 val = record.get(key)
                 if isinstance(val, (int, float)) and not isinstance(val, bool):
                     series.append(float(val))
@@ -475,13 +477,19 @@ class TrainingDashboard:
         def _fmt(v: Any, spec: str = ".4f") -> str:
             return format(v, spec) if isinstance(v, (int, float)) and not isinstance(v, bool) else "—"
 
-        core.add_row("loss", f"[bold]{_fmt(self._latest.get('loss'))}[/bold]  [cyan]{sparkline(list(self._loss))}[/cyan]")
+        core.add_row(
+            "loss", f"[bold]{_fmt(self._latest.get('loss'))}[/bold]  [cyan]{sparkline(list(self._loss))}[/cyan]"
+        )
         if self._val:
             vstep, vloss = self._val[-1]
             core.add_row("val_ce", f"{vloss:.4f} @ {vstep}  [magenta]{sparkline([v for _, v in self._val])}[/magenta]")
-        core.add_row("grad_norm", f"{_fmt(self._latest.get('grad_norm'))}  [yellow]{sparkline(list(self._grad))}[/yellow]")
+        core.add_row(
+            "grad_norm", f"{_fmt(self._latest.get('grad_norm'))}  [yellow]{sparkline(list(self._grad))}[/yellow]"
+        )
         core.add_row("lr", _fmt(self._latest.get("lr"), ".2e"))
-        core.add_row("tok/s", f"{_fmt(self._latest.get('tokens_per_s'), ',.0f')}  [green]{sparkline(list(self._toks))}[/green]")
+        core.add_row(
+            "tok/s", f"{_fmt(self._latest.get('tokens_per_s'), ',.0f')}  [green]{sparkline(list(self._toks))}[/green]"
+        )
         core.add_row("TFLOP/s", f"{_fmt(self._latest.get('tflops'), '.4f')}")
         mem = self._latest.get("peak_mem_gb")
         core.add_row("peak mem", f"{mem:.2f} GB" if isinstance(mem, (int, float)) else "— (cpu)")
@@ -502,9 +510,7 @@ class TrainingDashboard:
                 style = "bold white on red" if drift else "cyan"
                 marker = " [bold red]⚠ band[/bold red]" if drift else ""
                 diag.add_row(name, f"{series[-1]:.5g}  [{style}]{sparkline(series)}[/{style}]{marker}")
-            panels.append(
-                Panel(diag, title="mathematical invariants · trailing-band drift watch", border_style="cyan")
-            )
+            panels.append(Panel(diag, title="mathematical invariants · trailing-band drift watch", border_style="cyan"))
 
         if self.show_head_heatmaps and self._head_latest:
             heat = Table(box=None, show_header=True, header_style="dim", padding=(0, 1))

@@ -43,6 +43,7 @@ STEPS = 50
 BATCH_SIZE = 4
 LEARNING_RATE = 1e-3
 
+
 # House tiny-model convention (mirrors tests/test_demos.py): GQA exercised
 # via n_kv_head < n_head; head_dim = 16 satisfies quaternion (%4) and
 # octonion (%8) divisibility. Gauge forbids GQA, so it pins n_kv_head=n_head.
@@ -133,8 +134,7 @@ def _run_trajectory(attention_type: str) -> list[float]:
         vocab = config.vocab_size
         seq = config.sequence_len
         batches = [
-            torch.randint(0, vocab, (BATCH_SIZE, seq + 1), generator=data_gen, dtype=torch.long)
-            for _ in range(STEPS)
+            torch.randint(0, vocab, (BATCH_SIZE, seq + 1), generator=data_gen, dtype=torch.long) for _ in range(STEPS)
         ]
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.95), eps=1e-8)
@@ -212,9 +212,7 @@ def test_attention_golden_trajectory(attention_type: str) -> None:
     losses = _run_trajectory(attention_type)
     expected = golden["losses"]
     assert len(losses) == len(expected)
-    mismatches = [
-        (i, e, a) for i, (e, a) in enumerate(zip(expected, losses, strict=True)) if e != a
-    ]
+    mismatches = [(i, e, a) for i, (e, a) in enumerate(zip(expected, losses, strict=True)) if e != a]
     assert not mismatches, (
         f"{attention_type}: loss trajectory diverged from pre-refactor golden at "
         f"{len(mismatches)}/{len(expected)} steps; first divergence "
