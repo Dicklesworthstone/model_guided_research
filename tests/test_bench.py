@@ -348,9 +348,91 @@ def _fake_scorecard_success(cmd: list[str], *, timeout_s: float) -> tuple[int, s
     return 0, "ok", ""
 
 
+def test_scorecard_full_sparse_matrix_is_exactly_29_claim_covered_cells():
+    from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
+    from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
+
+    requested = [
+        "ultrametric:hier",
+        "fractal:hier",
+        "hyperbolic:hier",
+        "simplicial:rel",
+        "quaternion:rot",
+        "octonion:rot",
+        "braid:copyops",
+        "reversible:copyops",
+        "surreal:arith",
+        "gauge:bag",
+        "reversible:bag",
+        "tropical:placebo",
+    ]
+    mechanisms, tasks, matrix = cli._scorecard_matrix(
+        mechanism_options=None,
+        task_options=None,
+        cell_options=requested,
+        supported_mechanisms=list(SUPPORTED_ATTENTION_TYPES),
+        supported_tasks=set(TASKS),
+        default_tasks=list(DEFAULT_TASKS),
+    )
+    assert len(matrix) == 29
+    assert len(set(matrix)) == 29
+    assert mechanisms == [
+        "standard",
+        "ultrametric",
+        "fractal",
+        "hyperbolic",
+        "simplicial",
+        "quaternion",
+        "octonion",
+        "braid",
+        "reversible",
+        "surreal",
+        "gauge",
+        "tropical",
+    ]
+    assert tasks == ["hier", "rel", "rot", "copyops", "arith", "bag", "placebo"]
+    counts = {mechanism: sum(pair[0] == mechanism for pair in matrix) for mechanism in mechanisms}
+    assert counts == {
+        "standard": 7,
+        "ultrametric": 2,
+        "fractal": 2,
+        "hyperbolic": 2,
+        "simplicial": 2,
+        "quaternion": 2,
+        "octonion": 2,
+        "braid": 2,
+        "reversible": 3,
+        "surreal": 2,
+        "gauge": 2,
+        "tropical": 1,
+    }
+    hypotheses = cli._scorecard_hypothesis_snapshot(
+        [
+            "hyp-ultrametric-hier-heldout-depth",
+            "hyp-fractal-hier-heldout-depth",
+            "hyp-hyperbolic-hierarchy-retrieval",
+            "hyp-simplicial-two-hop-composition",
+            "hyp-quaternion-rotation-composition",
+            "hyp-octonion-rotation-composition",
+            "hyp-braid-length-generalization",
+            "hyp-reversible-copyops-inversion",
+            "hyp-surreal-wide-dynamic-range",
+            "hyp-gauge-bag-conservation",
+            "hyp-placebo-no-winner",
+            "hyp-hyperbolic-placebo-specificity",
+        ]
+    )
+    cli._scorecard_validate_hypothesis_coverage(hypotheses, matrix)
+
+
 def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
     monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
     launched_kv_heads: list[tuple[str, int]] = []
 
     def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
@@ -374,6 +456,8 @@ def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_pa
             "hyp-braid-length-generalization",
             "--seeds",
             "1",
+            "--n-kv-head",
+            "2",
             "--budget",
             "1e6",
             "--dataset-size",
@@ -398,20 +482,21 @@ def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_pa
     ]
     assert manifest["config"]["hypothesis_ids"] == ["hyp-braid-length-generalization"]
     assert [item["id"] for item in manifest["config"]["hypothesis_snapshot"]] == ["hyp-braid-length-generalization"]
+    assert not ({"status", "evidence", "verdict_history", "manual_hold"} & manifest["config"]["hypothesis_snapshot"][0].keys())
     assert [(cell["mechanism"], cell["resolved_n_kv_head"]) for cell in manifest["cells"]] == [
-        ("standard", 4),
-        ("braid", 4),
+        ("standard", 2),
+        ("braid", 2),
         ("reversible", 2),
-        ("standard", 4),
-        ("braid", 4),
+        ("standard", 2),
+        ("braid", 2),
         ("reversible", 2),
     ]
     assert launched_kv_heads == [
-        ("standard", 4),
-        ("braid", 4),
+        ("standard", 2),
+        ("braid", 2),
         ("reversible", 2),
-        ("standard", 4),
-        ("braid", 4),
+        ("standard", 2),
+        ("braid", 2),
         ("reversible", 2),
     ]
 
@@ -436,6 +521,28 @@ def test_scorecard_sparse_cells_reject_cartesian_options_before_writing(tmp_path
     assert not artifacts.exists()
 
 
+def test_scorecard_rejects_reversible_campaign_with_mismatched_kv_geometry(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "reversible:copyops",
+            "--n-head",
+            "4",
+            "--n-kv-head",
+            "4",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "campaign-global --n-kv-head" in result.output
+    assert not artifacts.exists()
+
+
 def test_scorecard_rejects_unknown_hypothesis_before_writing(tmp_path):
     artifacts = tmp_path / "artifacts"
     result = runner.invoke(
@@ -452,6 +559,85 @@ def test_scorecard_rejects_unknown_hypothesis_before_writing(tmp_path):
     assert result.exit_code == 2
     assert "unknown hypotheses" in result.output
     assert not artifacts.exists()
+
+
+def test_scorecard_rejects_hypothesis_matrix_gap_before_writing(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "hyperbolic:placebo",
+            "-H",
+            "hyp-braid-length-generalization",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "hypothesis/matrix coverage failed" in result.output
+    assert "braid:copyops" in result.output
+    assert not artifacts.exists()
+
+
+def test_scorecard_rejects_dirty_claim_bearing_run_before_writing(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": True},
+    )
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "hyperbolic:placebo",
+            "-H",
+            "hyp-hyperbolic-placebo-specificity",
+            "--artifacts-dir",
+            str(artifacts),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "clean, known Git commit" in result.output
+    assert not artifacts.exists()
+
+
+def test_scorecard_off_floor_gate_is_training_seed_strict_and_budget_local(tmp_path):
+    cells: list[dict] = []
+    for budget_index, budget_flops, score in ((0, 1e6, 0.5), (1, 2e6, 0.8)):
+        for seed in range(3):
+            cell = {
+                "id": f"b{budget_index}-copyops-standard-s{seed}",
+                "budget_index": budget_index,
+                "budget_flops": budget_flops,
+                "mechanism": "standard",
+                "task": "copyops",
+                "seed": seed,
+                "step_qualified": True,
+                "status": "done",
+            }
+            cells.append(cell)
+            eval_dir = cli._scorecard_eval_dir(tmp_path, cell)
+            eval_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "tasks": {
+                    "copyops": {
+                        "exact_match": {"greedy": {"held_out": {"mean": score}}},
+                        "answer_prior": {"held_out": {"mean": 0.5}},
+                    }
+                }
+            }
+            (eval_dir / "summary.json").write_text(json.dumps(payload))
+
+    floors = cli._scorecard_off_floor_tasks(cells, tmp_path)
+    assert floors["1000000.0"]["copyops"]["qualified"] is False
+    assert "did not clear" in floors["1000000.0"]["copyops"]["reason"]
+    assert floors["2000000.0"]["copyops"]["qualified"] is True
+    assert abs(floors["2000000.0"]["copyops"]["lower_ci95"] - 0.8) < 1e-12
 
 
 def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkeypatch):
@@ -494,6 +680,7 @@ def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkey
     first_manifest = json.loads(manifest_path.read_text())
     assert sum(cell["status"] == "done" for cell in first_manifest["cells"]) == 2
     assert sum(cell["status"] == "interrupted" for cell in first_manifest["cells"]) == 1
+    created_command = first_manifest["created_command"]
 
     before_resume = state["train_calls"]
     second = runner.invoke(cli.app, args)
@@ -502,6 +689,8 @@ def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkey
     final_manifest = json.loads(manifest_path.read_text())
     assert all(cell["status"] == "done" for cell in final_manifest["cells"])
     assert [cell["attempts"] for cell in final_manifest["cells"]] == [1, 1, 2, 1]
+    assert final_manifest["created_command"] == created_command
+    assert len(final_manifest["resume_history"]) == 1
     suite = manifest_path.parent
     for required in ("summary.json", "report.md", "report.html"):
         assert (suite / required).exists()
@@ -514,6 +703,86 @@ def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkey
     assert fresh.exit_code == 2
     assert "choose a new --run-id" in fresh.output
     assert state["train_calls"] == before_fresh
+
+
+def test_scorecard_claim_resume_uses_frozen_snapshot_live_hold_and_original_sha(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    clean_a = {"commit": "aaaaaaa", "commit_full": "a" * 40, "branch": "main", "dirty": False}
+    monkeypatch.setattr(cli, "_get_git_info", lambda: clean_a)
+    state = {"train_calls": 0, "interrupt_once": True}
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            if state["train_calls"] == 1 and state["interrupt_once"]:
+                state["interrupt_once"] = False
+                raise KeyboardInterrupt
+            state["train_calls"] += 1
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    args = [
+        "scorecard",
+        "--cell",
+        "hyperbolic:placebo",
+        "-H",
+        "hyp-hyperbolic-placebo-specificity",
+        "--seeds",
+        "2",
+        "--budget",
+        "1e6",
+        "--dataset-size",
+        "6",
+        "--examples",
+        "1",
+        "--artifacts-dir",
+        str(artifacts),
+        "--run-id",
+        "claim-resume-contract",
+    ]
+    monkeypatch.setattr(cli.sys, "argv", ["mgr", *args])
+    first = runner.invoke(cli.app, args)
+    assert first.exit_code == 130, first.output
+    manifest_path = artifacts / "scorecards" / "claim-resume-contract" / "manifest.json"
+    first_manifest = json.loads(manifest_path.read_text())
+    created_command = first_manifest["created_command"]
+
+    def reject_live_snapshot(_hypothesis_ids):
+        raise AssertionError("resume must use the manifest snapshot")
+
+    monkeypatch.setattr(cli, "_scorecard_hypothesis_snapshot", reject_live_snapshot)
+    monkeypatch.setattr(
+        cli,
+        "_scorecard_live_manual_holds",
+        lambda _ids: (
+            {
+                "hyp-hyperbolic-placebo-specificity": {
+                    "held": True,
+                    "reason": "operator review",
+                    "date": "2026-08-25",
+                }
+            },
+            None,
+        ),
+    )
+    resume_args = [*args, "--timeout-s", "7200"]
+    monkeypatch.setattr(cli.sys, "argv", ["mgr", *resume_args])
+    second = runner.invoke(cli.app, resume_args)
+    assert second.exit_code == 0, second.output
+    final_manifest = json.loads(manifest_path.read_text())
+    assert final_manifest["created_command"] == created_command
+    assert "7200" not in final_manifest["created_command"]
+    assert "7200" in final_manifest["resume_history"][-1]["command"]
+    summary = json.loads((manifest_path.parent / "summary.json").read_text())
+    assert summary["adjudications"]["verdicts"][0]["reason_code"] == "manual_hold"
+
+    clean_b = {"commit": "bbbbbbb", "commit_full": "b" * 40, "branch": "main", "dirty": False}
+    monkeypatch.setattr(cli, "_get_git_info", lambda: clean_b)
+    monkeypatch.setattr(cli.sys, "argv", ["mgr", *args])
+    mixed_sha = runner.invoke(cli.app, args)
+    assert mixed_sha.exit_code == 2
+    assert "original clean producer commit" in mixed_sha.output
 
 
 def test_scorecard_rejects_run_id_path_traversal(tmp_path):
@@ -640,7 +909,12 @@ hypotheses:
         _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=1.1)
 
     hypotheses = cli._scorecard_hypothesis_snapshot(["hyp-placebo-no-winner"])
-    degraded = cli._scorecard_adjudications(evidence, [1e6, 2e6], hypotheses=hypotheses)
+    degraded = cli._scorecard_adjudications(
+        evidence,
+        [1e6, 2e6],
+        hypotheses=hypotheses,
+        mechanisms=["standard", "tropical"],
+    )
     assert degraded["by_budget"]["1000000.0"][0]["verdict"] == "supported"
     assert degraded["by_budget"]["2000000.0"][0]["verdict"] == "refuted"
     assert degraded["verdict_flips"] == [
@@ -653,7 +927,93 @@ hypotheses:
 
     for seed in range(3):
         _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=0.9)
-    improved = cli._scorecard_adjudications(evidence, [1e6, 2e6], hypotheses=hypotheses)
+    improved = cli._scorecard_adjudications(
+        evidence,
+        [1e6, 2e6],
+        hypotheses=hypotheses,
+        mechanisms=["standard", "tropical"],
+    )
     assert improved["verdicts"][0]["verdict"] == "supported"
     assert improved["placebo"]["publication_blocked"] is True
     assert "significant improvement below 0.98x" in " ".join(improved["placebo"]["blockers"])
+
+
+def test_scorecard_fdr_reports_only_bh_surviving_supported_rows():
+    verdicts = [
+        {"id": "hyp-a", "verdict": "supported", "p_value": 0.01},
+        {"id": "hyp-b", "verdict": "supported", "p_value": 0.08},
+        {"id": "hyp-c", "verdict": "refuted", "p_value": 0.5},
+        {"id": "hyp-d", "verdict": "blocked"},
+    ]
+    fdr = cli._scorecard_fdr(verdicts)
+    assert fdr == {
+        "q_level": 0.1,
+        "family_size": 3,
+        "supported": 2,
+        "supported_fdr_survivors": ["hyp-a"],
+    }
+    assert verdicts[0]["q_value"] == 0.03
+    assert verdicts[1]["q_value"] == 0.12
+    assert verdicts[2]["q_value"] == 0.5
+    assert "q_value" not in verdicts[3]
+
+
+def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific_controls(tmp_path):
+    universal = {
+        "id": "hyp-placebo-no-winner",
+        "mechanisms": ["tropical"],
+        "prediction": {
+            "metric_path": "evaltasks:tasks.placebo.perplexity.in_range",
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 1.02,
+            "baseline": {"mechanism": "standard", "equal_flops": True},
+            "min_seeds": 3,
+        },
+    }
+    hyperbolic = {
+        "id": "hyp-hyperbolic-placebo-specificity",
+        "mechanisms": ["hyperbolic"],
+        "prediction": {
+            "metric_path": "evaltasks:tasks.placebo.perplexity.in_range",
+            "comparator": "<=",
+            "threshold_kind": "ratio",
+            "threshold": 1.02,
+            "baseline": {"mechanism": "standard", "equal_flops": True},
+            "min_seeds": 3,
+        },
+    }
+    for seed in range(3):
+        _write_scorecard_placebo_evidence(tmp_path, budget=1e6, mechanism="standard", seed=seed, value=1.0)
+        _write_scorecard_placebo_evidence(tmp_path, budget=1e6, mechanism="tropical", seed=seed, value=1.0)
+
+    blocked = cli._scorecard_adjudications(
+        tmp_path,
+        [1e6],
+        hypotheses=[universal, hyperbolic],
+        mechanisms=["standard", "tropical", "hyperbolic"],
+    )
+    assert next(row for row in blocked["placebo"]["rows"] if row["id"] == hyperbolic["id"])["verdict"] == "blocked"
+    assert "registered placebo guard is BLOCKED" in " ".join(blocked["placebo"]["blockers"])
+
+    uncovered = cli._scorecard_adjudications(
+        tmp_path,
+        [1e6],
+        hypotheses=[universal],
+        mechanisms=["standard", "tropical", "hyperbolic"],
+    )
+    assert "hyperbolic: no selected placebo hypothesis" in " ".join(uncovered["placebo"]["blockers"])
+
+    for seed, value in enumerate((0.95, 1.02, 1.09)):
+        _write_scorecard_placebo_evidence(tmp_path, budget=1e6, mechanism="hyperbolic", seed=seed, value=value)
+    inconclusive = cli._scorecard_adjudications(
+        tmp_path,
+        [1e6],
+        hypotheses=[universal, hyperbolic],
+        mechanisms=["standard", "tropical", "hyperbolic"],
+    )
+    hyperbolic_row = next(
+        row for row in inconclusive["placebo"]["rows"] if row["id"] == hyperbolic["id"]
+    )
+    assert hyperbolic_row["verdict"] == "inconclusive"
+    assert "registered placebo guard is INCONCLUSIVE" in " ".join(inconclusive["placebo"]["blockers"])

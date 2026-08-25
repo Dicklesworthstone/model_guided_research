@@ -3,6 +3,7 @@
 Model Guided Research CLI - Run experimental mathematical models for ML research
 """
 
+import copy
 import importlib
 import json
 import math
@@ -7090,7 +7091,17 @@ def eval_tasks(
     console.print(f"[bold green]Wrote eval artifacts[/bold green] → {run_dir}")
 
 
-_SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v2"
+_SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v3"
+_SCORECARD_HYPOTHESIS_SNAPSHOT_KEYS = (
+    "id",
+    "statement",
+    "mechanisms",
+    "source",
+    "date_registered",
+    "theorem_refs",
+    "prediction",
+    "operationalization_note",
+)
 
 
 def _scorecard_cell_id(budget_index: int, mechanism: str, task: str, seed: int) -> str:
@@ -7321,12 +7332,18 @@ def _scorecard_cell_table(manifest: dict[str, Any]) -> Table:
         style = styles.get(status, "white")
         elapsed = cell.get("wall_seconds")
         loss = (cell.get("metrics") or {}).get("final_loss")
+        if cell.get("evidence_qualified"):
+            evidence = "[green]OFF-FLOOR[/green]"
+        elif cell.get("step_qualified"):
+            evidence = "[cyan]STEP-ELIGIBLE[/cyan]"
+        else:
+            evidence = "[yellow]SMOKE-ONLY[/yellow]"
         table.add_row(
             str(cell["id"]),
             f"[{style}]{status}[/{style}]",
             str(cell.get("stage") or "-"),
             str(cell.get("planned_steps") or "-"),
-            "[green]qualified[/green]" if cell.get("evidence_qualified") else "[yellow]SMOKE-ONLY[/yellow]",
+            evidence,
             f"{float(elapsed):.1f}s" if isinstance(elapsed, int | float) else "-",
             f"{float(loss):.4f}" if isinstance(loss, int | float) else "-",
         )
@@ -7344,14 +7361,200 @@ def _scorecard_hypothesis_snapshot(hypothesis_ids: list[str]) -> list[dict[str, 
         return []
 
     registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
-    if registry is None or load_errors:
-        raise typer.BadParameter(f"cannot snapshot hypotheses: {'; '.join(load_errors)}")
+    repo_root = Path(__file__).resolve().parent
+    validation_errors, _warnings, _summary = _validate_hypothesis_registry(
+        registry,
+        load_errors,
+        repo_root,
+    )
+    if registry is None or validation_errors:
+        raise typer.BadParameter(f"cannot snapshot hypotheses: {'; '.join(validation_errors[:5])}")
     hypotheses = [item for item in registry.get("hypotheses", []) if isinstance(item, dict)]
     by_id = {str(item.get("id")): item for item in hypotheses}
     unknown = [hypothesis_id for hypothesis_id in normalized if hypothesis_id not in by_id]
     if unknown:
         raise typer.BadParameter(f"unknown hypotheses: {unknown}")
-    return [by_id[hypothesis_id] for hypothesis_id in normalized]
+    return [
+        copy.deepcopy(
+            {
+                key: by_id[hypothesis_id][key]
+                for key in _SCORECARD_HYPOTHESIS_SNAPSHOT_KEYS
+                if key in by_id[hypothesis_id]
+            }
+        )
+        for hypothesis_id in normalized
+    ]
+
+
+def _scorecard_validate_hypothesis_coverage(
+    hypotheses: list[dict[str, Any]],
+    matrix: list[tuple[str, str]],
+) -> None:
+    """Fail before launch when a selected claim cannot be produced by the matrix."""
+    available = set(matrix)
+    errors: list[str] = []
+    for hypothesis in hypotheses:
+        hypothesis_id = str(hypothesis.get("id"))
+        prediction = hypothesis.get("prediction")
+        if not isinstance(prediction, dict):
+            errors.append(f"{hypothesis_id}: prediction is not operationalized")
+            continue
+        schema, _, dotted = str(prediction.get("metric_path", "")).partition(":")
+        segments = dotted.split(".")
+        if schema != "evaltasks" or len(segments) < 2 or segments[0] != "tasks":
+            errors.append(f"{hypothesis_id}: scorecard only produces evaltasks:tasks.<task> metrics")
+            continue
+        task_name = segments[1]
+        baseline = prediction.get("baseline")
+        if baseline is None:
+            baseline_mechanism = None
+        elif isinstance(baseline, dict):
+            baseline_mechanism = str(baseline.get("mechanism", "standard"))
+            if isinstance(baseline.get("variant"), dict):
+                errors.append(f"{hypothesis_id}: scorecard cannot produce baseline.variant selectors")
+        else:
+            errors.append(f"{hypothesis_id}: malformed baseline")
+            continue
+        if isinstance(prediction.get("candidate_variant"), dict):
+            errors.append(f"{hypothesis_id}: scorecard cannot produce candidate_variant selectors")
+        if baseline_mechanism is not None and (baseline_mechanism, task_name) not in available:
+            errors.append(f"{hypothesis_id}: missing baseline cell {baseline_mechanism}:{task_name}")
+        for mechanism_name in hypothesis.get("mechanisms") or []:
+            pair = (str(mechanism_name), task_name)
+            if pair not in available:
+                errors.append(f"{hypothesis_id}: missing candidate cell {pair[0]}:{pair[1]}")
+    if errors:
+        raise typer.BadParameter("hypothesis/matrix coverage failed: " + "; ".join(errors))
+
+
+def _scorecard_live_manual_holds(hypothesis_ids: list[str]) -> tuple[dict[str, dict[str, Any]], str | None]:
+    """Read only live governance holds; claim definitions remain frozen in the manifest."""
+    if not hypothesis_ids:
+        return {}, None
+    registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
+    repo_root = Path(__file__).resolve().parent
+    validation_errors, _warnings, _summary = _validate_hypothesis_registry(
+        registry,
+        load_errors,
+        repo_root,
+    )
+    if registry is None or validation_errors:
+        return {}, "; ".join(validation_errors[:5])
+    by_id = {str(item.get("id")): item for item in registry.get("hypotheses", []) if isinstance(item, dict)}
+    missing = [hypothesis_id for hypothesis_id in hypothesis_ids if hypothesis_id not in by_id]
+    if missing:
+        return {}, f"selected hypotheses disappeared from live registry: {missing}"
+    holds: dict[str, dict[str, Any]] = {}
+    for hypothesis_id in hypothesis_ids:
+        hold = by_id[hypothesis_id].get("manual_hold")
+        if isinstance(hold, dict) and bool(hold.get("held")):
+            holds[hypothesis_id] = copy.deepcopy(hold)
+    return holds, None
+
+
+def _scorecard_fdr(verdicts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attach BH q-values and return the ci-v6 family headline."""
+    family = [verdict for verdict in verdicts if verdict["verdict"] != "blocked" and verdict.get("p_value") is not None]
+    if family:
+        q_values = _adj_bh_qvalues({str(verdict["id"]): float(verdict["p_value"]) for verdict in family})
+        for verdict in family:
+            verdict["q_value"] = q_values[str(verdict["id"])]
+    supported = sum(verdict["verdict"] == "supported" for verdict in verdicts)
+    survivors = sorted(
+        str(verdict["id"])
+        for verdict in family
+        if verdict["verdict"] == "supported" and float(verdict["q_value"]) <= _ADJ_FDR_Q
+    )
+    return {
+        "q_level": _ADJ_FDR_Q,
+        "family_size": len(family),
+        "supported": supported,
+        "supported_fdr_survivors": survivors,
+    }
+
+
+def _scorecard_off_floor_tasks(
+    cells: list[dict[str, Any]],
+    suite_dir: Path,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Require every standard seed and its lower CI to clear its recorded prior, per budget."""
+    budget_cells = list(dict.fromkeys((int(cell["budget_index"]), float(cell["budget_flops"])) for cell in cells))
+    results: dict[str, dict[str, dict[str, Any]]] = {}
+    for budget_index, budget_flops in budget_cells:
+        budget_key = str(budget_flops)
+        tasks = list(
+            dict.fromkeys(
+                str(cell["task"])
+                for cell in cells
+                if cell["budget_index"] == budget_index and cell["task"] != "placebo"
+            )
+        )
+        results[budget_key] = {}
+        for task_name in tasks:
+            baseline_cells = [
+                cell
+                for cell in cells
+                if cell["budget_index"] == budget_index
+                and cell["task"] == task_name
+                and cell["mechanism"] == "standard"
+                and cell["step_qualified"]
+            ]
+            observations: list[dict[str, Any]] = []
+            reason: str | None = None
+            if len(baseline_cells) < 3:
+                reason = "fewer than three step-qualified standard training seeds"
+            elif any(cell["status"] != "done" for cell in baseline_cells):
+                reason = "one or more standard training seeds did not complete"
+            else:
+                for cell in baseline_cells:
+                    summary_path = _scorecard_eval_dir(suite_dir, cell) / "summary.json"
+                    try:
+                        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        reason = f"missing or invalid standard eval summary for seed {cell['seed']}"
+                        break
+                    task_payload = (payload.get("tasks") or {}).get(task_name) or {}
+                    score = (((task_payload.get("exact_match") or {}).get("greedy") or {}).get("held_out") or {}).get(
+                        "mean"
+                    )
+                    prior = ((task_payload.get("answer_prior") or {}).get("held_out") or {}).get("mean")
+                    if not (
+                        isinstance(score, int | float)
+                        and not isinstance(score, bool)
+                        and math.isfinite(float(score))
+                        and isinstance(prior, int | float)
+                        and not isinstance(prior, bool)
+                        and math.isfinite(float(prior))
+                    ):
+                        reason = f"standard eval seed {cell['seed']} lacks finite held-out exact-match/prior"
+                        break
+                    observations.append({"seed": cell["seed"], "score": float(score), "answer_prior": float(prior)})
+            scores = [float(item["score"]) for item in observations]
+            priors = [float(item["answer_prior"]) for item in observations]
+            stats = _summary_stats(scores)
+            ci_half_width = stats.get("ci95")
+            lower_ci = (
+                float(stats["mean"]) - float(ci_half_width)
+                if isinstance(stats.get("mean"), int | float) and isinstance(ci_half_width, int | float)
+                else None
+            )
+            if reason is None:
+                max_prior = max(priors)
+                every_seed_clears = all(score > prior for score, prior in zip(scores, priors, strict=True))
+                if not every_seed_clears:
+                    reason = "at least one standard training seed did not clear its artifact-recorded prior"
+                elif lower_ci is None or lower_ci <= max_prior:
+                    reason = "standard lower 95% training-seed CI did not clear the maximum recorded prior"
+            results[budget_key][task_name] = {
+                "qualified": reason is None,
+                "reason": reason,
+                "observations": observations,
+                "mean": stats.get("mean"),
+                "ci95_half_width": ci_half_width,
+                "lower_ci95": lower_ci,
+                "maximum_answer_prior": max(priors) if priors else None,
+            }
+    return results
 
 
 def _scorecard_adjudications(
@@ -7359,6 +7562,8 @@ def _scorecard_adjudications(
     budgets: list[float],
     *,
     hypotheses: list[dict[str, Any]],
+    mechanisms: list[str],
+    governance_error: str | None = None,
     qualified_summary_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
     indexed_artifacts = _adj_collect_artifacts([suite_dir])
@@ -7368,7 +7573,9 @@ def _scorecard_adjudications(
         qualified = {path.resolve() for path in qualified_summary_paths}
         artifacts = [artifact for artifact in indexed_artifacts if Path(artifact["path"]).resolve() in qualified]
     verdicts = [_adjudicate_hypothesis(h, artifacts) for h in hypotheses]
+    fdr = _scorecard_fdr(verdicts)
     by_budget: dict[str, list[dict[str, Any]]] = {}
+    by_budget_fdr: dict[str, dict[str, Any]] = {}
     for budget in budgets:
         cohort = [
             artifact
@@ -7376,7 +7583,9 @@ def _scorecard_adjudications(
             if (planned := _adj_planned_flops(artifact)) is not None
             and math.isclose(float(planned), float(budget), rel_tol=_ADJ_BUDGET_RTOL)
         ]
-        by_budget[str(budget)] = [_adjudicate_hypothesis(h, cohort) for h in hypotheses]
+        budget_key = str(budget)
+        by_budget[budget_key] = [_adjudicate_hypothesis(h, cohort) for h in hypotheses]
+        by_budget_fdr[budget_key] = _scorecard_fdr(by_budget[budget_key])
 
     verdict_flips: list[dict[str, Any]] = []
     if len(by_budget) > 1:
@@ -7392,15 +7601,19 @@ def _scorecard_adjudications(
 
     hypothesis_by_id = {str(h.get("id")): h for h in hypotheses}
     placebo_rows: list[dict[str, Any]] = []
-    placebo_blockers: list[str] = []
+    placebo_blockers: list[str] = [] if governance_error is None else [f"live registry invalid: {governance_error}"]
+    placebo_coverage: set[str] = set()
     for verdict in verdicts:
         hyp = hypothesis_by_id.get(str(verdict.get("id"))) or {}
         pred = hyp.get("prediction")
         if not isinstance(pred, dict) or "tasks.placebo." not in str(pred.get("metric_path", "")):
             continue
+        placebo_coverage.update(str(mechanism) for mechanism in hyp.get("mechanisms") or [])
         placebo_rows.append(verdict)
-        if verdict.get("verdict") == "refuted":
-            placebo_blockers.append(f"{verdict.get('id')}: registered placebo bound refuted")
+        if verdict.get("verdict") != "supported":
+            placebo_blockers.append(
+                f"{verdict.get('id')}: registered placebo guard is {str(verdict.get('verdict')).upper()}"
+            )
         if pred.get("threshold_kind") != "ratio":
             continue
         for mechanism, arm in (verdict.get("arms") or {}).items():
@@ -7409,19 +7622,25 @@ def _scorecard_adjudications(
                 placebo_blockers.append(
                     f"{verdict.get('id')}:{mechanism}: significant improvement below 0.98x requires two-cause control"
                 )
+    uncovered = sorted(set(mechanisms) - {"standard"} - placebo_coverage)
+    for mechanism in uncovered:
+        placebo_blockers.append(f"{mechanism}: no selected placebo hypothesis covers this mechanism")
     universal_placebo = next(
         (row for row in placebo_rows if row.get("id") == "hyp-placebo-no-winner"),
         None,
     )
     if universal_placebo is None or universal_placebo.get("verdict") != "supported":
         placebo_blockers.append("hyp-placebo-no-winner: universal placebo guard has not been supported")
+    placebo_blockers = list(dict.fromkeys(placebo_blockers))
 
     return {
         "policy_version": _ADJ_POLICY_VERSION,
         "artifact_count": len(artifacts),
         "quarantined_artifact_count": len(indexed_artifacts) - len(artifacts),
         "verdicts": verdicts,
+        "fdr": fdr,
         "by_budget": by_budget,
+        "by_budget_fdr": by_budget_fdr,
         "verdict_flips": verdict_flips,
         "placebo": {
             "rows": placebo_rows,
@@ -7438,7 +7657,8 @@ def _scorecard_report_markdown(summary: dict[str, Any]) -> str:
     lines = [
         f"# Mechanism scorecard — {manifest['run_id']}",
         "",
-        f"- Command: `{manifest['command']}`",
+        f"- Original command: `{manifest['created_command']}`",
+        f"- Resume invocations: `{len(manifest.get('resume_history') or [])}`",
         f"- Budgets: `{manifest['config']['budgets']}`",
         f"- Mechanisms: `{manifest['config']['mechanisms']}`",
         f"- Tasks: `{manifest['config']['tasks']}`",
@@ -7457,21 +7677,38 @@ def _scorecard_report_markdown(summary: dict[str, Any]) -> str:
         loss = metrics.get("final_loss")
         loss_text = f"{float(loss):.6f}" if isinstance(loss, int | float) else "-"
         log = cell.get("stderr_path") or cell.get("stdout_path") or "-"
+        if cell.get("evidence_qualified"):
+            evidence = "OFF-FLOOR"
+        elif cell.get("step_qualified"):
+            evidence = "STEP-ONLY"
+        else:
+            evidence = "SMOKE-ONLY"
         lines.append(
             f"| {cell['id']} | {cell['budget_flops']:.3e} | {cell['mechanism']} | {cell['task']} | "
-            f"{cell['seed']} | {cell['status']} | {'qualified' if cell['evidence_qualified'] else 'SMOKE-ONLY'} | "
+            f"{cell['seed']} | {cell['status']} | {evidence} | "
             f"{cell.get('wall_seconds') or '-'} | {loss_text} | {log} |"
         )
-    quarantined = sum(not cell["evidence_qualified"] for cell in cells)
-    if quarantined:
+    smoke_only = sum(not cell["step_qualified"] for cell in cells)
+    floor_excluded = sum(cell["step_qualified"] and not cell["evidence_qualified"] for cell in cells)
+    if smoke_only or floor_excluded:
         lines.extend(
             [
                 "",
-                f"> **Evidence quarantine:** {quarantined} cell(s) planned fewer than "
-                f"{manifest['config']['min_evidence_steps']} optimizer steps. They test plumbing only and are excluded "
-                "from every ci-v6 verdict pool.",
+                f"> **Evidence quarantine:** {smoke_only} cell(s) planned fewer than "
+                f"{manifest['config']['min_evidence_steps']} optimizer steps; {floor_excluded} additional cell(s) "
+                "did not belong to a completed standard cohort whose every seed and lower 95% CI cleared the "
+                "artifact-recorded answer prior. All are excluded from every ci-v6 verdict pool.",
             ]
         )
+    lines.extend(["", "## Standard-baseline off-floor gate", ""])
+    for budget_key, task_results in (summary.get("off_floor") or {}).items():
+        lines.append(f"- Budget `{budget_key}`:")
+        for task_name, result in task_results.items():
+            status = "CLEAR" if result.get("qualified") else "BLOCKED"
+            detail = result.get("reason") or (
+                f"lower CI={result.get('lower_ci95')}, prior={result.get('maximum_answer_prior')}"
+            )
+            lines.append(f"  - `{task_name}`: **{status}** — {detail}")
     placebo = adjudications.get("placebo") or {}
     gate = "BLOCKED" if placebo.get("publication_blocked") else "clear on available evidence"
     lines.extend(["", "## Placebo publication gate", "", f"**{gate}**"])
@@ -7485,13 +7722,21 @@ def _scorecard_report_markdown(summary: dict[str, Any]) -> str:
             "",
             "## Preregistered verdicts",
             "",
-            "| hypothesis | verdict | reason / effect |",
-            "|---|---|---|",
+            "| hypothesis | verdict | q | reason / effect |",
+            "|---|---|---:|---|",
         ]
     )
     for verdict in adjudications.get("verdicts") or []:
         detail = verdict.get("reason") or json.dumps(verdict.get("arms") or {}, sort_keys=True)
-        lines.append(f"| {verdict.get('id')} | {str(verdict.get('verdict')).upper()} | {detail} |")
+        q_value = verdict.get("q_value")
+        q_text = f"{float(q_value):.3g}" if isinstance(q_value, int | float) else "-"
+        lines.append(f"| {verdict.get('id')} | {str(verdict.get('verdict')).upper()} | {q_text} | {detail} |")
+    fdr = adjudications.get("fdr") or {}
+    lines.append(
+        f"\n**FDR:** {fdr.get('supported', 0)} supported; "
+        f"{len(fdr.get('supported_fdr_survivors') or [])} survive BH at q={fdr.get('q_level', _ADJ_FDR_Q):g} "
+        f"within a family of {fdr.get('family_size', 0)} testable rows."
+    )
     lines.extend(["", "## Verdict stability across scale", ""])
     flips = adjudications.get("verdict_flips") or []
     if flips:
@@ -7521,15 +7766,23 @@ def _scorecard_report_html(summary: dict[str, Any]) -> str:
     for verdict in summary["adjudications"].get("verdicts") or []:
         status = str(verdict.get("verdict", "blocked"))
         detail = verdict.get("reason") or json.dumps(verdict.get("arms") or {}, sort_keys=True)
+        q_value = verdict.get("q_value")
+        q_text = f"{float(q_value):.3g}" if isinstance(q_value, int | float) else "-"
         rows.append(
             f"<tr><td>{html.escape(str(verdict.get('id')))}</td>"
             f"<td class='{html.escape(status)}'>{html.escape(status.upper())}</td>"
+            f"<td>{html.escape(q_text)}</td>"
             f"<td><code>{html.escape(str(detail))}</code></td></tr>"
         )
     placebo = summary["adjudications"].get("placebo") or {}
     gate_class = "refuted" if placebo.get("publication_blocked") else "supported"
     gate_text = (
         "PUBLICATION BLOCKED" if placebo.get("publication_blocked") else "placebo gate clear on available evidence"
+    )
+    fdr = summary["adjudications"].get("fdr") or {}
+    fdr_text = (
+        f"{fdr.get('supported', 0)} supported; {len(fdr.get('supported_fdr_survivors') or [])} survive BH at "
+        f"q={fdr.get('q_level', _ADJ_FDR_Q)} in a family of {fdr.get('family_size', 0)} testable rows"
     )
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Mechanism scorecard</title>
@@ -7543,7 +7796,8 @@ th{{background:#17233d}}code{{white-space:pre-wrap}}.supported{{color:#67e8a5}}.
 <p class="gate"><strong class="{gate_class}">{html.escape(gate_text)}</strong></p>
 <p>{sum(c["status"] == "done" for c in summary["manifest"]["cells"])}/{len(summary["manifest"]["cells"])} cells done ·
 policy {html.escape(str(summary["adjudications"].get("policy_version")))}</p>
-<table><thead><tr><th>Hypothesis</th><th>Verdict</th><th>Reason / effect</th></tr></thead>
+<p>{html.escape(fdr_text)}</p>
+<table><thead><tr><th>Hypothesis</th><th>Verdict</th><th>q</th><th>Reason / effect</th></tr></thead>
 <tbody>{"".join(rows)}</tbody></table></body></html>"""
 
 
@@ -7687,6 +7941,19 @@ def scorecard(
         raise typer.BadParameter(
             "--run-id must be a single 1-128 character artifact-directory name using letters, numbers, '.', '_', or '-'"
         )
+    suite_dir = artifacts_dir / "scorecards" / resolved_run_id
+    manifest_path = suite_dir / "manifest.json"
+    existing_manifest: dict[str, Any] | None = None
+    if not dry_run and resume and manifest_path.exists():
+        try:
+            loaded_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(f"corrupt scorecard manifest {manifest_path}: {exc}") from exc
+        if not isinstance(loaded_manifest, dict):
+            raise typer.BadParameter(f"corrupt scorecard manifest {manifest_path}: root must be a mapping")
+        if loaded_manifest.get("schema_version") != _SCORECARD_SCHEMA_VERSION:
+            raise typer.BadParameter("scorecard manifest schema changed; choose a new --run-id")
+        existing_manifest = loaded_manifest
 
     budgets = [float(value) for value in (budget or [2e9])]
     if any(not math.isfinite(value) or value < 1e6 for value in budgets):
@@ -7706,7 +7973,36 @@ def scorecard(
         default_tasks=list(DEFAULT_TASKS),
     )
     hypothesis_ids = [str(value).strip() for value in (hypothesis or [])]
-    hypothesis_snapshot = _scorecard_hypothesis_snapshot(hypothesis_ids)
+    if any(not hypothesis_id for hypothesis_id in hypothesis_ids):
+        raise typer.BadParameter("--hypothesis values cannot be empty")
+    if len(hypothesis_ids) != len(set(hypothesis_ids)):
+        raise typer.BadParameter("duplicate --hypothesis values are not allowed")
+    if existing_manifest is not None:
+        existing_config = existing_manifest.get("config")
+        if not isinstance(existing_config, dict):
+            raise typer.BadParameter("scorecard manifest config is invalid; choose a new --run-id")
+        if existing_config.get("hypothesis_ids") != hypothesis_ids:
+            raise typer.BadParameter("scorecard hypothesis allowlist differs from the manifest; choose a new --run-id")
+        frozen_snapshot = existing_config.get("hypothesis_snapshot")
+        if not isinstance(frozen_snapshot, list) or not all(isinstance(item, dict) for item in frozen_snapshot):
+            raise typer.BadParameter("scorecard manifest hypothesis snapshot is invalid; choose a new --run-id")
+        hypothesis_snapshot = copy.deepcopy(frozen_snapshot)
+    else:
+        hypothesis_snapshot = _scorecard_hypothesis_snapshot(hypothesis_ids)
+    _scorecard_validate_hypothesis_coverage(hypothesis_snapshot, matrix)
+    if "reversible" in mechanisms and n_kv_head != n_head // 2:
+        raise typer.BadParameter(
+            "reversible scorecards require campaign-global --n-kv-head to equal --n-head / 2 so every arm "
+            "uses identical KV geometry"
+        )
+    git_info = _get_git_info()
+    if hypothesis_ids and not dry_run:
+        if bool(git_info.get("dirty")) or git_info.get("commit_full") == "unknown":
+            raise typer.BadParameter("claim-bearing scorecards require a clean, known Git commit")
+        if existing_manifest is not None:
+            producer_git = existing_manifest.get("git") or {}
+            if producer_git.get("commit_full") != git_info.get("commit_full") or bool(producer_git.get("dirty")):
+                raise typer.BadParameter("scorecard resume must use the original clean producer commit")
     training_seeds = list(range(seeds))
     flops_per_step = _scorecard_flops_per_step(
         mechanisms,
@@ -7725,6 +8021,7 @@ def scorecard(
         "matrix": [{"mechanism": mechanism_name, "task": task_name} for mechanism_name, task_name in matrix],
         "hypothesis_ids": hypothesis_ids,
         "hypothesis_snapshot": hypothesis_snapshot,
+        "adjudication_policy": _ADJ_POLICY_VERSION,
         "training_seeds": training_seeds,
         "eval_seeds": eval_seeds,
         "examples": examples,
@@ -7736,6 +8033,7 @@ def scorecard(
         "n_layer": n_layer,
         "n_head": n_head,
         "n_kv_head": n_kv_head,
+        "resolved_campaign_n_kv_head": n_kv_head,
         "n_embd": n_embd,
         "learning_rate": learning_rate,
         "optimizer_type": optimizer_type,
@@ -7751,7 +8049,6 @@ def scorecard(
     for budget_index, budget_value in enumerate(budgets):
         for mechanism_name, task_name in matrix:
             planned_steps = max(1, math.ceil(budget_value / flops_per_step[mechanism_name]))
-            resolved_kv_heads = n_head // 2 if mechanism_name == "reversible" else n_kv_head
             for seed in training_seeds:
                 cells.append(
                     {
@@ -7761,11 +8058,13 @@ def scorecard(
                         "mechanism": mechanism_name,
                         "task": task_name,
                         "seed": seed,
-                        "resolved_n_kv_head": resolved_kv_heads,
+                        "resolved_n_kv_head": n_kv_head,
                         "flops_per_step_est": flops_per_step[mechanism_name],
                         "planned_steps": planned_steps,
                         "planned_flops_est": planned_steps * flops_per_step[mechanism_name],
-                        "evidence_qualified": planned_steps >= min_evidence_steps,
+                        "step_qualified": planned_steps >= min_evidence_steps,
+                        "off_floor_qualified": False,
+                        "evidence_qualified": False,
                         "status": "pending",
                         "stage": None,
                         "attempts": 0,
@@ -7783,10 +8082,11 @@ def scorecard(
         "schema_version": _SCORECARD_SCHEMA_VERSION,
         "kind": "scorecard-manifest",
         "run_id": resolved_run_id,
-        "command": shlex.join(sys.argv),
+        "created_command": shlex.join(sys.argv),
+        "resume_history": [],
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "updated_at": None,
-        "git": _get_git_info(),
+        "git": git_info,
         "config": config,
         "cells": cells,
     }
@@ -7802,29 +8102,28 @@ def scorecard(
         )
         return
 
-    suite_dir = artifacts_dir / "scorecards" / str(planned["run_id"])
-    manifest_path = suite_dir / "manifest.json"
     suite_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = suite_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    if manifest_path.exists() and resume:
-        try:
-            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise typer.BadParameter(f"corrupt scorecard manifest {manifest_path}: {exc}") from exc
-        if existing.get("schema_version") != _SCORECARD_SCHEMA_VERSION:
-            raise typer.BadParameter("scorecard manifest schema changed; choose a new --run-id")
-        if existing.get("config") != config:
+    if existing_manifest is not None:
+        if existing_manifest.get("config") != config:
             raise typer.BadParameter("scorecard config differs from the existing manifest; choose a new --run-id")
-        prior = {str(cell["id"]): cell for cell in existing.get("cells", [])}
+        prior = {str(cell["id"]): cell for cell in existing_manifest.get("cells", [])}
         for cell in cells:
             cell_id = str(cell["id"])
             if cell_id in prior:
                 cell.update(prior[cell_id])
             if cell["status"] == "done" and not (_scorecard_eval_dir(suite_dir, cell) / "summary.json").exists():
                 cell.update(status="pending", stage=None, error="done cell lost eval summary; rescheduled")
-        planned = {**existing, "command": shlex.join(sys.argv), "cells": cells}
+        resume_history = list(existing_manifest.get("resume_history") or [])
+        resume_history.append(
+            {
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "command": shlex.join(sys.argv),
+            }
+        )
+        planned = {**existing_manifest, "resume_history": resume_history, "cells": cells}
     elif manifest_path.exists():
         raise typer.BadParameter(
             "--fresh cannot reuse a scorecard run directory because old evidence would contaminate the new run; "
@@ -7945,16 +8244,33 @@ def scorecard(
             live.update(_scorecard_cell_table(planned), refresh=True)
 
     runtime_seconds = time.perf_counter() - started
+    off_floor = _scorecard_off_floor_tasks(cells, suite_dir)
+    for cell in cells:
+        budget_floor = off_floor.get(str(float(cell["budget_flops"]))) or {}
+        task_off_floor = cell["task"] == "placebo" or bool((budget_floor.get(str(cell["task"])) or {}).get("qualified"))
+        cell["off_floor_qualified"] = task_off_floor
+        cell["evidence_qualified"] = bool(cell["status"] == "done" and cell["step_qualified"] and task_off_floor)
+    save_manifest()
     qualified_summary_paths: set[Path] = set()
     for cell in cells:
         if cell["status"] != "done" or not cell["evidence_qualified"]:
             continue
         qualified_summary_paths.add(_scorecard_train_dir(suite_dir, cell) / "summary.json")
         qualified_summary_paths.add(_scorecard_eval_dir(suite_dir, cell) / "summary.json")
+    live_holds, governance_error = _scorecard_live_manual_holds(hypothesis_ids)
+    adjudication_hypotheses: list[dict[str, Any]] = []
+    for hypothesis_entry in hypothesis_snapshot:
+        adjudication_entry = copy.deepcopy(hypothesis_entry)
+        hypothesis_id = str(adjudication_entry.get("id"))
+        if hypothesis_id in live_holds:
+            adjudication_entry["manual_hold"] = live_holds[hypothesis_id]
+        adjudication_hypotheses.append(adjudication_entry)
     adjudications = _scorecard_adjudications(
         suite_dir,
         budgets,
-        hypotheses=hypothesis_snapshot,
+        hypotheses=adjudication_hypotheses,
+        mechanisms=mechanisms,
+        governance_error=governance_error,
         qualified_summary_paths=qualified_summary_paths,
     )
     summary = {
@@ -7962,6 +8278,7 @@ def scorecard(
         "kind": "scorecard",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "runtime_seconds": runtime_seconds,
+        "off_floor": off_floor,
         "manifest": planned,
         "adjudications": adjudications,
     }
