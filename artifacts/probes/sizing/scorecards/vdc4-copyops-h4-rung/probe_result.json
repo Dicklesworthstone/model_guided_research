@@ -1,0 +1,111 @@
+{
+  "schema_version": "mgr.sizing_probe_result.v1",
+  "bead": "model_guided_research-vdc.4",
+  "phase": "phase-0b-copyops-h4-rung-finding",
+  "quarantined": true,
+  "claim_evidence_eligible": false,
+  "producer_git": {
+    "commit": "b61aa95977801e6d4c5a2a0d80e152c252abed93",
+    "dirty": false
+  },
+  "source_manifest": "manifest.json",
+  "runtime_seconds": 2681.177364503965,
+  "completed_cells": 6,
+  "failed_cells": 0,
+  "coordinate": {
+    "attention_type": "standard",
+    "n_layer": 2,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_embd": 64,
+    "sequence_len": 64,
+    "batch_size": 4,
+    "learning_rate": 0.0006,
+    "optimizer_type": "adamw",
+    "warmup_steps": 0,
+    "dataset_size": 1000,
+    "dataset_seed": 42,
+    "training_seeds": [
+      0,
+      1,
+      2
+    ],
+    "eval_seeds": [
+      0,
+      1,
+      2
+    ],
+    "examples_per_split": 48,
+    "flops_per_step_est": 5108662272
+  },
+  "selection_rule": "The exact H4 rung qualifies only if all three standard copyops checkpoints exceed their artifact-recorded held-out answer prior and the per-seed held-out distribution is non-pathological and unimodal rather than floor-bimodal.",
+  "rung": {
+    "target_flops": 1000000000000.0,
+    "planned_flops": 1001297805312,
+    "planned_steps": 196,
+    "final_losses": [
+      1.849717140197754,
+      1.856870174407959,
+      1.8529878854751587
+    ],
+    "held_out_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "in_range_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "held_out_answer_prior": [
+      0.020833333333333332,
+      0.020833333333333332,
+      0.020833333333333332
+    ],
+    "held_out_perplexity": [
+      13.778499609894222,
+      14.161743700504303,
+      13.808833373917473
+    ],
+    "in_range_perplexity": [
+      7.252129826280806,
+      7.314806620279948,
+      7.221672041548623
+    ],
+    "qualified": false,
+    "reason": "No standard checkpoint exceeded its artifact-recorded answer prior; all held-out and in-range exact-match scores were zero."
+  },
+  "quarantined_placebo_control": {
+    "final_losses": [
+      1.6440777778625488,
+      1.6462141275405884,
+      1.6547306776046753
+    ],
+    "held_out_perplexity": [
+      24.133610434002346,
+      17.824486063586342,
+      20.35204215844472
+    ],
+    "in_range_perplexity": [
+      5.124214467075136,
+      5.091923672291967,
+      5.227200804485215
+    ],
+    "skipped_examples": [
+      0,
+      0,
+      0
+    ]
+  },
+  "decision": {
+    "selected_target_flops": null,
+    "outcome": "no_rung_qualified",
+    "interpretation": "Optimization and perplexity improved cleanly, but every checkpoint remained prompt-blind and exact-sequence accuracy stayed below the answer prior. This quarantined probe is sizing orientation only and is not evidence for or against any mechanism claim.",
+    "successor_required": true,
+    "successor_target_flops": 2000000000000.0,
+    "successor_planned_steps": 392,
+    "successor_planned_flops": 2002595610624,
+    "successor_change": "target FLOPs only"
+  }
+}
