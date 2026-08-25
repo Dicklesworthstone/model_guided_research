@@ -1,0 +1,77 @@
+{
+  "schema_version": "mgr.sizing_probe_result.v1",
+  "bead": "model_guided_research-vdc.4",
+  "phase": "phase-0-copyops-rung-finding",
+  "quarantined": true,
+  "claim_evidence_eligible": false,
+  "producer_git": {
+    "commit": "f6f7d7b61c8afa379de82c5976552bd3a521c431",
+    "dirty": false
+  },
+  "source_manifest": "manifest.json",
+  "runtime_seconds": 4654.577131752856,
+  "completed_cells": 18,
+  "failed_cells": 0,
+  "coordinate": {
+    "attention_type": "standard",
+    "n_layer": 2,
+    "n_head": 2,
+    "n_kv_head": 2,
+    "n_embd": 64,
+    "sequence_len": 64,
+    "batch_size": 4,
+    "learning_rate": 0.0006,
+    "optimizer_type": "adamw",
+    "dataset_size": 1000,
+    "dataset_seed": 42,
+    "training_seeds": [0, 1, 2],
+    "eval_seeds": [0, 1, 2],
+    "examples_per_split": 48,
+    "flops_per_step_est": 5121245184
+  },
+  "selection_rule": "Select the lowest rung where every standard training seed exceeds its artifact-recorded held-out answer prior and the per-seed held-out distribution is unimodal rather than floor-bimodal.",
+  "rungs": [
+    {
+      "target_flops": 50000000000.0,
+      "planned_flops": 51212451840,
+      "planned_steps": 10,
+      "final_losses": [10.19556999206543, 10.225818634033203, 10.248117446899414],
+      "held_out_exact_match": [0.0, 0.0, 0.0],
+      "held_out_answer_prior": [0.020833333333333332, 0.020833333333333332, 0.020833333333333332],
+      "held_out_perplexity_mean": 30648.280390986693,
+      "in_range_perplexity_mean": 25248.34162959346,
+      "qualified": false,
+      "reason": "No training seed exceeded its artifact-recorded answer prior."
+    },
+    {
+      "target_flops": 200000000000.0,
+      "planned_flops": 204849807360,
+      "planned_steps": 40,
+      "final_losses": [7.471686840057373, 7.4914350509643555, 7.536337852478027],
+      "held_out_exact_match": [0.0, 0.0, 0.0],
+      "held_out_answer_prior": [0.020833333333333332, 0.020833333333333332, 0.020833333333333332],
+      "held_out_perplexity_mean": 3204.2264282791707,
+      "in_range_perplexity_mean": 1556.4942362750019,
+      "qualified": false,
+      "reason": "No training seed exceeded its artifact-recorded answer prior."
+    },
+    {
+      "target_flops": 500000000000.0,
+      "planned_flops": 501882028032,
+      "planned_steps": 98,
+      "final_losses": [2.466460943222046, 2.305647850036621, 2.3963778018951416],
+      "held_out_exact_match": [0.0, 0.0, 0.0],
+      "held_out_answer_prior": [0.020833333333333332, 0.020833333333333332, 0.020833333333333332],
+      "held_out_perplexity_mean": 24.90105813962442,
+      "in_range_perplexity_mean": 12.065539009041258,
+      "qualified": false,
+      "reason": "No training seed exceeded its artifact-recorded answer prior."
+    }
+  ],
+  "decision": {
+    "selected_target_flops": null,
+    "outcome": "no_rung_qualified",
+    "interpretation": "The loss and perplexity trajectories improved substantially, but exact sequence accuracy remained at zero both in-range and held-out. This probe is sizing orientation only and is not evidence for or against a mechanism claim.",
+    "successor_required": true
+  }
+}

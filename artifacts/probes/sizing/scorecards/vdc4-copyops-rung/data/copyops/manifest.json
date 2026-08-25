@@ -1,0 +1,24 @@
+{
+  "dials": {
+    "length": 8
+  },
+  "generator_version": 1,
+  "hypothesis": "explicit permutation/inversion structure extrapolates length-indexed bijections",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "6154b200fa6bebc32e139f8b5b800ab4707a403d03f8d15335b76c129aa9f325",
+    "train_000.parquet": "6535f2cdef19ee70d5ec9aef58a5ead3b281c2991175f943084ec31021b69482",
+    "val_000.parquet": "24102a5cf4a9d9f245cd987146051aa09180eb5fd0fa022b4f42c939673eba3f"
+  },
+  "size": 1000,
+  "split_sizes": {
+    "test": 100,
+    "train": 800,
+    "val": 100
+  },
+  "target_mechanisms": [
+    "braid",
+    "reversible"
+  ],
+  "task": "copyops"
+}
