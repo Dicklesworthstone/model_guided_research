@@ -1,0 +1,111 @@
+{
+  "schema_version": "mgr.sizing_probe_result.v1",
+  "bead": "model_guided_research-vdc.4",
+  "phase": "phase-0c-copyops-h4-rung-finding",
+  "quarantined": true,
+  "claim_evidence_eligible": false,
+  "producer_git": {
+    "commit": "c71f7f67fabfe83db66bae2bda0cf071135bb40a",
+    "dirty": false
+  },
+  "source_manifest": "manifest.json",
+  "runtime_seconds": 2990.513648269698,
+  "completed_cells": 6,
+  "failed_cells": 0,
+  "coordinate": {
+    "attention_type": "standard",
+    "n_layer": 2,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_embd": 64,
+    "sequence_len": 64,
+    "batch_size": 4,
+    "learning_rate": 0.0006,
+    "optimizer_type": "adamw",
+    "warmup_steps": 0,
+    "dataset_size": 1000,
+    "dataset_seed": 42,
+    "training_seeds": [
+      0,
+      1,
+      2
+    ],
+    "eval_seeds": [
+      0,
+      1,
+      2
+    ],
+    "examples_per_split": 48,
+    "flops_per_step_est": 5108662272
+  },
+  "selection_rule": "The exact H4 rung qualifies only if all three standard copyops checkpoints exceed their artifact-recorded held-out answer prior and the per-seed held-out distribution is non-pathological and unimodal rather than floor-bimodal.",
+  "rung": {
+    "target_flops": 2000000000000.0,
+    "planned_flops": 2002595610624,
+    "planned_steps": 392,
+    "final_losses": [
+      1.8556174039840698,
+      1.862669825553894,
+      1.8674993515014648
+    ],
+    "held_out_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "in_range_exact_match": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "held_out_answer_prior": [
+      0.020833333333333332,
+      0.020833333333333332,
+      0.020833333333333332
+    ],
+    "held_out_perplexity": [
+      13.831006308396656,
+      13.910524474249945,
+      13.825879474480947
+    ],
+    "in_range_perplexity": [
+      7.138798875941171,
+      7.126548661126031,
+      7.128359177046352
+    ],
+    "qualified": false,
+    "reason": "No standard checkpoint exceeded its artifact-recorded answer prior; all held-out and in-range exact-match scores were zero."
+  },
+  "quarantined_placebo_control": {
+    "final_losses": [
+      1.5255985260009766,
+      1.4944404363632202,
+      1.5124293565750122
+    ],
+    "held_out_perplexity": [
+      33.98265657822291,
+      47.219435122278,
+      53.86760427554449
+    ],
+    "in_range_perplexity": [
+      4.350351881649759,
+      4.224524017837313,
+      4.283158997694652
+    ],
+    "skipped_examples": [
+      0,
+      0,
+      0
+    ]
+  },
+  "decision": {
+    "selected_target_flops": null,
+    "outcome": "no_rung_qualified",
+    "interpretation": "Doubling exposure from 1e12 to 2e12 left the copyops checkpoints uniformly below the answer prior and preserved the same prompt-blind local-grammar failure mode. This quarantined probe is sizing orientation only and is not evidence for or against any mechanism claim.",
+    "successor_required": true,
+    "successor_target_flops": 4000000000000.0,
+    "successor_planned_steps": 783,
+    "successor_planned_flops": 4000082558976,
+    "successor_change": "target FLOPs only"
+  }
+}
