@@ -781,6 +781,19 @@ python -m nanochat.train --scheduler-type [SCHED]
 # final FRACTION of total steps (default 0.0 = flat LR)
 python -m nanochat.train --lr-warmdown-ratio 0.2
 
+# Width-scaling parameterization arm (lab.1): 'nsa' applies the derived
+# per-stage corrections (tropical exact-E[max] constants); default 'current'
+python -m nanochat.train --parameterization nsa
+
+# Activation checkpointing (memory/compute trade; recompute is numerically
+# identical, so trajectories are unchanged; default none)
+python -m nanochat.train --activation-checkpointing full
+python -m nanochat.train --activation-checkpointing every-k --activation-ckpt-every-k 2
+
+# Background tokenizer prefetch for the streaming dataloader (hides encode
+# refill stalls behind GPU steps; 0 = synchronous loading)
+python -m nanochat.train --dataloader-prefetch 4
+
 # Hyperparameter tuning
 python -m nanochat.train \
     --batch-size 16 \
