@@ -348,6 +348,112 @@ def _fake_scorecard_success(cmd: list[str], *, timeout_s: float) -> tuple[int, s
     return 0, "ok", ""
 
 
+def test_scorecard_sparse_cells_snapshot_claims_and_resolve_reversible_kv(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    launched_kv_heads: list[tuple[str, int]] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            mechanism = cmd[cmd.index("--attention-type") + 1]
+            kv_heads = int(cmd[cmd.index("--n-kv-head") + 1])
+            launched_kv_heads.append((mechanism, kv_heads))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "braid:copyops",
+            "--cell",
+            "reversible:copyops",
+            "-H",
+            "hyp-braid-length-generalization",
+            "--seeds",
+            "1",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--run-id",
+            "sparse-contract",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "sparse-contract" / "manifest.json").read_text())
+    assert manifest["config"]["matrix"] == [
+        {"mechanism": "standard", "task": "copyops"},
+        {"mechanism": "braid", "task": "copyops"},
+        {"mechanism": "reversible", "task": "copyops"},
+        {"mechanism": "standard", "task": "placebo"},
+        {"mechanism": "braid", "task": "placebo"},
+        {"mechanism": "reversible", "task": "placebo"},
+    ]
+    assert manifest["config"]["hypothesis_ids"] == ["hyp-braid-length-generalization"]
+    assert [item["id"] for item in manifest["config"]["hypothesis_snapshot"]] == ["hyp-braid-length-generalization"]
+    assert [(cell["mechanism"], cell["resolved_n_kv_head"]) for cell in manifest["cells"]] == [
+        ("standard", 4),
+        ("braid", 4),
+        ("reversible", 2),
+        ("standard", 4),
+        ("braid", 4),
+        ("reversible", 2),
+    ]
+    assert launched_kv_heads == [
+        ("standard", 4),
+        ("braid", 4),
+        ("reversible", 2),
+        ("standard", 4),
+        ("braid", 4),
+        ("reversible", 2),
+    ]
+
+
+def test_scorecard_sparse_cells_reject_cartesian_options_before_writing(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "braid:copyops",
+            "--mechanism",
+            "braid",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "--cell cannot be combined" in result.output
+    assert not artifacts.exists()
+
+
+def test_scorecard_rejects_unknown_hypothesis_before_writing(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--hypothesis",
+            "hyp-does-not-exist",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "unknown hypotheses" in result.output
+    assert not artifacts.exists()
+
+
 def test_scorecard_resume_executes_exactly_the_unfinished_cells(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
     monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
@@ -533,7 +639,8 @@ hypotheses:
         _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="standard", seed=seed, value=1.0)
         _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=1.1)
 
-    degraded = cli._scorecard_adjudications(evidence, [1e6, 2e6])
+    hypotheses = cli._scorecard_hypothesis_snapshot(["hyp-placebo-no-winner"])
+    degraded = cli._scorecard_adjudications(evidence, [1e6, 2e6], hypotheses=hypotheses)
     assert degraded["by_budget"]["1000000.0"][0]["verdict"] == "supported"
     assert degraded["by_budget"]["2000000.0"][0]["verdict"] == "refuted"
     assert degraded["verdict_flips"] == [
@@ -546,7 +653,7 @@ hypotheses:
 
     for seed in range(3):
         _write_scorecard_placebo_evidence(evidence, budget=2e6, mechanism="tropical", seed=seed, value=0.9)
-    improved = cli._scorecard_adjudications(evidence, [1e6, 2e6])
+    improved = cli._scorecard_adjudications(evidence, [1e6, 2e6], hypotheses=hypotheses)
     assert improved["verdicts"][0]["verdict"] == "supported"
     assert improved["placebo"]["publication_blocked"] is True
     assert "significant improvement below 0.98x" in " ".join(improved["placebo"]["blockers"])

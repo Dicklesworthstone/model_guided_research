@@ -830,17 +830,24 @@ mgr bench-fixed-flops \
     -a standard -a tropical -a standard,tropical \
     --include-demo-certs
 
-# Resumable preregistered scorecard: task-specific training, checkpoint eval,
-# ci-v6 verdicts, placebo publication gate, and JSON/Markdown/HTML reports.
-# Repeat --budget to get an explicit verdict-flip table across scales.
+# Resumable preregistered scorecard: sparse mechanism/task cells, checkpoint
+# eval, frozen ci-v6 claim allowlist, placebo gate, and JSON/Markdown/HTML reports.
+# Set this only from a committed, quarantined sizing probe.
 mgr scorecard \
     --run-id hierarchy_scorecard \
-    --budget 2e9 --budget 2e10 \
-    -m hyperbolic -m ultrametric -m fractal \
-    -t hier \
-    --seeds 3
-# The standard baseline and placebo task are added automatically. Re-running
-# the identical command skips completed cells via
+    --budget "$PREREGISTERED_OFF_FLOOR_FLOPS" \
+    --cell hyperbolic:hier \
+    --cell ultrametric:hier \
+    --cell fractal:hier \
+    -H hyp-hyperbolic-hierarchy-retrieval \
+    -H hyp-ultrametric-hier-heldout-depth \
+    -H hyp-fractal-hier-heldout-depth \
+    -H hyp-hyperbolic-placebo-specificity \
+    --seeds 3 --dry-run
+# Each selected task gets a standard baseline; every selected mechanism gets a
+# placebo cell. The exact hypothesis definitions are snapshotted in the manifest.
+# Remove --dry-run only after the command and stopping rule are preregistered.
+# Re-running that identical command skips completed cells via
 # artifacts/scorecards/hierarchy_scorecard/manifest.json.
 # Cells planning fewer than --min-evidence-steps (default 10) are labeled
 # SMOKE-ONLY and excluded from ci-v6, preventing tiny floored plumbing runs

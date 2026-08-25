@@ -7090,7 +7090,7 @@ def eval_tasks(
     console.print(f"[bold green]Wrote eval artifacts[/bold green] → {run_dir}")
 
 
-_SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v1"
+_SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v2"
 
 
 def _scorecard_cell_id(budget_index: int, mechanism: str, task: str, seed: int) -> str:
@@ -7131,6 +7131,7 @@ def _scorecard_train_command(
     val_batches: int,
     checkpoint_interval: int,
 ) -> list[str]:
+    resolved_kv_heads = n_head // 2 if cell["mechanism"] == "reversible" else n_kv_head
     cmd = [
         sys.executable,
         "-m",
@@ -7148,7 +7149,7 @@ def _scorecard_train_command(
         "--n-head",
         str(n_head),
         "--n-kv-head",
-        str(n_kv_head),
+        str(resolved_kv_heads),
         "--n-embd",
         str(n_embd),
         "--learning-rate",
@@ -7332,23 +7333,34 @@ def _scorecard_cell_table(manifest: dict[str, Any]) -> Table:
     return table
 
 
+def _scorecard_hypothesis_snapshot(hypothesis_ids: list[str]) -> list[dict[str, Any]]:
+    """Resolve an explicit, ordered claim allowlist before any run artifacts exist."""
+    normalized = [hypothesis_id.strip() for hypothesis_id in hypothesis_ids]
+    if any(not hypothesis_id for hypothesis_id in normalized):
+        raise typer.BadParameter("--hypothesis values cannot be empty")
+    if len(normalized) != len(set(normalized)):
+        raise typer.BadParameter("duplicate --hypothesis values are not allowed")
+    if not normalized:
+        return []
+
+    registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
+    if registry is None or load_errors:
+        raise typer.BadParameter(f"cannot snapshot hypotheses: {'; '.join(load_errors)}")
+    hypotheses = [item for item in registry.get("hypotheses", []) if isinstance(item, dict)]
+    by_id = {str(item.get("id")): item for item in hypotheses}
+    unknown = [hypothesis_id for hypothesis_id in normalized if hypothesis_id not in by_id]
+    if unknown:
+        raise typer.BadParameter(f"unknown hypotheses: {unknown}")
+    return [by_id[hypothesis_id] for hypothesis_id in normalized]
+
+
 def _scorecard_adjudications(
     suite_dir: Path,
     budgets: list[float],
     *,
+    hypotheses: list[dict[str, Any]],
     qualified_summary_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
-    registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
-    if registry is None or load_errors:
-        return {
-            "policy_version": _ADJ_POLICY_VERSION,
-            "error": "; ".join(load_errors),
-            "verdicts": [],
-            "by_budget": {},
-            "verdict_flips": [],
-            "placebo": {"rows": [], "publication_blocked": True, "blockers": ["registry_invalid"]},
-        }
-    hypotheses = [h for h in registry.get("hypotheses", []) if isinstance(h, dict)]
     indexed_artifacts = _adj_collect_artifacts([suite_dir])
     if qualified_summary_paths is None:
         artifacts = indexed_artifacts
@@ -7535,6 +7547,56 @@ policy {html.escape(str(summary["adjudications"].get("policy_version")))}</p>
 <tbody>{"".join(rows)}</tbody></table></body></html>"""
 
 
+def _scorecard_matrix(
+    *,
+    mechanism_options: list[str] | None,
+    task_options: list[str] | None,
+    cell_options: list[str] | None,
+    supported_mechanisms: list[str],
+    supported_tasks: set[str],
+    default_tasks: list[str],
+) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """Resolve either the legacy Cartesian matrix or explicit sparse cells."""
+    supported_mechanism_names = set(supported_mechanisms)
+    if cell_options:
+        if mechanism_options is not None or task_options is not None:
+            raise typer.BadParameter("--cell cannot be combined with --mechanism or --task")
+        requested: list[tuple[str, str]] = []
+        for raw_cell in cell_options:
+            parts = [part.strip() for part in str(raw_cell).split(":")]
+            if len(parts) != 2 or not all(parts):
+                raise typer.BadParameter("every --cell must have the form MECHANISM:TASK")
+            mechanism_name, task_name = parts
+            if mechanism_name not in supported_mechanism_names:
+                raise typer.BadParameter(f"unknown mechanism in --cell: {mechanism_name}")
+            if task_name not in supported_tasks:
+                raise typer.BadParameter(f"unknown task in --cell: {task_name}")
+            requested.append((mechanism_name, task_name))
+        requested = list(dict.fromkeys(requested))
+        mechanisms = list(dict.fromkeys(["standard", *(mechanism for mechanism, _task in requested)]))
+        tasks = list(dict.fromkeys([*(task for _mechanism, task in requested), "placebo"]))
+        matrix: list[tuple[str, str]] = []
+        for mechanism_name, task_name in requested:
+            matrix.append(("standard", task_name))
+            matrix.append((mechanism_name, task_name))
+        for mechanism_name in mechanisms:
+            matrix.append((mechanism_name, "placebo"))
+        return mechanisms, tasks, list(dict.fromkeys(matrix))
+
+    mechanisms = [str(value).strip() for value in (mechanism_options or supported_mechanisms)]
+    unknown_mechanisms = sorted(set(mechanisms) - supported_mechanism_names)
+    if unknown_mechanisms:
+        raise typer.BadParameter(f"unknown mechanisms: {unknown_mechanisms}")
+    mechanisms = list(dict.fromkeys(["standard", *mechanisms]))
+
+    tasks = [str(value).strip() for value in (task_options or default_tasks)]
+    unknown_tasks = sorted(set(tasks) - supported_tasks)
+    if unknown_tasks:
+        raise typer.BadParameter(f"unknown tasks: {unknown_tasks}")
+    tasks = list(dict.fromkeys([*tasks, "placebo"]))
+    return mechanisms, tasks, [(mechanism, task) for task in tasks for mechanism in mechanisms]
+
+
 @app.command("scorecard")
 def scorecard(
     budget: Annotated[
@@ -7552,6 +7614,21 @@ def scorecard(
     task: Annotated[
         list[str] | None,
         typer.Option("--task", "-t", help="Diagnostic task (repeatable; placebo is added automatically)"),
+    ] = None,
+    matrix_cell: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--cell",
+            help="Sparse MECHANISM:TASK cell (repeatable; standard baselines and placebo controls are added)",
+        ),
+    ] = None,
+    hypothesis: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--hypothesis",
+            "-H",
+            help="Registered hypothesis ID to snapshot and adjudicate (repeatable; omitted means no claim adjudication)",
+        ),
     ] = None,
     seeds: Annotated[int, typer.Option(help="Number of independent training seeds", min=1)] = 3,
     eval_seeds: Annotated[str, typer.Option(help="Comma-separated repeated-measure eval seeds per checkpoint")] = "0",
@@ -7590,11 +7667,12 @@ def scorecard(
 ) -> None:
     """Run the preregistered fixed-FLOPs mechanism scorecard (bead vdc.4).
 
-    The manifest is the operational authority: every mechanism × task × seed
-    cell moves through pending/running/done/failed, is written atomically, and
-    can be resumed without replaying completed work. Failed cells never stop
-    independent cells. Verdicts come from the existing ci-v6 adjudicator; this
-    command does not write the hypothesis registry.
+    The manifest is the operational authority: every selected mechanism-task
+    cell and seed moves through pending/running/done/failed, is written
+    atomically, and can be resumed without replaying completed work. Failed
+    cells never stop independent cells. Verdicts come from the existing ci-v6
+    adjudicator and a frozen hypothesis allowlist; this command does not write
+    the hypothesis registry.
     """
     from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
     from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
@@ -7619,17 +7697,16 @@ def scorecard(
         if any(math.isclose(left, right, rel_tol=_ADJ_BUDGET_RTOL) for right in budgets[index + 1 :]):
             raise typer.BadParameter("--budget cohorts must differ by more than the adjudicator's 5% tolerance")
 
-    mechanisms = [str(value).strip() for value in (mechanism or list(SUPPORTED_ATTENTION_TYPES))]
-    unknown_mechanisms = sorted(set(mechanisms) - set(SUPPORTED_ATTENTION_TYPES))
-    if unknown_mechanisms:
-        raise typer.BadParameter(f"unknown mechanisms: {unknown_mechanisms}")
-    mechanisms = list(dict.fromkeys(["standard", *mechanisms]))
-
-    tasks = [str(value).strip() for value in (task or list(DEFAULT_TASKS))]
-    unknown_tasks = sorted(set(tasks) - set(TASKS))
-    if unknown_tasks:
-        raise typer.BadParameter(f"unknown tasks: {unknown_tasks}")
-    tasks = list(dict.fromkeys([*tasks, "placebo"]))
+    mechanisms, tasks, matrix = _scorecard_matrix(
+        mechanism_options=mechanism,
+        task_options=task,
+        cell_options=matrix_cell,
+        supported_mechanisms=list(SUPPORTED_ATTENTION_TYPES),
+        supported_tasks=set(TASKS),
+        default_tasks=list(DEFAULT_TASKS),
+    )
+    hypothesis_ids = [str(value).strip() for value in (hypothesis or [])]
+    hypothesis_snapshot = _scorecard_hypothesis_snapshot(hypothesis_ids)
     training_seeds = list(range(seeds))
     flops_per_step = _scorecard_flops_per_step(
         mechanisms,
@@ -7645,6 +7722,9 @@ def scorecard(
         "budgets": budgets,
         "mechanisms": mechanisms,
         "tasks": tasks,
+        "matrix": [{"mechanism": mechanism_name, "task": task_name} for mechanism_name, task_name in matrix],
+        "hypothesis_ids": hypothesis_ids,
+        "hypothesis_snapshot": hypothesis_snapshot,
         "training_seeds": training_seeds,
         "eval_seeds": eval_seeds,
         "examples": examples,
@@ -7669,35 +7749,36 @@ def scorecard(
     }
     cells: list[dict[str, Any]] = []
     for budget_index, budget_value in enumerate(budgets):
-        for task_name in tasks:
-            for mechanism_name in mechanisms:
-                planned_steps = max(1, math.ceil(budget_value / flops_per_step[mechanism_name]))
-                for seed in training_seeds:
-                    cells.append(
-                        {
-                            "id": _scorecard_cell_id(budget_index, mechanism_name, task_name, seed),
-                            "budget_index": budget_index,
-                            "budget_flops": budget_value,
-                            "mechanism": mechanism_name,
-                            "task": task_name,
-                            "seed": seed,
-                            "flops_per_step_est": flops_per_step[mechanism_name],
-                            "planned_steps": planned_steps,
-                            "planned_flops_est": planned_steps * flops_per_step[mechanism_name],
-                            "evidence_qualified": planned_steps >= min_evidence_steps,
-                            "status": "pending",
-                            "stage": None,
-                            "attempts": 0,
-                            "wall_seconds": None,
-                            "metrics": {},
-                            "train_summary_path": None,
-                            "eval_summary_path": None,
-                            "stdout_path": None,
-                            "stderr_path": None,
-                            "returncode": None,
-                            "error": None,
-                        }
-                    )
+        for mechanism_name, task_name in matrix:
+            planned_steps = max(1, math.ceil(budget_value / flops_per_step[mechanism_name]))
+            resolved_kv_heads = n_head // 2 if mechanism_name == "reversible" else n_kv_head
+            for seed in training_seeds:
+                cells.append(
+                    {
+                        "id": _scorecard_cell_id(budget_index, mechanism_name, task_name, seed),
+                        "budget_index": budget_index,
+                        "budget_flops": budget_value,
+                        "mechanism": mechanism_name,
+                        "task": task_name,
+                        "seed": seed,
+                        "resolved_n_kv_head": resolved_kv_heads,
+                        "flops_per_step_est": flops_per_step[mechanism_name],
+                        "planned_steps": planned_steps,
+                        "planned_flops_est": planned_steps * flops_per_step[mechanism_name],
+                        "evidence_qualified": planned_steps >= min_evidence_steps,
+                        "status": "pending",
+                        "stage": None,
+                        "attempts": 0,
+                        "wall_seconds": None,
+                        "metrics": {},
+                        "train_summary_path": None,
+                        "eval_summary_path": None,
+                        "stdout_path": None,
+                        "stderr_path": None,
+                        "returncode": None,
+                        "error": None,
+                    }
+                )
     planned = {
         "schema_version": _SCORECARD_SCHEMA_VERSION,
         "kind": "scorecard-manifest",
@@ -7873,6 +7954,7 @@ def scorecard(
     adjudications = _scorecard_adjudications(
         suite_dir,
         budgets,
+        hypotheses=hypothesis_snapshot,
         qualified_summary_paths=qualified_summary_paths,
     )
     summary = {
