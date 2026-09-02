@@ -1,0 +1,27 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 9633                                                 
+  attention_type    standard                                                    
+  n_params          147,456                                                     
+  training budget   {"max_steps": 9634, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 207618048, "flops_consumed_est":      
+                    2000192274432}                                              
+  lineage           {"run_id": "seed_0", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-nee
+dle-tasktok-shuf-b2-rung/runs/budget_0/needle/standard/seed_0/checkpoints @ 9633
+                                                                                
+                                                           slope                
+                                                        held-out                
+  task     EM in-range   EM held-out   ppl in/held        [CI95]   axis         
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  needle         0.000         0.000     19.4/30.0             -   context_wo…  
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-nee
+dle-tasktok-shuf-b2-rung/evals/tasks/eval-b0-needle-standard-s0
