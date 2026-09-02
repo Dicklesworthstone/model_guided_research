@@ -1108,7 +1108,9 @@ class TestIntegrableRMatrix:
         require(bool(torch.isfinite(y).all()), "rmatrix output must be finite at long rapidity spans")
         charges = attn.last_braid_charges
         assert isinstance(charges, dict)
-        defect = float(charges["q1_mass_defect"])
+        q1_value = charges["q1_mass_defect"]
+        assert isinstance(q1_value, int | float)
+        defect = float(q1_value)
         require(defect < 1e-5, f"Q1 mass partition must survive the log-space kernel, defect {defect:.2e}")
         y.square().sum().backward()
         for name, p in attn.named_parameters():
