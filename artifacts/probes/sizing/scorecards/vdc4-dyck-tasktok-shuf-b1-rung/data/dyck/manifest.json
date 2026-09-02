@@ -1,0 +1,28 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "892801a36053adeaea5c471fac99a8fdf2180d176fe65ee75ad6f90d3c8484b4",
+    "train_000.parquet": "e461e53f0c7f499f2f0077801ef5756914cb3d8459d72810b9d69ba8c1e9412b",
+    "val_000.parquet": "676ba1e4cd286fc0fc360e770b8c48aca6ec58abd6d7cce3c381c4f1010c1f66"
+  },
+  "dials": {
+    "max_depth": 4
+  },
+  "generator_version": 1,
+  "hypothesis": "crossing structure tracks nesting topology; validity extrapolates to held-out depths",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "bf2057ef5606af404038d5b2511748cc4cd661e4e7ed8315958fb68eaed98437",
+    "train_000.parquet": "727523619737b55d2aecf929dcd6d3671ab26a718d7c90cd5c623a3d4cd548d4",
+    "val_000.parquet": "f36bd3dee29b2d3dcace1f4ab3ecbc0c073e4e04d0a247d33b818b19c76c28f9"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "braid"
+  ],
+  "task": "dyck"
+}

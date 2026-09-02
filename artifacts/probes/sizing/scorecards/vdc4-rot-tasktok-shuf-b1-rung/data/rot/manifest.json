@@ -1,0 +1,29 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "856f1a1d2a31661141665ecb923370d941c6faad7e3ed1b5f7aba72d536f3371",
+    "train_000.parquet": "5d1f13ac7ec57a9e07f4b66f9eebe4ad18d7b45bfaac620c05757ef946b36b95",
+    "val_000.parquet": "1f3758b12da7933b1077cf5787811e366193b07da0150aba1c4754270ca1782a"
+  },
+  "dials": {
+    "length": 6
+  },
+  "generator_version": 1,
+  "hypothesis": "rotor value mixing composes orientation algebra; exact 24-element octahedral checker",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "b256f6aaa925bc2f03ea967e52786850e463f32cb6d7891d5292d1418431ad53",
+    "train_000.parquet": "98096333dba67e1a3311619f396670289f39f41cb77e481e453367aa874e5ba6",
+    "val_000.parquet": "16e2d20a725542a89a34d28f625a37660ace9ac66e64d650b0716f75137d2ea4"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "quaternion",
+    "octonion"
+  ],
+  "task": "rot"
+}

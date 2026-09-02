@@ -1,0 +1,409 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 1000190509056,
+        "flops_per_step_est": 201326592,
+        "max_steps": 4968,
+        "target_flops": 1000000000000.0
+      },
+      "dir": "/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b1-rung/runs/budget_0/group/standard/seed_0/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "seed_0"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 0,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "n_embd": 64,
+        "n_head": 4,
+        "n_kv_head": 2,
+        "n_layer": 2,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 64,
+        "standard_record_attn_entropy": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "use_flex_attention": false,
+        "vocab_size": 384
+      },
+      "n_params": 139264,
+      "step": 4967
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-09-02T10:57:22Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "5dce958",
+      "commit_full": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+      "dirty": false
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-group-standard-s0",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 362
+    }
+  },
+  "provenance": {
+    "config_hash": "29aac355a9ac60fc4cdec4b670a683b7f6d68015641ca6742ab4764527fb3924",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v4",
+  "tasks": {
+    "group": {
+      "answer_prior": {
+        "held_out": {
+          "majority_answer": "e1",
+          "mean": 0.09722222222222222,
+          "per_seed": [
+            0.08333333333333333,
+            0.10416666666666667,
+            0.10416666666666667
+          ]
+        },
+        "in_range": {
+          "majority_answer": "e1",
+          "mean": 0.08333333333333333,
+          "per_seed": [
+            0.08333333333333333,
+            0.08333333333333333,
+            0.08333333333333333
+          ]
+        }
+      },
+      "curve": {
+        "accuracy": [
+          1.0,
+          1.0,
+          0.6842105263157895,
+          0.6086956521739131,
+          0.5,
+          0.4782608695652174,
+          0.47058823529411764,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.16666666666666666,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.25,
+          0.125,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.5,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.25,
+          0.0,
+          0.0,
+          0.5,
+          0.0
+        ],
+        "buckets": [
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          7.0,
+          8.0,
+          16.0,
+          17.0,
+          18.0,
+          20.0,
+          21.0,
+          22.0,
+          23.0,
+          24.0,
+          25.0,
+          26.0,
+          27.0,
+          28.0,
+          29.0,
+          30.0,
+          31.0,
+          32.0,
+          33.0,
+          34.0,
+          36.0,
+          37.0,
+          38.0,
+          39.0,
+          40.0,
+          41.0,
+          42.0,
+          43.0,
+          44.0,
+          45.0,
+          46.0,
+          47.0,
+          48.0,
+          49.0,
+          50.0,
+          51.0,
+          52.0,
+          53.0,
+          54.0,
+          55.0,
+          56.0,
+          57.0,
+          58.0,
+          59.0,
+          60.0,
+          61.0,
+          62.0,
+          63.0,
+          64.0
+        ],
+        "counts": [
+          22,
+          18,
+          19,
+          23,
+          22,
+          23,
+          17,
+          5,
+          3,
+          1,
+          2,
+          2,
+          6,
+          2,
+          3,
+          1,
+          6,
+          1,
+          2,
+          7,
+          3,
+          2,
+          2,
+          1,
+          5,
+          1,
+          4,
+          1,
+          1,
+          5,
+          1,
+          4,
+          3,
+          7,
+          1,
+          4,
+          8,
+          2,
+          5,
+          2,
+          4,
+          2,
+          3,
+          5,
+          2,
+          2,
+          3,
+          4,
+          4,
+          4,
+          1,
+          4,
+          2,
+          1
+        ]
+      },
+      "difficulty_axis": "word_length",
+      "exact_match": {
+        "greedy": {
+          "held_out": {
+            "ci95": [
+              0.01259949604384307,
+              0.08462272617837914
+            ],
+            "mean": 0.048611111111111105,
+            "per_seed": [
+              0.020833333333333332,
+              0.08333333333333333,
+              0.041666666666666664
+            ]
+          },
+          "in_range": {
+            "ci95": [
+              0.646388888888889,
+              0.7008333333333333
+            ],
+            "mean": 0.6736111111111112,
+            "per_seed": [
+              0.6875,
+              0.6875,
+              0.6458333333333334
+            ]
+          }
+        }
+      },
+      "in_range_max": 8.0,
+      "length_slope": {
+        "all": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.015727109723225316,
+            -0.011241063862614914
+          ],
+          "intercept": 0.6689509398036451,
+          "n_docs": 288,
+          "slope": -0.013484086792920116
+        },
+        "by_category": {
+          "a5": {
+            "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+            "ci95": [
+              -0.000773167703355684,
+              0.007337591749029029
+            ],
+            "intercept": -0.10660696294637856,
+            "n_docs": 34,
+            "slope": 0.0032822120228366727
+          },
+          "s3": {
+            "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+            "ci95": [
+              -0.008547005463911973,
+              0.008573232564374882
+            ],
+            "intercept": 0.08513316810260042,
+            "n_docs": 35,
+            "slope": 1.3113550231454146e-05
+          },
+          "s5": {
+            "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+            "ci95": [
+              -0.0013859308192810675,
+              0.005095301106894852
+            ],
+            "intercept": -0.045756238236232934,
+            "n_docs": 40,
+            "slope": 0.0018546851438068922
+          },
+          "z60": {
+            "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+            "ci95": [
+              -0.004662347734838519,
+              0.007078242156646474
+            ],
+            "intercept": 0.009825839252875633,
+            "n_docs": 35,
+            "slope": 0.0012079472109039772
+          }
+        },
+        "held_out": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.0006311676433315692,
+            0.004480208948825769
+          ],
+          "intercept": -0.02966609349402615,
+          "n_docs": 144,
+          "slope": 0.0019245206527471002
+        }
+      },
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 3.5997445003853903,
+        "in_range": 1.518656780322393
+      },
+      "skipped_too_long": 0
+    }
+  },
+  "train_provenance": {
+    "config_hash": "a79544402e0e39d5a609ae0463567690953e836ec1ec023fd0f1c5ea8b54600a",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}

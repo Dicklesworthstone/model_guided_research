@@ -1,0 +1,29 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "0b5e262e65db8206b9626d98507da349c367bade90f921aefbfa30af329ff836",
+    "train_000.parquet": "858d103fef86349ef644a903a813f434407540c0afb0c480d2817cf6d07ba517",
+    "val_000.parquet": "9863807043315f63644d41c64522cf73d08e22a82fad80c44ecad9b499701c13"
+  },
+  "dials": {
+    "length": 8
+  },
+  "generator_version": 1,
+  "hypothesis": "non-solvable word problems (S5/A5) are the NC1-complete state-tracking barrier; solvable controls (Z60/S3) are the specificity control where the gap should shrink",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "17bf140d6f744c247abe9b844293b4d4974d9109ac07e388468eeef8397b4b76",
+    "train_000.parquet": "ca4a73fda9d5d0026b8bc1ece18c2341fac37583d1b8c431a594e626250d14f2",
+    "val_000.parquet": "747194a8977d93bc4f252c272d2f866a194b00284c5764af3c0c686eb2aafff5"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "braid",
+    "gauge"
+  ],
+  "task": "group"
+}

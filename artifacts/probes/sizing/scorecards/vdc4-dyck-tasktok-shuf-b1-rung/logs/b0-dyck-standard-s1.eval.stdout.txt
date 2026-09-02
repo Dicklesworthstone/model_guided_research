@@ -1,0 +1,28 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 5127                                                 
+  attention_type    standard                                                    
+  n_params          131,072                                                     
+  training budget   {"max_steps": 5128, "target_flops": 1000000000000.0,        
+                    "flops_per_step_est": 195035136, "flops_consumed_est":      
+                    1000140177408}                                              
+  lineage           {"run_id": "seed_1", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-dyc
+  k-tasktok-shuf-b1-rung/runs/budget_0/dyck/standard/seed_1/checkpoints @ 5127  
+                                                                                
+                                                          slope                 
+                                                       held-out                 
+  task   EM in-range   EM held-out   ppl in/held         [CI95]   axis          
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  dyck         0.931         0.861       2.9/3.8        -0.0296   nesting_dep…  
+                                                   [-0.0584,-0…                 
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-dyc
+k-tasktok-shuf-b1-rung/evals/tasks/eval-b0-dyck-standard-s1

@@ -1,0 +1,29 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "9f76bafdafc1caece6fe9e72b4f4b521b735e1086a0cf04d4ba0167d6ad95cb5",
+    "train_000.parquet": "859dd9f4017d725ddb82d9850b60aa7c1b5ae479e41abc07be7fd3e1d65ed7ef",
+    "val_000.parquet": "8bf730045b0a139224002222d46646245bc2f5b9adddf505e2ff7ddb21adc95a"
+  },
+  "dials": {
+    "context_words": 128,
+    "distractor_density": 0.2
+  },
+  "generator_version": 1,
+  "hypothesis": "hierarchical addressing retrieves planted pairs at lengths where dense attention dilutes",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "29aac20c2261c14a958cebbedb24c0415d4d6f8e8d963ad82e835146ee8589bc",
+    "train_000.parquet": "e5a0ef7d06cc0e1e13e1b6470d2461599ca60cc5958a0faa9fefe55630402ccf",
+    "val_000.parquet": "1bf871517235cf9006e6d8302be1577f5e4c2df010fdf29120b867cd775baf25"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "ultrametric"
+  ],
+  "task": "needle"
+}

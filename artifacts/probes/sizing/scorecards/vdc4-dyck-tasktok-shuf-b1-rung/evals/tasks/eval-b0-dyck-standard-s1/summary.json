@@ -1,0 +1,235 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 1000140177408,
+        "flops_per_step_est": 195035136,
+        "max_steps": 5128,
+        "target_flops": 1000000000000.0
+      },
+      "dir": "/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-dyck-tasktok-shuf-b1-rung/runs/budget_0/dyck/standard/seed_1/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "seed_1"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 1,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "n_embd": 64,
+        "n_head": 4,
+        "n_kv_head": 2,
+        "n_layer": 2,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 64,
+        "standard_record_attn_entropy": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "use_flex_attention": false,
+        "vocab_size": 320
+      },
+      "n_params": 131072,
+      "step": 5127
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-09-02T11:25:40Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "5dce958",
+      "commit_full": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+      "dirty": false
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-dyck-standard-s1",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 294
+    }
+  },
+  "provenance": {
+    "config_hash": "487caf999323a9a75771b1b47f2aa327a786249710de5233077c2a209b1b262a",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v4",
+  "tasks": {
+    "dyck": {
+      "answer_prior": {
+        "held_out": {
+          "majority_answer": "valid",
+          "mean": 0.5625,
+          "per_seed": [
+            0.5208333333333334,
+            0.6458333333333334,
+            0.5208333333333334
+          ]
+        },
+        "in_range": {
+          "majority_answer": "valid",
+          "mean": 0.5416666666666666,
+          "per_seed": [
+            0.5,
+            0.5416666666666666,
+            0.5833333333333334
+          ]
+        }
+      },
+      "curve": {
+        "accuracy": [
+          1.0,
+          0.9696969696969697,
+          0.8666666666666667,
+          0.9320388349514563,
+          0.90625,
+          0.9047619047619048,
+          0.75,
+          0.7391304347826086,
+          0.5,
+          1.0
+        ],
+        "buckets": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          7.0,
+          8.0,
+          9.0,
+          10.0
+        ],
+        "counts": [
+          5,
+          33,
+          60,
+          103,
+          32,
+          21,
+          8,
+          23,
+          2,
+          1
+        ]
+      },
+      "difficulty_axis": "nesting_depth",
+      "exact_match": {
+        "greedy": {
+          "held_out": {
+            "ci95": [
+              0.8474999999999999,
+              0.8747222222222222
+            ],
+            "mean": 0.861111111111111,
+            "per_seed": [
+              0.8541666666666666,
+              0.875,
+              0.8541666666666666
+            ]
+          },
+          "in_range": {
+            "ci95": [
+              0.9033333333333333,
+              0.9577777777777778
+            ],
+            "mean": 0.9305555555555556,
+            "per_seed": [
+              0.9583333333333334,
+              0.9166666666666666,
+              0.9166666666666666
+            ]
+          }
+        }
+      },
+      "in_range_max": 6.0,
+      "length_slope": {
+        "all": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.049343884934352544,
+            -0.009034675848527574
+          ],
+          "intercept": 1.0191783133207728,
+          "n_docs": 288,
+          "slope": -0.02918928039144006
+        },
+        "held_out": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.05843234911709479,
+            -0.0008133372472356494
+          ],
+          "intercept": 1.0104596121545275,
+          "n_docs": 144,
+          "slope": -0.02962284318216522
+        }
+      },
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 3.7771941588984594,
+        "in_range": 2.8589462058411703
+      },
+      "skipped_too_long": 0
+    }
+  },
+  "train_provenance": {
+    "config_hash": "b74be1bb280a99287274b09b7f74930378488394183c63f899a6f68e8ec515a7",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "5dce958e2cb119015937e7ca756ebcdde8b347d2",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}

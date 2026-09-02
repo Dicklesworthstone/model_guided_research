@@ -1,0 +1,28 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "b06740995e416c2230e616999b2ad2f3fe36f4de460a682fd846fbc591b9d541",
+    "train_000.parquet": "bd8c59f960a83b34c1c9f655ccccd0990a692dd8249d0658536b26dd4b2442b2",
+    "val_000.parquet": "76a7e4f6c3297bcf1aa382c74f5ac9162747f09da09877244ce9ac738c27e1fc"
+  },
+  "dials": {
+    "n_facts": 8
+  },
+  "generator_version": 1,
+  "hypothesis": "2-hop composition is triangle aggregation; gap grows with distractor fact count",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "97425696db31b1eafcdce7b1a3fb9de68e400500499b38483acf9820e929820e",
+    "train_000.parquet": "dc4565b1c1ffb61f67df0379476c6eddafdd9374874b5718e0a5b84cac655e53",
+    "val_000.parquet": "cd68fdabbb542fec72279b565332c5a935191220412e2790c14e9bfb4db06f1a"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "simplicial"
+  ],
+  "task": "rel"
+}

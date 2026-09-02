@@ -1,0 +1,26 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 5127                                                 
+  attention_type    standard                                                    
+  n_params          131,072                                                     
+  training budget   {"max_steps": 5128, "target_flops": 1000000000000.0,        
+                    "flops_per_step_est": 195035136, "flops_consumed_est":      
+                    1000140177408}                                              
+  lineage           {"run_id": "seed_2", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-bag
+   -tasktok-shuf-b1-rung/runs/budget_0/bag/standard/seed_2/checkpoints @ 5127   
+                                                                                
+                                                     slope held-out             
+  task   EM in-range   EM held-out   ppl in/held             [CI95]   axis      
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  bag          0.486         0.021      3.3/12.1                  -   op_count  
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-bag
+-tasktok-shuf-b1-rung/evals/tasks/eval-b0-bag-standard-s2
