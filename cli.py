@@ -12074,8 +12074,12 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
         # above this fires on supported AND refuted - both directions are
         # equally vacuous - closing the hole where mechanical verdicts
         # overrode the registered hand-checks by recency (o85g audit).
+        # The floor is recorded on EVERY floored arm, including one that was
+        # already inconclusive by power: a ratio of near-zero slopes at a
+        # floored rung (group comparison 2026-09-02, CI [-0.75, 122]) is
+        # floor noise, and the ledger should say so rather than "underpowered".
         slope_paths = _adj_slope_floor_paths(dotted) if not single_arm else None
-        if slope_paths is not None and arm_verdict in ("supported", "refuted"):
+        if slope_paths is not None:
             em_path, em_prior_path = slope_paths
 
             def _arm_mean(arts: list[dict[str, Any]], path: str) -> float | None:

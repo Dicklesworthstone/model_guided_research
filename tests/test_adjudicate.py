@@ -1126,6 +1126,17 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
     assert v_rev["verdict"] == "inconclusive", v_rev
     assert v_rev["arms"]["braid"]["floor_source"] == "slope_em_floor"
 
+    # an arm that is ALREADY inconclusive (noisy near-zero slopes, the real
+    # group-comparison shape of 2026-09-02: ratio CI [-0.75, 122]) must still
+    # carry the floor annotation - the ledger reason is the floor, not power
+    noisy = tmp_path / "noisy"
+    for i, (cs, bs) in enumerate(((0.0027, 0.0), (0.0, -0.001), (0.0, 0.0))):
+        slope_eval(noisy, f"cand{i}", mechanism="braid", slope=cs, em=0.03, prior=0.097)
+        slope_eval(noisy, f"base{i}", mechanism="standard", slope=bs, em=0.02, prior=0.097)
+    v_noisy = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["braid"]), _index(noisy))
+    assert v_noisy["verdict"] == "inconclusive", v_noisy
+    assert v_noisy["arms"]["braid"]["floor_source"] == "slope_em_floor" and v_noisy["floor_effect"] is True
+
     # off-floor control: same slopes with both arms ABOVE the prior - the
     # mechanical verdict stands (zero candidate slope vs negative baseline
     # gives ratio -0 <= 0.5 -> supported, per the registered sign caveat)
