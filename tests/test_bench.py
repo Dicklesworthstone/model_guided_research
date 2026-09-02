@@ -1243,3 +1243,115 @@ def test_scorecard_seed_offset_trains_on_seeds_the_probe_never_used(tmp_path, mo
     assert sorted({cell["seed"] for cell in manifest["cells"]}) == [3, 4, 5]
     assert all(cell["id"].endswith(("-s3", "-s4", "-s5")) for cell in manifest["cells"])
     assert sorted(launched_seeds) == [3, 3, 4, 4, 5, 5]  # copyops + placebo, three seeds each
+
+
+# ---------------------------------------------------------------------------
+# per-arm variants (bead 63ko): MECHANISM@key=value arms in the scorecard
+# ---------------------------------------------------------------------------
+
+
+def test_scorecard_arm_spec_parses_labels_and_flags():
+    assert cli._scorecard_parse_arm("braid") == ("braid", {})
+    base, extras = cli._scorecard_parse_arm("braid@braid_crossing_law=rmatrix")
+    assert (base, extras) == ("braid", {"braid_crossing_law": "rmatrix"})
+    assert cli._scorecard_arm_label("standard", {"control_zero_attention": "true"}) == (
+        "standard@control_zero_attention=true"
+    )
+    assert cli._scorecard_arm_path_token("standard@control_zero_attention=true") == (
+        "standard+control_zero_attention-true"
+    )
+    assert cli._scorecard_arm_train_flags({"control_zero_attention": "true", "braid_crossing_law": "rmatrix"}) == [
+        "--braid-crossing-law",
+        "rmatrix",
+        "--control-zero-attention",
+    ]
+    assert cli._scorecard_arm_train_flags({"control_zero_attention": "false"}) == ["--no-control-zero-attention"]
+
+
+@pytest.mark.parametrize(
+    "spec, message",
+    [
+        ("braid@n_layer=4", "campaign-global"),
+        ("braid@not_a_field=1", "not a GPTConfig field"),
+        ("braid@braid_crossing_law", "key=value"),
+    ],
+)
+def test_scorecard_arm_spec_rejects_bad_extras(spec, message):
+    import typer
+
+    with pytest.raises(typer.BadParameter, match=message):
+        cli._scorecard_parse_arm(spec)
+
+
+def test_scorecard_variant_arm_reaches_the_trainer_and_the_manifest(tmp_path, monkeypatch):
+    """A variant arm trains with its extra flag, gets its own cells and
+    directories, and the manifest records mechanism + extras per arm."""
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    launched: list[list[str]] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            launched.append(list(cmd))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--mechanism",
+            "standard@control_zero_attention=true",
+            "--task",
+            "arith",
+            "--seeds",
+            "1",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--run-id",
+            "variant-arm",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "variant-arm" / "manifest.json").read_text())
+    assert manifest["config"]["mechanisms"] == ["standard", "standard@control_zero_attention=true"]
+    assert manifest["config"]["mechanism_arms"]["standard@control_zero_attention=true"] == {
+        "mechanism": "standard",
+        "extras": {"control_zero_attention": "true"},
+    }
+    ids = {cell["id"] for cell in manifest["cells"]}
+    assert "b0-arith-standard-s0" in ids and "b0-arith-standard+control_zero_attention-true-s0" in ids
+    variant_cmds = [cmd for cmd in launched if "--control-zero-attention" in cmd]
+    plain_cmds = [cmd for cmd in launched if "--control-zero-attention" not in cmd]
+    assert len(variant_cmds) == 2 and len(plain_cmds) == 2  # arith + placebo per arm
+    assert all(cmd[cmd.index("--attention-type") + 1] == "standard" for cmd in variant_cmds)
+
+
+def test_scorecard_coverage_accepts_variant_selectors_when_the_arm_exists():
+    hypothesis = {
+        "id": "hyp-control-no-context-planted-effect",
+        "mechanisms": ["standard"],
+        "prediction": {
+            "metric_path": "evaltasks:tasks.arith.exact_match.greedy.held_out.mean",
+            "baseline": {"mechanism": "standard", "equal_flops": True, "variant": {"control_zero_attention": True}},
+            "candidate_variant": {"control_zero_attention": False},
+        },
+    }
+    with_arm = [("standard", "arith"), ("standard@control_zero_attention=true", "arith")]
+    cli._scorecard_validate_hypothesis_coverage([hypothesis], with_arm)  # plain standard is the all-defaults arm
+    import typer
+
+    with pytest.raises(typer.BadParameter, match="missing baseline arm"):
+        cli._scorecard_validate_hypothesis_coverage([hypothesis], [("standard", "arith")])

@@ -7113,8 +7113,102 @@ _SCORECARD_HYPOTHESIS_SNAPSHOT_KEYS = (
 )
 
 
+#: campaign-global model shape: never a per-arm extra (it would break the
+#: equal-FLOPs cohort and the campaign-wide KV geometry)
+_SCORECARD_ARM_FIXED_KEYS: frozenset[str] = frozenset(
+    {"n_layer", "n_embd", "n_head", "n_kv_head", "sequence_len", "vocab_size", "attention_type"}
+)
+
+
+def _scorecard_parse_arm(spec: str) -> tuple[str, dict[str, str]]:
+    """``MECHANISM[@key=value[,key=value...]]`` -> (mechanism, extras).
+
+    A per-arm variant (bead 63ko): the same mechanism trained with one recorded
+    knob changed, e.g. ``braid@braid_crossing_law=rmatrix`` or the planted-effect
+    control ``standard@control_zero_attention=true``. Extras must be GPTConfig
+    fields with a matching ``nanochat.train`` flag, so the trainer records them in
+    ``model_config`` and the registry's ``baseline.variant`` /
+    ``candidate_variant`` selectors can tell the arms apart at adjudication.
+    """
+    import dataclasses
+
+    from nanochat.gpt import GPTConfig
+    from nanochat.train import build_parser
+
+    base, sep, rest = str(spec).strip().partition("@")
+    if not base:
+        raise typer.BadParameter(f"empty mechanism in arm spec {spec!r}")
+    extras: dict[str, str] = {}
+    if sep:
+        config_fields = {field.name for field in dataclasses.fields(GPTConfig)}
+        train_flags = {opt for action in build_parser()._actions for opt in action.option_strings}
+        for item in rest.split(","):
+            key, eq, value = (part.strip() for part in item.partition("="))
+            if not eq or not key or not value:
+                raise typer.BadParameter(f"arm spec {spec!r}: every extra must be key=value")
+            if key in _SCORECARD_ARM_FIXED_KEYS:
+                raise typer.BadParameter(f"arm spec {spec!r}: {key} is campaign-global, not a per-arm extra")
+            if key not in config_fields:
+                raise typer.BadParameter(
+                    f"arm spec {spec!r}: {key} is not a GPTConfig field (selectors need model_config)"
+                )
+            flag = "--" + key.replace("_", "-")
+            needed = flag if value.lower() != "false" else "--no-" + key.replace("_", "-")
+            if needed not in train_flags:
+                raise typer.BadParameter(f"arm spec {spec!r}: nanochat.train has no {needed} flag for {key}")
+            extras[key] = value
+    return base, extras
+
+
+def _scorecard_arm_label(base: str, extras: dict[str, str]) -> str:
+    """Canonical spec string (sorted extras) used as the arm's name everywhere."""
+    if not extras:
+        return base
+    return base + "@" + ",".join(f"{key}={extras[key]}" for key in sorted(extras))
+
+
+def _scorecard_arm_path_token(label: str) -> str:
+    """A directory-safe form of an arm label: ``braid+braid_crossing_law-rmatrix``."""
+    return label.replace("@", "+").replace("=", "-").replace(",", "+")
+
+
+def _scorecard_arm_train_flags(extras: dict[str, str]) -> list[str]:
+    """Per-arm extras as nanochat.train flags (``true``/``false`` become the
+    BooleanOptionalAction switch, anything else a valued flag)."""
+    flags: list[str] = []
+    for key in sorted(extras):
+        value = extras[key]
+        dashed = key.replace("_", "-")
+        if value.lower() == "true":
+            flags.append(f"--{dashed}")
+        elif value.lower() == "false":
+            flags.append(f"--no-{dashed}")
+        else:
+            flags.extend([f"--{dashed}", value])
+    return flags
+
+
+def _scorecard_arm_matches_selector(
+    extras: dict[str, str], selector: dict[str, Any], defaults: dict[str, Any] | None = None
+) -> bool:
+    """A registry variant selector (mapping of config keys to scalars) names
+    this arm when every selected key is one of the arm's extras with the same
+    value, or, when the arm does not set the key, the GPTConfig default equals
+    the selected value (the plain arm IS the all-defaults variant, which is how
+    ``candidate_variant: {control_zero_attention: false}`` resolves to plain
+    standard). Values compare as lower-cased strings: the registry writes
+    ``true``, the trainer records ``True``."""
+    for key, wanted in selector.items():
+        have: Any = extras.get(str(key))
+        if have is None and defaults is not None and str(key) in defaults:
+            have = defaults[str(key)]
+        if have is None or str(have).strip().lower() != str(wanted).strip().lower():
+            return False
+    return True
+
+
 def _scorecard_cell_id(budget_index: int, mechanism: str, task: str, seed: int) -> str:
-    return f"b{budget_index}-{task}-{mechanism}-s{seed}"
+    return f"b{budget_index}-{task}-{_scorecard_arm_path_token(mechanism)}-s{seed}"
 
 
 def _scorecard_train_dir(suite_dir: Path, cell: dict[str, Any]) -> Path:
@@ -7123,7 +7217,7 @@ def _scorecard_train_dir(suite_dir: Path, cell: dict[str, Any]) -> Path:
         / "runs"
         / f"budget_{cell['budget_index']}"
         / str(cell["task"])
-        / str(cell["mechanism"])
+        / _scorecard_arm_path_token(str(cell["mechanism"]))
         / f"seed_{cell['seed']}"
     )
 
@@ -7152,7 +7246,9 @@ def _scorecard_train_command(
     val_batches: int,
     checkpoint_interval: int,
 ) -> list[str]:
-    resolved_kv_heads = n_head // 2 if cell["mechanism"] == "reversible" else n_kv_head
+    mechanism_base = str(cell.get("mechanism_base") or cell["mechanism"])
+    mechanism_extras: dict[str, str] = dict(cell.get("mechanism_extras") or {})
+    resolved_kv_heads = n_head // 2 if mechanism_base == "reversible" else n_kv_head
     cmd = [
         sys.executable,
         "-m",
@@ -7184,7 +7280,7 @@ def _scorecard_train_command(
         "--log-interval",
         str(log_interval),
         "--attention-type",
-        str(cell["mechanism"]),
+        mechanism_base,
         "--target-flops",
         str(cell["budget_flops"]),
         "--checkpoint-interval",
@@ -7200,13 +7296,14 @@ def _scorecard_train_command(
         "--artifacts-kind",
         "runs",
         "--artifacts-topic",
-        f"budget_{cell['budget_index']}/{cell['task']}/{cell['mechanism']}",
+        f"budget_{cell['budget_index']}/{cell['task']}/{_scorecard_arm_path_token(str(cell['mechanism']))}",
         "--run-id",
         f"seed_{cell['seed']}",
         "--check-numerics",
     ]
     if val_interval > 0:
         cmd.extend(["--val-interval", str(val_interval), "--val-batches", str(val_batches)])
+    cmd.extend(_scorecard_arm_train_flags(mechanism_extras))  # per-arm variant knobs (bead 63ko)
     return cmd
 
 
@@ -7412,8 +7509,28 @@ def _scorecard_validate_hypothesis_coverage(
     hypotheses: list[dict[str, Any]],
     matrix: list[tuple[str, str]],
 ) -> None:
-    """Fail before launch when a selected claim cannot be produced by the matrix."""
-    available = set(matrix)
+    """Fail before launch when a selected claim cannot be produced by the matrix.
+
+    Arms are labels (``mechanism`` or ``mechanism@key=value,...``); a registry
+    variant selector is satisfiable when some arm of the right mechanism and
+    task carries every selected key with the selected value.
+    """
+    import dataclasses
+
+    from nanochat.gpt import GPTConfig
+
+    arms = [(_scorecard_parse_arm(label), task_name) for label, task_name in matrix]
+    available = {(base, task_name) for (base, _extras), task_name in arms}
+    config_defaults = {field.name: getattr(GPTConfig(), field.name) for field in dataclasses.fields(GPTConfig)}
+
+    def _has_arm(base: str, task_name: str, selector: dict[str, Any] | None) -> bool:
+        for (arm_base, extras), arm_task in arms:
+            if arm_base != base or arm_task != task_name:
+                continue
+            if selector is None or _scorecard_arm_matches_selector(extras, selector, config_defaults):
+                return True
+        return False
+
     errors: list[str] = []
     for hypothesis in hypotheses:
         hypothesis_id = str(hypothesis.get("id"))
@@ -7428,23 +7545,33 @@ def _scorecard_validate_hypothesis_coverage(
             continue
         task_name = segments[1]
         baseline = prediction.get("baseline")
+        baseline_variant: dict[str, Any] | None = None
         if baseline is None:
             baseline_mechanism = None
         elif isinstance(baseline, dict):
             baseline_mechanism = str(baseline.get("mechanism", "standard"))
             if isinstance(baseline.get("variant"), dict):
-                errors.append(f"{hypothesis_id}: scorecard cannot produce baseline.variant selectors")
+                baseline_variant = dict(baseline["variant"])
         else:
             errors.append(f"{hypothesis_id}: malformed baseline")
             continue
-        if isinstance(prediction.get("candidate_variant"), dict):
-            errors.append(f"{hypothesis_id}: scorecard cannot produce candidate_variant selectors")
-        if baseline_mechanism is not None and (baseline_mechanism, task_name) not in available:
-            errors.append(f"{hypothesis_id}: missing baseline cell {baseline_mechanism}:{task_name}")
+        candidate_variant = (
+            dict(prediction["candidate_variant"]) if isinstance(prediction.get("candidate_variant"), dict) else None
+        )
+        if baseline_mechanism is not None and not _has_arm(baseline_mechanism, task_name, baseline_variant):
+            want = f"{baseline_mechanism}:{task_name}" + (
+                f" with variant {baseline_variant}" if baseline_variant else ""
+            )
+            errors.append(f"{hypothesis_id}: missing baseline arm {want} (add it as --mechanism MECH@key=value)")
         for mechanism_name in hypothesis.get("mechanisms") or []:
-            pair = (str(mechanism_name), task_name)
-            if pair not in available:
-                errors.append(f"{hypothesis_id}: missing candidate cell {pair[0]}:{pair[1]}")
+            base = str(mechanism_name)
+            if (base, task_name) not in available:
+                errors.append(f"{hypothesis_id}: missing candidate cell {base}:{task_name}")
+            elif candidate_variant is not None and not _has_arm(base, task_name, candidate_variant):
+                errors.append(
+                    f"{hypothesis_id}: no {base}:{task_name} arm carries candidate_variant {candidate_variant} "
+                    "(add it as --mechanism MECH@key=value)"
+                )
     if errors:
         raise typer.BadParameter("hypothesis/matrix coverage failed: " + "; ".join(errors))
 
@@ -7873,12 +8000,15 @@ def _scorecard_matrix(
             raise typer.BadParameter("--cell cannot be combined with --mechanism or --task")
         requested: list[tuple[str, str]] = []
         for raw_cell in cell_options:
-            parts = [part.strip() for part in str(raw_cell).split(":")]
+            # the task is the LAST ':' segment; an arm spec's values may contain ':'
+            parts = [part.strip() for part in str(raw_cell).rsplit(":", 1)]
             if len(parts) != 2 or not all(parts):
-                raise typer.BadParameter("every --cell must have the form MECHANISM:TASK")
-            mechanism_name, task_name = parts
-            if mechanism_name not in supported_mechanism_names:
-                raise typer.BadParameter(f"unknown mechanism in --cell: {mechanism_name}")
+                raise typer.BadParameter("every --cell must have the form MECHANISM[@key=value,...]:TASK")
+            mechanism_spec, task_name = parts
+            mechanism_base, mechanism_extras = _scorecard_parse_arm(mechanism_spec)
+            mechanism_name = _scorecard_arm_label(mechanism_base, mechanism_extras)
+            if mechanism_base not in supported_mechanism_names:
+                raise typer.BadParameter(f"unknown mechanism in --cell: {mechanism_base}")
             if task_name not in supported_tasks:
                 raise typer.BadParameter(f"unknown task in --cell: {task_name}")
             requested.append((mechanism_name, task_name))
@@ -7893,8 +8023,10 @@ def _scorecard_matrix(
             matrix.append((mechanism_name, "placebo"))
         return mechanisms, tasks, list(dict.fromkeys(matrix))
 
-    mechanisms = [str(value).strip() for value in (mechanism_options or supported_mechanisms)]
-    unknown_mechanisms = sorted(set(mechanisms) - supported_mechanism_names)
+    mechanisms = [
+        _scorecard_arm_label(*_scorecard_parse_arm(value)) for value in (mechanism_options or supported_mechanisms)
+    ]
+    unknown_mechanisms = sorted({_scorecard_parse_arm(m)[0] for m in mechanisms} - supported_mechanism_names)
     if unknown_mechanisms:
         raise typer.BadParameter(f"unknown mechanisms: {unknown_mechanisms}")
     mechanisms = list(dict.fromkeys(["standard", *mechanisms]))
@@ -8052,6 +8184,10 @@ def scorecard(
         supported_tasks=set(TASKS),
         default_tasks=list(DEFAULT_TASKS),
     )
+    # arm label -> (mechanism, per-arm extras); the model shape, FLOPs estimate
+    # and placebo coverage are per MECHANISM, the cells and selectors per ARM
+    mechanism_arms = {label: _scorecard_parse_arm(label) for label in mechanisms}
+    mechanism_bases = list(dict.fromkeys(base for base, _extras in mechanism_arms.values()))
     hypothesis_ids = [str(value).strip() for value in (hypothesis or [])]
     if any(not hypothesis_id for hypothesis_id in hypothesis_ids):
         raise typer.BadParameter("--hypothesis values cannot be empty")
@@ -8079,7 +8215,7 @@ def scorecard(
     else:
         hypothesis_snapshot = _scorecard_hypothesis_snapshot(hypothesis_ids)
     _scorecard_validate_hypothesis_coverage(hypothesis_snapshot, matrix)
-    if "reversible" in mechanisms and n_kv_head != n_head // 2:
+    if "reversible" in mechanism_bases and n_kv_head != n_head // 2:
         raise typer.BadParameter(
             "reversible scorecards require campaign-global --n-kv-head to equal --n-head / 2 so every arm "
             "uses identical KV geometry"
@@ -8102,7 +8238,7 @@ def scorecard(
             raise typer.BadParameter(f"live governance registry failed validation: {preflight_governance_error}")
     training_seeds = list(range(seed_offset, seed_offset + seeds))
     flops_per_step = _scorecard_flops_per_step(
-        mechanisms,
+        mechanism_bases,
         batch_size=batch_size,
         sequence_len=sequence_len,
         n_layer=n_layer,
@@ -8115,6 +8251,9 @@ def scorecard(
     config = {
         "budgets": budgets,
         "mechanisms": mechanisms,
+        "mechanism_arms": {
+            label: {"mechanism": base, "extras": dict(extras)} for label, (base, extras) in mechanism_arms.items()
+        },
         "tasks": tasks,
         "matrix": [{"mechanism": mechanism_name, "task": task_name} for mechanism_name, task_name in matrix],
         "hypothesis_ids": hypothesis_ids,
@@ -8150,7 +8289,8 @@ def scorecard(
     cells: list[dict[str, Any]] = []
     for budget_index, budget_value in enumerate(budgets):
         for mechanism_name, task_name in matrix:
-            planned_steps = max(1, math.ceil(budget_value / flops_per_step[mechanism_name]))
+            base_name, arm_extras = mechanism_arms[mechanism_name]
+            planned_steps = max(1, math.ceil(budget_value / flops_per_step[base_name]))
             for seed in training_seeds:
                 cells.append(
                     {
@@ -8158,12 +8298,14 @@ def scorecard(
                         "budget_index": budget_index,
                         "budget_flops": budget_value,
                         "mechanism": mechanism_name,
+                        "mechanism_base": base_name,
+                        "mechanism_extras": dict(arm_extras),
                         "task": task_name,
                         "seed": seed,
                         "resolved_n_kv_head": n_kv_head,
-                        "flops_per_step_est": flops_per_step[mechanism_name],
+                        "flops_per_step_est": flops_per_step[base_name],
                         "planned_steps": planned_steps,
-                        "planned_flops_est": planned_steps * flops_per_step[mechanism_name],
+                        "planned_flops_est": planned_steps * flops_per_step[base_name],
                         "step_qualified": planned_steps >= min_evidence_steps,
                         "off_floor_qualified": False,
                         "evidence_qualified": False,
@@ -8380,7 +8522,7 @@ def scorecard(
         suite_dir,
         budgets,
         hypotheses=adjudication_hypotheses,
-        mechanisms=mechanisms,
+        mechanisms=mechanism_bases,
         governance_error=governance_error,
         qualified_summary_paths=qualified_summary_paths,
     )

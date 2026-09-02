@@ -129,6 +129,20 @@ shown able to find one. The harness carries both controls:
   so the registry's `baseline.variant` / `candidate_variant` selectors tell
   the two arms apart.
 
+### Per-arm variants
+
+`mgr scorecard --mechanism MECHANISM@key=value[,key=value]` trains the same
+mechanism with one recorded knob changed and treats it as its own arm:
+`braid@braid_crossing_law=rmatrix`, `standard@control_zero_attention=true`,
+`reversible@reversible_mode=symplectic,reversible_tied=true`. Extras must be
+`GPTConfig` fields with a `nanochat.train` flag, so the trainer records them in
+`model_config` and the registry's `baseline.variant` / `candidate_variant`
+selectors find the arm at adjudication (a selector equal to the config
+default resolves to the plain arm). Model shape keys are campaign-global and
+refused as extras. Cells and directories carry the arm label
+(`standard+control_zero_attention-true`), the FLOPs estimate and the placebo
+coverage are per mechanism.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.
