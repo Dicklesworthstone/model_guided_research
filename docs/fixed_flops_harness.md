@@ -77,13 +77,14 @@ Current policy:
 - Demos should still be run under *explicit* compute knobs (usually iterations/epochs) and record them in artifacts.
 - The fixed-FLOPs harness is *fully implemented for nanochat*; demos will gain FLOPs estimators incrementally.
 
-### Running demos with a fixed iteration cap
+### Demo run sizes
 
-Many demos respect `ProjectConfig.max_iterations`. You can override it from the CLI:
+The JAX demos are fixed-size programs: none of them reads an iteration cap,
+so there is no CLI knob that shrinks them (the former `--max-iterations`
+option was accepted by `mgr run` but consumed by nothing, and was removed).
+A demo run with artifacts is:
 
 ```bash
-mgr run matrix-gauge --max-iterations 50 --artifacts-dir artifacts --run-id 20251218_demo_smoke
+mgr run matrix-gauge --seed 0 --artifacts-dir artifacts --run-id 20251218_demo_smoke
 ```
-
-If a specific demo does not yet honor `max_iterations`, it should be updated *in-place* to do so when practical.
 

@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 import cli
@@ -1116,3 +1117,21 @@ def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific
     hyperbolic_row = next(row for row in inconclusive["placebo"]["rows"] if row["id"] == hyperbolic["id"])
     assert hyperbolic_row["verdict"] == "inconclusive"
     assert "registered placebo guard is INCONCLUSIVE" in " ".join(inconclusive["placebo"]["blockers"])
+
+
+@pytest.mark.parametrize("bad", ["../escape", "a/b", "a\\b", ".", "..", " padded "])
+def test_resolve_run_id_rejects_path_like_values(bad):
+    """Every artifact-writing command joins --run-id under the artifacts tree,
+    so a separator or a dot-segment would write outside it."""
+    import typer
+
+    with pytest.raises(typer.BadParameter, match="single path segment"):
+        cli._resolve_run_id(bad)
+
+
+def test_resolve_run_id_defaults_and_passes_plain_ids():
+    assert cli._resolve_run_id("flops_suite_cpu") == "flops_suite_cpu"
+    assert cli._resolve_run_id("20260901_120000_smoke") == "20260901_120000_smoke"
+    generated = cli._resolve_run_id(None)
+    assert generated and "/" not in generated
+    assert cli._resolve_run_id("") != ""

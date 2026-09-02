@@ -40,7 +40,6 @@ class ProjectConfig:
     profile_performance: bool = False  # Enable performance profiling
 
     # Demo settings
-    max_iterations: int = 1000
     convergence_threshold: float = 1e-6
     early_stopping_patience: int = 10
 

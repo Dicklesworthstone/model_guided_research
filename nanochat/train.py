@@ -682,6 +682,24 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
         if syn_cfg_path is not None:
             warnings.append("--synaptic-config is only used with --model-type synaptic; ignoring.")
 
+    # Artifact path segments: --run-id is joined as ONE directory under
+    # <artifacts-dir>/<kind>/<topic>/, and kind/topic may nest but must stay
+    # inside the artifacts tree. Unchecked, '--run-id ../x' or an absolute
+    # topic wrote summary.json/metrics.jsonl wherever the caller pointed.
+    run_id_arg = getattr(args, "run_id", None)
+    if run_id_arg is not None:
+        rid = str(run_id_arg)
+        if not rid.strip() or rid in {".", ".."} or "/" in rid or "\\" in rid or rid != rid.strip():
+            errors.append(f"--run-id must be a single non-empty path segment, got {rid!r}")
+    for flag in ("artifacts_kind", "artifacts_topic"):
+        val = getattr(args, flag, None)
+        if val is None:
+            continue
+        sval = str(val)
+        segments = sval.replace("\\", "/").split("/")
+        if not sval.strip() or sval.startswith("/") or any(seg in {"", ".", ".."} for seg in segments):
+            errors.append(f"--{flag.replace('_', '-')} must be a relative path with no empty or '..' segments, got {sval!r}")
+
     if errors:
         if ddp_rank == 0:
             console.print("[bold red]Invalid configuration[/bold red]")

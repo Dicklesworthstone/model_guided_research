@@ -81,6 +81,19 @@ def _default_run_id() -> str:
     return time.strftime("%Y%m%d_%H%M%S")
 
 
+def _resolve_run_id(run_id: str | None) -> str:
+    """The caller's --run-id, or a timestamp default - after checking it is ONE
+    path segment. Every artifact writer joins it under
+    <artifacts-dir>/<kind>/<topic>/, so a value like '../x' or '/abs' would
+    silently write outside the artifacts tree."""
+    if run_id is None or not str(run_id).strip():
+        return _default_run_id()
+    rid = str(run_id)
+    if rid in {".", ".."} or "/" in rid or "\\" in rid or "\x00" in rid or rid != rid.strip():
+        raise typer.BadParameter(f"--run-id must be a single path segment (no separators), got {rid!r}")
+    return rid
+
+
 def _write_artifacts(run_dir: Path, *, summary: dict[str, Any], report_md: str) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -524,12 +537,6 @@ def run(
         typer.Option("--verbose-level", min=0, max=3, help="Verbosity level: 0=silent, 1=normal, 2=detailed, 3=debug"),
     ] = None,
     seed: Annotated[int | None, typer.Option("--seed", "-s", help="Random seed for reproducibility")] = None,
-    max_iterations: Annotated[
-        int | None,
-        typer.Option(
-            "--max-iterations", min=1, help="Override ProjectConfig.max_iterations (for demos that respect it)"
-        ),
-    ] = None,
     no_rich: Annotated[bool, typer.Option("--no-rich", help="Disable rich formatting for plain text output")] = False,
     debug: Annotated[bool, typer.Option("--debug", help="Enable debug mode with numerical checking")] = False,
     ultra_packed: Annotated[
@@ -544,9 +551,6 @@ def run(
     ] = False,
     simplicial_hodge: Annotated[
         bool, typer.Option("--simplicial-hodge", help="Demonstrate Hodge-based readout coefficients on a tiny graph")
-    ] = False,
-    simplicial_signed: Annotated[
-        bool, typer.Option("--simplicial-signed", help="Demonstrate signed (orientation-aware) diffusion vs unsigned")
     ] = False,
     rev_cayley: Annotated[
         bool, typer.Option("--rev-cayley", help="Demonstrate Cayley orthogonal property check (skew → orthogonal)")
@@ -585,9 +589,6 @@ def run(
     ] = False,
     gauge_structured: Annotated[
         bool, typer.Option("--gauge-structured", help="Enable structured SO/SPD/Sp channel blocks in matrix-gauge demo")
-    ] = False,
-    gauge_bch_compact: Annotated[
-        bool, typer.Option("--gauge-bch-compact", help="Print only compact BCH summary table (skip heatmap)")
     ] = False,
     gauge_alt_struct: Annotated[
         bool,
@@ -631,8 +632,6 @@ def run(
         config.verbose_level = verbose_level
     if seed is not None:
         config.random_seed = seed
-    if max_iterations is not None:
-        config.max_iterations = max_iterations
     if no_rich:
         config.use_rich_output = False
     if debug:
@@ -654,10 +653,6 @@ def run(
         import os as _os
 
         _os.environ["GAUGE_STRUCTURED"] = "1"
-    if gauge_bch_compact:
-        import os as _os
-
-        _os.environ["GAUGE_BCH_COMPACT"] = "1"
     if gauge_alt_struct:
         import os as _os
 
@@ -770,8 +765,11 @@ def run(
                         import os as _os
 
                         _os.environ["REV_LAYER_CERT"] = "1"
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # The orthogonality table below still runs; say why the
+                        # demo itself will NOT be in Cayley mode instead of
+                        # silently degrading to the standalone check.
+                        console.print(f"[yellow]--rev-cayley: could not enable the demo's Cayley mode: {exc}[/yellow]")
                     M = _np.random.randn(16, 16)
                     A = 0.1 * (M - M.T)  # skew
                     import jax.numpy as _jnp
@@ -838,7 +836,7 @@ def run(
 
         # Write artifacts using the unified artifacts layout
         if artifacts_dir is not None:
-            resolved_run_id = run_id or _default_run_id()
+            resolved_run_id = _resolve_run_id(run_id)
             run_dir = artifacts_dir / "certs" / "demos" / demo_name / resolved_run_id
 
             meta = {
@@ -854,7 +852,6 @@ def run(
                 "seed": int(config.random_seed),
                 "config_file": str(config_file) if config_file is not None else None,
                 "flags": {
-                    "max_iterations": int(config.max_iterations),
                     "ultra_packed": bool(ultra_packed),
                     "tropical_cert": bool(tropical_cert),
                     "simplicial_hodge": bool(simplicial_hodge),
@@ -864,7 +861,6 @@ def run(
                     "rev_pareto": bool(rev_pareto),
                     "rev_symp_hybrid": bool(rev_symp_hybrid),
                     "gauge_structured": bool(gauge_structured),
-                    "gauge_bch_compact": bool(gauge_bch_compact),
                     "gauge_alt_struct": bool(gauge_alt_struct),
                 },
             }
@@ -1033,7 +1029,6 @@ def config(
         "debug_mode": False,
         "check_numerics": False,
         "profile_performance": False,
-        "max_iterations": 1000,
         "convergence_threshold": 1e-6,
         "early_stopping_patience": 10,
         "default_learning_rate": 0.001,
@@ -1211,7 +1206,7 @@ def evaluate(
         console.print(f"[dim]Wrote suite JSON to {export_json}[/dim]")
 
     if artifacts_dir is not None:
-        resolved_run_id = run_id or _default_run_id()
+        resolved_run_id = _resolve_run_id(run_id)
         run_dir = artifacts_dir / "bench" / "practical_utility" / resolved_run_id
 
         summary = {
@@ -1535,7 +1530,7 @@ def bench_fixed_flops(
         raise typer.BadParameter("--attention-type must be provided at least once")
     seed_list = [int(s) for s in seeds.split(",") if s.strip()] or [int(seed)]
 
-    suite_run_id = run_id or _default_run_id()
+    suite_run_id = _resolve_run_id(run_id)
     suite_dir = artifacts_dir / "bench" / "fixed_flops" / "nanochat" / suite_run_id
     suite_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = suite_dir / "logs"
@@ -1740,8 +1735,6 @@ def bench_fixed_flops(
                 "cli",
                 "run",
                 demo_name,
-                "--max-iterations",
-                "50",
                 "--seed",
                 str(seed),
                 "--artifacts-dir",
@@ -2692,7 +2685,7 @@ def scaling_sweep(
         )
     console.print(table)
 
-    suite_run_id = run_id or _default_run_id()
+    suite_run_id = _resolve_run_id(run_id)
     suite_dir = artifacts_dir / "scaling" / mechanism / suite_run_id
 
     def _cmd_preview(row: dict[str, Any], seed: int) -> str:
@@ -3578,7 +3571,7 @@ def per_head_metrics(
     if not seeds:
         raise typer.BadParameter("--seed must be provided at least once")
 
-    suite_run_id = run_id or _default_run_id()
+    suite_run_id = _resolve_run_id(run_id)
     suite_dir = artifacts_dir / "bench" / "feature_ablate" / "per_head_metrics" / suite_run_id
     suite_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = suite_dir / "logs"
@@ -4278,7 +4271,7 @@ def regressions(
         "cert_degrade_factor": float(cert_degrade_factor),
     }
 
-    report_run_id = run_id or _default_run_id()
+    report_run_id = _resolve_run_id(run_id)
     report_dir = artifacts_dir / "regressions" / report_run_id
 
     md_lines: list[str] = []
@@ -5718,7 +5711,7 @@ def certify(
         raise typer.Exit(code=2)
 
     git_info = _get_git_info()
-    rid = run_id or _default_run_id()
+    rid = _resolve_run_id(run_id)
     console.print(
         Panel(
             f"mechanisms: [cyan]{', '.join(mechanisms)}[/cyan]\n"
@@ -5991,7 +5984,7 @@ def fuzz(
         raise typer.Exit(code=2)
 
     git_info = _get_git_info()
-    rid = run_id or _default_run_id()
+    rid = _resolve_run_id(run_id)
     n_cells_per_mech = 2 * len([1, 2, 63, 64]) * (3 * 3 + 1)  # dtypes * lengths * (3 patterns x 3 scales + zeros)
     total_cells = n_cells_per_mech * len(mechanisms)
     console.print(
@@ -6965,7 +6958,7 @@ def eval_tasks(
             "n_examples_per_seed": examples,
         }
 
-    resolved_run_id = run_id or time.strftime("%Y%m%d_%H%M%S")
+    resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "evals" / "tasks" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -7969,7 +7962,7 @@ def scorecard(
     from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
     from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
 
-    resolved_run_id = run_id or _default_run_id()
+    resolved_run_id = _resolve_run_id(run_id)
     if (
         len(resolved_run_id) > 128
         or not resolved_run_id
@@ -8600,7 +8593,7 @@ def probe_charges(
 
     from nanochat.report import build_provenance
 
-    resolved_run_id = run_id or time.strftime("%Y%m%d_%H%M%S")
+    resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "probes" / "charges" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     summary = {
@@ -8811,7 +8804,7 @@ def precision_curve(
     table.add_row("ratio (digit/float)", "-", f"{ratio:.3f}")
     console.print(table)
 
-    resolved_run_id = run_id or time.strftime("%Y%m%d_%H%M%S")
+    resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "bench" / "precision_curves" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     summary = {
@@ -9003,7 +8996,7 @@ def depth_curve(
         )
     console.print(table)
 
-    resolved_run_id = run_id or time.strftime("%Y%m%d_%H%M%S")
+    resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "bench" / "depth_curves" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     summary = {
@@ -9121,7 +9114,7 @@ def bench_ultrametric(
     console.print(table)
     console.print(f"[dim]loadavg at start: {load_before} (timings on a busy box understate speedups)[/dim]")
 
-    resolved_run_id = run_id or time.strftime("%Y%m%d_%H%M%S")
+    resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "bench" / "ultrametric_paths" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     summary = {

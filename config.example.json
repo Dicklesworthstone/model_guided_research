@@ -22,7 +22,6 @@
   "check_numerics": false,
   "profile_performance": false,
   
-  "max_iterations": 1000,
   "convergence_threshold": 1e-6,
   "early_stopping_patience": 10,
   

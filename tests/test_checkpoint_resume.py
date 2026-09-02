@@ -498,6 +498,31 @@ def test_data_dir_trains_on_generated_task_corpus(tmp_path):
         train_mod.train(bad)
 
 
+@pytest.mark.parametrize(
+    "flag, value, match",
+    [
+        ("--run-id", "../escape", "run-id"),
+        ("--run-id", "nested/run", "run-id"),
+        ("--run-id", "   ", "run-id"),
+        ("--artifacts-topic", "../../etc", "artifacts-topic"),
+        ("--artifacts-topic", "/abs/path", "artifacts-topic"),
+        ("--artifacts-kind", "bench/../x", "artifacts-kind"),
+    ],
+)
+def test_artifact_path_segments_are_validated(tmp_path, flag, value, match):
+    """--run-id is one directory under <artifacts-dir>/<kind>/<topic>/ and
+    kind/topic may nest but never escape: previously '--run-id ../x' wrote
+    summary.json and metrics.jsonl outside the artifacts tree."""
+    from nanochat import train as train_mod
+
+    args = train_mod.build_parser().parse_args(
+        ["--device", "cpu", "--max-steps", "1", "--artifacts-dir", str(tmp_path / "artifacts"), flag, value]
+    )
+    with pytest.raises(ValueError, match=match):
+        train_mod.train(args)
+    assert not (tmp_path / "escape").exists() and not (tmp_path / "etc").exists()
+
+
 def test_optimizer_type_selects_distinct_optimizers():
     """`--optimizer-type adamw | muon | hoss` must build three DIFFERENT
     optimizer sets. Before 2026-09 setup_optimizers branched only on hoss, so

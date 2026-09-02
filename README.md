@@ -741,8 +741,8 @@ mgr info knot-braid
 # Run all demos sequentially (~5-10 minutes)
 mgr run-all
 
-# Custom configuration
-mgr run matrix-gauge --verbose --max-iterations 500
+# Custom configuration (seed, verbosity level, NaN/Inf checking)
+mgr run matrix-gauge --seed 7 --verbose-level 2 --debug
 
 # Export diagnostics to JSON
 mgr run reversible --rev-cayley --export-json artifacts/rev.json
@@ -1167,9 +1167,8 @@ uv sync --upgrade-package torch --index https://download.pytorch.org/whl/cu118
 ### Runtime Issues
 
 ```bash
-# Memory errors
-mgr run <demo> --max-iterations 100  # Reduce problem size
-python -m nanochat.train --batch-size 4  # Smaller batches
+# Memory errors (the JAX demos are fixed-size; shrink nanochat runs instead)
+python -m nanochat.train --batch-size 4 --sequence-len 128  # Smaller batches / shorter context
 
 # Numerical instabilities
 mgr run <demo> --debug  # Enable NaN/Inf detection

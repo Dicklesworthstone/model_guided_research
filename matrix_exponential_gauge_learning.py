@@ -226,7 +226,11 @@ def spd_from_symmetric(S: jnp.ndarray) -> Array:
     Returns exp(S) = V diag(exp(λ)) V^T.
     """
     lam, V = jnp.linalg.eigh(S)
-    return cast(Array, (V * jnp.exp(lam))[..., None, :] @ jnp.swapaxes(V, -1, -2))
+    # (V * exp(lam)) scales column k by exp(lambda_k), so this is V diag(exp lam) V^T
+    # with the input's (..., d, d) shape. The previous `[..., None, :]` insertion
+    # returned (..., d, 1, d); the demo's default head split happened to give
+    # the SPD block width 1, which hid the shape error behind broadcasting.
+    return cast(Array, (V * jnp.exp(lam)) @ jnp.swapaxes(V, -1, -2))
 
 
 def symplectic_cayley(H: jnp.ndarray) -> Array:
@@ -271,6 +275,20 @@ def _bch_fuse_sequence(mats: Sequence[jnp.ndarray], *, order: int = 2) -> Array:
         comm = fused @ m - m @ fused
         fused = fused + m + 0.5 * comm
     return fused
+
+
+def _norm_growth(y_out: jnp.ndarray, x_in: jnp.ndarray) -> float:
+    """Mean per-token output norm over mean per-token input norm.
+
+    This is a VALUE-PATH quantity - the one the structured SO/SPD/Sp channel
+    blocks act on (their claim is norm control). The transport-angle
+    curvature proxy is computed from q/k before any value transform, so no
+    value-path change can move it; comparing configurations on it alone
+    printed identical numbers and a vacuous "decision".
+    """
+    num = float(jnp.mean(jnp.linalg.norm(y_out, axis=-1)))
+    den = float(jnp.mean(jnp.linalg.norm(x_in, axis=-1)))
+    return num / den if den > 0.0 else float("inf")
 
 
 def _relative_frob(a: jnp.ndarray, b: jnp.ndarray) -> float:
@@ -675,67 +693,9 @@ class GaugeAttentionBlock(nn.Module):
         # Pull back to native frames
         z = self._apply_transport(z_t, theta_prefix, sign=-1.0)  # (B,N,H,dh)
 
-        # Merge heads
-        # z shape is (B, N, H, dh) if structured blocks preserved it, but structured blocks might have changed last dim
-        # Actually, structured blocks map (..., dh) -> (..., dh) (concatenated parts sum to dh)
-        # But wait, my structured block logic:
-        # so_slice (so_dim), spd_slice (spd_dim), sp_slice (sp_dim)
-        # parts appended.
-        # If so_dim + spd_dim + sp_dim == dh, then output is dh.
-        # Let's check if z is indeed (B, N, H, dh)
-        # The error says: cannot reshape array of shape (1, 32, 4, 19) into shape (1, 32, 64)
-        # 4 * 19 = 76 != 64.
-        # Ah, the structured blocks might be producing different output dimensions?
-        # cayley_orthogonal_from_skew: (d,d) -> (d,d). Preserves dim.
-        # spd_from_symmetric: (d,d) -> (d,d). Preserves dim.
-        # symplectic_cayley: (d,d) -> (d,d). Preserves dim.
-        # So input dim should equal output dim.
-        # Wait, let's look at the structured block logic again.
-        # off += so_dim ...
-        # If so_dim, spd_dim, sp_dim don't sum to dh, then we are missing parts?
-        # In setup:
-        # so_dim = max(0, dh // 3)
-        # sp_dim = max(0, ((dh - so_dim) // 2) * 2)
-        # spd_dim = max(0, dh - so_dim - sp_dim)
-        # They sum to dh by construction.
-        #
-        # Wait, the error says shape is (1, 32, 4, 19).
-        # 19? dh is 16.
-        # If dh=16:
-        # so_dim = 16//3 = 5.
-        # sp_dim = ((16-5)//2)*2 = (11//2)*2 = 5*2 = 10.
-        # spd_dim = 16 - 5 - 10 = 1.
-        # Sum = 5+10+1 = 16.
-        #
-        # Why 19?
-        # 5 (so) + 1 (spd) + 10 (sp) = 16.
-        #
-        # Let's look at the matmul logic I added.
-        # so_slice: (..., 5). Q: (H, 5, 5).
-        # matmul( (..., 5), (H, 5, 5) ) -> (..., 5).
-        #
-        # Wait, I used `jnp.matmul(so_flat, Q)`.
-        # so_flat: (H, B*N, 5). Q: (H, 5, 5).
-        # Result: (H, B*N, 5).
-        #
-        # Maybe I messed up the reshape/transpose?
-        #
-        # Let's look at the error again: (1, 32, 4, 19).
-        # B=1, N=32, H=4. Last dim 19.
-        # 19 = 5 + 1 + 10 + ... 3?
-        #
-        # Ah, `parts` list.
-        # I append `so_out`, `spd_out`, `sp_out`.
-        # If `else` branches are taken, I append `slice`.
-        #
-        # Wait, `so_dim` logic:
-        # if so_dim > 1 and self.so_param is not None: ... parts.append(so_out)
-        # else: parts.append(so_slice)
-        #
-        # If I have a bug in `so_out` shape...
-        #
-        # Let's debug print the shapes of parts inside `_apply_structured_blocks`.
-
+        # Merge heads. The structured blocks preserve dh: the SO/SPD/Sp widths
+        # are chosen in setup so that so_dim + spd_dim + sp_dim == dh, and each
+        # transform is a (d, d) map on its slice.
         z = z.reshape(B, N, H * dh)
         z = self.o_proj(z)
         if self.cfg.dropout_rate > 0.0:
@@ -1052,25 +1012,42 @@ def demo():
     )
     model_alt = GaugeTransformer(cfg_alt, depth=1, vocab_size=None)
     vars_alt = model_alt.init(key, x, train=False, return_debug=True)
-    _, dbg_alt = cast(
+    y_alt, dbg_alt = cast(
         tuple[Array, list[dict[str, Any]]],
         model_alt.apply(vars_alt, x, train=False, return_debug=True),
     )
+    # The curvature proxy is a transport-angle statistic (q/k path) and is
+    # identical under both settings by construction; the structured blocks act
+    # on the VALUE path, so the comparison that can actually move is the
+    # activation-norm growth |y|/|x| of the block output.
     curv_mean = float(jnp.mean(dbg[0]["curvature_proxy"]))
     curv_mean_alt = float(jnp.mean(dbg_alt[0]["curvature_proxy"]))
+    growth = _norm_growth(y, x)
+    growth_alt = _norm_growth(y_alt, x)
     _print_table(
-        "Structured/unstructured curvature comparison",
-        (("Structured blocks", "center"), ("Mean curvature proxy", "right")),
+        "Structured/unstructured comparison",
         (
-            (str(cfg.use_structured_blocks), f"{curv_mean:.4f}"),
-            (str(not cfg.use_structured_blocks), f"{curv_mean_alt:.4f}"),
+            ("Structured blocks", "center"),
+            ("Curvature proxy (angle path)", "right"),
+            ("Output norm growth |y|/|x|", "right"),
+        ),
+        (
+            (str(cfg.use_structured_blocks), f"{curv_mean:.4f}", f"{growth:.4f}"),
+            (str(not cfg.use_structured_blocks), f"{curv_mean_alt:.4f}", f"{growth_alt:.4f}"),
         ),
     )
-    if curv_mean <= curv_mean_alt:
-        _print_styled("Decision: keep structured blocks as default for this demo.", style="bold green")
+    structured_growth = growth if cfg.use_structured_blocks else growth_alt
+    plain_growth = growth_alt if cfg.use_structured_blocks else growth
+    if abs(structured_growth - 1.0) <= abs(plain_growth - 1.0):
+        _print_styled(
+            "Decision: structured SO/SPD/Sp blocks keep activation growth closer to 1 on this seed "
+            "(curvature is angle-path only and cannot separate the two).",
+            style="bold green",
+        )
     else:
         _print_styled(
-            "Decision: structured blocks were not better on this seed; toggle with --gauge-structured if desired.",
+            "Decision: structured blocks did not improve norm control on this seed; "
+            "toggle with --gauge-structured if desired.",
             style="bold yellow",
         )
 
@@ -1193,10 +1170,18 @@ def demo():
     )
     curv_mean_comm = float(jnp.mean(dbg_comm[0]["curvature_proxy"]))
     curv_mean_def = float(jnp.mean(dbg[0]["curvature_proxy"]))
+    # Forcing even blocks' SO/SPD/Sp generators diagonal changes the VALUE path
+    # only, so the curvature proxy (angle path) is identical in both rows by
+    # construction; the norm growth column is the one that can move.
+    growth_def = _norm_growth(y, x)
+    growth_comm = _norm_growth(y_comm, x)
     _print_table(
-        "BCH-aware curvature comparison",
-        (("Stacking mode", "left"), ("Mean curvature proxy", "right")),
-        (("Default", f"{curv_mean_def:.4f}"), ("Even blocks commuting", f"{curv_mean_comm:.4f}")),
+        "BCH-aware stacking comparison",
+        (("Stacking mode", "left"), ("Curvature proxy (angle path)", "right"), ("Output norm growth |y|/|x|", "right")),
+        (
+            ("Default", f"{curv_mean_def:.4f}", f"{growth_def:.4f}"),
+            ("Even blocks commuting", f"{curv_mean_comm:.4f}", f"{growth_comm:.4f}"),
+        ),
     )
     # Curvature/comm summary table per block
     per_block_rows = []
