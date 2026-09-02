@@ -48,8 +48,12 @@ lake env lean AxiomCheck.lean > axioms.txt
 
 Every headline lemma must depend only on the three standard Lean axioms
 (`propext`, `Classical.choice`, `Quot.sound`). CI runs exactly this check
-and fails on any `sorryAx`. Current status (vnl.2 + vnl.3): all ten
-headline lemmas across both tranches audit clean.
+and fails on any `sorryAx`. Current status: the ten headline lemmas of
+tranche 1 (bead vnl.2) plus the ABSTRACT ordinal-termination core audit
+clean; tranche 2 proper (bead vnl.3: the CNF-decrease lemmas, kick-kick
+symplecticity beyond the shear core, Gromov = LCP on general trees) is still
+open, so the theorem registry keeps thm-ordinal-termination at
+`proved-on-paper`.
 
 ## Conventions
 

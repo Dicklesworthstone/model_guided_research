@@ -148,6 +148,9 @@ filterwarnings = [
     "ignore::pytest.PytestReturnNotNoneWarning",
     "ignore::pytest.PytestCollectionWarning",
 ]
+markers = [
+    "slow: subprocess training runs and long parity sweeps (over ~30 s each on a 16-core CPU); the per-push CI job runs -m 'not slow', the nightly workflow runs everything",
+]
 
 [dependency-groups]
 dev = [

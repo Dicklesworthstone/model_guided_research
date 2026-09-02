@@ -57,6 +57,13 @@ Docs reference:
 
 ## Remaining Gaps / Follow-ups
 
+> **Status (2026-09-01):** items 1–3 below have closed since this audit was
+> written: ultrametric gained `trie` and `balltree` modes
+> (`--ultrametric-mode`), tropical records margins and exposes gauge-fix /
+> score-centering flags (`--tropical-record-margins`, `--tropical-gauge-fix`,
+> `--tropical-score-center`), and braid gained `--braid-mode discrete` with the
+> `ybe` and `rmatrix` crossing laws. The synaptic reconciliation item remains.
+
 These are places where nanochat still doesn’t fully realize what the docs describe; they should become beads (or map to existing ones).
 
 1) **Ultrametric sublinear retrieval / packed trie layout**

@@ -144,6 +144,7 @@ def test_mixed_attention_schedule_train_artifacts(monkeypatch, tmp_path):
     assert all(json.loads(line) for line in metrics_lines)
 
 
+@pytest.mark.slow
 def test_interrupted_run_resumes_bitwise(monkeypatch, tmp_path):
     """THE acceptance test: checkpoint at step 5, resume, steps 6-11 bitwise-match
     the uninterrupted run on CPU fp32 (AdamW + Muon both round-trip)."""
@@ -182,6 +183,7 @@ def test_interrupted_run_resumes_bitwise(monkeypatch, tmp_path):
     assert summary_b2["resume"]["resume_step"] == 6
 
 
+@pytest.mark.slow
 def test_resume_restores_original_budget(monkeypatch, tmp_path):
     """A resumed run honors the ORIGINAL budget even if the resume command line disagrees."""
     _run_train(monkeypatch, tmp_path, "budget-parent", checkpoint_interval=4, max_steps=8)
@@ -198,6 +200,7 @@ def test_resume_restores_original_budget(monkeypatch, tmp_path):
     assert len(summary["results"]["losses"]) == 4
 
 
+@pytest.mark.slow
 def test_resume_with_ordinal_scheduler_round_trips_counters(monkeypatch, tmp_path):
     """Scheduler counters survive the round trip and the trajectory stays bitwise.
 
@@ -243,6 +246,7 @@ def test_checkpoint_verify_happy_path(monkeypatch, tmp_path):
     assert summary["checkpointing"]["saved_steps"] == [5, 11]
 
 
+@pytest.mark.slow
 def test_resume_config_mismatch_is_actionable(monkeypatch, tmp_path):
     _run_train(monkeypatch, tmp_path, "mismatch-parent", checkpoint_interval=6)
     with pytest.raises(ValueError, match="n_embd"):
@@ -255,6 +259,7 @@ def test_resume_config_mismatch_is_actionable(monkeypatch, tmp_path):
         )
 
 
+@pytest.mark.slow
 def test_resume_approximate_mode_passes_loader_state(monkeypatch, tmp_path):
     """Approximate mode hands the recorded (pq_idx, rg_idx) to the loader's
     native resume instead of fast-forwarding; trajectories need not be bitwise."""
@@ -272,6 +277,7 @@ def test_resume_approximate_mode_passes_loader_state(monkeypatch, tmp_path):
     assert len(summary["results"]["losses"]) == 6
 
 
+@pytest.mark.slow
 def test_resume_under_torch_compile_round_trips(monkeypatch, tmp_path):
     """torch.compile both directions: the checkpoint is saved from the raw module
     (clean keys) and resume loads before the compile wrap (aot_eager keeps eager
@@ -877,6 +883,7 @@ def test_semiring_controller_and_ladder_state_round_trip():
     assert clone2.step(3, 3) == lad.step(3, 3)  # hold seen identically
 
 
+@pytest.mark.slow
 def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
     """efzy: the coverage controller's beta and the checkpoint step's pending
     coverage reading round-trip through optim_*.pt, so a resumed closed-loop
@@ -950,6 +957,7 @@ def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
     _assert_bitwise_trajectory(summary_b["results"]["losses"], summary_a["results"]["losses"][6:], offset=6)
 
 
+@pytest.mark.slow
 def test_stateful_beta_resume_refuses_missing_controller_state(monkeypatch, tmp_path):
     """efzy: resuming a coverage/ordinal beta run from a checkpoint saved under
     a DIFFERENT --semiring-beta mode (no controller state in the payload) must
@@ -1003,6 +1011,7 @@ def test_lr_warmdown_multiplier_shape():
     assert f(0, 1, 0.9) == 1.0, "single-step run has no tail"
 
 
+@pytest.mark.slow
 def test_lr_warmdown_tail_lands_in_metrics(monkeypatch, tmp_path):
     """kj8s end-to-end: ratio 0.5 over 12 steps — per-step recorded LRs stay
     flat through the stable phase then decay linearly to ~0; the default run
@@ -1069,6 +1078,7 @@ def test_lr_warmdown_conflicts_with_ordinal_scheduler(tmp_path):
         train_mod.train(args)
 
 
+@pytest.mark.slow
 def test_hoss_end_to_end_training_smoke(monkeypatch, tmp_path):
     """rz8.3: nanochat trains end-to-end with --optimizer-type hoss on the
     CPU smoke config - the closure path (loss.backward(create_graph=True)
@@ -1191,6 +1201,7 @@ def test_find_last_step_discovers_through_meta_commit_point(tmp_path):
         find_last_step(str(empty))
 
 
+@pytest.mark.slow
 def test_activation_checkpointing_preserves_trajectories_bitwise(monkeypatch, tmp_path):
     """saew: full / every-k checkpointing recomputes activations instead of
     storing them; with no dropout the recompute is numerically identical, so

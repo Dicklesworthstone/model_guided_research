@@ -1945,6 +1945,7 @@ class TestTropicalFFN:
             "gradcheck failed for pure max-plus FFN",
         )
 
+    @pytest.mark.slow
     def test_training_smoke_loss_decreases(self):
         import torch
 

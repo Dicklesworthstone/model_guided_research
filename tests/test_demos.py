@@ -1573,6 +1573,7 @@ def test_execution_sandbox_smoke():
     require("hello" in result.stdout, f"Expected stdout to contain 'hello', got: {result.stdout!r}")
 
 
+@pytest.mark.slow
 def test_certify_full_suite_passes():
     """The complete certificate suite must be green on CPU fp32 (br-5ki.1 acceptance)."""
     from cli import _CERTIFY_MECHANISMS, _run_certify_checks

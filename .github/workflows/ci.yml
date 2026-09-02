@@ -84,12 +84,16 @@ jobs:
 
       - name: Run tests with pytest
         run: |
+          # No -x: one brittle assertion used to halt the job at 21% and hide
+          # every later failure (a task-generator drift went unseen for weeks).
+          # Tests marked slow (subprocess training, long parity sweeps) run in
+          # the nightly workflow's full-suite job instead.
           uv run pytest tests/ \
             -v \
             --tb=short \
             --ignore=tests/test_runner.py \
             --ignore=tests/test_runner_enhanced.py \
-            -x
+            -m "not slow"
         env:
           JAX_PLATFORMS: cpu
 
@@ -184,10 +188,20 @@ jobs:
           auto-config: false
           use-github-cache: true
 
+      - name: Build proofs
+        working-directory: proofs
+        run: lake build
+
       - name: Axiom gate (no sorryAx)
         working-directory: proofs
         run: |
-          lake env lean AxiomCheck.lean > axioms.txt
+          # Capture stderr too: this step used to exit 1 with an empty log,
+          # leaving the failure undiagnosable from the CI page.
+          if ! lake env lean AxiomCheck.lean > axioms.txt 2>&1; then
+            cat axioms.txt
+            echo "::error::AxiomCheck.lean failed to elaborate (see output above)"
+            exit 1
+          fi
           cat axioms.txt
           if grep -q sorryAx axioms.txt; then
             echo "::error::sorryAx found in axiom audit"

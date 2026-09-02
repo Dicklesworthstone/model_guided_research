@@ -250,6 +250,7 @@ def _run_golden_eval(tmp_path: Path) -> dict:
     return scores
 
 
+@pytest.mark.slow
 def test_golden_fixture_scores_reproduce(tmp_path):
     tok = _tokenizer_or_skip()
     del tok
@@ -329,6 +330,7 @@ def _train_tiny_checkpoint(tmp_path: Path, attention_type: str, monkeypatch) -> 
 
 
 @pytest.mark.parametrize("attention_type", ["standard", "ultrametric", "simplicial", "gauge"])
+@pytest.mark.slow
 def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path):
     """Mechanism coverage incl. the special-cache mechanisms (ultrametric,
     simplicial) and gauge - includable since 7b0.5 landed KV-cache decode
@@ -386,6 +388,7 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     assert (run_dir / "run.md").exists()
 
 
+@pytest.mark.slow
 def test_e2e_lm_only_task_and_sampled_mode(monkeypatch, tmp_path):
     tok = _tokenizer_or_skip()
     del tok

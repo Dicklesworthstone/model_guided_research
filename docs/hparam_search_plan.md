@@ -53,8 +53,10 @@ difficulty**, do not enlarge the search space.
 
 ## 4. Metric to optimize
 
-- Default objective: **mean of the last N training losses** (`--score-tail`),
-  what `cmaes_phase1.py` minimizes — cheap and always available.
+- Default objective: **validation CE** (`--objective-metric val_ce`, what
+  `cmaes_phase1.py` minimizes). The training-loss tail
+  (`--objective-metric train_tail`, window `--score-tail`) is the cheap
+  smoke-only proxy and is rejected on `--resume` of a val_ce run.
 - For cross-arm comparison prefer **validation CE** *with care*: raw val CE is
   **not** commensurable across normed vs no-norm arms (logit scale → confidence
   → CE differs at equal accuracy). Use **exact-match accuracy** when comparing

@@ -46,3 +46,38 @@ jobs:
             ${{ runner.temp }}/e2e/reports/
             ${{ runner.temp }}/e2e/logs/
           retention-days: 14
+
+  # The per-push CI test job deselects tests marked `slow` (subprocess
+  # training runs, long parity sweeps). They still have to run somewhere,
+  # and this is where: the full suite, nightly, with no -x so every failure
+  # is reported.
+  pytest-full:
+    name: full pytest (slow tests included)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev --extra test
+
+      - name: Run the full test suite
+        run: |
+          uv run pytest tests/ \
+            -q \
+            --tb=short \
+            --durations=30 \
+            --ignore=tests/test_runner.py \
+            --ignore=tests/test_runner_enhanced.py
+        env:
+          JAX_PLATFORMS: cpu

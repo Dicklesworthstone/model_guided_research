@@ -37,7 +37,7 @@ mgr profile --attention standard --compare-flex   # (profiling, see docs/profili
 #   standard -> attention-entropy heatmap + per-head softmax attention maps
 python -m nanochat.viz state --attention standard --out artifacts/vis/state_standard
 #   tropical -> per-head route-margin heatmap (+ coverage when semiring_beta set)
-python -m nanochat.viz state --attention tropical --out artifacts/vis/state_tropical
+python -m nanochat.viz state --attention-type tropical --out artifacts/vis/state_tropical
 
 # Visualize a TRAINED checkpoint instead of a fresh seeded probe:
 python -m nanochat.viz state \
@@ -129,7 +129,7 @@ pay nothing) and **toggleable** via `TrainingDashboard(show_head_heatmaps=...)`.
 ```bash
 # Dashboard with the per-head heatmap (tropical route margins per head).
 python -m nanochat.train \
-    --attention tropical --tropical-record-margins \
+    --attention-type tropical --tropical-record-margins \
     --dashboard \
     --device cpu --target-flops 2e8 --batch-size 8 \
     --artifacts-kind bench --artifacts-topic dashboard/nanochat \

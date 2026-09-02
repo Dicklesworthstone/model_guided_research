@@ -90,9 +90,10 @@ peak device memory, trace path) for machine consumption / regression tracking.
 
 - **Device-agnostic** — on a CPU box the CUDA columns are zero and the table
   reports CPU time/memory; the same code yields CUDA kernel times on a GPU.
-- **Trainer integration (planned)** — these hooks are built to drop into the
-  training loop: wrap the attention/optimizer steps in `nvtx_range` and gate a
-  `torch_profiler` session on `ProfileConfig.from_env()`, so a run emits a trace
-  with zero overhead when off. Until that wiring lands, the standalone microbench
-  above is the entry point and profiles the same forward/backward hot paths.
+- **Trainer integration** — wired: `python -m nanochat.train --profile
+  [--profile-steps N]` opens a `torch_profiler` session around the training
+  steps (train.py, `_profile_session`), and the attention/optimizer steps are
+  bracketed with `nvtx_range`, so a run emits a trace with zero overhead when
+  off. The standalone microbench above remains the quickest entry point for
+  the same forward/backward hot paths.
 </content>

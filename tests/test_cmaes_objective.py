@@ -83,6 +83,7 @@ def test_cmaes_rosenbrock_sanity() -> None:
     assert best < 1.0
 
 
+@pytest.mark.slow
 def test_nanochat_train_objective_deterministic_cpu(tmp_path: Path) -> None:
     """
     End-to-end objective smoke test:

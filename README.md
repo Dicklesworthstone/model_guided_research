@@ -187,10 +187,10 @@ model_guided_research/
 ├── config.py                          # Global configuration
 ├── utils.py                           # Shared utilities
 │
-├── .beads/                            # MCP Agent Mail (task tracking)
-│   ├── config.yaml                    # Beads configuration
-│   ├── metadata.json                  # Database metadata
-│   └── .gitignore                     # Excludes runtime files
+├── .beads/                            # br (beads_rust) issue tracker — the only TODO system
+│   ├── issues.jsonl                   # Issue graph (source of truth, committed)
+│   ├── metadata.json                  # Tracker metadata
+│   └── .gitignore                     # Excludes the SQLite db and runtime lock files
 │
 ├── markdown_documentation/            # Theoretical foundations
 │   ├── matrix_exponential_gauge_learning.md
@@ -716,10 +716,12 @@ mgr hypotheses show hyp-ultrametric-hier-heldout-depth
 mgr hypotheses validate                 # schema + append-only governance
 ```
 
-Snapshot at registration time (2026-06-10): 24 claims — 15 operationalized
-against the `evaltasks`/`train` artifact schemas, 9 explicitly blocked on
-named infrastructure with the blocker recorded in the entry. The registry,
-not this README, is the source of truth for what this project predicts.
+The registry, not this README, is the source of truth for what this project
+predicts and for how each claim has fared: `mgr hypotheses list` prints the
+live count per status (supported / refuted / inconclusive / blocked / open),
+and `mgr status` says which entries the verdict engine could rule on today.
+Claims that cannot be operationalized yet are registered with
+`prediction: null` and the named blocker, so the debt stays visible.
 
 ## 💡 CLI Usage
 
@@ -761,9 +763,9 @@ python -m nanochat.train --help
 
 # Attention type selection
 python -m nanochat.train --attention-type [TYPE]
-# Where TYPE is one of:
-#   standard, tropical, ultrametric, simplicial, quaternion,
-#   braid, fractal, octonion, surreal, reversible, gauge
+# Where TYPE is one of the 13:
+#   standard, clifford, hyperbolic, tropical, ultrametric, simplicial,
+#   quaternion, braid, fractal, octonion, surreal, reversible, gauge
 
 # Per-layer attention schedule
 python -m nanochat.train --n-layer 4 --attention-schedule standard,tropical
@@ -925,18 +927,25 @@ python tests/test_mathematical_correctness.py
 
 ### Empirical Observations
 
-**From JAX Demos**:
-- Matrix exponential methods show improved gradient stability
-- Ultrametric attention achieves sub-quadratic scaling
-- Tropical geometry provides certifiable robustness
-- Reversible blocks reduce memory by 2-4× (not 10× at demo scale)
-- Ordinal scheduling comparable to cosine on simple tasks
+Empirical claims live in the hypothesis ledger, where the verdict engine can
+confirm or retire them (`mgr hypotheses list --status supported`,
+`--status refuted`). Two facts from the ledger set the current baseline
+honestly:
 
-**From Nanochat Experiments**:
-- Different attention types excel in different regimes
-- HOSS optimizer effective on ill-conditioned landscapes
-- Ordinal scheduler provides principled restart mechanism
-- Runtime configuration enables rapid iteration
+- The only mechanism-versus-standard comparisons adjudicated at a rung where
+  the standard baseline actually learned the task are braid on Dyck
+  (REFUTED, standard wins) and surreal on arith (REFUTED, a clean null).
+  Every other cross-mechanism entry is INCONCLUSIVE at a floored baseline,
+  BLOCKED on infrastructure, or OPEN.
+- The SUPPORTED entries are within-mechanism or single-arm results (Maslov
+  annealing costs nothing relative to a fixed tropical beta; ball-tree
+  ultrametric attention is exact and faster than the dense kernel; p-adic
+  digit truncation degrades gracefully at K=16).
+
+`tests/test_practical_utility.py` produces demo-scale diagnostics with
+green/yellow/red verdicts; those are sanity checks on toy problems, not
+evidence about the transformer mechanisms. Anything stated here that is not
+in the ledger should be read as a design intention, not an observation.
 
 ### Open Questions
 
@@ -951,7 +960,7 @@ python tests/test_mathematical_correctness.py
 ### Immediate (Next 3-6 Months)
 
 1. **Comprehensive Benchmarking**
-   - Systematic evaluation across all 66 configurations
+   - Systematic evaluation across the 78 homogeneous base configurations
    - Multiple datasets and task types
    - Scaling studies (model size, sequence length)
 

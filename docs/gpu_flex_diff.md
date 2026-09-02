@@ -1,5 +1,11 @@
 # GPU / FlexAttention Stack Diff (bio_inspired_nanochat → model_guided_research)
 
+> **Status (2026-09-01): historical handoff, kept for provenance.** Every delta
+> listed below has since landed in this repo: `--use-flex-attention`, the
+> `--compile*` flags, `--activation-checkpointing`, and `SynapticFlexAttention`
+> (`nanochat/synaptic.py`). The one item still open is `PYTORCH_CUDA_ALLOC_CONF`
+> guidance for GPU hosts.
+
 Bead: `model_guided_research-6l7`
 
 This note captures the current “known-good” GPU + `torch.compile` + FlexAttention integration pattern from

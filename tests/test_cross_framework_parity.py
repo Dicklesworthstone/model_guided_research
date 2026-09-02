@@ -362,6 +362,7 @@ def _octonion_aggregate_per_query_reference(weights, v, q, k, *, n_head, head_di
 @pytest.mark.parametrize("n_kv_head", [4, 2])  # 4 = GQA off, 2 = GQA on
 @pytest.mark.parametrize("batch", [1, 4])
 @pytest.mark.parametrize("tq", [1, 7, 256])
+@pytest.mark.slow
 def test_octonion_tiled_aggregate_matches_per_query_reference(
     batch, tq, n_kv_head, tile_budget_mb, dtype, monkeypatch
 ) -> None:
