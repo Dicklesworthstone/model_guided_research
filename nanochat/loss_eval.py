@@ -41,7 +41,9 @@ def evaluate_loss_and_bpb(model, batches, steps, token_bytes) -> tuple[float, fl
     the global figures. Returns ``(ce, bpb)``; ``bpb`` is ``inf`` when no byte
     was counted.
     """
-    device = model.get_device()
+    # The byte table lives on the training device; the model may be wrapped
+    # (torch.compile, DistributedDataParallel) and not expose get_device().
+    device = token_bytes.device
     # [nats over valid targets, valid targets, nats over byte tokens, bytes]
     totals = torch.zeros(4, dtype=torch.float64, device=device)
     batch_iter = iter(batches)
