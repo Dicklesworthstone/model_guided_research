@@ -512,13 +512,24 @@ class BraidCausalSelfAttention(AttentionCore):
                             f"Discrete braid invariant check failed: max |perm-sum - mask-sum| = {max_err:.3e}"
                         )
 
+        # Scale each row by the number of keys that query can SEE, not by the
+        # total key count of the tensor. With 1/sqrt(Tk) the token at position
+        # t was scaled by 1/sqrt(T_train) during training but by 1/sqrt(t+1)
+        # during single-token decode (Tk == t+1), so generation ran a different
+        # function than the one that was trained at every non-final position
+        # (the KV-cache parity tests only compare the LAST position, where the
+        # two agree). visible[i] = Tk - Tq + i + 1 covers training (Tq == Tk),
+        # single-token decode (Tq == 1) and chunked prefill identically.
+        visible = torch.arange(Tk - Tq + 1, Tk + 1, device=v.device, dtype=torch.float32)
+        inv_scale = visible.rsqrt().to(v.dtype).view(1, 1, Tq, 1)
+
         with torch.no_grad():
             # Charge fingerprint of the heuristic modes (u55.3): additive
             # accumulation has no mass partition - transported mass is whatever
             # the gates sum to - so the Q1 defect is measurably nonzero, and Q2
             # records the law's path-dependence (restricted fails the braid
             # relation; the constant ybe law passes it but still fails Q1).
-            row_mass = attn_weights.sum(dim=-1) / (Tk**0.5 + 1e-6)
+            row_mass = attn_weights.sum(dim=-1) * inv_scale.view(1, 1, Tq)
             self.last_braid_charges = {
                 "crossing_law": str(self.braid_crossing_law),
                 "q1_mass_defect": float(torch.max(torch.abs(row_mass - 1.0))),
@@ -528,4 +539,4 @@ class BraidCausalSelfAttention(AttentionCore):
             }
 
         y = attn_weights @ v  # [B, H, Tq, D]
-        return y / (Tk**0.5 + 1e-6)
+        return y * inv_scale
