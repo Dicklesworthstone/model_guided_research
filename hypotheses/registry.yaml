@@ -1714,6 +1714,7 @@ hypotheses:
         leak into either arm. If the engine does NOT return SUPPORTED here,
         every two-arm verdict at this coordinate is uninterpretable until the
         apparatus is fixed.
-    status: open
+    status: supported
     evidence: []
-    verdict_history: []
+    verdict_history:
+      - {date: "2026-09-02", verdict: supported, artifacts: ["artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s3/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s4/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s5/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s3/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s4/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s5/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"standard": {"baseline_floor": 0.5069444444444444, "baseline_mean": 0.5069444444444444, "budget_flops": 1000000000000.0, "ci95": [0.2575836236857751, 0.43686082075866933], "effect": 0.3472222222222222, "floor_source": "recorded_answer_prior", "n_baseline": 3, "n_candidate": 3, "n_for_80pct": 2, "p_value": 0.0097214097961013, "power": 0.9999999999999891, "verdict": "supported"}}}

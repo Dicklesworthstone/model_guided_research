@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-02",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 1,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 1,
+    "supported_fdr_survivors": [
+      "hyp-control-no-context-planted-effect"
+    ]
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "standard": {
+          "baseline_floor": 0.5069444444444444,
+          "baseline_mean": 0.5069444444444444,
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            0.2575836236857751,
+            0.43686082075866933
+          ],
+          "effect": 0.3472222222222222,
+          "floor_source": "recorded_answer_prior",
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 0.0097214097961013,
+          "power": 0.9999999999999891,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s3/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s4/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s5/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s5/summary.json"
+      ],
+      "id": "hyp-control-no-context-planted-effect",
+      "p_value": 0.0097214097961013,
+      "policy_version": "ci-v6",
+      "q_value": 0.0097214097961013,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    }
+  ]
+}
