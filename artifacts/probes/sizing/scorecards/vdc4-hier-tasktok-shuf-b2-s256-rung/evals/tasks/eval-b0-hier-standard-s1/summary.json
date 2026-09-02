@@ -1,0 +1,221 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 2000884334592,
+        "flops_per_step_est": 1107296256,
+        "max_steps": 1807,
+        "target_flops": 2000000000000.0
+      },
+      "dir": "/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-hier-tasktok-shuf-b2-s256-rung/runs/budget_0/hier/standard/seed_1/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "seed_1"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 1,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "control_zero_attention": false,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "n_embd": 64,
+        "n_head": 4,
+        "n_kv_head": 2,
+        "n_layer": 2,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 256,
+        "standard_record_attn_entropy": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "use_flex_attention": false,
+        "vocab_size": 384
+      },
+      "n_params": 139264,
+      "step": 1806
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-09-02T22:12:05Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "e7f5845",
+      "commit_full": "e7f5845ddacf19a82d162ea3d846f04aa881935f",
+      "dirty": false
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-hier-standard-s1",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 377
+    }
+  },
+  "provenance": {
+    "config_hash": "ed79f78863c4cd8055110cb60368895d2b21a344e447c06f87a5eb03134c0a8e",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "e7f5845ddacf19a82d162ea3d846f04aa881935f",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v4",
+  "tasks": {
+    "hier": {
+      "answer_prior": {
+        "held_out": {
+          "majority_answer": "v87",
+          "mean": 0.05555555555555555,
+          "per_seed": [
+            0.08333333333333333,
+            0.041666666666666664,
+            0.041666666666666664
+          ]
+        },
+        "in_range": {
+          "majority_answer": "v6",
+          "mean": 0.0625,
+          "per_seed": [
+            0.0625,
+            0.041666666666666664,
+            0.08333333333333333
+          ]
+        }
+      },
+      "curve": {
+        "accuracy": [
+          0.0,
+          0.0,
+          0.022388059701492536,
+          0.0,
+          0.02459016393442623
+        ],
+        "buckets": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "counts": [
+          11,
+          8,
+          134,
+          13,
+          122
+        ]
+      },
+      "difficulty_axis": "path_depth",
+      "exact_match": {
+        "greedy": {
+          "held_out": {
+            "ci95": [
+              0.020833333333333332,
+              0.020833333333333332
+            ],
+            "mean": 0.020833333333333332,
+            "per_seed": [
+              0.020833333333333332,
+              0.020833333333333332,
+              0.020833333333333332
+            ]
+          },
+          "in_range": {
+            "ci95": [
+              -0.002741802658576386,
+              0.04440846932524305
+            ],
+            "mean": 0.020833333333333332,
+            "per_seed": [
+              0.020833333333333332,
+              0.041666666666666664,
+              0.0
+            ]
+          }
+        }
+      },
+      "in_range_max": 3.0,
+      "length_slope": {
+        "all": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.011121724823050325,
+            0.017916174166346374
+          ],
+          "intercept": 0.007963985705666685,
+          "n_docs": 288,
+          "slope": 0.003397224671648024
+        },
+        "held_out": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.021581920541497525,
+            0.041380461701622566
+          ],
+          "intercept": -0.026050712052796094,
+          "n_docs": 144,
+          "slope": 0.009899270580062519
+        }
+      },
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 33.3180436094602,
+        "in_range": 1.6029792552193005
+      },
+      "skipped_too_long": 0
+    }
+  },
+  "train_provenance": {
+    "config_hash": "3140323dcd2cf1528eac69cb7b4e9deccbae2d7c91e9959669ca17c48a98e984",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "e7f5845ddacf19a82d162ea3d846f04aa881935f",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}
