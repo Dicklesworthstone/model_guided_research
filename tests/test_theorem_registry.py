@@ -188,8 +188,20 @@ def test_lean_checked_requires_existing_proof_file(tmp_path: Path) -> None:
     assert any("proof file does not exist" in e for e in errors), f"got: {errors}"
     (tmp_path / "proofs").mkdir()
     (tmp_path / "proofs" / "Tropical.lean").write_text("-- lemma\n", encoding="utf-8")
-    errors2, _, _ = validate(registry(lc), repo_root=tmp_path)
-    assert not errors2, f"lean-checked with existing proof file should validate, got: {errors2}"
+    # an existing file alone is not enough any more: the label must be bound
+    # to a lemma the axiom audit prints (formalization block, scope full)
+    errors_unbound, _, _ = validate(registry(lc), repo_root=tmp_path)
+    assert any("requires a formalization block" in e for e in errors_unbound), f"got: {errors_unbound}"
+    (tmp_path / "proofs" / "AxiomCheck.lean").write_text(
+        "#print axioms RouteStability.route_stable\n", encoding="utf-8"
+    )
+    bound = entry(
+        status="lean-checked",
+        proof_location="proofs/Tropical.lean RouteStability.route_stable",
+        formalization={"file": "proofs/Tropical.lean", "theorems": ["RouteStability.route_stable"], "scope": "full"},
+    )
+    errors2, _, _ = validate(registry(bound), repo_root=tmp_path)
+    assert not errors2, f"lean-checked bound to an audited lemma should validate, got: {errors2}"
 
 
 def test_lean_checked_without_proofs_token_rejected() -> None:
@@ -289,3 +301,102 @@ def test_cli_theorems_validate_green_and_json() -> None:
     payload = json.loads(result_json.output)
     assert payload["errors"] == []
     assert payload["summary"]["entries"] >= 25
+
+
+# ---------------------------------------------------------------------------
+# formalization block: a label is bound to the Lean artifact the CI audits
+# ---------------------------------------------------------------------------
+
+
+def _formalization(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "file": "proofs/MGRProofs/RouteStability.lean",
+        "theorems": ["MGRProofs.lse_max_sandwich"],
+        "scope": "full",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_lean_checked_requires_formalization_block() -> None:
+    errors, _, _ = validate(
+        registry(entry(status="lean-checked", proof_location="Lean: proofs/MGRProofs/RouteStability.lean (x)"))
+    )
+    assert any("requires a formalization block" in e for e in errors), f"got: {errors}"
+
+
+def test_lean_checked_with_full_formalization_validates() -> None:
+    errors, _, _ = validate(
+        registry(
+            entry(
+                status="lean-checked",
+                proof_location="Lean: proofs/MGRProofs/RouteStability.lean (lse_max_sandwich)",
+                formalization=_formalization(),
+            )
+        )
+    )
+    assert not errors, f"a fully formalized, audited lemma must validate, got: {errors}"
+
+
+def test_formalization_theorem_must_be_audited_by_axiom_check() -> None:
+    """Kill witness: naming a Lean theorem the axiom gate never prints leaves
+    the label unbound to any CI-checked artifact."""
+    errors, _, _ = validate(
+        registry(
+            entry(
+                status="lean-checked",
+                proof_location="Lean: proofs/MGRProofs/RouteStability.lean (x)",
+                formalization=_formalization(theorems=["MGRProofs.not_a_real_lemma"]),
+            )
+        )
+    )
+    assert any("not audited by proofs/AxiomCheck.lean" in e for e in errors), f"got: {errors}"
+
+
+def test_partial_formalization_cannot_carry_lean_checked_status() -> None:
+    errors, _, _ = validate(
+        registry(
+            entry(
+                status="lean-checked",
+                proof_location="Lean: proofs/MGRProofs/RouteStability.lean (x)",
+                formalization=_formalization(scope="partial", unformalized="the k-ary case"),
+            )
+        )
+    )
+    assert any("scope must be full" in e for e in errors), f"got: {errors}"
+
+
+def test_partial_formalization_requires_unformalized_note() -> None:
+    errors, _, _ = validate(registry(entry(formalization=_formalization(scope="partial"))))
+    assert any("requires 'unformalized'" in e for e in errors), f"got: {errors}"
+
+
+def test_partial_formalization_on_paper_theorem_validates() -> None:
+    errors, _, _ = validate(
+        registry(entry(formalization=_formalization(scope="partial", unformalized="the boundary clause")))
+    )
+    assert not errors, f"got: {errors}"
+
+
+def test_conjecture_cannot_carry_formalization() -> None:
+    errors, _, _ = validate(registry(entry(id="conj-test-entry", status="conjecture", formalization=_formalization())))
+    assert any("conjecture cannot carry a formalization" in e for e in errors), f"got: {errors}"
+
+
+def test_real_registry_formalized_theorems_are_all_audited() -> None:
+    """Every Lean lemma the registry points at is printed by AxiomCheck.lean,
+    so the CI sorryAx grep actually covers every lean-checked label."""
+    data, load_errors = cli._load_theorem_registry(REPO_ROOT / "hypotheses" / "theorems.yaml")
+    assert data is not None and not load_errors
+    audited = {
+        line.strip()[len("#print axioms ") :]
+        for line in (REPO_ROOT / "proofs" / "AxiomCheck.lean").read_text().splitlines()
+        if line.strip().startswith("#print axioms ")
+    }
+    formalized = [t for t in data["theorems"] if isinstance(t.get("formalization"), dict)]
+    assert formalized, "the real registry should carry formalization blocks"
+    for t in formalized:
+        for name in t["formalization"]["theorems"]:
+            assert name in audited, f"{t['id']}: {name} is not audited by AxiomCheck.lean"
+    lean_checked = [t for t in data["theorems"] if t.get("status") == "lean-checked"]
+    assert all(t["formalization"]["scope"] == "full" for t in lean_checked)

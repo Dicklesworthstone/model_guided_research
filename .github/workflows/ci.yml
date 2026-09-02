@@ -126,6 +126,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
+      - name: Validate the theorem and hypothesis registries (labels must
+          resolve to artifacts: Lean lemmas audited by AxiomCheck.lean, certify
+          check names, note anchors, append-only verdict history)
+        run: |
+          uv run mgr theorems validate
+          uv run mgr hypotheses validate
+        env:
+          JAX_PLATFORMS: cpu
+
       - name: Run mechanism certificates (separate job so a cert failure is
           distinguishable from a unit-test failure in the PR UI)
         run: |

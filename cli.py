@@ -9687,8 +9687,11 @@ def _validate_theorem_registry(
     source-note path+anchor existence (path may be the literal "pending"),
     certify pointer resolution against the canonical check-name list,
     pytest pointer FORMAT, depends_on referential integrity, lean-checked
-    proof-file existence. Deep tier (collected_pytest_ids provided): pytest
-    pointer resolution against the live collection.
+    proof-file existence, and the formalization block (file exists, every
+    named lemma is printed by proofs/AxiomCheck.lean so the CI sorry gate
+    covers it, scope full for lean-checked, partial scopes name their gap).
+    Deep tier (collected_pytest_ids provided): pytest pointer resolution
+    against the live collection.
     """
     import re as _re
 
@@ -9714,6 +9717,15 @@ def _validate_theorem_registry(
     id_re = _re.compile(_THEOREM_ID_RE)
     seen_ids: set[str] = set()
     all_ids = {t.get("id") for t in theorems if isinstance(t, dict)}
+    # The Lean lemmas the CI sorry gate actually audits: a formalization
+    # block may only name these, otherwise its label is bound to nothing.
+    audited_lemmas: set[str] = set()
+    axiom_check = repo_root / "proofs" / "AxiomCheck.lean"
+    if axiom_check.exists():
+        for raw in axiom_check.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line.startswith("#print axioms "):
+                audited_lemmas.add(line[len("#print axioms ") :].strip())
     summary["entries"] = len(theorems)
 
     for idx, t in enumerate(theorems):
@@ -9768,6 +9780,36 @@ def _validate_theorem_registry(
                     elif not _anchor_in_note(note_file, anchor):
                         errors.append(f"{where}: anchor {anchor!r} not found in any heading of {npath}")
 
+        # formalization block: binds the label to a Lean artifact the CI audits
+        formalization = t.get("formalization")
+        if formalization is not None:
+            if not isinstance(formalization, dict):
+                errors.append(f"{where}: formalization must be a mapping (file, theorems, scope, unformalized)")
+                formalization = None
+            else:
+                f_file = formalization.get("file")
+                if not isinstance(f_file, str) or not (repo_root / f_file).exists():
+                    errors.append(f"{where}: formalization.file must name an existing Lean file, got {f_file!r}")
+                names = formalization.get("theorems")
+                if not isinstance(names, list) or not names or not all(isinstance(n, str) and n for n in names):
+                    errors.append(f"{where}: formalization.theorems must be a non-empty list of Lean lemma names")
+                else:
+                    for name in names:
+                        if name not in audited_lemmas:
+                            errors.append(
+                                f"{where}: formalization theorem {name!r} is not audited by proofs/AxiomCheck.lean "
+                                "(#print axioms): the CI sorry gate does not cover it, so the label is unbound"
+                            )
+                scope = formalization.get("scope")
+                if scope not in ("full", "partial"):
+                    errors.append(f"{where}: formalization.scope must be 'full' or 'partial', got {scope!r}")
+                elif scope == "partial":
+                    note = formalization.get("unformalized")
+                    if not isinstance(note, str) or not note.strip():
+                        errors.append(f"{where}: formalization.scope partial requires 'unformalized' naming the gap")
+                if status == "conjecture":
+                    errors.append(f"{where}: a conjecture cannot carry a formalization block (promote it first)")
+
         if status == "lean-checked":
             ploc = t.get("proof_location", "")
             lean_tokens = [tok for tok in str(ploc).replace(",", " ").split() if "proofs/" in tok]
@@ -9777,6 +9819,18 @@ def _validate_theorem_registry(
                 lean_file = lean_tokens[0].split("::")[0].rstrip(";:")
                 if not (repo_root / lean_file).exists():
                     errors.append(f"{where}: lean-checked proof file does not exist: {lean_file}")
+            # lean-checked means the statement AS WRITTEN is formalized: the
+            # label is only as strong as the audited artifact behind it
+            if not isinstance(formalization, dict):
+                errors.append(
+                    f"{where}: lean-checked requires a formalization block "
+                    "(file, theorems audited by AxiomCheck.lean, scope full)"
+                )
+            elif formalization.get("scope") != "full":
+                errors.append(
+                    f"{where}: lean-checked means the statement as written is formalized: scope must be full "
+                    "(a partial formalization keeps status proved-on-paper and records the gap)"
+                )
 
         checks = t.get("numerical_checks")
         if not isinstance(checks, list):
