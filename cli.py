@@ -6216,8 +6216,6 @@ def _run_doctor_checks() -> list[dict[str, Any]]:
 
     # Tokenizer
     try:
-        from nanochat.tokenizer import checkpoint_tokenizer
-
         tok = get_tokenizer()
         n_vocab = tok.get_vocab_size() if hasattr(tok, "get_vocab_size") else "?"
         add("tokenizer", "ok", f"{type(tok).__name__} (vocab={n_vocab})")
@@ -7987,6 +7985,8 @@ def scorecard(
         raise typer.BadParameter(
             "--run-id must be a single 1-128 character artifact-directory name using letters, numbers, '.', '_', or '-'"
         )
+    if tokenizer not in ("gpt2", "task"):
+        raise typer.BadParameter(f"--tokenizer must be gpt2 or task, got {tokenizer!r}")
     suite_dir = artifacts_dir / "scorecards" / resolved_run_id
     manifest_path = suite_dir / "manifest.json"
     existing_manifest: dict[str, Any] | None = None

@@ -36,13 +36,6 @@ from nanochat.checkpoint_manager import (
 from nanochat.common import autodetect_device_type, compute_cleanup, compute_init, print0
 from nanochat.dataloader import tokenizing_distributed_data_loader, tokenizing_distributed_data_loader_with_state
 from nanochat.dataset import ensure_min_parquet_files, list_parquet_files
-from nanochat.tokenizer import (
-    TASK_TOKENIZER_DIRNAME,
-    TASK_TOKENIZER_MIN_VOCAB,
-    HuggingFaceTokenizer,
-    padded_vocab_size,
-    train_task_tokenizer,
-)
 from nanochat.gpt import (
     GPT,
     SUPPORTED_ATTENTION_TYPES,
@@ -62,6 +55,13 @@ from nanochat.report import (
     get_system_info,
 )
 from nanochat.synaptic import SynapticConfig
+from nanochat.tokenizer import (
+    TASK_TOKENIZER_DIRNAME,
+    TASK_TOKENIZER_MIN_VOCAB,
+    HuggingFaceTokenizer,
+    padded_vocab_size,
+    train_task_tokenizer,
+)
 from nanochat.tropical_attention_torch import set_semiring_beta
 
 console = Console()
