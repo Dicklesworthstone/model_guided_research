@@ -108,6 +108,27 @@ same documents shuffled, with exact match 0.0. Two rules:
   trainer's `<|bos|>` since the same date (`mgr.evaltasks.v4`); v3 and v4
   artifacts must never share an arm.
 
+### Two controls every comparison needs
+
+An apparatus that has never reported "nothing" has not been shown able to
+report anything, and one that has never found a planted effect has not been
+shown able to find one. The harness carries both controls:
+
+- **Negative control: the placebo task.** Answers carry no structure, so no
+  mechanism may win. `hyp-placebo-no-winner` is adjudicated from placebo
+  cells of every mechanism at the campaign budget; the scorecard's
+  publication gate stays BLOCKED until it is SUPPORTED.
+- **Positive control: the no-context arm.** `nanochat.train
+  --control-zero-attention` multiplies every block's attention output by
+  zero, so the model is a per-token MLP stack bounded by the answer prior on
+  any context-dependent task. `hyp-control-no-context-planted-effect`
+  registers "standard beats that arm by 0.20 held-out exact match at equal
+  FLOPs on arith"; the engine MUST return SUPPORTED, and any other outcome
+  indicts the evaluator, the budget cohorts, the variant selectors or the
+  statistics rather than attention. The flag is recorded in `model_config`,
+  so the registry's `baseline.variant` / `candidate_variant` selectors tell
+  the two arms apart.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.
