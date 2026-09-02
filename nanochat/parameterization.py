@@ -307,6 +307,9 @@ def coordinate_check(
         "loglog_slope": float(slope),
         "r_squared": float(r2),
         "concentration_class": scaling_rule(attention_type).concentration_class,
+        # the FFN is part of the arm: with the standard FFN the tropical
+        # current/nsa arms are identical, so evidence must record which one ran
+        "ffn_type": str(kwargs.get("ffn_type", "standard")),
     }
 
 
@@ -389,6 +392,7 @@ def coord_check_artifact(
             "r_squared": result.get("r_squared"),
             "concentration_class": result.get("concentration_class"),
             "parameterization": parameterization,
+            "ffn_type": result.get("ffn_type"),
         },
     }
 

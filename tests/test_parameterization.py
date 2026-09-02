@@ -321,6 +321,9 @@ def test_coord_check_command_writes_one_artifact_per_arm_and_seed(tmp_path):
     payload = json.loads((run_dir / "tropical_nsa_s1" / "summary.json").read_text())
     assert payload["schema_version"] == P.COORD_CURVES_SCHEMA and payload["mechanism"] == "tropical"
     assert payload["results"]["parameterization"] == "nsa" and payload["meta"]["seed"] == 1
+    assert payload["results"]["ffn_type"] == "tropical"  # --ffn-type auto: the E[max] correction's home
+    std = json.loads((run_dir / "standard_current_s0" / "summary.json").read_text())
+    assert std["results"]["ffn_type"] == "standard"
     assert payload["meta"]["run_id"] == "cc" and "git" in payload["meta"]
     assert payload["results"]["abs_loglog_slope"] == pytest.approx(abs(payload["results"]["loglog_slope"]))
     assert set(payload["results"]["activation_rms"]) == {"32", "64"}

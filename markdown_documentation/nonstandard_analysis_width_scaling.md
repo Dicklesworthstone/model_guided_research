@@ -279,8 +279,18 @@ declared second-order and left unshifted; the tropical MLP's output then grows
 at the score stage — the rule the registered nsa arm implements — cannot touch
 this, which is why the arm was refuted rather than merely underpowered.
 
+**Growth law of the offset** (seeds 0–2, tropical attention, standard FFN):
+the per-channel offset is a single-signed, negative constant across channels
+(signed mean −1.40 / −1.36 / −1.34 at width 2048) whose magnitude grows as
+width^0.12 / width^0.15 / width^0.06 over 64…2048, while the *centered* RMS of
+the attention output is flat (log-log slope 0.03 / 0.05 / 0.00). The drift is
+therefore purely a location effect of the max-plus value stage under score
+centering (s_k ≤ 0 pulls every y_d = max_k (s_k + v_{k,d}) below the value
+maximum by an amount that grows slowly with the head count); the spread is
+already correctly parameterized, and no scale rule can fix a location term.
+
 **What a successor would have to claim** (not registered here; a claim needs
 its own pre-evidence entry): a location correction at the value-aggregation
-stage, or a fan-in-scaled output projection, flattens the tropical curve on a
-fresh seed set. The growth law of the offset (√width under a constant-std
-projection versus Θ(1) under 1/√fan-in) is the open measurement on bead 1xov.
+stage — subtracting the expected value-stage location as a function of Tk and
+the head count, the same way the score stage subtracts E[max] — flattens the
+tropical curve on a fresh seed set. Bead 1xov holds the design.
