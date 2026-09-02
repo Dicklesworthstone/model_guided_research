@@ -7133,6 +7133,7 @@ def _scorecard_train_command(
     n_embd: int,
     learning_rate: float,
     optimizer_type: str,
+    tokenizer: str,
     warmup_steps: int,
     log_interval: int,
     val_interval: int,
@@ -7164,6 +7165,8 @@ def _scorecard_train_command(
         str(learning_rate),
         "--optimizer-type",
         optimizer_type,
+        "--tokenizer",
+        tokenizer,
         "--warmup-steps",
         str(warmup_steps),
         "--log-interval",
@@ -7929,6 +7932,14 @@ def scorecard(
     n_embd: Annotated[int, typer.Option(help="Embedding width", min=16)] = 128,
     learning_rate: Annotated[float, typer.Option(help="Training learning rate", min=1e-8)] = 6e-4,
     optimizer_type: Annotated[str, typer.Option(help="nanochat optimizer")] = "adamw",
+    tokenizer: Annotated[
+        str,
+        typer.Option(
+            help="gpt2 | task. task trains a byte-level BPE per task corpus, so the FLOPs budget buys transformer "
+            "body instead of a 50k-row vocabulary (at d=64 the GPT-2 embedding/lm_head are ~97%% of every FLOP). "
+            "Changes the comparison coordinate: keep one value across the cells you compare."
+        ),
+    ] = "gpt2",
     warmup_steps: Annotated[int, typer.Option(help="Warmup steps", min=0)] = 0,
     log_interval: Annotated[int, typer.Option(help="Training log cadence", min=1)] = 1,
     val_interval: Annotated[int, typer.Option(help="Training validation cadence; 0 disables it", min=0)] = 0,
@@ -8092,6 +8103,7 @@ def scorecard(
         "n_embd": n_embd,
         "learning_rate": learning_rate,
         "optimizer_type": optimizer_type,
+        "tokenizer": tokenizer,
         "warmup_steps": warmup_steps,
         "log_interval": log_interval,
         "val_interval": val_interval,
@@ -8228,6 +8240,7 @@ def scorecard(
                     n_embd=n_embd,
                     learning_rate=learning_rate,
                     optimizer_type=optimizer_type,
+                    tokenizer=tokenizer,
                     warmup_steps=warmup_steps,
                     log_interval=log_interval,
                     val_interval=val_interval,
