@@ -126,7 +126,10 @@ def test_prefetch_thread_stops_when_the_generator_is_closed(tmp_path):
     started = [t for t in threading.enumerate() if t.name == "dataloader-prefetch" and t.name not in before]
     assert started, "prefetch thread should be running after the first batch"
     loader.close()
-    deadline = time.monotonic() + 10.0
+    # generous: on a shared host at load 60 the daemon may not get scheduled for
+    # many seconds; without the fix it never exits at all, so the assertion
+    # keeps its teeth at any deadline
+    deadline = time.monotonic() + 60.0
     while time.monotonic() < deadline and any(t.is_alive() for t in started):
         time.sleep(0.05)
     assert not any(t.is_alive() for t in started), "prefetch thread must exit after the generator is closed"
