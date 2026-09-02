@@ -1,0 +1,270 @@
+# Bridge Plan: model_guided_research
+
+**Reality check date:** 2026-09-01 (Phase 1, commit fc6afa8); bridge plan written 2026-09-02 against commit e0792c6.
+**Gap count:** 6 critical, 5 major, 5 minor.
+**Beads:** 272 total (5 open + 5 in progress before this plan). Every gap below says whether the existing beads would close it. Bead creation from this plan (Phase 3a) is the next step and is deliberately not done here.
+**Estimated work:** the critical path is compute-bound, not code-bound. On this CPU-only box a single off-floor training run at d128/L4 and 1e14 FLOPs takes about 2 hours; the campaigns below need roughly 40 such runs. One GPU turns that into an afternoon.
+
+This document is the measuring stick for the next ambition and refinement rounds. Revise it in place; do not fork it.
+
+---
+
+## Vision checklist (what the README and AGENTS.md promise)
+
+| # | Goal | Source | Status | Evidence |
+|---|------|--------|--------|----------|
+| V1 | 13 JAX demos, each faithful to its mathematics, runnable via `mgr run` with property checks | README "13 Mathematical Frameworks" | WORKING | All 13 demos run; gauge demo repaired 2026-09-01 (SPD shape, real value-path comparisons) |
+| V2 | 13 selectable nanochat attention types, faithful to the frameworks | README "Nanochat", "13 selectable attention types" | PARTIAL | 10 faithful; fractal, simplicial and surreal are proxies (README now says so; the code has not changed) |
+| V3 | Every mechanism passes the new-mechanism checklist (reduction certify, placebo, coordinate check, numerics, interpretability observable, goldens) | docs/new_mechanism_checklist.md | PARTIAL | Reduction certify for 3 of 11; coordinate check for 0 of 11; certificates 81 days stale for 7 mechanisms |
+| V4 | Fixed-FLOPs fair comparison harness producing predicted-vs-observed verdicts across the battery x mechanisms | README "Experimental Matrix", bead vdc.4 | UNPROVEN | Harness runs (e2e scorecard scenario) but the production scorecard has zero off-floor rows; copyops floored at every rung 5e10..8e12 |
+| V5 | Hypothesis ledger with adjudicated, evidence-backed verdicts | README "Expected Performance Characteristics", docs/research_loop.md | PARTIAL | 52 hypotheses: 7 supported, 3 refuted, 10 inconclusive, 12 blocked, 20 open. Only braid-Dyck and surreal-arith were ever compared to standard off-floor. 8 entries cite artifacts that are not in the repo |
+| V6 | The research loop runs end to end on CPU tiny budgets (gen-tasks, train, certify, eval-tasks, sample, adjudicate) | AGENTS.md "Research Loop", scripts/e2e_pipeline.py | WORKING | e2e full-loop and scorecard scenarios; `mgr quickstart` (added 2026-09-01) |
+| V7 | CI green on push; nightly e2e green | .github/workflows | UNPROVEN | No CI run has completed since Aug 26: every push since is cancelled by the next push (an auto-committer on this host pushes in bursts). Nightly e2e failed 2026-09-01 12:35 UTC on the pre-fix contract |
+| V8 | Three optimizers (adamw, muon, hoss) and the ordinal scheduler are real and distinct | README "Recommended Experimental Protocol" | WORKING | Fixed 2026-09-01 (`pure_adamw` vs `muon` split; per-group ordinal LR); tests in tests/test_checkpoint_resume.py |
+| V9 | GPU / FlexAttention path validated | bead 0jk, docs/gpu_flex_diff.md | UNPROVEN | Validated in June; four mechanism edits since (braid decode scaling, trie rewind, reversible autocast, flex mask memo) have never run on a GPU |
+| V10 | Machine-checked mathematics: theorem registry + Lean proofs of load-bearing lemmas | epic vnl | PARTIAL | Tranche 1 proved; tranche 2 (mxo3, vnl.3) in progress |
+| V11 | Interpretability observable per mechanism in the metrics stream | checklist item 6 | PARTIAL | braid charges, tropical margins, attention entropy exist; gauge curvature, hyperbolic curvature readout, quaternion/octonion rotor stats do not |
+| V12 | Documentation states only what the ledger supports | README "Empirical Observations" | WORKING | README rewritten 2026-09-01; stale docs bead g7jd closed |
+| V13 | Fixed-FLOPs comparisons measure the mechanism, not the tokenizer | docs/fixed_flops_harness.md | WORKING (unproven in production) | `--tokenizer task` landed 2026-09-02 (bead n6y1). No campaign has used it yet |
+| V14 | Hybrid architectures, mixture of mechanisms, scaling-law study, length extrapolation, optimizer bake-off | README "Future Directions (Immediate)" | NOT_STARTED | Beads 7b0.3, 7b0.4, w94, w94.3, vdc.5, rz8.4 exist; all compute-bound |
+| V15 | Reach: standalone attention API, docs site | epic swh | NOT_STARTED | p3 beads exist |
+| V16 | Reproducibility: bitwise resume, frozen-worktree campaigns, taint propagation | beads rz8.1, nm9j, dz9i | WORKING | Tests and e2e resume scenario |
+
+**Headline:** the tooling is real and now mostly correct; the science is undelivered. The single fact that decides whether this project delivers on its vision is V4/V5: no mechanism has been shown to beat (or lose to) standard attention at a rung where standard actually learns the task, except braid on Dyck (loses) and surreal on arith (null). Everything in the critical section below exists to change that fact.
+
+---
+
+## Critical gaps (block the core value proposition)
+
+### Gap 1: Off-floor mechanism-vs-standard evidence — UNPROVEN to WORKING
+
+**Current state:** `mgr status` reports 42 of 52 hypotheses cannot be ruled on today: 13 have no candidate artifacts, 15 have no operationalized prediction, 9 lack the metric, 4 are on manual hold, 1 is tainted. The vdc.4 scorecard (`artifacts/scorecards`) has no row where the standard baseline cleared the answer-prior floor. The copyops diagnostic (bead r7qn, 2026-09-01) found the cause: at d64 the 50,304-token GPT-2 vocabulary is 96.6% of every FLOP, so a fixed-FLOPs budget bought almost no transformer body. `nanochat/train.py --tokenizer task` (bead n6y1) removes that cost: a 512-token byte-level BPE gives the body about 25x more tokens per FLOP at the same budget.
+
+**Target state:** for each battery task there is a recorded rung (model size, budget) where all three standard seeds clear the floor, and at that rung every registered mechanism-vs-standard hypothesis for that task has a SUPPORTED, REFUTED or INCONCLUSIVE verdict backed by committed artifacts.
+
+**Success criteria:**
+- [ ] `artifacts/probes/sizing/` holds a task-tokenizer rung ladder for copyops, hier, needle, dyck, arith and group, each with the standard arm at 3 seeds and the recorded answer-prior floor.
+- [ ] `mgr status --json` shows `engine_today.no_candidate_artifacts` at 0 for the mechanism-vs-standard hypotheses (`hyp-reversible-copyops-inversion`, `hyp-ultrametric-hier-heldout-depth`, `hyp-fractal-hier-heldout-depth`, `hyp-ultrametric-needle-long-context`, `hyp-tropical-needle-no-dilution`, `hyp-braid-length-generalization`, `hyp-placebo-no-winner`).
+- [ ] The vdc.4 scorecard report has at least one floor-passing row per task, and the predicted-vs-observed table is non-empty.
+- [ ] Every cited artifact is committed (force-added) so `evidence_missing` stays empty.
+
+**Implementation plan:**
+1. Preregister on bead r7qn the exact successor coordinate (this is the campaign_preregistration_template): task tokenizer at 512, standard arm, d64/L2 at budgets 1e12, 2e12, 4e12, then d128/L4 at 1e13, 3e13, 1e14; 3 seeds; metric `exact_match.greedy.held_out`; stopping rule "first rung where all three seeds exceed the floor by 0.10".
+2. Run the ladder from a detached clean worktree (`git worktree add --detach`, campaign runs are refused on a dirty tree) with `mgr scorecard --tokenizer task` or `nanochat.train --tokenizer task`; keep outputs under `artifacts/probes/sizing/` (quarantined, never in the default evidence pool).
+3. At the found rung, run each registered mechanism arm plus the placebo arm at the power-derived seed count (docs/campaign_preregistration_template.md); adjudicate with `mgr adjudicate` (ci-v6); append verdicts.
+4. Run `mgr scorecard` for the full battery at that rung (vdc.4) and commit the report.
+5. If a task has no rung reachable on CPU within 1e14 FLOPs, record that as the probe's verdict and move the task to the GPU list (Gap 6).
+
+**Dependencies:** Gap 5 (CI must complete so regressions are caught before compute is spent); Gap 4 for the coordinate check (checklist item 3 wants the width-scaling coordinate confirmed before cross-mechanism comparisons at d128).
+**Would existing beads close it?** Partially. vdc.4 (in progress) and r7qn (open) cover the scorecard and the diagnostic; n6y1 delivered the tokenizer. New beads are needed for the preregistered rung ladder per task, the per-task campaigns, and the artifact commits.
+**Estimated complexity:** XL (compute), S (code).
+**Vision goals served:** V4, V5, V13.
+
+### Gap 2: Ledger verdicts citing artifacts that are not in the repo — PARTIAL to WORKING
+
+**Current state:** `mgr status --json` lists 8 entries whose cited artifacts are absent: `hyp-symplectic-nonorm-depth-tied`, `hyp-symplectic-nonorm-depth-untied` (six e2-symp-tied / e2-std-norm campaign runs), `hyp-rmatrix-s5-length-slope`, `hyp-rmatrix-solvable-control-specificity`, `hyp-rmatrix-charge-decodability`, `hyp-padic-truncation-graceful`, `hyp-padic-truncation-graceful-k16`, `hyp-padic-truncation-depth-independent`. Two of those are SUPPORTED. Bead uej2 is in progress; three other entries were regenerated and re-adjudicated on 2026-09-02 (run review-regen-2026-09-02).
+
+**Target state:** every verdict in `hypotheses/registry.yaml` cites artifacts present in the tree, or is superseded by a re-adjudication from regenerated evidence.
+
+**Success criteria:**
+- [ ] `mgr status --json | jq '.evidence_missing | length'` prints 0.
+- [ ] `tests/test_adjudicate.py::test_status_flags_verdicts_whose_cited_artifacts_are_absent` stays green.
+- [ ] Each regenerated verdict cites a run id that names the regeneration date.
+
+**Implementation plan:**
+1. p-adic truncation trio: rerun the ultrametric truncation sweep (`mgr certify`/bench paths named in the registry `evidence.artifacts` fields) from a clean worktree; commit under `artifacts/bench/` with force-add.
+2. rmatrix trio: rerun the e2e word-problem scenario at the registered sizes (`scripts/e2e_pipeline.py --scenario word-problem` produces the slope tables) and the charge-decodability probe; commit.
+3. Symplectic pair: six training runs (reversible tied/untied vs standard-with-norm) at the registered budget; on CPU these are the most expensive items in this gap. Re-adjudicate; the note on bead n68c says these cannot be decided on val_CE because the no-norm arm runs at activation norm about 260, so register the replacement metric first.
+4. Append the new verdicts (registry is append-only) and close uej2.
+
+**Dependencies:** none for the code; compute for the symplectic pair.
+**Would existing beads close it?** Yes: uej2 plus n68c.
+**Estimated complexity:** M (L for the symplectic pair on CPU).
+**Vision goals served:** V5, V12.
+
+### Gap 3: Three proxy mechanisms sold as faithful — PARTIAL to WORKING
+
+**Current state:** `nanochat/fractal_attention_torch.py`, `simplicial_attention_torch.py` and `surreal_torch.py` implement simplified stand-ins (a router-simplex over fixed memories, a pairwise-only "two-hop" approximation, a scaled-attention variant with transseries labels) rather than the constructions in markdown_documentation/. README now labels them proxies; the registry hypotheses for them (`hyp-fractal-hier-heldout-depth`, `hyp-simplicial-two-hop-composition`, `hyp-surreal-*`) therefore test the proxy, not the theory.
+
+**Target state:** either each proxy is replaced by a faithful mechanism that passes the new-mechanism checklist, or the hypothesis registry scopes each claim to "proxy tier" with a named successor hypothesis for the faithful version.
+
+**Success criteria:**
+- [ ] Fractal: an IFS memory whose contraction maps are learned and whose capacity is measured by the Moran dimension (bead 8gk.5 unifies this with the ultrametric trie); `mgr certify fractal` includes a contraction and an address-decoding check.
+- [ ] Simplicial: genuine 2-simplex (triplet) attention over a sparse neighbourhood with the mass-conservation certify check extended to the triangle term; a placebo that keeps the parameter count but randomizes the triangles.
+- [ ] Surreal: the scaling-axis construction from the transseries design doc, with `hyp-surreal-scaling-axis-prediction` operationalized (it is blocked today).
+- [ ] Goldens recaptured in the same commit as each GPTConfig change; docs/new_mechanism_checklist.md audit table updated.
+
+**Implementation plan:**
+1. Write the exact reduction each faithful mechanism has to a known one (checklist item 1) as a certify check before writing the mechanism.
+2. Implement in place in the existing module (no new files), behind the same `attention_type` names, so configs and the registry do not change.
+3. Register the faithful-tier hypotheses before evidence exists; run at the Gap 1 rung.
+
+**Dependencies:** Gap 1 (a rung to test at); Gap 4 (the checklist gate).
+**Would existing beads close it?** Partially: 8gk.5 covers fractal. Simplicial and surreal have no bead.
+**Estimated complexity:** L each.
+**Vision goals served:** V2, V3, V5.
+
+### Gap 4: New-mechanism checklist gate incomplete — PARTIAL to WORKING
+
+**Current state:** the audit table in docs/new_mechanism_checklist.md shows coordinate check (lab.1) at "no" for all eleven mechanisms, reduction-to-known certify for three (tropical, ultrametric, octonion), and `mgr status` shows certificates 81 days old for tropical, ultrametric, quaternion, octonion, simplicial, fractal (braid recaptured 2026-09-02). Beads lab.1 and bp08 (`--parameterization nsa`, coord-check artifact schema) are in progress.
+
+**Target state:** every mechanism has a fresh certificate at HEAD, a coordinate-check artifact, and, where a sub-mechanism exists, a reduction check.
+
+**Success criteria:**
+- [ ] `mgr status --json | jq '[.certificates[] | select(.stale==true)] | length'` prints 0 after a `mgr certify --all` recapture committed with force-add.
+- [ ] A coord-check artifact per mechanism under `artifacts/coordcheck/` and `hyp-coordcheck-clt-flat` adjudicated.
+- [ ] Reduction certs for gauge (to standard with QK-norm), braid (zero-charge limit to standard), reversible (identity coupling to a plain block).
+
+**Implementation plan:**
+1. Finish bp08: `--parameterization nsa` end to end, coord-check artifact schema, engine ingestion.
+2. Add the three reduction checks to `mgr certify` in nanochat/model_utils.py / the mechanism modules.
+3. Recapture certificates for all mechanisms from a clean worktree and commit them in one commit.
+
+**Dependencies:** none.
+**Would existing beads close it?** Partially: lab.1 and bp08 cover the coordinate check; certificate refresh and the reduction certs need beads.
+**Estimated complexity:** M.
+**Vision goals served:** V3.
+
+### Gap 5: CI has not completed since Aug 26 — UNPROVEN to WORKING
+
+**Current state:** the workflows were fixed on 2026-09-01 (ruff 0.16 formatting, no `-x`, slow marker split, lean job order, nightly full-suite job, scorecard contract v3) but GitHub shows every CI run since then as cancelled by the next push, and the last completed run is a failure at fc6afa8. Pushes arrive in bursts from an auto-committer on this host (four commits and pushes within one minute on 2026-09-02 02:38 UTC, authored as the owner with a Claude co-author trailer). The nightly e2e failure on 2026-09-01 12:35 UTC predates the contract fix.
+
+**Target state:** a completed green CI run at HEAD and a completed green nightly run.
+
+**Success criteria:**
+- [ ] `gh run list --workflow CI --limit 1 --json conclusion` prints success at HEAD.
+- [ ] `gh run list --workflow "E2E Pipeline (nightly)" --limit 1` prints success.
+
+**Implementation plan:**
+1. Wait for the run at 24b4920 or later to complete without a competing push; read the log; fix whatever fails.
+2. Owner decision: either the auto-committer batches its pushes, or `.github/workflows/ci.yml` sets `concurrency.cancel-in-progress: false` so bursts queue instead of cancelling.
+3. Trigger the nightly manually once (`gh workflow run e2e-nightly.yml`) after CI is green.
+
+**Dependencies:** none.
+**Would existing beads close it?** No bead covers it; 7af7 records the host hazard.
+**Estimated complexity:** S.
+**Vision goals served:** V7.
+
+### Gap 6: No GPU evidence for four mechanism changes — UNPROVEN to WORKING
+
+**Current state:** this host has no GPU. The braid decode scaling fix, the ultrametric trie rewind, the reversible autocast recompute and the FlexAttention block-mask memo were validated on CPU only. Goldens are pinned to this host and torch 2.13.
+
+**Target state:** the golden, certify and e2e determinism suites pass on a CUDA box under bf16 autocast, and GPU goldens are captured.
+
+**Success criteria:**
+- [ ] `MGR_CAPTURE_ATTENTION_GOLDENS=1 uv run pytest tests/test_attention_core_goldens.py` on a GPU host, committed as a second golden set keyed by device.
+- [ ] `mgr certify --all --device cuda` green.
+- [ ] `scripts/e2e_pipeline.py --scenario determinism` green on cuda.
+
+**Implementation plan:** one session on a GPU box running the three commands above and committing the results; if anything fails, file bugs with the device-specific trace.
+
+**Dependencies:** GPU access.
+**Would existing beads close it?** No.
+**Estimated complexity:** S given hardware.
+**Vision goals served:** V9, and it unblocks the 3e14+ budgets in Gap 1.
+
+---
+
+## Major gaps (significantly degrade the vision)
+
+### Gap 7: 24 hypotheses cannot be ruled on because their metric or prediction does not exist
+
+**Current state:** engine readiness lists 15 hypotheses with `prediction_not_operationalized` and 9 with `metric_missing`. Examples: `hyp-gauge-gradient-stability`, `hyp-reversible-gradient-stability`, `hyp-octonion-norm-stability` (need per-step gradient and activation norm statistics in metrics.jsonl), `hyp-tropical-robustness-perturbation` and `hyp-tropical-certified-robustness` (need an eval mode with input perturbation and the margin certificate), `hyp-hensel-curriculum-parity` (needs the curriculum flag), `hyp-tie-locus-density-decreases` (needs the tie-locus probe), `hyp-hyperbolic-curvature-readout`, `hyp-surreal-scaling-axis-prediction`, `hyp-group-nonsolvable-barrier`.
+
+**Target state:** each of the 24 either has its metric emitted by the trainer or evaluator and a numeric prediction registered, or is retired with a reason.
+
+**Success criteria:**
+- [ ] `engine_today.prediction_not_operationalized + metric_missing` at most 4 (the ones that genuinely need scale).
+- [ ] Each new metric has a unit test proving it lands in metrics.jsonl or the eval summary.
+
+**Implementation plan:** group by metric: (a) gradient and activation norm statistics per block, one trainer change serves four hypotheses; (b) perturbation eval mode in `mgr eval-tasks` serves the two tropical robustness claims and 8gk.7; (c) tie-locus density probe (tropical and ultrametric) as a certify observable; (d) hyperbolic curvature readout as a metrics-stream observable (also Gap 8).
+**Would existing beads close it?** Partially: 8gk.7 covers certified robustness; the rest need beads.
+**Estimated complexity:** M.
+**Vision goals served:** V5, V11.
+
+### Gap 8: Interpretability observables missing for half the mechanisms
+
+**Current state:** braid conserved charges, tropical margins and attention entropy are in the metrics stream. Gauge curvature (bead u55.2), hyperbolic curvature, quaternion/octonion rotor norms, ultrametric LCP depth histogram, reversible shadow energy are not first-class.
+**Target state:** one named observable per mechanism in `summary.json` and metrics.jsonl, each with a registered leading-indicator hypothesis (bead 5ki.5 pattern).
+**Success criteria:** `tests/test_eval_tasks.py` or the certify suite asserts presence per mechanism; `mgr viz` renders it.
+**Would existing beads close it?** Partially: u55.2 and 5ki.5.
+**Estimated complexity:** M. **Vision goals served:** V11.
+
+### Gap 9: Compute-bound studies not started (hybrids, mixture of mechanisms, scaling laws, length extrapolation, optimizer bake-off)
+
+**Current state:** beads 7b0.3, 7b0.4, w94, w94.3, vdc.5, rz8.4 exist with detailed comments. Nothing has run because the rung problem (Gap 1) made every comparison floored.
+**Target state:** each study has a preregistered coordinate and at least one adjudicated verdict.
+**Would existing beads close it?** Yes, once Gap 1 and Gap 6 unblock them.
+**Estimated complexity:** XL (compute). **Vision goals served:** V14.
+
+### Gap 10: Theory epics partially delivered (Theory I/II/III, formal proofs, capstone)
+
+**Current state:** epics 8gk, u55, lab, vnl and the capstone cbm are open with child beads in progress (lab.1, bp08, mxo3). These are the long-horizon differentiators; they are correctly sequenced behind the empirical rungs.
+**Would existing beads close it?** Yes.
+**Estimated complexity:** XL. **Vision goals served:** V10.
+
+### Gap 11: `mgr` surface still carries dormant paths
+
+**Current state:** bead 43dd lists nanochat modules with no caller (decision needed: wire in or delete; deletion needs owner permission). rz8.6 (env-var registry), 63ko (per-arm flags), pni6 (campaign val cadence) are small and open.
+**Would existing beads close it?** Yes.
+**Estimated complexity:** S each. **Vision goals served:** V6, V12.
+
+---
+
+## Minor gaps (polish)
+
+- **Gap 12: host hazard (bead 7af7).** Something on this host hard-resets working trees to origin and, separately, auto-commits and pushes. Not code; needs the owner to identify the process. Until then: commit after every batch and work on main so the auto-committer's commits are not orphaned.
+- **Gap 13: reach (epic swh).** Standalone API wheel and docs site; p3.
+- **Gap 14: kernels (7b0.7).** Tropical max-plus Triton kernel; needs GPU.
+- **Gap 15: route observatory (8gk.9), region-count experiments (oeno).** Research extras behind Gap 1.
+- **Gap 16: docs.** docs/fixed_flops_harness.md and docs/config_parity_suite.md should describe `--tokenizer task` and its effect on the FLOPs coordinate (small edit, do with the first campaign that uses it).
+
+---
+
+## Prioritized order
+
+1. Gap 5 (CI completes) — hours, unblocks trust in everything else.
+2. Gap 1 step 1 and 2 (preregister and run the task-tokenizer rung ladder) — the single most valuable compute on the project.
+3. Gap 2 (regenerate missing evidence) — runs in parallel with 2 on spare cores.
+4. Gap 4 (bp08 coordinate check, certificate refresh) — code, parallel with the compute.
+5. Gap 7 metric group (a) and (b) — code, parallel.
+6. Gap 1 steps 3 and 4 (campaigns and vdc.4) — after the rung is known.
+7. Gap 6 (GPU session) — as soon as hardware exists; it also lifts the budget ceiling for 6.
+8. Gap 3 (faithful fractal, simplicial, surreal) — after the rung exists to test them at.
+9. Gaps 8, 9, 10, 11, then the minor gaps.
+
+## Dependency graph
+
+```mermaid
+flowchart LR
+  G5[Gap 5: CI completes] --> G1a[Gap 1: rung ladder, task tokenizer]
+  N6[n6y1 task tokenizer, done] --> G1a
+  G1a --> G1b[Gap 1: mechanism campaigns + adjudication]
+  G4[Gap 4: coord check + certs] --> G1b
+  G1b --> VDC4[vdc.4 scorecard rows]
+  G2[Gap 2: regenerate missing evidence] --> LEDGER[Ledger fully evidence-backed]
+  G1b --> LEDGER
+  G7[Gap 7: missing metrics] --> G1b
+  G6[Gap 6: GPU session] --> G1b
+  G6 --> G9[Gap 9: hybrids, scaling, extrapolation, bake-off]
+  G1b --> G9
+  G1a --> G3[Gap 3: faithful fractal/simplicial/surreal]
+  G4 --> G3
+  G3 --> G1b
+  G7 --> G8[Gap 8: observables]
+  G8 --> G10[Gap 10: theory epics]
+```
+
+## Verification plan
+
+After the bridge work, each vision goal is checked by a command, not a claim:
+
+- [ ] V4/V5: `mgr status --json` shows `evidence_missing` empty and at least 7 mechanism-vs-standard hypotheses with verdicts at floor-passing rungs; `mgr scorecard` report for vdc.4 has a non-empty predicted-vs-observed table.
+- [ ] V2/V3: docs/new_mechanism_checklist.md audit table has no "no" in the coordinate-check column and no proxy rows; `mgr certify --all` fresh at HEAD.
+- [ ] V6: `scripts/e2e_pipeline.py --scenario all` exits 0 on CPU.
+- [ ] V7: latest CI and nightly runs completed with success.
+- [ ] V9: GPU goldens committed; `mgr certify --all --device cuda` green.
+- [ ] V11: every mechanism's observable asserted by a test.
+- [ ] V13: at least one committed campaign trained with `--tokenizer task`, its checkpoints carrying `tokenizer/tokenizer.json`.
+- [ ] V14: one adjudicated verdict per compute-bound study.
+- [ ] V16: `scripts/e2e_pipeline.py --scenario resume --scenario determinism` green.
