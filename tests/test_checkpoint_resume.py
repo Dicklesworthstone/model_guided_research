@@ -1240,7 +1240,9 @@ def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
     checkpoint consumer loads it back through checkpoint_tokenizer. With the
     GPT-2 tokenizer this tiny model would spend ~97% of its FLOPs on the
     50k-row vocabulary matrices."""
-    from nanochat import train as train_mod
+    from typer.testing import CliRunner
+
+    import cli
     from nanochat.diagnostics_data import generate_task
     from nanochat.tokenizer import TASK_TOKENIZER_DIRNAME, checkpoint_tokenizer, padded_vocab_size
 
@@ -1258,7 +1260,7 @@ def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
     run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "tok"
     ckpt_dir = run_dir / "checkpoints"
     assert (ckpt_dir / TASK_TOKENIZER_DIRNAME / "tokenizer.json").exists()
-    meta = json.loads((ckpt_dir / "meta_000001.json").read_text())
+    meta = json.loads(sorted(ckpt_dir.glob("meta_*.json"))[-1].read_text())
     tok_meta = meta["tokenizer"]
     assert tok_meta["kind"] == "task" and tok_meta["dir"] == TASK_TOKENIZER_DIRNAME
     assert 256 < tok_meta["vocab_size"] <= 320
@@ -1274,16 +1276,15 @@ def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
 
     # the sampler must decode with the checkpoint's tokenizer, not GPT-2 ids
     # (which would index past this 320-row embedding table)
-    result = runner.invoke(
+    result = CliRunner().invoke(
         cli.app,
         ["sample", "--checkpoint", str(ckpt_dir), "--prompt", doc, "--max-tokens", "3", "--device", "cpu", "--json"],
     )
     assert result.exit_code == 0, result.output[-2000:]
+    assert json.loads(result.output)["results"][0]["prompt_tokens"] == len(ids)
 
 
 def test_task_tokenizer_flag_validation(tmp_path):
-    from nanochat import train as train_mod
-
     for extra, match in (
         (["--tokenizer", "task"], "data-dir"),
         (["--tokenizer", "task", "--data-dir", str(tmp_path), "--vocab-size", "1024"], "vocab-size"),
