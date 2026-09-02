@@ -6216,6 +6216,8 @@ def _run_doctor_checks() -> list[dict[str, Any]]:
 
     # Tokenizer
     try:
+        from nanochat.tokenizer import get_tokenizer
+
         tok = get_tokenizer()
         n_vocab = tok.get_vocab_size() if hasattr(tok, "get_vocab_size") else "?"
         add("tokenizer", "ok", f"{type(tok).__name__} (vocab={n_vocab})")

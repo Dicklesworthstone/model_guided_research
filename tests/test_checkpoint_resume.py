@@ -1266,7 +1266,7 @@ def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
     assert 256 < tok_meta["vocab_size"] <= 320
     assert meta["model_config"]["vocab_size"] == padded_vocab_size(tok_meta["vocab_size"]) < 1000
     summary = json.loads((run_dir / "summary.json").read_text())
-    assert summary["tokenizer"]["kind"] == "task"
+    assert summary["hparams"]["tokenizer"]["kind"] == "task"
 
     tok = checkpoint_tokenizer(ckpt_dir, meta)
     doc = "TASK arith CMP 1.00e-02 2.00e+03 OUT"
