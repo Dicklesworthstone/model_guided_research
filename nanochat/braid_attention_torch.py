@@ -344,11 +344,16 @@ class BraidCausalSelfAttention(AttentionCore):
             raise ValueError(
                 f"rmatrix rapidity table covers {u_all.size(-1)} positions but Tk={Tk}; increase config.sequence_len"
             )
-        eta = self.rmatrix_eta().view(-1, 1, 1)  # (H, 1, 1)
+        # The kernel is positional and tiny ((H, Tq, Tk), B-independent), so it
+        # is evaluated in float64: the log-space gauge below accumulates a
+        # Tk-term cumulative sum, and in fp32 that put the Q1 mass-partition
+        # defect at ~1e-5 (the e2e charge gate); in fp64 it is ~1e-13. The
+        # weights are cast to the value dtype only where they meet v.
+        eta = self.rmatrix_eta().view(-1, 1, 1).double()  # (H, 1, 1)
         qpos = torch.arange(Tk - Tq, Tk, device=q.device)
         uq = u_all[:, qpos]  # (H, Tq)
         uk = u_all[:, :Tk]  # (H, Tk)
-        w = uq.unsqueeze(-1) - uk.unsqueeze(1)  # (H, Tq, Tk); >= 0 iff j <= qpos_i
+        w = (uq.unsqueeze(-1) - uk.unsqueeze(1)).double()  # (H, Tq, Tk); >= 0 iff j <= qpos_i
         valid = w >= 0
 
         log_sh_e = _log_sinh_pos(eta)  # eta >= _RMATRIX_ETA_MIN > 0
@@ -384,7 +389,7 @@ class BraidCausalSelfAttention(AttentionCore):
         # view satisfies its own mass partition; Q1 telemetry tracks the base
         # view (gated views are explicit, learned departures from it).
         if getattr(self, "rmatrix_n_probes", 0) > 0:
-            delta = torch.nn.functional.softplus(self.rmatrix_probe_delta_raw.float()) + _RMATRIX_GAP_MIN
+            delta = torch.nn.functional.softplus(self.rmatrix_probe_delta_raw.double()) + _RMATRIX_GAP_MIN
             for kp in range(self.rmatrix_n_probes):
                 w_k = w + delta[:, kp].view(-1, 1, 1)
                 weights_k, _ = kernel_rows(w_k)

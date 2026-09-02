@@ -1348,3 +1348,28 @@ def test_validation_reports_bits_per_byte(tmp_path):
     doc = "TASK arith CMP 3.10e+01 9.00e-03 OUT"
     assert sum(table[i] for i in tok.encode(doc)) == len(doc.encode("utf-8"))
     assert min(table[i] for i in tok.encode(doc)) >= 1
+
+
+def test_depth_telemetry_lands_in_metrics_and_summary(monkeypatch, tmp_path):
+    """Per-block gradient norms and activation RMS are recorded on every logged
+    step and summarized under results.depth_telemetry: the per-layer telemetry
+    the gradient-stability and norm-stability hypotheses register against."""
+    import math
+
+    summary = _run_train(monkeypatch, tmp_path, "depth-telemetry", max_steps=3, n_layer=2, log_interval=1)
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "depth-telemetry"
+    steps = [json.loads(line) for line in (run_dir / "metrics.jsonl").read_text().splitlines()]
+    steps = [rec for rec in steps if rec.get("type") == "step"]
+    assert len(steps) == 3
+    for rec in steps:
+        assert len(rec["grad_norm_by_block"]) == 2 and all(
+            math.isfinite(x) and x > 0 for x in rec["grad_norm_by_block"]
+        )
+        assert len(rec["activation_rms_by_block"]) == 2 and all(
+            math.isfinite(x) and x > 0 for x in rec["activation_rms_by_block"]
+        )
+    telemetry = summary["results"]["depth_telemetry"]
+    assert telemetry["logged_steps"] == 3
+    assert telemetry["grad_norm_spike_ratio"] >= 1.0
+    assert len(telemetry["grad_norm_by_block_final"]) == 2 and len(telemetry["activation_rms_by_block_mean"]) == 2
+    assert telemetry["grad_norm_depth_ratio"] > 0 and telemetry["activation_rms_depth_ratio"] > 0

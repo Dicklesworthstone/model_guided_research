@@ -508,6 +508,92 @@ def _collect_tropical_margin_stats(model: torch.nn.Module) -> dict[str, Any] | N
     return stats
 
 
+def _transformer_blocks(model: torch.nn.Module) -> list[torch.nn.Module] | None:
+    """The residual blocks of a GPT-style model (``model.transformer.h``), else None."""
+    transformer = getattr(model, "transformer", None)
+    blocks = getattr(transformer, "h", None) if transformer is not None else None
+    return list(blocks) if blocks is not None else None
+
+
+def _collect_block_grad_norms(model: torch.nn.Module) -> list[float] | None:
+    """Per-block L2 gradient norm: the per-layer gradient telemetry the
+    gradient-stability hypotheses wait on (hyp-gauge-gradient-stability,
+    hyp-reversible-gradient-stability). Call after backward and before the next
+    zero_grad. Tied blocks share parameters and therefore report equal norms."""
+    blocks = _transformer_blocks(model)
+    if blocks is None:
+        return None
+    out: list[float] = []
+    for block in blocks:
+        grads = [p.grad for p in block.parameters() if p.grad is not None]
+        out.append(float(torch.nn.utils.get_total_norm(grads)) if grads else 0.0)
+    return out
+
+
+def _install_activation_rms_hooks(model: torch.nn.Module) -> dict[str, Any] | None:
+    """Forward hooks that record every block's output RMS, the per-layer
+    activation-magnitude telemetry hyp-octonion-norm-stability waits on.
+
+    Readings are kept as 0-dim tensors and converted at log time, so the hooks
+    add no per-forward device sync. A cursor assigns readings to block
+    positions in forward order, which is what makes tied (shared) blocks
+    report one value per position instead of overwriting each other. Not
+    installed under torch.compile (module hooks and dynamo do not mix)."""
+    blocks = _transformer_blocks(model)
+    if not blocks:
+        return None
+    n_blocks = len(blocks)
+    state: dict[str, Any] = {"rms": [None] * n_blocks, "cursor": 0, "handles": []}
+
+    def hook(_module: torch.nn.Module, _inputs: Any, output: Any) -> None:
+        tensor = output[0] if isinstance(output, tuple) else output
+        if isinstance(tensor, torch.Tensor):
+            state["rms"][state["cursor"]] = tensor.detach().float().pow(2).mean().sqrt()
+        state["cursor"] = (state["cursor"] + 1) % n_blocks
+
+    for block in {id(b): b for b in blocks}.values():  # one hook per distinct module
+        state["handles"].append(block.register_forward_hook(hook))
+    return state
+
+
+def _summarize_depth_telemetry(
+    grad_norms: list[float],
+    block_grad_norms: list[list[float]],
+    activation_rms: list[list[float]],
+) -> dict[str, Any] | None:
+    """Summary statistics over the logged steps for the depth-telemetry
+    observables (metric paths under results.depth_telemetry). Ratios use the
+    LAST logged reading; spike_ratio is max/median of the total gradient norm
+    over the run (1.0 = perfectly flat)."""
+    import statistics as st
+
+    if not grad_norms:
+        return None
+    finite = [g for g in grad_norms if math.isfinite(g)]
+    out: dict[str, Any] = {
+        "grad_norm_max": max(finite) if finite else None,
+        "grad_norm_median": st.median(finite) if finite else None,
+        "grad_norm_spike_ratio": (max(finite) / st.median(finite)) if finite and st.median(finite) > 0 else None,
+        "logged_steps": len(grad_norms),
+    }
+
+    def _by_block(series: list[list[float]], key: str) -> None:
+        rows = [row for row in series if row and all(isinstance(x, int | float) and math.isfinite(x) for x in row)]
+        if not rows:
+            out[f"{key}_by_block_final"] = None
+            out[f"{key}_by_block_mean"] = None
+            out[f"{key}_depth_ratio"] = None
+            return
+        final = list(rows[-1])
+        out[f"{key}_by_block_final"] = final
+        out[f"{key}_by_block_mean"] = [st.fmean(col) for col in zip(*rows, strict=True)]
+        out[f"{key}_depth_ratio"] = (final[-1] / final[0]) if len(final) > 1 and final[0] > 0 else None
+
+    _by_block(block_grad_norms, "grad_norm")
+    _by_block(activation_rms, "activation_rms")
+    return out
+
+
 def _collect_attn_entropy_stats(model: torch.nn.Module) -> dict[str, Any] | None:
     """Collect latest per-head attention entropy stats from standard attention modules (if enabled)."""
     transformer = getattr(model, "transformer", None)
@@ -1092,6 +1178,9 @@ def train(args) -> None:
             raise TypeError("synaptic training requires GPTSynapticConfig")
         raw_model = GPTSynaptic(config)
     raw_model.to(device)
+    # Per-block activation RMS hooks (depth telemetry); skipped under
+    # torch.compile, where module forward hooks and dynamo do not mix.
+    activation_hooks = _install_activation_rms_hooks(raw_model) if not compile_requested else None
     raw_model.init_weights()
     if resume_meta is not None:
         # The resumed run must be the SAME model: config drift between the
@@ -1572,6 +1661,11 @@ def train(args) -> None:
             return sdpa_kernel(SDPBackend.MATH)
 
     losses: list[float] = []
+    # depth telemetry (logged steps only): total grad norm, per-block grad
+    # norms, per-block activation RMS - summarized into results.depth_telemetry
+    grad_norm_log: list[float] = []
+    block_grad_norm_log: list[list[float]] = []
+    activation_rms_log: list[list[float]] = []
     val_losses: list[tuple[int, float]] = []  # (step, val_loss) pairs
     val_bpbs: list[tuple[int, float]] = []  # (step, bits per byte) pairs; empty when the model has no per-token loss
     # Tie-locus trend trackers (bead y4r8): first/last certificate coverage
@@ -1909,6 +2003,24 @@ def train(args) -> None:
                         ),
                         "elapsed_s": step_t1 - (meas_start_time or step_t1),
                     }
+                    # depth telemetry: gradients are still populated here (see
+                    # _grad_norm); activation readings come from this step's
+                    # forward via the block hooks
+                    record["grad_norm_by_block"] = _collect_block_grad_norms(raw_model)
+                    record["activation_rms_by_block"] = (
+                        [float(x) if x is not None else None for x in activation_hooks["rms"]]
+                        if activation_hooks is not None
+                        else None
+                    )
+                    if isinstance(record["grad_norm"], int | float):
+                        grad_norm_log.append(float(record["grad_norm"]))
+                    if record["grad_norm_by_block"] is not None:
+                        block_grad_norm_log.append(list(record["grad_norm_by_block"]))
+                    rms_readings = [x for x in (record["activation_rms_by_block"] or []) if isinstance(x, int | float)]
+                    if record["activation_rms_by_block"] is not None and len(rms_readings) == len(
+                        record["activation_rms_by_block"]
+                    ):
+                        activation_rms_log.append([float(x) for x in rms_readings])
                     if schedulers:
                         s0 = schedulers[0]
                         record["ordinal"] = {
@@ -2184,6 +2296,9 @@ def train(args) -> None:
     attn_entropy = _collect_attn_entropy_stats(raw_model)
     if attn_entropy is not None:
         results["attention_entropy"] = attn_entropy
+    depth_telemetry = _summarize_depth_telemetry(grad_norm_log, block_grad_norm_log, activation_rms_log)
+    if depth_telemetry is not None:
+        results["depth_telemetry"] = depth_telemetry
     summary: dict[str, Any] = {
         "schema_version": "mgr.telemetry.v1",
         "meta": meta,
