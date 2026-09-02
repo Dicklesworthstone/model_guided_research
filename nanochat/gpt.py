@@ -354,6 +354,10 @@ class CausalSelfAttention(AttentionCore):
             persistent=False,
         )
         self._flex_attention: Callable[..., Any] | None = flex_attention
+        # create_block_mask compiles and materializes a block-sparse mask; the
+        # mask depends only on (B, Tq, Tk, device), which is constant across a
+        # training run, so memoize it instead of rebuilding it every forward.
+        self._flex_block_masks: dict[tuple[int, int, int, str], Any] = {}
         if self.use_flex_attention and self.compile_flex_attention:
             self._flex_attention = _get_compiled_flex_attention(
                 backend=self.compile_backend,
@@ -390,11 +394,17 @@ class CausalSelfAttention(AttentionCore):
 
             B = q.size(0)
             prefix_len = Tk - Tq
+            cache_key = (B, Tq, Tk, str(q.device))
+            block_mask = self._flex_block_masks.get(cache_key)
+            if block_mask is None:
 
-            def causal_mask(b, h, q_idx, kv_idx):
-                return kv_idx <= (prefix_len + q_idx)
+                def causal_mask(b, h, q_idx, kv_idx):
+                    return kv_idx <= (prefix_len + q_idx)
 
-            block_mask = create_block_mask(causal_mask, B, self.n_head, Tq, Tk, device=q.device)
+                block_mask = create_block_mask(causal_mask, B, self.n_head, Tq, Tk, device=q.device)
+                if len(self._flex_block_masks) >= 8:  # decode grows Tk every step; keep the cache bounded
+                    self._flex_block_masks.pop(next(iter(self._flex_block_masks)))
+                self._flex_block_masks[cache_key] = block_mask
             flex_fn = self._flex_attention
             if flex_fn is None:
                 raise RuntimeError("FlexAttention callable is unavailable at runtime.")
@@ -979,9 +989,19 @@ class GPT(nn.Module):
         return flops + 2 * nparams_ckpt + 4 * h * q * t * len(idxs)
 
     def setup_optimizers(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02, weight_decay=0.0):
-        if self.config.optimizer_type == "hoss":
+        optimizer_type = str(self.config.optimizer_type)
+        if optimizer_type == "hoss":
             console.print("Using HOSS optimizer", style="bold green")
             return [HOSS([p for p in self.parameters() if p.requires_grad], lr=matrix_lr)]
+        if optimizer_type not in ("adamw", "muon"):
+            raise ValueError(f"optimizer_type must be adamw | muon | hoss, got {optimizer_type!r}")
+        # 'adamw' = AdamW for EVERY parameter group. 'muon' = the nanochat split
+        # (AdamW for embeddings / lm_head / sub-2D params, Muon for the block
+        # matrices). Until 2026-09 there was no adamw branch at all: both
+        # values built the split below, so every artifact labelled adamw
+        # had in fact trained its matrices with Muon and an optimizer
+        # "comparison" between the two compared a run with itself.
+        pure_adamw = optimizer_type == "adamw"
 
         model_dim = self.config.n_embd
         ddp, rank, _local_rank, _world_size = get_dist_info()
@@ -1031,6 +1051,8 @@ class GPT(nn.Module):
         ]
         if lowdim_block_params:
             adam_groups.append(dict(params=lowdim_block_params, lr=matrix_lr))
+        if pure_adamw and matrix_params:
+            adam_groups.append(dict(params=matrix_params, lr=matrix_lr))
         if ddp:
             adamw_optimizer = DistAdamW(
                 adam_groups,
@@ -1053,13 +1075,16 @@ class GPT(nn.Module):
                 eps=1e-10,
                 weight_decay=weight_decay,
             )
-        # Create the Muon optimizer for the linear layers
-        if ddp:
-            muon_optimizer = DistMuon(matrix_params, lr=matrix_lr, momentum=0.95)
+        if pure_adamw:
+            optimizers = [adamw_optimizer]
         else:
-            muon_optimizer = Muon(matrix_params, lr=matrix_lr, momentum=0.95)
-        # Combine them the two optimizers into one list
-        optimizers = [adamw_optimizer, muon_optimizer]
+            # Create the Muon optimizer for the linear layers
+            if ddp:
+                muon_optimizer = DistMuon(matrix_params, lr=matrix_lr, momentum=0.95)
+            else:
+                muon_optimizer = Muon(matrix_params, lr=matrix_lr, momentum=0.95)
+            # Combine the two optimizers into one list
+            optimizers = [adamw_optimizer, muon_optimizer]
         for opt in optimizers:
             for group in opt.param_groups:
                 group["initial_lr"] = group["lr"]

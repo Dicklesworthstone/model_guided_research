@@ -1141,6 +1141,13 @@ def _write_parquet(path: Path, docs: list[str]) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def content_sha256(docs: list[str]) -> str:
+    """Serializer-independent hash of a split: the ordered documents as one
+    canonical JSON array. Two generator runs agree on this iff they produced
+    the same texts in the same order, regardless of the parquet writer."""
+    return hashlib.sha256(json.dumps(docs, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def generate_task(
     task: str,
     *,
@@ -1160,13 +1167,16 @@ def generate_task(
 
     task_dir = out_dir / task
     hashes: dict[str, str] = {}
+    content_hashes: dict[str, str] = {}
     sizes: dict[str, int] = {}
     for split, docs in splits.items():
         if split == "test":
             path = task_dir / "heldout" / "test_000.parquet"
         else:
             path = task_dir / f"{split}_000.parquet"  # 'train_*' sorts before 'val_*': val is LAST
-        hashes[str(path.relative_to(task_dir))] = _write_parquet(path, docs)
+        rel = str(path.relative_to(task_dir))
+        hashes[rel] = _write_parquet(path, docs)
+        content_hashes[rel] = content_sha256(docs)
         sizes[split] = len(docs)
 
     manifest: dict[str, Any] = {
@@ -1176,7 +1186,13 @@ def generate_task(
         "size": size,
         "dials": dials,
         "split_sizes": sizes,
+        # sha256: the parquet FILE bytes (integrity of what is on disk; this
+        # changes whenever the parquet writer changes, e.g. a pyarrow upgrade
+        # rewrites the footer's created_by string). content_sha256: the
+        # generator's OUTPUT (the ordered documents), independent of the
+        # serializer - the version-bump gate compares this one.
         "sha256": hashes,
+        "content_sha256": content_hashes,
         "target_mechanisms": list(spec.target_mechanisms),
         "hypothesis": spec.hypothesis,
     }

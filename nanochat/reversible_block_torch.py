@@ -235,6 +235,19 @@ class ReversibleFunction(torch.autograd.Function):
         ctx.kv_cache = kv_cache
         ctx.f_module = f_module
         ctx.g_module = g_module
+        # Autograd runs a custom Function's backward with autocast DISABLED, so
+        # under bf16 mixed precision the recompute below would re-run F/G in
+        # fp32 while the forward ran them in bf16: x2 = y2 - G(y1) would then
+        # be reconstructed from a different G than the one that produced y2,
+        # and the gradients would belong to a different network than the
+        # forward. Record the forward's autocast state and re-enter it in
+        # backward (what torch.amp.custom_fwd/custom_bwd do for a fixed device).
+        device_type = x.device.type
+        ctx.autocast_state = (
+            device_type,
+            torch.is_autocast_enabled(device_type),
+            torch.get_autocast_dtype(device_type),
+        )
 
         return y
 
@@ -251,51 +264,40 @@ class ReversibleFunction(torch.autograd.Function):
 
         y1, y2 = torch.chunk(y, 2, dim=-1)
         dy1, dy2 = torch.chunk(grad_y, 2, dim=-1)
+        device_type, autocast_enabled, autocast_dtype = ctx.autocast_state
 
-        # Reconstruct x2 (the only input the gradient computation below needs).
-        # x1 = y1 - F(x2) is never used here, so its extra F forward is skipped;
-        # the requires_grad below is set on the detached clones, not these.
-        with torch.no_grad():
-            g_out = g_module(y1)
-            x2 = y2 - g_out
+        # Every recompute below runs under the SAME autocast state as the
+        # forward (see forward): the reconstruction x2 = y2 - G(y1) is only
+        # exact against the G that actually produced y2.
+        with torch.autocast(device_type=device_type, dtype=autocast_dtype, enabled=autocast_enabled):
+            # Reconstruct x2 (the only input the gradient computation below
+            # needs). x1 = y1 - F(x2) is never used here, so its extra F forward
+            # is skipped; requires_grad is set on detached clones, not these.
+            with torch.no_grad():
+                g_out = g_module(y1)
+                x2 = y2 - g_out
 
-        # Now recompute gradients
-        # Backward G
-        # y2 = x2 + G(y1)
-        # dy2 flows to dx2 (identity) and dG(y1)
-        # dG(y1) flows to params_G and dy1
+            # RevNet backward: re-run G and F with grad on reconstructed inputs
+            # so parameter gradients accumulate through autograd, then chain the
+            # input gradients by hand along the coupling identities
+            #   y2 = x2 + G(y1)   ->  dx2 += dy2,  dy1 += dG^T dy2
+            #   y1 = x1 + F(x2)   ->  dx1  = dy1,  dx2 += dF^T dy1
+            with torch.enable_grad():
+                y1_detached = y1.detach().requires_grad_(True)
+                g_out = g_module(y1_detached)
+                g_out.backward(dy2)
+                y1_grad = y1_detached.grad
+                if y1_grad is None:
+                    raise RuntimeError("Reversible G recomputation did not produce an input gradient")
+                dy1_total = dy1 + y1_grad
 
-        # Standard RevNet backward logic is complex to implement manually in PyTorch
-        # without hooking into autograd for parameters.
-        # We need to use `torch.autograd.backward` or run forward with grad enabled on reconstructed inputs.
-
-        with torch.enable_grad():
-            # Recompute G
-            y1_detached = y1.detach()
-            y1_detached.requires_grad = True
-            g_out = g_module(y1_detached)
-
-            g_out.backward(dy2, retain_graph=True)
-
-            # Grads w.r.t params_G are accumulated.
-            # Grads w.r.t y1 are in y1_detached.grad
-            y1_grad = y1_detached.grad
-            if y1_grad is None:
-                raise RuntimeError("Reversible G recomputation did not produce an input gradient")
-            dy1_total = dy1 + y1_grad
-
-            # Recompute F
-            x2_detached = x2.detach()
-            x2_detached.requires_grad = True
-            f_out = f_module(x2_detached, cos_sin, kv_cache)
-
-            f_out.backward(dy1_total, retain_graph=True)
-
-            # Grads w.r.t params_F accumulated.
-            x2_grad = x2_detached.grad
-            if x2_grad is None:
-                raise RuntimeError("Reversible F recomputation did not produce an input gradient")
-            dx2_total = dy2 + x2_grad  # (dy2 comes from identity path x2->y2)
-            dx1_total = dy1_total  # x1 -> y1 is identity
+                x2_detached = x2.detach().requires_grad_(True)
+                f_out = f_module(x2_detached, cos_sin, kv_cache)
+                f_out.backward(dy1_total)
+                x2_grad = x2_detached.grad
+                if x2_grad is None:
+                    raise RuntimeError("Reversible F recomputation did not produce an input gradient")
+                dx2_total = dy2 + x2_grad  # dy2 arrives through the identity path x2 -> y2
+                dx1_total = dy1_total  # x1 -> y1 is the identity
 
         return torch.cat([dx1_total, dx2_total], dim=-1), None, None, None, None

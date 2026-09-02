@@ -8,29 +8,37 @@ C: Patience (steps)
 
 Transitions (mirroring JAX ordinal logic):
 - Step: Update EMA loss.
-  - If improved: C is reset (or kept, per policy).
+  - If improved: C is kept (patience extends while the EMA keeps improving).
   - Else: C -> C-1.
 - Limit (C=0):
-  - Anneal (B>0): B->B-1, lr->lr*gamma, C->P(B).
-  - Restart (B=0, A>0): A->A-1, B->B_init, lr->lr_init, C->P(B_init).
+  - Anneal (B>0): B->B-1, scale->scale*gamma, C->P.
+  - Restart (B=0, A>0): A->A-1, B->B_init, scale->1, C->P, optimizer state cleared.
+
+The schedule is a multiplicative SCALE applied to each param group's own
+configured learning rate (``initial_lr`` when the optimizer factory recorded
+one, else the group's lr at construction). Earlier versions overwrote every
+group with a single ``eta_init``, which silently collapsed the embedding /
+lm_head / matrix LR split that setup_optimizers builds (a 1/sqrt(d_model)
+scaled 0.2 / 0.004 / 0.02 structure) into one flat value - so an
+``--scheduler-type ordinal`` arm trained a different optimizer configuration
+from the ``none`` arm before the schedule ever fired.
 """
 
 import torch
 
 
 class OrdinalLRScheduler:
-    def __init__(self, optimizer, A_init=2, B_init=3, P_init=100, eta_init=1e-3, gamma=0.3, min_lr=1e-6):
+    def __init__(self, optimizer, A_init=2, B_init=3, P_init=100, gamma=0.3, min_lr=1e-6):
         self.optimizer = optimizer
         if A_init < 0 or B_init < 0 or P_init < 1:
             raise ValueError("A_init and B_init must be >= 0 and P_init must be >= 1")
-        if eta_init <= 0 or gamma <= 0 or min_lr <= 0:
-            raise ValueError("eta_init, gamma, and min_lr must be positive")
+        if gamma <= 0 or min_lr <= 0:
+            raise ValueError("gamma and min_lr must be positive")
         self.A = A_init
         self.B_init = B_init
         self.B = B_init
         self.P_init = P_init
         self.C = P_init
-        self.eta_init = eta_init
         self.gamma = gamma
         self.min_lr = min_lr
 
@@ -38,9 +46,14 @@ class OrdinalLRScheduler:
         self.ema_loss = None
         self.alpha = 0.1  # EMA smoothing factor
 
-        # Set initial LR
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = self.eta_init
+        # Per-group base LRs; the schedule only ever moves the shared scale.
+        self.base_lrs = [float(group.get("initial_lr", group["lr"])) for group in self.optimizer.param_groups]
+        self.scale = 1.0
+        self._apply_lr()
+
+    def _apply_lr(self) -> None:
+        for group, base in zip(self.optimizer.param_groups, self.base_lrs, strict=True):
+            group["lr"] = max(self.min_lr, base * self.scale)
 
     def step(self, loss):
         if torch.is_tensor(loss):
@@ -54,10 +67,8 @@ class OrdinalLRScheduler:
         # Check for improvement
         if self.ema_loss < self.best_loss:
             self.best_loss = self.ema_loss
-            # JAX logic: "If improved: keep (A,B,C)".
-            # This means we DON'T decrement C.
-            # It effectively extends patience indefinitely as long as we improve.
-            pass
+            # JAX logic: "If improved: keep (A,B,C)" - C is not decremented, so
+            # patience extends indefinitely while the EMA keeps improving.
         else:
             # No improvement
             self.C -= 1
@@ -69,9 +80,8 @@ class OrdinalLRScheduler:
                 # Anneal (omega-term drop)
                 self.B -= 1
                 self.C = self.P_init  # Reset patience
-                # Decay LR
-                for param_group in self.optimizer.param_groups:
-                    param_group["lr"] = max(self.min_lr, param_group["lr"] * self.gamma)
+                self.scale *= self.gamma
+                self._apply_lr()
                 # Reset best loss to allow new exploration (JAX: "reset best metric")
                 self.best_loss = float("inf")
 
@@ -80,9 +90,8 @@ class OrdinalLRScheduler:
                 self.A -= 1
                 self.B = self.B_init
                 self.C = self.P_init
-                # Reset LR to init
-                for param_group in self.optimizer.param_groups:
-                    param_group["lr"] = self.eta_init
+                self.scale = 1.0
+                self._apply_lr()
                 # Reset optimizer state
                 self.optimizer.state.clear()
 
@@ -98,10 +107,12 @@ class OrdinalLRScheduler:
     def state_dict(self) -> dict:
         """Mutable scheduler state for checkpoint/resume (bead rz8.1).
 
-        Constructor hyperparameters (B_init/P_init/eta_init/gamma/min_lr/alpha)
-        are intentionally included too: a resumed run must reproduce the limit
-        transitions of the original run even if the resume command line drifts.
-        Per-param-group LRs live in the OPTIMIZER state_dict, not here.
+        Constructor hyperparameters (B_init/P_init/gamma/min_lr/alpha) and the
+        per-group base LRs are included too: a resumed run must reproduce the
+        limit transitions of the original run even if the resume command line
+        drifts. Per-param-group LRs also live in the OPTIMIZER state_dict;
+        load_state_dict re-derives them from base_lrs * scale so the two
+        sources cannot disagree.
         """
         return {
             "A": self.A,
@@ -109,16 +120,26 @@ class OrdinalLRScheduler:
             "C": self.C,
             "B_init": self.B_init,
             "P_init": self.P_init,
-            "eta_init": self.eta_init,
             "gamma": self.gamma,
             "min_lr": self.min_lr,
             "best_loss": self.best_loss,
             "ema_loss": self.ema_loss,
             "alpha": self.alpha,
+            "base_lrs": list(self.base_lrs),
+            "scale": self.scale,
         }
 
     def load_state_dict(self, state: dict) -> None:
-        for key in ("A", "B", "C", "B_init", "P_init", "eta_init", "gamma", "min_lr", "best_loss", "ema_loss", "alpha"):
+        keys = ("A", "B", "C", "B_init", "P_init", "gamma", "min_lr", "best_loss", "ema_loss", "alpha", "base_lrs", "scale")
+        for key in keys:
             if key not in state:
                 raise KeyError(f"OrdinalLRScheduler.load_state_dict missing key {key!r}")
+        if len(state["base_lrs"]) != len(self.optimizer.param_groups):
+            raise ValueError(
+                f"OrdinalLRScheduler.load_state_dict: checkpoint has {len(state['base_lrs'])} param-group base LRs, "
+                f"optimizer has {len(self.optimizer.param_groups)} groups"
+            )
+        for key in keys:
             setattr(self, key, state[key])
+        self.base_lrs = [float(b) for b in state["base_lrs"]]
+        self._apply_lr()

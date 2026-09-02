@@ -1084,11 +1084,13 @@ def train(args) -> None:
         # We attach an ordinal scheduler to each optimizer
         # Note: Ordinal scheduler updates LR based on loss.
         for opt in optimizers:
-            schedulers.append(OrdinalLRScheduler(opt, eta_init=args.learning_rate))
+            schedulers.append(OrdinalLRScheduler(opt))
 
     # Restore optimizer/scheduler state AFTER scheduler construction: the
-    # OrdinalLRScheduler __init__ writes eta_init into the param groups, and
-    # optimizer.load_state_dict then restores the checkpointed LRs over it.
+    # OrdinalLRScheduler __init__ snapshots each param group's configured LR
+    # as its base; optimizer.load_state_dict then restores the checkpointed
+    # LRs, and scheduler.load_state_dict re-applies base * scale over them so
+    # the two sources agree.
     if resume_train_state is not None:
         saved_opt_states = resume_train_state.get("optimizers") or []
         if len(saved_opt_states) != len(optimizers):

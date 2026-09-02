@@ -81,15 +81,23 @@ def test_generator_version_bump_enforced(tmp_path):
             'uv run python -c "from tests.test_diagnostics_data import capture_hash_fixture; capture_hash_fixture()"'
         )
     fixture = json.loads(FIXTURE_PATH.read_text())
+    # Compare the serializer-independent CONTENT hash, not the parquet file
+    # bytes: the file hash embeds the parquet writer's version string, so a
+    # pyarrow upgrade (23.0.0 -> 25.0.1 on 2026-08-27) changed every task's
+    # file hash while the generated documents were byte-identical. Collect
+    # every drifted task before failing so the message names all of them.
+    drifted: list[str] = []
     for task in sorted(DEFAULT_TASKS):
         manifest = generate_task(task, out_dir=tmp_path / task, size=PIN_SIZE, seed=PIN_SEED)
         pinned = fixture[task]
-        if manifest["sha256"]["train_000.parquet"] != pinned["train_sha256"]:
-            assert manifest["generator_version"] != pinned["generator_version"], (
-                f"{task}: generator output changed for pinned (seed={PIN_SEED}, size={PIN_SIZE}) but "
-                f"GENERATOR_VERSIONS[{task!r}] was not bumped (still {pinned['generator_version']}). "
-                "Bump the version, then recapture the fixture with capture_hash_fixture()."
-            )
+        if manifest["content_sha256"]["train_000.parquet"] != pinned["train_content_sha256"]:
+            if manifest["generator_version"] == pinned["generator_version"]:
+                drifted.append(f"{task} (GENERATOR_VERSIONS[{task!r}] still {pinned['generator_version']})")
+    assert not drifted, (
+        f"generator output changed for pinned (seed={PIN_SEED}, size={PIN_SIZE}) without a version bump: "
+        + "; ".join(drifted)
+        + ". Bump the version, then recapture the fixture with capture_hash_fixture()."
+    )
 
 
 def capture_hash_fixture() -> None:
@@ -102,7 +110,7 @@ def capture_hash_fixture() -> None:
             manifest = generate_task(task, out_dir=Path(tmp) / task, size=PIN_SIZE, seed=PIN_SEED)
             out[task] = {
                 "generator_version": manifest["generator_version"],
-                "train_sha256": manifest["sha256"]["train_000.parquet"],
+                "train_content_sha256": manifest["content_sha256"]["train_000.parquet"],
             }
     FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE_PATH.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")

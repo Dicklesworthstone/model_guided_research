@@ -40,3 +40,4 @@ beads.right.meta.json
 # br runtime lock files (ephemeral, never commit)
 .sync.lock
 .write.lock
+.br-db-openers-*.lock

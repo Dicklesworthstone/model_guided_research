@@ -112,11 +112,11 @@ class GaugeBlock(nn.Module):
         new_even = c * x_even - s * x_odd
         new_odd = s * x_even + c * x_odd
 
-        # Interleave back
-        x_new = torch.zeros_like(x)
-        x_new[..., 0::2] = new_even
-        x_new[..., 1::2] = new_odd
-        return x_new
+        # Interleave back: stack the pair members on a trailing axis and
+        # flatten, which is a single allocation and keeps autograd out of
+        # in-place strided writes (the previous zeros_like + two index_put
+        # writes were three passes over x).
+        return torch.stack((new_even, new_odd), dim=-1).flatten(-2)
 
     def _gauge_attention(self, x, cos_sin, kv_cache) -> torch.Tensor:
         B, T, C = x.size()

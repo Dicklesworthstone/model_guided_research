@@ -1,9 +1,14 @@
 """
-Surreal Regularization / Probe (PyTorch)
-Implements a dynamic scaling probe based on "Surreal Numbers and Transseries".
-This acts as a "Meta-Optimizer" hook that logs dominance metrics and uses "Surreal Layers"
-where weights are parameterized as `w = exp(s) * v` (Scale * Direction) to separate
-magnitude (exponent) from direction (coefficient), mimicking Transseries.
+Surreal parameterization (PyTorch)
+
+"Surreal Layers" parameterize weights as `w = exp(s) * normalize(v)`
+(scale * direction), separating magnitude (exponent) from direction
+(coefficient) in the spirit of transseries. `SurrealCausalSelfAttention` is
+standard scaled-dot-product attention whose four projections use this
+parameterization; it changes the optimization geometry, not the attention
+math. (An earlier dominance "probe" stub lived here; it always returned
+constants and was imported nowhere, so it was removed rather than left
+looking like a feature.)
 """
 
 import torch
@@ -11,32 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from nanochat.model_utils import AttentionCore, sdpa_causal_attend
-
-
-class SurrealProbe:
-    def __init__(self, model, enabled=False):
-        self.model = model
-        self.enabled = enabled
-
-    def step(self, loss, inputs, targets):
-        """
-        Compute dominance metrics:
-        T_D: Data scaling benefit (simulated via split?)
-        T_H: Depth scaling benefit (simulated via skipping layers)
-        T_W: Width scaling benefit (simulated via masking channels)
-
-        Returns: extra_loss, metrics
-        """
-        if not self.enabled:
-            return 0.0, {}
-
-        # Placeholder for dominance check
-        # In a full implementation, this would run the forward pass with:
-        # 1. Half depth (skip layers)
-        # 2. Half width (mask channels)
-        # 3. Log the ratios E_half / E_full
-
-        return 0.0, {"surreal_balance": 1.0}
 
 
 class SurrealLayer(nn.Module):

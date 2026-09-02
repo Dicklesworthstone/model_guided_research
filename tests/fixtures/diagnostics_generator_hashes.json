@@ -1,46 +1,46 @@
 {
   "arith": {
     "generator_version": 1,
-    "train_sha256": "5d9bf509ee7475123a6aa0d699f437d06adb2bb3221bff9fc627ac578fb75f11"
+    "train_content_sha256": "4c0e0f54b2e7a39bf3278ca03664f617c5ffdcf025ccd5031175bb3187ac5d4a"
   },
   "bag": {
     "generator_version": 1,
-    "train_sha256": "1ce0c18ba73955c227805eaf87c50a81b0b09adac1f7f9f76d8224d3502fe325"
+    "train_content_sha256": "dc3e31a62b6cba5993c4c3520415f0b0e8ff8097b4a4e8593dc5518daaae4a46"
   },
   "copyops": {
     "generator_version": 1,
-    "train_sha256": "b18d48744142f41acaedcb2f4a7ec72577b87c071ed693d43961b8e0fc6faf3b"
+    "train_content_sha256": "76a92f4eef5660eaba1c5ff72abfc7bcfb873942cf66744c72b93b5b33589d6a"
   },
   "dyck": {
     "generator_version": 1,
-    "train_sha256": "d22059da52116bfa00a48c7bc074de4999d5b951462433839d03b70443ad4425"
+    "train_content_sha256": "cf20ca6edad75f2183a84cbce4420bb203b6a9790f040871754f61516fb6ed35"
   },
   "group": {
     "generator_version": 1,
-    "train_sha256": "d2d7c393dc07b7a9b88e7162884eef66153eb706fa493577870cd6419d9b9ea7"
+    "train_content_sha256": "f80198893d6c5b2709cdea13ccf411462b8f45ba6774855990d50289ab393ce9"
   },
   "hier": {
     "generator_version": 1,
-    "train_sha256": "08041ddff25bca5ca590a46f24afd7285e101aef1fe7e2c45731e6382617b10b"
+    "train_content_sha256": "8e264043449b4dba509b529141a4d6104af4b4c94a36744ff476adedfa93d58f"
   },
   "needle": {
     "generator_version": 1,
-    "train_sha256": "043cc53e31f5af6b8ba01a91b64dd2725999e4dc487b0813d9046417f9e5d398"
+    "train_content_sha256": "30de02fc0903b4e4d9268d748d829480361a7acf809366630edffc8aecae6829"
   },
   "placebo": {
     "generator_version": 1,
-    "train_sha256": "2bf848b1d6e16b6ed36c690353f770ee28707d8a57d69e7b30f036247d219578"
+    "train_content_sha256": "db0909056dc910cfbe1e7b711cda8e22404ba1fd8b6be55684392aba20837ab3"
   },
   "regime": {
     "generator_version": 1,
-    "train_sha256": "1a9739ba7b8c817c7af9686775364dfbf8647eaf94169802cf7533a93a71b9e9"
+    "train_content_sha256": "f0d9a2c162499fe8080dbf7ac8db54546621cedffb124b50d84624eddc2f6a1a"
   },
   "rel": {
     "generator_version": 1,
-    "train_sha256": "f8953101a101773bfbfdc9ca43632a083387db4a58e3ec15bb00b7c1f11b8d14"
+    "train_content_sha256": "af9a8ce22fd60c398ee4def81709b2012c48af64057c0b2bbeb5e35249be7a0b"
   },
   "rot": {
     "generator_version": 1,
-    "train_sha256": "ad6a45fef638facf3b993a77392367fa5cfdfc0241c85522630e8c27d26d5b18"
+    "train_content_sha256": "7ab48e1f39e768753ac4cb36b71f0d877f6e49b8cf6bb30fc2213855989a4a35"
   }
 }

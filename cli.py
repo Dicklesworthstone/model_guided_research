@@ -1187,25 +1187,25 @@ def evaluate(
 
     results = run_all_utility_tests()
 
+    # Built unconditionally: both the --export-json file and the --artifacts-dir
+    # summary consume it (a payload scoped to the export branch made
+    # `mgr eval --artifacts-dir X --run-id Y` raise UnboundLocalError).
+    payload = [
+        {
+            "approach": r.approach_name,
+            "claim": r.claim,
+            "baseline": float(r.baseline_metric),
+            "proposed": float(r.proposed_metric),
+            "improvement": float(r.improvement_ratio),
+            "is_better": bool(r.is_better),
+            "verdict": r.verdict,
+            "details": r.details,
+        }
+        for r in results
+    ]
+
     if export_json is not None:
-        payload = []
-        for r in results:
-            payload.append(
-                {
-                    "approach": r.approach_name,
-                    "claim": r.claim,
-                    "baseline": float(r.baseline_metric),
-                    "proposed": float(r.proposed_metric),
-                    "improvement": float(r.improvement_ratio),
-                    "is_better": bool(r.is_better),
-                    "verdict": r.verdict,
-                    "details": r.details,
-                }
-            )
-        try:
-            export_json.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
+        export_json.parent.mkdir(parents=True, exist_ok=True)
         with export_json.open("w", encoding="utf-8") as f:
             json.dump({"results": payload}, f, indent=2)
         console.print(f"[dim]Wrote suite JSON to {export_json}[/dim]")

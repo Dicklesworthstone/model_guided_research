@@ -96,7 +96,7 @@ mgr = "cli:app"
 model-guided-research = "cli:app"
 
 [project.urls]
-Repository = "https://github.com/model-guided-research/model-guided-research"
+Repository = "https://github.com/Dicklesworthstone/model_guided_research"
 
 # Configure Hatchling
 [tool.hatch.build.targets.wheel]

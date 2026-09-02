@@ -1419,6 +1419,39 @@ class TestAdditiveReversibleWiring:
             require(float(err) < 1e-9, f"param grad mismatch at {name}: rel {float(err):.2e}")
         print("  ✅ wired recompute gradients match eager coupling (fp64)")
 
+    def test_recompute_runs_under_the_forward_autocast_state(self):
+        """Under bf16 autocast the backward recompute must re-enter the same
+        autocast state as the forward: autograd runs custom Functions'
+        backward with autocast disabled, so an unguarded recompute would
+        reconstruct x2 = y2 - G(y1) with an fp32 G against a bf16-produced y2
+        and differentiate a different network than the one that ran forward."""
+        import torch
+
+        wired, eager = self._tiny_block(seed=13)
+        wired, eager = wired.float(), eager.float()
+        x = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float32)
+        w = torch.randn(2, self.T, 2 * self.CH, dtype=torch.float32)
+
+        xw = x.clone().requires_grad_(True)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            yw = wired(xw, None, None)
+        yw.backward(w)
+
+        xe = x.clone().requires_grad_(True)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            ye = self._eager_forward(eager, xe)
+        ye.backward(w)
+
+        require(yw.dtype == ye.dtype, "wired and eager forwards must agree on output dtype under autocast")
+        if xw.grad is None or xe.grad is None:
+            raise AssertionError("input gradients were not populated")
+        dx_err = (xw.grad - xe.grad).abs().max() / xe.grad.abs().max().clamp_min(1e-30)
+        require(float(dx_err) < 2e-2, f"autocast input grad mismatch: rel {float(dx_err):.2e}")
+        for (name, pw), (_, pe) in zip(wired.named_parameters(), eager.named_parameters(), strict=True):
+            err = (pw.grad - pe.grad).abs().max() / pe.grad.abs().max().clamp_min(1e-30)
+            require(float(err) < 2e-2, f"autocast param grad mismatch at {name}: rel {float(err):.2e}")
+        print("  ✅ wired recompute honors the forward autocast state (bf16)")
+
     def test_only_block_output_is_persisted_for_backward(self):
         """Memory win made precise: saved-tensor byte accounting must show the
         wired path persists EXACTLY one output tensor, while the eager

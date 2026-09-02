@@ -153,8 +153,9 @@ class HOSS(Optimizer):
 
             device = params_flat.device
 
-            # Cast to float32 for stability in Lanczos
-            params_flat.float()
+            # Lanczos runs in float32 for stability; the parameter vector itself
+            # is only needed for its device/layout (updates are cast back per
+            # parameter below).
             grads_flat_f32 = grads_flat.float()
 
             # Gradient clipping

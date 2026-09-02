@@ -968,11 +968,11 @@ def scenario_scorecard(work: Path) -> bool:
         summary = json.loads((suite / "summary.json").read_text())
         r.assert_true(
             "scorecard-contract",
-            manifest["schema_version"] == "mgr.scorecard.v1"
+            manifest["schema_version"] == "mgr.scorecard.v3"
             and len(manifest["cells"]) == 1
             and manifest["cells"][0]["status"] == "done"
             and manifest["cells"][0]["evidence_qualified"] is False
-            and summary["schema_version"] == "mgr.scorecard.v1"
+            and summary["schema_version"] == "mgr.scorecard.v3"
             and summary["adjudications"]["artifact_count"] == 0
             and summary["adjudications"]["quarantined_artifact_count"] == 2
             and (suite / "report.md").exists()

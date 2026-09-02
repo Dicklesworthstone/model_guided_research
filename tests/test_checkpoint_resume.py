@@ -498,14 +498,65 @@ def test_data_dir_trains_on_generated_task_corpus(tmp_path):
         train_mod.train(bad)
 
 
+def test_optimizer_type_selects_distinct_optimizers():
+    """`--optimizer-type adamw | muon | hoss` must build three DIFFERENT
+    optimizer sets. Before 2026-09 setup_optimizers branched only on hoss, so
+    'adamw' and 'muon' both produced the AdamW+Muon split and every artifact
+    labelled adamw had trained its matrices with Muon."""
+    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.hoss_opt_torch import HOSS
+    from nanochat.muon import Muon
+
+    def build(optimizer_type):
+        cfg = GPTConfig(
+            n_layer=1, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=64, optimizer_type=optimizer_type
+        )
+        return GPT(cfg).setup_optimizers()
+
+    adamw = build("adamw")
+    muon = build("muon")
+    hoss = build("hoss")
+    assert [type(o) for o in adamw] == [torch.optim.AdamW]
+    assert [type(o) for o in muon] == [torch.optim.AdamW, Muon]
+    assert [type(o) for o in hoss] == [HOSS]
+    # Under pure AdamW every trainable parameter is owned by that single
+    # optimizer; under the split the block matrices belong to Muon only.
+    n_params = lambda opts: sum(p.numel() for o in opts for g in o.param_groups for p in g["params"])  # noqa: E731
+    assert n_params(adamw) == n_params(muon) == n_params(hoss)
+    muon_matrix_params = sum(p.numel() for g in muon[1].param_groups for p in g["params"])
+    assert muon_matrix_params > 0
+    with pytest.raises(ValueError, match="optimizer_type must be"):
+        build("sgd")
+
+
+def test_ordinal_scheduler_preserves_param_group_lr_ratios():
+    """The schedule is a multiplicative scale on each group's OWN base LR.
+    The old implementation overwrote every group with one eta_init, which
+    silently flattened the embedding / lm_head / matrix LR split."""
+    from nanochat.ordinal_scheduler import OrdinalLRScheduler
+
+    p1, p2 = torch.nn.Parameter(torch.zeros(2)), torch.nn.Parameter(torch.zeros(2))
+    opt = torch.optim.SGD([{"params": [p1], "lr": 0.2}, {"params": [p2], "lr": 0.02}])
+    sched = OrdinalLRScheduler(opt, A_init=1, B_init=1, P_init=2, gamma=0.5)
+    assert sched.get_last_lr() == [0.2, 0.02]
+    for x in [1.0, 1.1, 1.2]:  # non-improving: patience 2 expires -> anneal
+        sched.step(x)
+    assert sched.B == 0
+    assert sched.get_last_lr() == pytest.approx([0.1, 0.01])
+    for x in [1.3, 1.4, 1.5]:  # expires again -> restart back to the base LRs
+        sched.step(x)
+    assert (sched.A, sched.B) == (0, 1)
+    assert sched.get_last_lr() == pytest.approx([0.2, 0.02])
+
+
 def test_ordinal_scheduler_state_dict_round_trip():
     """Unit: a restored scheduler continues the exact LR trajectory of the original."""
     from nanochat.ordinal_scheduler import OrdinalLRScheduler
 
     def make():
         params = [torch.nn.Parameter(torch.zeros(2))]
-        opt = torch.optim.SGD(params, lr=1.0)
-        return OrdinalLRScheduler(opt, A_init=1, B_init=2, P_init=3, eta_init=0.1, gamma=0.5)
+        opt = torch.optim.SGD(params, lr=0.1)
+        return OrdinalLRScheduler(opt, A_init=1, B_init=2, P_init=3, gamma=0.5)
 
     # Non-improving losses force C to count down and trigger anneals/restarts.
     losses = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]
