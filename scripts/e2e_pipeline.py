@@ -1001,7 +1001,9 @@ def main() -> int:
             "symplectic",
             "all",
         ],
-        default="all",
+        action="append",
+        default=None,
+        help="Scenario to run (repeatable; default all). A repeated flag used to keep only the last value.",
     )
     parser.add_argument(
         "--workdir",
@@ -1031,7 +1033,8 @@ def main() -> int:
         "word-problem": lambda: scenario_word_problem(work),
         "symplectic": lambda: scenario_symplectic(work),
     }
-    wanted = list(runners) if args.scenario == "all" else [args.scenario]
+    chosen = list(args.scenario or ["all"])
+    wanted = list(runners) if "all" in chosen else list(dict.fromkeys(chosen))
     results = {name: runners[name]() for name in wanted}
 
     table = Table(title="e2e scenarios", border_style="blue")
