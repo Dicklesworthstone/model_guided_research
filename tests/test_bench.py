@@ -1135,3 +1135,58 @@ def test_resolve_run_id_defaults_and_passes_plain_ids():
     generated = cli._resolve_run_id(None)
     assert generated and "/" not in generated
     assert cli._resolve_run_id("") != ""
+
+
+def test_quickstart_default_path_runs_every_stage(tmp_path):
+    """`mgr quickstart` with no data on disk: generates the task, trains both
+    mechanisms, certifies them, samples side by side, writes the comparison
+    summary. Tiny fixed step count so the whole showcase is a CI-sized smoke."""
+    run_dir = tmp_path / "qs"
+    result = runner.invoke(
+        cli.app,
+        [
+            "quickstart",
+            "--out",
+            str(run_dir),
+            "--max-steps",
+            "3",
+            "--device",
+            "cpu",
+            "--mechanisms",
+            "standard,tropical",
+        ],
+    )
+    assert result.exit_code == 0, result.output[-3000:]
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["schema_version"] == "mgr.quickstart.v1"
+    assert summary["meta"]["mechanisms"] == ["standard", "tropical"] and summary["meta"]["steps"] == 3
+    for mech in ("standard", "tropical"):
+        assert len(summary["results"][mech]["losses"]) == 3
+        assert Path(summary["results"][mech]["checkpoint_dir"]).is_dir()
+        cert = summary["certificates"][mech]
+        assert cert["total"] > 0 and cert["passed"] == cert["total"], cert
+    assert (run_dir / "data" / "arith" / "manifest.json").exists()
+    for stage in ("train-standard", "train-tropical", "certify-standard", "certify-tropical", "sample"):
+        assert (run_dir / "logs" / f"{stage}.log").exists()
+    assert "quickstart complete" in result.output
+
+
+def test_quickstart_failure_names_the_stage_and_reproduction(tmp_path):
+    """A broken corpus fails the FIRST training stage: the failure panel names
+    the stage, shows the subprocess tail, and prints the reproduction command."""
+    bad = tmp_path / "corpus"
+    bad.mkdir()
+    (bad / "shard_a.parquet").write_bytes(b"not a parquet file")
+    (bad / "shard_b.parquet").write_bytes(b"not a parquet file")
+    result = runner.invoke(
+        cli.app,
+        ["quickstart", "--out", str(tmp_path / "qs"), "--max-steps", "2", "--device", "cpu", "--data", str(bad)],
+    )
+    assert result.exit_code == 1, result.output[-2000:]
+    assert "stage data failed" in result.output and "reproduce" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_quickstart_rejects_a_single_mechanism(tmp_path):
+    result = runner.invoke(cli.app, ["quickstart", "--out", str(tmp_path / "qs"), "--mechanisms", "standard"])
+    assert result.exit_code == 2 and "at least two" in result.output

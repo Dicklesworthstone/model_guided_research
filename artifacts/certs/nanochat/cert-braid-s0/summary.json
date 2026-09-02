@@ -1,0 +1,135 @@
+{
+  "checks": [
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 584.588,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "ybe_law_holds",
+      "comparator": "le",
+      "detail": "R3 residual for the swap-output crossing law",
+      "duration_ms": 1.072,
+      "family": "classical",
+      "measured": 8.881784197001252e-16,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "restricted_law_violates_ybe",
+      "comparator": "ge",
+      "detail": "separation witness: the heuristic law must NOT satisfy YBE (proves the test has teeth)",
+      "duration_ms": 0.732,
+      "family": "classical",
+      "measured": 4.6811257646193996,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.001
+    },
+    {
+      "check": "payload_multiset_invariance",
+      "comparator": "le",
+      "detail": "crossings must preserve the payload multiset {y} exactly",
+      "duration_ms": 3.833,
+      "family": "classical",
+      "measured": 0.0,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.0
+    },
+    {
+      "check": "rmatrix_braid_relation_holds",
+      "comparator": "le",
+      "detail": "spectral-parameter braid relation for the trigonometric six-vertex law (rapidities ride)",
+      "duration_ms": 0.616,
+      "family": "classical",
+      "measured": 5.329070518200751e-15,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_inversion_relation_holds",
+      "comparator": "le",
+      "detail": "inversion relation N(w) N(-w) = I (protected memory: the mixing is exactly invertible)",
+      "duration_ms": 0.122,
+      "family": "classical",
+      "measured": 9.103828801926284e-15,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_transfer_matrices_commute",
+      "comparator": "le",
+      "detail": "[T(u), T(v)] = 0 for the inhomogeneous transfer family (one-particle closed form, fp64)",
+      "duration_ms": 1.639,
+      "family": "classical",
+      "measured": 5.60176076513449e-17,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_perturbed_transfer_separates",
+      "comparator": "ge",
+      "detail": "separation witness: perturbing one Boltzmann weight must break commutativity (teeth)",
+      "duration_ms": 4.097,
+      "family": "classical",
+      "measured": 2.6819140368715558e-05,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-06
+    },
+    {
+      "check": "rmatrix_mass_partition_charge_conserved",
+      "comparator": "le",
+      "detail": "Q1: sum_j A_ij + leftover_i = 1 exactly (stochastic gauge; live module forward)",
+      "duration_ms": 118.649,
+      "family": "classical",
+      "measured": 5.960464477539062e-07,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "heuristic_mass_partition_violated",
+      "comparator": "ge",
+      "detail": "separation witness: additive heuristic accumulation has NO mass partition (Q1 defect >> 0)",
+      "duration_ms": 117.341,
+      "family": "classical",
+      "measured": 2.6621429920196533,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.001
+    }
+  ],
+  "counts": {
+    "error": 0,
+    "fail": 0,
+    "pass": 10
+  },
+  "device": "cpu",
+  "dtype": "fp32",
+  "duration_s": 2.655,
+  "git": {
+    "branch": "HEAD",
+    "commit": "3ffda85",
+    "commit_full": "3ffda85a3a55dfc9b9e30a08bb7fec9b8d7d1aac",
+    "dirty": false
+  },
+  "kind": "certify",
+  "mechanisms": [
+    "braid"
+  ],
+  "run_id": "cert-braid-s0",
+  "schema_version": 1,
+  "seed": 0
+}

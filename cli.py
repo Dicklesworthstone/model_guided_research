@@ -6303,9 +6303,13 @@ def doctor(
             table.add_row(r["name"], style[r["status"]], r["detail"], r["hint"])
         console.print(table)
         color = "green" if n_fail == 0 and n_warn == 0 else ("yellow" if n_fail == 0 else "red")
+        next_step = (
+            "" if n_fail else "\nnext: [bold]mgr quickstart[/bold] - the five-minute showcase, no downloads needed"
+        )
         console.print(
             Panel(
-                f"[bold {color}]{len(rows) - n_warn - n_fail} ok · {n_warn} warn · {n_fail} fail[/bold {color}]",
+                f"[bold {color}]{len(rows) - n_warn - n_fail} ok · {n_warn} warn · {n_fail} fail[/bold {color}]"
+                + next_step,
                 border_style=color,
             )
         )
@@ -12481,6 +12485,386 @@ def profile(
     if out is not None:
         argv += ["--out", str(out)]
     raise typer.Exit(code=profiling.main(argv))
+
+
+# ---------------------------------------------------------------------------
+# quickstart (bead swh.3): the five-minute showcase, one command
+# ---------------------------------------------------------------------------
+
+_QUICKSTART_MODEL: tuple[str, ...] = (
+    "--n-layer",
+    "2",
+    "--n-head",
+    "4",
+    "--n-embd",
+    "64",
+    "--sequence-len",
+    "64",
+    "--batch-size",
+    "8",
+    "--warmup-steps",
+    "0",
+)
+#: per-mechanism telemetry surfaced in the comparison table: (train flag, metrics key, label)
+_QUICKSTART_DIAGNOSTICS: dict[str, tuple[str | None, str, str]] = {
+    "standard": ("--standard-record-attn-entropy", "attn_entropy_head_mean", "attention entropy (nats)"),
+    "tropical": ("--tropical-record-margins", "tropical_gamma_min", "min tropical margin gamma"),
+    "hyperbolic": (None, "hyperbolic_radius_head_mean", "mean Lorentz radius"),
+}
+
+
+def _quickstart_prompt_from(data_dir: Path) -> str:
+    """An in-distribution prompt: the first document of the first parquet, cut
+    at its answer marker when it is a generated task (``... OUT``), else its
+    first eight words."""
+    import pyarrow.parquet as pq
+
+    files = sorted(p for p in data_dir.rglob("*.parquet"))
+    if not files:
+        raise typer.BadParameter(f"no parquet files under {data_dir}")
+    column = pq.read_table(files[0]).column("text")
+    if column.length() == 0:
+        raise typer.BadParameter(f"{files[0]} holds no documents")
+    doc = str(column[0].as_py())
+    if " OUT" in doc:
+        return doc.split(" OUT", 1)[0] + " OUT"
+    return " ".join(doc.split()[:8])
+
+
+def _quickstart_metric(metrics_path: Path, key: str) -> float | None:
+    """Last per-step value of ``key`` in a metrics.jsonl (mean over heads for lists)."""
+    from nanochat.report import read_metrics_jsonl
+
+    if not metrics_path.exists():
+        return None
+    _header, records, _problems = read_metrics_jsonl(metrics_path)
+    for rec in reversed(records):
+        if rec.get("type") != "step" or key not in rec:
+            continue
+        val = rec[key]
+        vals = [float(v) for v in (val if isinstance(val, list) else [val]) if isinstance(v, int | float)]
+        vals = [v for v in vals if math.isfinite(v)]
+        if vals:
+            return sum(vals) / len(vals)
+    return None
+
+
+class _QuickstartStages:
+    """Numbered stage panels + subprocess plumbing with rz8.8-grade forensics:
+    a failing stage prints its output tail and the exact reproduction command,
+    then exits 1 - never a half-finished showcase that looks finished."""
+
+    def __init__(self, run_dir: Path, total: int) -> None:
+        self.run_dir = run_dir
+        self.logs = run_dir / "logs"
+        self.logs.mkdir(parents=True, exist_ok=True)
+        self.total = total
+        self.index = 0
+        self.timings: dict[str, float] = {}
+
+    def begin(self, title: str, caption: str) -> None:
+        self.index += 1
+        console.print()
+        console.rule(f"[bold cyan]{self.index}/{self.total} · {title}[/bold cyan]")
+        console.print(f"[dim]{caption}[/dim]")
+
+    def fail(self, name: str, detail: str) -> None:
+        """In-process stage failure with the same forensics as a subprocess one."""
+        console.print(Panel(detail, title=f"[red]stage {name} failed[/red]", border_style="red"))
+        console.print(Panel(shlex.join(sys.argv), title="reproduce", border_style="red"))
+        raise typer.Exit(code=1)
+
+    def run(self, name: str, argv: list[str], *, timeout: int = 1800, echo: bool = False) -> str:
+        repo = Path(__file__).resolve().parent
+        env = dict(os.environ)
+        env.setdefault("OMP_NUM_THREADS", "4")
+        if echo:
+            env["FORCE_COLOR"] = "1"  # the child keeps its Rich styling through the pipe
+        t0 = time.perf_counter()
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=repo, env=env)
+            out = (proc.stdout or "") + (proc.stderr or "")
+            code = proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            out = (exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")) + "\nTIMEOUT"
+            code = -1
+        elapsed = time.perf_counter() - t0
+        self.timings[name] = elapsed
+        (self.logs / f"{name}.log").write_text(out, encoding="utf-8")
+        if code != 0:
+            tail = "\n".join(out.splitlines()[-40:]) or "(no output)"
+            console.print(Panel(tail, title=f"[red]stage {name} failed (exit {code})[/red]", border_style="red"))
+            console.print(
+                Panel(
+                    f"cd {repo} && {shlex.join(argv)}\n\nfull log: {self.logs / f'{name}.log'}",
+                    title="reproduce",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+        if echo:
+            from rich.text import Text
+
+            console.print(Text.from_ansi(out))
+        return out
+
+
+@app.command("quickstart")
+def quickstart(
+    budget_seconds: Annotated[
+        int,
+        typer.Option(
+            "--budget-seconds",
+            min=10,
+            help="Wall-clock budget for the training stage; the step count is calibrated to this host from a probe run.",
+        ),
+    ] = 300,
+    mechanisms: Annotated[
+        str, typer.Option("--mechanisms", help="Comma-separated attention types to train and compare (two or more).")
+    ] = "standard,tropical",
+    device: Annotated[str, typer.Option("--device", help="auto | cpu | cuda")] = "auto",
+    seed: Annotated[int, typer.Option("--seed", help="Data, init, and sampling seed.")] = 0,
+    data: Annotated[
+        Path | None,
+        typer.Option("--data", help="Train on this parquet corpus directory instead of the generated task."),
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Run directory (default: artifacts/quickstart/<timestamp>).")
+    ] = None,
+    max_steps: Annotated[
+        int | None, typer.Option("--max-steps", min=1, help="Fixed training step count (skips the budget calibration).")
+    ] = None,
+):
+    """The five-minute showcase: two mathematically different transformers
+    train on a generated task, their invariants are certified, they generate
+    side by side, and a comparison table closes the loop - one command, no
+    downloads, no flags required.
+
+    EXPECTATION SETTING: a minute-scale model learns a toy task, not language.
+    The pipeline and the certificates are the demonstration; judge mechanisms
+    relatively, at matched budgets, never by the prose.
+    """
+    from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
+
+    mechs = [m.strip() for m in mechanisms.split(",") if m.strip()]
+    if len(mechs) < 2:
+        raise typer.BadParameter("--mechanisms needs at least two attention types to compare")
+    unknown = [m for m in mechs if m not in SUPPORTED_ATTENTION_TYPES]
+    if unknown:
+        raise typer.BadParameter(f"unknown attention type(s) {unknown}; choose from {list(SUPPORTED_ATTENTION_TYPES)}")
+    if data is not None and not data.is_dir():
+        raise typer.BadParameter(f"--data must be an existing directory, got {data}")
+    dev = device
+    if dev == "auto":
+        import torch
+
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+    run_dir = out if out is not None else Path("artifacts") / "quickstart" / _default_run_id()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    py = [sys.executable]
+    stages = _QuickstartStages(run_dir, total=7)
+    t_start = time.perf_counter()
+
+    console.print(
+        Panel(
+            f"[bold]{' vs '.join(mechs)}[/bold] on [bold]{dev}[/bold] · seed {seed} · run dir [dim]{run_dir}[/dim]\n\n"
+            "What you are about to see is the research pipeline end to end: a deterministic task is generated, "
+            "each mechanism trains on it for a minute-scale budget, the mechanisms' mathematical invariants are "
+            "certified, the two models generate side by side, and a table compares them.\n\n"
+            "[yellow]A model trained for a minute learns a toy task, not language. The certificates and the "
+            "pipeline are the demonstration; the samples are there to show generation works, not to impress.[/yellow]",
+            title="mgr quickstart",
+            border_style="cyan",
+        )
+    )
+
+    # (1) preflight
+    stages.begin("preflight", "A condensed `mgr doctor`: only rows that need attention are shown.")
+    rows = _run_doctor_checks()
+    n_fail = sum(1 for r in rows if r["status"] == "fail")
+    n_warn = sum(1 for r in rows if r["status"] == "warn")
+    attention = [r for r in rows if r["status"] != "ok"]
+    if attention:
+        pt = Table(box=box.SIMPLE, show_header=True)
+        for col in ("check", "status", "detail", "hint"):
+            pt.add_column(col)
+        for r in attention:
+            mark = "[yellow]WARN[/yellow]" if r["status"] == "warn" else "[bold red]FAIL[/bold red]"
+            pt.add_row(r["name"], mark, r["detail"], r["hint"])
+        console.print(pt)
+    console.print(f"{len(rows) - n_fail - n_warn} ok · {n_warn} warn · {n_fail} fail")
+    if n_fail:
+        console.print("[bold red]fix the failing rows above (mgr doctor for the full report) and rerun[/bold red]")
+        raise typer.Exit(code=2)
+
+    # (2) data
+    stages.begin(
+        "data",
+        "A deterministic diagnostic task doubles as the training corpus, so the showcase needs no download.",
+    )
+    if data is None:
+        from nanochat.diagnostics_data import generate_task
+
+        t0 = time.perf_counter()
+        manifest = generate_task("arith", out_dir=run_dir / "data", size=300, seed=seed)
+        data_dir = run_dir / "data" / "arith"
+        sizes = manifest["split_sizes"]
+        console.print(
+            f"arith task · train {sizes['train']} / val {sizes['val']} / held-out {sizes['test']} documents · "
+            f"generator v{manifest['generator_version']} · {time.perf_counter() - t0:.1f}s"
+        )
+    else:
+        data_dir = data
+        console.print(f"training on the corpus at {data_dir}")
+    try:
+        prompt = _quickstart_prompt_from(data_dir)
+    except Exception as exc:  # noqa: BLE001 - any unreadable corpus is a stage failure, reported as such
+        stages.fail("data", f"could not read a document from {data_dir}: {type(exc).__name__}: {exc}")
+        raise AssertionError("unreachable") from exc
+    console.print(f"sampling prompt: [bold]{prompt}[/bold]")
+
+    # (3) train (with budget calibration)
+    stages.begin(
+        "train",
+        "Each mechanism trains the same 2-layer, 64-wide GPT on the same data and seed; the budget is honest wall-clock.",
+    )
+
+    def train_argv(mech: str, steps: int, run_id: str, kind: str) -> list[str]:
+        flag = _QUICKSTART_DIAGNOSTICS.get(mech, (None, "", ""))[0]
+        return (
+            py
+            + ["-m", "nanochat.train", "--device", dev, "--attention-type", mech, "--data-dir", str(data_dir)]
+            + ["--max-steps", str(steps), *_QUICKSTART_MODEL]
+            + ["--n-kv-head", "2" if mech == "reversible" else "4"]
+            + ["--checkpoint-interval", str(steps), "--seed", str(seed), "--log-interval", "1"]
+            + ["--artifacts-dir", str(run_dir / "artifacts"), "--artifacts-kind", kind]
+            + ["--artifacts-topic", "nanochat", "--run-id", run_id]
+            + ([flag] if flag else [])
+        )
+
+    steps = max_steps
+    if steps is None:
+        probe_steps = 4
+        stages.run("calibrate", train_argv(mechs[0], probe_steps, mechs[0], "calibration"))
+        s_per_step = stages.timings["calibrate"] / probe_steps  # includes process start-up: conservative
+        steps = max(10, min(400, int(budget_seconds * 0.8 / (len(mechs) * s_per_step))))
+        console.print(
+            f"calibration: {stages.timings['calibrate']:.1f}s for {probe_steps} steps -> "
+            f"{steps} steps per mechanism within the {budget_seconds}s budget"
+        )
+    results: dict[str, dict[str, Any]] = {}
+    for mech in mechs:
+        stages.run(f"train-{mech}", train_argv(mech, steps, mech, "quickstart"))
+        art = run_dir / "artifacts" / "quickstart" / "nanochat" / mech
+        summary = json.loads((art / "summary.json").read_text(encoding="utf-8"))
+        res = summary.get("results") or {}
+        losses = [float(x) for x in (res.get("losses") or []) if isinstance(x, int | float)]
+        results[mech] = {
+            "steps": steps,
+            "losses": losses,
+            "final_loss": losses[-1] if losses else None,
+            "tokens_per_second": res.get("tokens_per_second"),
+            "checkpoint_dir": str(art / "checkpoints"),
+            "elapsed_s": stages.timings[f"train-{mech}"],
+        }
+        spark = _sparkline(losses, width=24) if losses else "-"
+        console.print(
+            f"[bold]{mech:12s}[/bold] {spark}  loss {losses[0] if losses else float('nan'):.3f} -> "
+            f"{losses[-1] if losses else float('nan'):.3f} · {stages.timings[f'train-{mech}']:.1f}s"
+        )
+
+    # (4) certify
+    stages.begin(
+        "certify",
+        "The project's signature: each mechanism's mathematical invariants are checked live at this exact "
+        "configuration (masking, norm preservation, algebraic identities), not assumed from the paper.",
+    )
+    certs: dict[str, dict[str, Any]] = {}
+    for mech in mechs:
+        argv = py + ["-m", "cli", "certify", "-m", mech, "--device", dev, "--dtype", "fp32", "--seed", str(seed)]
+        argv += ["--artifacts-dir", str(run_dir / "certs"), "--run-id", mech]
+        stages.run(f"certify-{mech}", argv)
+        cert_summary = next(iter(sorted((run_dir / "certs").rglob(f"{mech}/summary.json"))), None)
+        checks = json.loads(cert_summary.read_text(encoding="utf-8")).get("checks", []) if cert_summary else []
+        passed = sum(1 for c in checks if isinstance(c, dict) and c.get("status") == "pass")
+        certs[mech] = {"passed": passed, "total": len(checks), "path": str(cert_summary) if cert_summary else None}
+        color = "green" if passed == len(checks) and checks else "red"
+        console.print(f"[bold]{mech:12s}[/bold] [{color}]{passed}/{len(checks)} invariants certified[/{color}]")
+
+    # (5) side-by-side generation
+    stages.begin(
+        "generate",
+        "Same prompt, same seed, greedy decoding, every mechanism side by side (mgr sample --compare).",
+    )
+    argv = py + ["-m", "cli", "sample", "--checkpoint", results[mechs[0]]["checkpoint_dir"]]
+    for mech in mechs[1:]:
+        argv += ["--compare", results[mech]["checkpoint_dir"]]
+    argv += ["--prompt", prompt, "--max-tokens", "16", "--temperature", "0", "--seed", str(seed), "--device", dev]
+    stages.run("sample", argv, echo=True)
+
+    # (6) comparison table
+    stages.begin(
+        "compare", "Final loss, throughput, one mechanism-specific diagnostic each, and the certificate tally."
+    )
+    ct = Table(box=box.SIMPLE_HEAVY, title=f"{steps} steps each · seed {seed} · {dev}")
+    for col in ("mechanism", "final loss", "loss trend", "tokens/s", "diagnostic", "certificates"):
+        ct.add_column(col)
+    for mech in mechs:
+        r = results[mech]
+        _flag, key, label = _QUICKSTART_DIAGNOSTICS.get(mech, (None, "", ""))
+        diag = _quickstart_metric(Path(r["checkpoint_dir"]).parent / "metrics.jsonl", key) if key else None
+        r["diagnostic"] = {"label": label, "value": diag} if key else None
+        c = certs[mech]
+        ct.add_row(
+            mech,
+            f"{r['final_loss']:.3f}" if r["final_loss"] is not None else "-",
+            _sparkline(r["losses"], width=16) if r["losses"] else "-",
+            f"{float(r['tokens_per_second']):,.0f}" if isinstance(r["tokens_per_second"], int | float) else "-",
+            f"{label} {diag:.3f}" if diag is not None else "-",
+            f"[green]{c['passed']}/{c['total']}[/green]"
+            if c["passed"] == c["total"]
+            else f"[red]{c['passed']}/{c['total']}[/red]",
+        )
+    console.print(ct)
+
+    # (7) closing
+    stages.begin("next", "Where to go from here.")
+    total = time.perf_counter() - t_start
+    payload = {
+        "schema_version": "mgr.quickstart.v1",
+        "meta": {
+            "run_id": run_dir.name,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "git": _get_git_info(),
+            "command": shlex.join(sys.argv),
+            "device": dev,
+            "seed": seed,
+            "mechanisms": mechs,
+            "data_dir": str(data_dir),
+            "prompt": prompt,
+            "budget_seconds": budget_seconds,
+            "steps": steps,
+            "elapsed_s": total,
+        },
+        "results": results,
+        "certificates": certs,
+        "stage_timings_s": stages.timings,
+    }
+    (run_dir / "summary.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    console.print(
+        Panel(
+            f"Done in {total:.0f}s. Everything above is under [dim]{run_dir}[/dim] (summary.json, logs/, "
+            "artifacts/, certs/).\n\n"
+            "Next commands:\n"
+            "  fair A/B at equal FLOPs:   mgr bench-fixed-flops -a standard -a tropical --target-flops 2e9\n"
+            "  held-out exact match:      mgr eval-tasks --checkpoint <dir> --task arith\n"
+            "  the preregistered claims:  mgr hypotheses list\n"
+            "  the campaign harness:      mgr scorecard --dry-run ...\n\n"
+            "README: 'The 13 Mathematical Frameworks', 'Experimental Matrix', 'Benchmarks (fixed budgets)'.",
+            title="quickstart complete",
+            border_style="green",
+        )
+    )
 
 
 if __name__ == "__main__":

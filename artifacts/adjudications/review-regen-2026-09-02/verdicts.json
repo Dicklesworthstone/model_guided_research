@@ -1,0 +1,115 @@
+{
+  "date": "2026-09-01",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 3,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5"
+    ],
+    "q_level": 0.1,
+    "supported": 2,
+    "supported_fdr_survivors": [
+      "hyp-rmatrix-charge-drift-separation",
+      "hyp-ultrametric-trie-decode-speedup"
+    ]
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "ultrametric": {
+          "budget_flops": null,
+          "ci95": [
+            65.69695232614146,
+            77.86924969564544
+          ],
+          "effect": 71.78310101089345,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 48,
+          "p_value": 0.00019955531598848621,
+          "power": 0.10510180108882516,
+          "single_arm": true,
+          "underpowered": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"
+      ],
+      "id": "hyp-ultrametric-trie-decode-speedup",
+      "p_value": 0.00019955531598848621,
+      "policy_version": "ci-v6",
+      "q_value": 0.00029933297398272935,
+      "tainted_artifacts_seen": false,
+      "underpowered": true,
+      "verdict": "supported"
+    },
+    {
+      "arms": {
+        "ultrametric": {
+          "budget_flops": null,
+          "ci95": [
+            2.670946146076435,
+            4.103199983383839
+          ],
+          "effect": 3.3870730647301373,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 0.9667650032271456,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"
+      ],
+      "id": "hyp-balltree-valued-attention-speedup",
+      "p_value": 0.9667650032271456,
+      "policy_version": "ci-v6",
+      "q_value": 0.9667650032271456,
+      "tainted_artifacts_seen": false,
+      "verdict": "inconclusive"
+    },
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": null,
+          "ci95": [
+            4.009205426022076e-07,
+            9.699862872317767e-07
+          ],
+          "effect": 6.854534149169922e-07,
+          "n_baseline": 0,
+          "n_candidate": 4,
+          "n_for_80pct": 2,
+          "p_value": 9.748227445260937e-07,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/certs/nanochat/cert-braid-s0/summary.json",
+        "artifacts/certs/nanochat/cert-braid-s1/summary.json",
+        "artifacts/certs/nanochat/cert-braid-s2/summary.json",
+        "artifacts/certs/nanochat/fdxb-cert-refresh-all/summary.json"
+      ],
+      "id": "hyp-rmatrix-charge-drift-separation",
+      "p_value": 9.748227445260937e-07,
+      "policy_version": "ci-v6",
+      "q_value": 2.9244682335782812e-06,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    }
+  ]
+}

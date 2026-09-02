@@ -1,0 +1,69 @@
+{
+  "kind": "bench-ultrametric",
+  "mechanism": "ultrametric",
+  "meta": {
+    "context_lengths": [
+      1024,
+      4096
+    ],
+    "device": "cpu",
+    "generated_at": "2026-09-02T01:48:53Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "3ffda85",
+      "commit_full": "3ffda85a3a55dfc9b9e30a08bb7fec9b8d7d1aac",
+      "dirty": false
+    },
+    "loadavg": [
+      8.04736328125,
+      7.4169921875,
+      14.9033203125
+    ],
+    "repeats": 3,
+    "run_id": "bench-ultra-s1-r2",
+    "seed": 1
+  },
+  "provenance": {
+    "config_hash": "9db38447e05b9f05d94388845d4da2a458b37066256bf44f28cab194cf07edf3",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "3ffda85a3a55dfc9b9e30a08bb7fec9b8d7d1aac",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "decode": [
+      {
+        "Tk": 1024.0,
+        "kernel_s": 0.0007084999815560877,
+        "speedup": 0.4891455894005798,
+        "trie_s": 0.0014484439743682742
+      },
+      {
+        "Tk": 4096.0,
+        "kernel_s": 0.10206924402154982,
+        "speedup": 69.05403034364706,
+        "trie_s": 0.0014781069767195731
+      }
+    ],
+    "forward": [
+      {
+        "T": 1024.0,
+        "balltree_s": 0.6337889749847818,
+        "kernel_s": 0.3939959289855324,
+        "speedup": 0.6216515978287455
+      },
+      {
+        "T": 4096.0,
+        "balltree_s": 0.792971907008905,
+        "kernel_s": 2.7664497929799836,
+        "speedup": 3.4887109726434695
+      }
+    ],
+    "speedup_decode_t1024": 0.4891455894005798,
+    "speedup_decode_t4096": 69.05403034364706,
+    "speedup_forward_t1024": 0.6216515978287455,
+    "speedup_forward_t4096": 3.4887109726434695
+  },
+  "schema_version": "mgr.bench.ultrametric_paths.v1"
+}

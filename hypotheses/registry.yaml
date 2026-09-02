@@ -212,10 +212,11 @@ hypotheses:
         come from an idle box (>= 3 distinct seeds). Threshold 1.0 = the
         crossover claim exactly as registered (trie decode at least matches
         the kernel per token at T = 4096; the sanity probe suggests far more).
-    status: refuted
+    status: supported
     evidence: []
     verdict_history:
       - {date: "2026-06-11", verdict: refuted, artifacts: ["artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"], adjudicator: "engine:ci-v3", policy_version: "ci-v3", arms: {"ultrametric": {"budget_flops": null, "ci95": [0.638944702171961, 0.7709713412242294], "effect": 0.7049580216980952, "n_baseline": 0, "n_candidate": 3, "single_arm": true, "verdict": "refuted"}}}
+      - {date: "2026-09-01", verdict: supported, artifacts: ["artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"ultrametric": {"budget_flops": null, "ci95": [65.69695232614146, 77.86924969564544], "effect": 71.78310101089345, "n_baseline": 0, "n_candidate": 3, "n_for_80pct": 48, "p_value": 0.00019955531598848621, "power": 0.10510180108882516, "single_arm": true, "underpowered": true, "verdict": "supported"}}}
 
   # ---------------------------------------------------------------------------
   # Topology & composition (braid / reversible)
@@ -943,10 +944,11 @@ hypotheses:
         test_nanochat_ultrametric_balltree_kv_parity_and_kernel_agreement
         (same function, thm-balltree-exact-attention) - any hier eval gap
         between ultrametric_mode variants is a bug, not a finding.
-    status: supported
+    status: inconclusive
     evidence: []
     verdict_history:
       - {date: "2026-06-11", verdict: supported, artifacts: ["artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"], adjudicator: "engine:ci-v3", policy_version: "ci-v3", arms: {"ultrametric": {"budget_flops": null, "ci95": [34.95316937610607, 43.742754445106875], "effect": 39.34796191060647, "n_baseline": 0, "n_candidate": 3, "single_arm": true, "verdict": "supported"}}}
+      - {date: "2026-09-01", verdict: inconclusive, artifacts: ["artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json", "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"ultrametric": {"budget_flops": null, "ci95": [2.670946146076435, 4.103199983383839], "effect": 3.3870730647301373, "n_baseline": 0, "n_candidate": 3, "n_for_80pct": 2, "p_value": 0.9667650032271456, "power": 1.0, "single_arm": true, "verdict": "inconclusive"}}}
 
   - id: hyp-tie-locus-density-decreases
     statement: >-
@@ -1113,6 +1115,7 @@ hypotheses:
     evidence: []
     verdict_history:
       - {date: "2026-06-11", verdict: supported, artifacts: ["artifacts/certs/nanochat/cert-braid-s0/summary.json", "artifacts/certs/nanochat/cert-braid-s1/summary.json", "artifacts/certs/nanochat/cert-braid-s2/summary.json"], adjudicator: "engine:ci-v3", policy_version: "ci-v3", arms: {"braid": {"budget_flops": null, "ci95": [9.5367431640625e-07, 9.5367431640625e-07], "effect": 9.5367431640625e-07, "n_baseline": 0, "n_candidate": 3, "single_arm": true, "verdict": "supported"}}}
+      - {date: "2026-09-01", verdict: supported, artifacts: ["artifacts/certs/nanochat/cert-braid-s0/summary.json", "artifacts/certs/nanochat/cert-braid-s1/summary.json", "artifacts/certs/nanochat/cert-braid-s2/summary.json", "artifacts/certs/nanochat/fdxb-cert-refresh-all/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"braid": {"budget_flops": null, "ci95": [4.009205426022076e-07, 9.699862872317767e-07], "effect": 6.854534149169922e-07, "n_baseline": 0, "n_candidate": 4, "n_for_80pct": 2, "p_value": 9.748227445260937e-07, "power": 1.0, "single_arm": true, "verdict": "supported"}}}
 
   - id: hyp-rmatrix-charge-decodability
     statement: >-
