@@ -1,0 +1,90 @@
+{
+  "date": "2026-09-02",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 2,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            -0.7454175152749489,
+            121.99999999999984
+          ],
+          "effect": -0.3704453441295546,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 77228,
+          "p_value": 0.18890274314214464,
+          "power": 0.02603814303755698,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s5/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s5/summary.json"
+      ],
+      "id": "hyp-rmatrix-s5-length-slope",
+      "p_value": 0.18890274314214464,
+      "policy_version": "ci-v6",
+      "q_value": 0.3778054862842893,
+      "tainted_artifacts_seen": true,
+      "verdict": "inconclusive"
+    },
+    {
+      "arms": {
+        "braid": {
+          "baseline_em_mean": 0.02314814814814815,
+          "budget_flops": 1000000000000.0,
+          "candidate_em_mean": 0.03472222222222222,
+          "ci95": [
+            0.0,
+            -0.0
+          ],
+          "effect": -0.0,
+          "em_floor": 0.09722222222222222,
+          "floor_effect": true,
+          "floor_source": "slope_em_floor",
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 3,
+          "p_value": 1.0,
+          "power": 1.0,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s5/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s5/summary.json"
+      ],
+      "floor_effect": true,
+      "id": "hyp-rmatrix-solvable-control-specificity",
+      "p_value": 1.0,
+      "policy_version": "ci-v6",
+      "q_value": 1.0,
+      "tainted_artifacts_seen": true,
+      "verdict": "inconclusive"
+    }
+  ]
+}
