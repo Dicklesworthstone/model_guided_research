@@ -245,3 +245,42 @@ the √(2 ln N) scaling law confirmed via the exact/asymptote ratio rising
 toward 1; the unit-rotor isometry at 8.9e−16; and the coordinate-check CLT
 control flat at slope +0.003. The standalone validation script that seeded
 these lives at the validation-scratch path.
+
+## 9. Coordinate-check results (2026-09-02) — what the ladder actually showed
+
+Measured with `mgr coord-check` from a clean tree (init-time forwards, widths
+64…2048, seq 32, batch 8; artifacts under `artifacts/bench/coord_curves/`),
+adjudicated by `mgr adjudicate` under ci-v6:
+
+| arm | |slope| per seed | verdict |
+|---|---|---|
+| standard (CLT control) | 0.0015 / 0.0011 / 0.0009 | `hyp-coordcheck-clt-flat` SUPPORTED |
+| reversible (CLT, volume-preserving) | 0.0005 / 0.0009 / 0.0003 | (same entry, for-all) |
+| tropical, tropical FFN, current rule | 0.10 / 0.12 / 0.06 / 0.11 / 0.11 / 0.11 | drifts, as predicted |
+| tropical, tropical FFN, nsa rule | 0.12 / 0.14 / 0.08 / 0.13 / 0.13 / 0.13 | drifts MORE: `hyp-tropical-evt-miscoupling` REFUTED |
+
+The separation prediction of section 2(a) fails: nsa minus current |slope| is
++0.019 (CI [−0.009, 0.047], six seeds per arm, 98% power) against the
+registered −0.05. The refuted entry stays in the registry as written.
+
+**Where the drift enters (bead 1xov, per-stage hooks at seed 0).** The
+attention path alone is the source: tropical attention with the *standard*
+FFN already drifts (|slope| 0.06/0.08/0.03, identical under both rules, since
+the score-stage shift commutes with per-query centering and cancels), while
+standard attention with the *tropical* FFN is flat (−0.02/−0.01/−0.01). Inside
+the block, standard attention's output RMS is 0.15 at every width with a
+per-channel mean of 0.02–0.03; tropical attention's output RMS grows
+0.97 → 1.20 → 1.33 → 1.51 across widths 64 → 2048 and its per-channel mean
+grows 0.85 → 1.09 → 1.23 → 1.40, so almost the whole attention output is a
+common-mode location offset that grows with width. That offset comes from the
+post-max value aggregation y_d = max_k (s_k + v_{k,d}), which section 2(a)
+declared second-order and left unshifted; the tropical MLP's output then grows
+(1.6 → 2.5) only because its input carries the offset. The exact-E[max] shift
+at the score stage — the rule the registered nsa arm implements — cannot touch
+this, which is why the arm was refuted rather than merely underpowered.
+
+**What a successor would have to claim** (not registered here; a claim needs
+its own pre-evidence entry): a location correction at the value-aggregation
+stage, or a fan-in-scaled output projection, flattens the tropical curve on a
+fresh seed set. The growth law of the offset (√width under a constant-std
+projection versus Θ(1) under 1/√fan-in) is the open measurement on bead 1xov.
