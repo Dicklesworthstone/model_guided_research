@@ -1,0 +1,27 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 9934                                                 
+  attention_type    standard                                                    
+  n_params          139,264                                                     
+  training budget   {"max_steps": 9935, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 201326592, "flops_consumed_est":      
+                    2000179691520}                                              
+  lineage           {"run_id": "seed_0", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-hie
+  r-tasktok-shuf-b2-rung/runs/budget_0/hier/standard/seed_0/checkpoints @ 9934  
+                                                                                
+                                                   slope held-out               
+  task   EM in-range   EM held-out   ppl in/held           [CI95]   axis        
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  hier         0.007         0.000      1.5/37.9          +0.0000   path_depth  
+                                                   [+0.0000,+0.0…               
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-hie
+r-tasktok-shuf-b2-rung/evals/tasks/eval-b0-hier-standard-s0

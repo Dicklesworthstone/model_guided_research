@@ -1,0 +1,32 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "a3af7b84d259e41d05b69bb2c61539ad5b9ae1bef6b67e0f57c1923d0d6ba2a2",
+    "train_000.parquet": "ba3f708ac746ff4a493b1d5d4941b7424949dfbd74bfe1f140363af908728381",
+    "val_000.parquet": "3322b63395638a14335ae8f2644e69fc9d31cbdd23bf0e254764ba7bdd1c234d"
+  },
+  "dials": {
+    "branching": 3,
+    "depth": 3,
+    "zipf_alpha": 1.0
+  },
+  "generator_version": 1,
+  "hypothesis": "discrete, recursive, and continuous-curvature routing resolve nested key paths; held-out DEPTH is the discriminating axis",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "3589bc051626410e29f19b81d1e9b84b0288b0c58e388c39bb9b2e0f68e13f60",
+    "train_000.parquet": "20099b122c5c909bb6a2c063a0a5205a5cbcfae08fead164e7a302e7517e8836",
+    "val_000.parquet": "cc1453bd3875600627f83a673e5335777e778ff80edb3be3985a3185b5d9d9b3"
+  },
+  "size": 100000,
+  "split_sizes": {
+    "test": 10000,
+    "train": 80000,
+    "val": 10000
+  },
+  "target_mechanisms": [
+    "ultrametric",
+    "fractal",
+    "hyperbolic"
+  ],
+  "task": "hier"
+}
