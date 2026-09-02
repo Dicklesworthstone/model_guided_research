@@ -56,6 +56,7 @@ from nanochat.report import (
 )
 from nanochat.synaptic import SynapticConfig
 from nanochat.tokenizer import (
+    TASK_TOKENIZER_DEFAULT_VOCAB,
     TASK_TOKENIZER_DIRNAME,
     TASK_TOKENIZER_MIN_VOCAB,
     HuggingFaceTokenizer,
@@ -2554,7 +2555,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tokenizer-vocab-size",
         type=int,
-        default=512,
+        default=TASK_TOKENIZER_DEFAULT_VOCAB,
         help=f"Target vocabulary for --tokenizer task (>= {TASK_TOKENIZER_MIN_VOCAB}); the embedding table is padded to a multiple of 64.",
     )
     parser.add_argument(

@@ -7262,16 +7262,26 @@ def _scorecard_flops_per_step(
     n_head: int,
     n_kv_head: int,
     n_embd: int,
+    tokenizer: str = "gpt2",
 ) -> dict[str, int]:
-    """Exact model-estimator FLOPs/step preflight for budget-floor quarantine."""
-    from nanochat.gpt import GPT, GPTConfig
+    """Model-estimator FLOPs/step preflight for budget-floor quarantine.
 
+    The embedding/lm_head matmuls are most of the FLOPs at small width, so the
+    estimate has to use the vocabulary the cells will actually train with: the
+    padded GPT-2 table for ``gpt2``, the padded default task-tokenizer size for
+    ``task`` (the trained size is only known once each cell has trained its
+    tokenizer; the trainer sizes its own step budget from the exact figure)."""
+    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.tokenizer import TASK_TOKENIZER_DEFAULT_VOCAB, padded_vocab_size
+
+    vocab_size = padded_vocab_size(TASK_TOKENIZER_DEFAULT_VOCAB) if tokenizer == "task" else GPTConfig().vocab_size
     estimates: dict[str, int] = {}
     for mechanism in mechanisms:
         resolved_kv_heads = n_head // 2 if mechanism == "reversible" else n_kv_head
         model = GPT(
             GPTConfig(
                 sequence_len=sequence_len,
+                vocab_size=vocab_size,
                 n_layer=n_layer,
                 n_head=n_head,
                 n_kv_head=resolved_kv_heads,
@@ -8080,6 +8090,7 @@ def scorecard(
         n_head=n_head,
         n_kv_head=n_kv_head,
         n_embd=n_embd,
+        tokenizer=tokenizer,
     )
 
     config = {
@@ -12026,20 +12037,28 @@ def status(
         if art["schema"] != "certify":
             continue
         mt = Path(art["path"]).stat().st_mtime
+        git_meta = art["data"].get("git") if isinstance(art["data"].get("git"), dict) else {}
+        cert_commit = git_meta.get("commit_full") or git_meta.get("commit")
         for c in art["data"].get("checks") or []:
             mech = c.get("mechanism") if isinstance(c, dict) else None
             if not isinstance(mech, str):
                 continue
             cur = cert_state.get(mech)
             if cur is None or mt > cur["cert_mtime"]:
-                cert_state[mech] = {"cert_mtime": mt, "cert_path": art["path"]}
+                cert_state[mech] = {"cert_mtime": mt, "cert_path": art["path"], "commit": cert_commit}
     certs: list[dict[str, Any]] = []
     for mech in sorted(cert_state):
         st = cert_state[mech]
-        mech_file = repo_root / "nanochat" / f"{mech}_attention_torch.py"
+        mech_file = repo_root / "nanochat" / _STATUS_MECHANISM_SOURCE.get(mech, f"{mech}_attention_torch.py")
         stale: bool | None = None
         if mech_file.exists():
-            stale = mech_file.stat().st_mtime > st["cert_mtime"]
+            # A certificate is stale when the mechanism's source changed AFTER
+            # the commit the certificate was produced at. Ask git, not mtimes:
+            # every checkout/reset rewrites source mtimes, which flagged every
+            # certificate STALE the moment anyone pulled.
+            stale = _status_source_changed_since(repo_root, st.get("commit"), mech_file)
+            if stale is None:
+                stale = mech_file.stat().st_mtime > st["cert_mtime"]  # no usable commit: mtime fallback
         certs.append(
             {
                 "mechanism": mech,
@@ -12159,6 +12178,37 @@ def status(
             border_style="blue",
         )
     )
+
+
+#: mechanisms whose implementation does not live in nanochat/<mech>_attention_torch.py
+_STATUS_MECHANISM_SOURCE: dict[str, str] = {
+    "standard": "gpt.py",
+    "gauge": "gauge_block_torch.py",
+    "reversible": "reversible_block_torch.py",
+    "surreal": "surreal_torch.py",
+}
+
+
+def _status_source_changed_since(repo_root: Path, commit: str | None, source: Path) -> bool | None:
+    """True when ``source`` has a commit after ``commit`` on the current history,
+    False when it does not, None when git cannot answer (unknown or missing
+    commit, no repository) so the caller can fall back to mtimes."""
+    if not commit:
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "log", "-1", "--format=%H", f"{commit}..HEAD", "--", str(source)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return bool(proc.stdout.strip())
 
 
 def _status_evidence_missing(entries: list[dict[str, Any]], repo_root: Path) -> list[dict[str, Any]]:

@@ -478,6 +478,7 @@ class RustBPETokenizer:
 
 
 TASK_TOKENIZER_MIN_VOCAB = 300  # 256 byte-level symbols + the special tokens + room for merges
+TASK_TOKENIZER_DEFAULT_VOCAB = 512  # the trainer's --tokenizer-vocab-size default; a small corpus may yield fewer
 TASK_TOKENIZER_DIRNAME = "tokenizer"  # saved INSIDE the checkpoint directory so it travels with the weights
 
 
