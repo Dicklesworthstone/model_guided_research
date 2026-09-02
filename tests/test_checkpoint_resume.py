@@ -1273,6 +1273,14 @@ def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
     ids = tok.encode(doc)
     assert max(ids) < meta["model_config"]["vocab_size"]
     assert tok.decode(ids) == doc
+    # Resume retrains the tokenizer from the same corpus instead of reloading
+    # it, so BPE training must be deterministic for a fixed corpus.
+    from nanochat.dataset import list_parquet_files
+    from nanochat.tokenizer import train_task_tokenizer
+
+    retrained = train_task_tokenizer(list_parquet_files(str(data_dir))[:-1], 320)
+    assert retrained.get_vocab_size() == tok_meta["vocab_size"]
+    assert retrained.encode(doc) == ids
 
     # the sampler must decode with the checkpoint's tokenizer, not GPT-2 ids
     # (which would index past this 320-row embedding table)
