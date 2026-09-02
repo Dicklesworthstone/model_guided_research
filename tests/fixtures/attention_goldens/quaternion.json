@@ -19,6 +19,7 @@
     "compile_flex_attention": false,
     "compile_fullgraph": false,
     "compile_mode": null,
+    "control_zero_attention": false,
     "disable_block_norms": false,
     "eval_weight_quant_bits": null,
     "ffn_beta": null,

@@ -307,6 +307,13 @@ class GPTConfig:
     # expected-failure control of hyp-symplectic-nonorm-depth-tied/-untied.
     # Standard attention only (validated); trunk-boundary norms retained.
     disable_block_norms: bool = False
+    # Planted-effect control arm (null calibration of the verdict engine):
+    # every block's attention output is multiplied by zero, so the network is
+    # a per-token MLP stack that cannot mix context. Trained and evaluated
+    # exactly like any other arm, it bounds any context-dependent task at the
+    # answer prior; a two-arm comparison against the un-zeroed model at equal
+    # FLOPs is an effect the engine MUST detect. Block-based mechanisms only.
+    control_zero_attention: bool = False
     # Reversible-specific options (see nanochat.reversible_block_torch; u55.5).
     # symplectic = kick-kick coupling with exact-gradient kicks (corrected
     # sign: conserves the coercive H = phi_G + phi_F; theory note
@@ -496,13 +503,19 @@ class Block(nn.Module):
         if self.attention_type == "reversible":
             return self.special_block(x, cos_sin, kv_cache)
 
+        # control_zero_attention: the attention path still runs (same graph,
+        # same KV-cache writes) but contributes nothing, so the block is a
+        # per-token MLP - the planted no-context arm for engine calibration
+        zero_attention = getattr(self.config, "control_zero_attention", False)
         if getattr(self.config, "disable_block_norms", False):
             # the no-norm falsification arm (z4xx): identical block, norms
             # stripped - drift is expected; that is the point of the control
-            x = x + self.attn(x, cos_sin, kv_cache)
+            attn_out = self.attn(x, cos_sin, kv_cache)
+            x = x + (attn_out * 0.0 if zero_attention else attn_out)
             x = x + self.mlp(x)
             return x
-        x = x + self.attn(norm(x), cos_sin, kv_cache)
+        attn_out = self.attn(norm(x), cos_sin, kv_cache)
+        x = x + (attn_out * 0.0 if zero_attention else attn_out)
         x = x + self.mlp(norm(x))
         return x
 
@@ -647,6 +660,14 @@ class GPT(nn.Module):
                 "disable_block_norms is the standard-attention falsification arm only (z4xx); "
                 f"attention schedule layer {bad_idx} is {bad_name!r}"
             )
+        if getattr(self.config, "control_zero_attention", False):
+            special = [(i, n) for i, n in enumerate(attention_schedule) if n in ("gauge", "reversible")]
+            if special:
+                bad_idx, bad_name = special[0]
+                raise ValueError(
+                    "control_zero_attention applies to Block-based mechanisms only (gauge and reversible run "
+                    f"their own blocks); attention schedule layer {bad_idx} is {bad_name!r}"
+                )
         ffn_type = getattr(self.config, "ffn_type", "standard")
         if ffn_type not in ("standard", "tropical", "tropical-rational"):
             raise ValueError(f"ffn_type must be standard | tropical | tropical-rational, got {ffn_type!r}")

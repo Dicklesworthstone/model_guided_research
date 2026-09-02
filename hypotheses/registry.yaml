@@ -1666,3 +1666,54 @@ hypotheses:
     status: blocked
     evidence: []
     verdict_history: []
+
+  # ---------------------------------------------------------------------------
+  # CALIBRATION CONTROL (2026-09-02): a planted effect the verdict engine must
+  # detect on the two-arm path. Not a scientific claim about any mechanism.
+  # ---------------------------------------------------------------------------
+  - id: hyp-control-no-context-planted-effect
+    statement: >-
+      POSITIVE CONTROL for the two-arm verdict path (an apparatus that has
+      never reported a planted effect has not been shown able to report any
+      effect). A standard-attention model trained at the arith rung
+      coordinate beats the same model trained with control_zero_attention
+      (every block's attention output multiplied by zero, so the network is a
+      per-token MLP stack that cannot mix context and is bounded by the
+      answer prior) by at least 0.20 held-out exact match at equal FLOPs.
+      SUPPORTED means the evaluator, budget cohorts, variant selectors and
+      ci-v6 statistics can see an effect of this size; anything else is a
+      defect in the apparatus, not a finding about attention.
+    mechanisms: [standard]
+    source:
+      kind: model
+      provenance: >-
+        Frontier-math epistemic pass 2026-09-02 (null calibration, NC-2: the
+        planted witness). Arith rung result at registration: standard clears
+        the floor on training seeds 0-2 (held-out EM 0.81/0.86/0.85 vs prior
+        0.507); those seeds are SPENT (they selected the coordinate) and the
+        control uses fresh training seeds 3-5 for BOTH arms.
+    date_registered: "2026-09-02"
+    prediction:
+      metric_path: "evaltasks:tasks.arith.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.20
+      baseline: {mechanism: standard, equal_flops: true, variant: {control_zero_attention: true}}
+      min_seeds: 3
+      candidate_variant: {control_zero_attention: false}
+      scale_caveats: >-
+        REGISTERED 2026-09-02 BEFORE any control_zero_attention run existed
+        (the flag landed in code the same day; zero checkpoints). Coordinate:
+        standard attention, d64/L2/4 heads/2 kv heads, seq 64, batch 4, lr
+        6e-4, adamw, warmup 0, task tokenizer, --data-shuffle epoch,
+        mgr.evaltasks.v4, target 1e12 FLOPs, arith corpus dataset_size 50000
+        dataset_seed 42, training seeds 3,4,5 per arm, eval seeds 0,1,2,
+        examples 48. Expected: candidate ~0.8, control ~0.5 (the majority
+        answer), effect ~0.3 with small variance. Pre-flag artifacts lack the
+        control_zero_attention key and match neither selector, so they cannot
+        leak into either arm. If the engine does NOT return SUPPORTED here,
+        every two-arm verdict at this coordinate is uninterpretable until the
+        apparatus is fixed.
+    status: open
+    evidence: []
+    verdict_history: []

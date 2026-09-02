@@ -1917,3 +1917,48 @@ if __name__ == "__main__":
     import sys
 
     raise SystemExit(pytest.main(sys.argv[1:] or [__file__]))
+
+
+def test_control_zero_attention_makes_logits_context_free():
+    """The planted no-context arm: with control_zero_attention the logits at a
+    position depend on that position's token only (attention contributes
+    nothing), while the same model without the flag does mix context. This is
+    the arm a two-arm verdict must be able to tell from the real model."""
+    import torch
+
+    from nanochat.gpt import GPT, GPTConfig
+
+    torch.manual_seed(0)
+
+    def cfg(flag: bool, attention_type: str = "standard") -> GPTConfig:
+        return GPTConfig(
+            sequence_len=32,
+            vocab_size=128,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=2,
+            n_embd=64,
+            attention_type=attention_type,
+            control_zero_attention=flag,
+        )
+
+    a = torch.randint(0, 128, (1, 12), dtype=torch.long)
+    b = a.clone()
+    b[:, :-1] = torch.randint(0, 128, (1, 11), dtype=torch.long)  # different history, same last token
+
+    def logits_at_last(flag: bool) -> tuple[torch.Tensor, torch.Tensor]:
+        torch.manual_seed(1)
+        model = GPT(cfg(flag))
+        model.init_weights()
+        with torch.no_grad():
+            for p in model.parameters():  # move off the zero-init projections so context can matter
+                p.add_(0.05 * torch.randn_like(p))
+        with torch.inference_mode():
+            return model(a)[0, -1].float(), model(b)[0, -1].float()
+
+    la, lb = logits_at_last(True)
+    torch.testing.assert_close(la, lb, rtol=0, atol=1e-6)
+    ma, mb = logits_at_last(False)
+    assert float((ma - mb).abs().max()) > 1e-3, "without the flag the history must change the logits"
+    with pytest.raises(ValueError, match="control_zero_attention"):
+        GPT(cfg(True, attention_type="gauge"))

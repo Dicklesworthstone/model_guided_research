@@ -997,6 +997,9 @@ def train(args) -> None:
             no_norms = getattr(args, "disable_block_norms", None)
             if no_norms is not None:
                 config.disable_block_norms = bool(no_norms)
+        zero_attention = getattr(args, "control_zero_attention", None)
+        if zero_attention is not None:
+            config.control_zero_attention = bool(zero_attention)
         if has_reversible:
             config.reversible_mode = str(getattr(args, "reversible_mode", config.reversible_mode))
             rev_tied = getattr(args, "reversible_tied", None)
@@ -2644,6 +2647,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Standard attention only: strip the per-layer norms - the expected-failure falsification "
             "arm of the symplectic no-norm program (bead z4xx)."
+        ),
+    )
+    parser.add_argument(
+        "--control-zero-attention",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Planted-effect control arm: every block's attention output is zeroed, so the model cannot mix "
+            "context (a per-token MLP stack). Recorded in model_config for the verdict engine's variant "
+            "selectors; Block-based mechanisms only."
         ),
     )
     parser.add_argument(
