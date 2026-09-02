@@ -342,7 +342,7 @@ hypotheses:
     operationalization_note: >-
       needs per-step gradient-norm telemetry (D2 / bead rz8.2 metrics.jsonl);
       register the depth-sweep comparison once that stream exists.
-    status: blocked
+    status: open
     evidence: []
     verdict_history: []
 
@@ -592,7 +592,7 @@ hypotheses:
       needs per-layer activation-magnitude telemetry (D2 / rz8.2); the
       mathematical half is already certified (rotor_norm_preservation in
       mgr certify) — this entry tracks the architectural consequence.
-    status: blocked
+    status: open
     evidence: []
     verdict_history: []
 
@@ -766,7 +766,7 @@ hypotheses:
       needs per-step grad-norm telemetry (D2 / rz8.2). NOTE: gauge was
       untrainable until 1fr6 (zero-init residual deadlock, fixed 2026-06-10);
       no pre-1fr6 result can bear on this entry.
-    status: blocked
+    status: open
     evidence: []
     verdict_history: []
 
@@ -1834,3 +1834,108 @@ hypotheses:
     evidence: []
     verdict_history:
       - {date: "2026-09-02", verdict: supported, artifacts: ["artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s3/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s4/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s5/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s3/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s4/summary.json", "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s5/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"standard": {"baseline_floor": 0.5069444444444444, "baseline_mean": 0.5069444444444444, "budget_flops": 1000000000000.0, "ci95": [0.2575836236857751, 0.43686082075866933], "effect": 0.3472222222222222, "floor_source": "recorded_answer_prior", "n_baseline": 3, "n_candidate": 3, "n_for_80pct": 2, "p_value": 0.0097214097961013, "power": 0.9999999999999891, "verdict": "supported"}}}
+  - id: hyp-hyperbolic-curvature-readout-hier
+    statement: >-
+      On hierarchical retrieval (the hier task) at least 25 percent of hyperbolic
+      attention heads sit above the hierarchy-curvature threshold at the end of
+      training: the learned per-head curvature reads out the data's hierarchy.
+    mechanisms: [hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        Successor (hier half) of hyp-hyperbolic-curvature-readout, registered
+        2026-09-02 once training summaries record dataset.task and the verdict
+        engine's variant selectors read it; the paired statement is split into two
+        separately adjudicable directions as that entry's note anticipated.
+    date_registered: "2026-09-02"
+    prediction:
+      metric_path: "train:results.hyperbolic_frac_heads_hier"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.25
+      baseline: null
+      candidate_variant: {task: hier}
+      min_seeds: 3
+      scale_caveats: >-
+        Single-arm absolute claim on the hyperbolic mechanism's own readout
+        (results.hyperbolic_frac_heads_hier, the fraction of heads whose curvature
+        exceeds the module's recorded hierarchy threshold at the last logged step).
+        The {task: hier} selector resolves against dataset.task, which the trainer
+        reads from the corpus manifest, so placebo runs of the same mechanism can
+        never enter this arm. Three seeds at one budget cohort; evidence comes from
+        any hyperbolic hier run at or above the rung where standard clears the hier
+        floor (none exists at registration: hier is floored at every rung so far).
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-hyperbolic-curvature-readout-placebo
+    statement: >-
+      On the structure-free placebo task at least 95 percent of hyperbolic attention
+      heads collapse into the near-Euclidean curvature band at the same training
+      budget: with no hierarchy to read, the curvature readout stays flat.
+    mechanisms: [hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        Successor (placebo half) of hyp-hyperbolic-curvature-readout, registered
+        2026-09-02 with the dataset.task selector; this is the negative control of
+        the readout - a mechanism whose heads went hyperbolic on noise would have
+        refuted the readout's meaning.
+    date_registered: "2026-09-02"
+    prediction:
+      metric_path: "train:results.hyperbolic_frac_heads_euclidean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.95
+      baseline: null
+      candidate_variant: {task: placebo}
+      min_seeds: 3
+      scale_caveats: >-
+        Single-arm absolute claim on results.hyperbolic_frac_heads_euclidean (fraction
+        of heads inside the module's recorded near-Euclidean band at the last logged
+        step) for hyperbolic runs whose dataset.task is placebo. Three seeds at one
+        budget cohort; the placebo cells of any scorecard that includes the hyperbolic
+        mechanism qualify once trained under a build that records dataset.task
+        (2026-09-02 or later). Together with the hier half this is the paired
+        readout claim; supporting one without the other is reported as such.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-tie-locus-density-decreases-tropical
+    statement: >-
+      For tropical attention trained with margin recording and closed-loop
+      annealing, route coverage (the fraction of routing decisions off the tie
+      locus, i.e. with a margin above the route-stability threshold) rises over
+      training: the model learns to avoid its own decision boundaries.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Successor (tropical half) of hyp-tie-locus-density-decreases, registered
+        2026-09-02: the within-run trend the original note asked for is exactly a
+        single-arm absolute prediction on results.route_coverage_delta, which the
+        engine has evaluated since ci-v3; the ultrametric half stays on the original
+        entry until its tie counter exists.
+    date_registered: "2026-09-02"
+    theorem_refs: [thm-tropicalization-of-attention, thm-route-stability]
+    prediction:
+      metric_path: "train:results.route_coverage_delta"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.01
+      baseline: null
+      candidate_variant: {tropical_record_margins: true}
+      min_seeds: 3
+      scale_caveats: >-
+        route_coverage_delta = route_coverage_last - route_coverage_first over the
+        run, recorded only by tropical runs with tropical_record_margins on and a
+        semiring annealing schedule active (a live beta; runs without one carry no
+        field and are simply not candidates). Threshold 0.01 = one point of
+        coverage gained; the original note's companion condition (final tie fraction
+        1 - coverage <= 0.05) is reported next to the verdict from the same
+        artifacts, not adjudicated here. Three seeds in one budget cohort. No
+        qualifying run exists at registration (the scorecard does not enable the
+        controller); the evidence must come from a preregistered annealing campaign.
+    status: open
+    evidence: []
+    verdict_history: []
