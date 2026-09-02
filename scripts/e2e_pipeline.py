@@ -454,7 +454,7 @@ def scenario_full_loop(work: Path) -> bool:
             rec = json.loads(summary.read_text())
             r.assert_true(
                 f"eval-{arm}-contract",
-                rec["schema_version"] == "mgr.evaltasks.v3"
+                rec["schema_version"] == "mgr.evaltasks.v4"
                 and "answer_prior" in rec["tasks"]["arith"]
                 and (summary.parent / "generations.jsonl").exists(),
                 f"{summary.name}: v2 schema + answer_prior + receipts present",
