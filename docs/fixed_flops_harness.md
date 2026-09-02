@@ -155,6 +155,19 @@ the same syntax, so a within-mechanism ablation (two arms of one mechanism
 differing in one flag) goes through the same Welch / CI / FDR path as a
 mechanism comparison.
 
+### Training arms
+
+Two registry mechanisms are training knobs rather than attention types:
+`ordinal` (the transfinite-patience LR scheduler) and `hoss` (the hyperreal
+second-order optimizer). `mgr scorecard --mechanism ordinal` and
+`--mechanism hoss` train standard attention with `--scheduler-type ordinal`
+or `--optimizer-type hoss` respectively; every other cell keeps the
+campaign's scheduler (none) and optimizer. The FLOPs estimate is the standard
+model's, and the verdict engine's arm matching already separates these arms
+from the standard baseline by the recorded scheduler and optimizer types, so
+`hyp-ordinal-regime-recovery` and `hyp-hoss-regime-curvature` adjudicate from
+a scorecard suite like any attention hypothesis.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.

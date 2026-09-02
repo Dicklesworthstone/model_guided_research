@@ -7125,6 +7125,14 @@ _SCORECARD_HYPOTHESIS_SNAPSHOT_KEYS = (
 _SCORECARD_ARM_FIXED_KEYS: frozenset[str] = frozenset(
     {"n_layer", "n_embd", "n_head", "n_kv_head", "sequence_len", "vocab_size", "attention_type"}
 )
+# Registry mechanisms that are training knobs, not attention types: the arm
+# trains STANDARD attention with exactly one trainer flag changed, which is
+# how the verdict engine's arm matching (_adj_artifact_matches_arm) tells the
+# arm apart from the standard baseline (scheduler none, optimizer non-hoss).
+_SCORECARD_TRAINING_ARMS: dict[str, dict[str, str]] = {
+    "ordinal": {"--scheduler-type": "ordinal"},
+    "hoss": {"--optimizer-type": "hoss"},
+}
 
 
 def _scorecard_parse_arm(spec: str) -> tuple[str, dict[str, str]]:
@@ -7262,6 +7270,8 @@ def _scorecard_train_command(
     mechanism_base = str(cell.get("mechanism_base") or cell["mechanism"])
     mechanism_extras: dict[str, str] = dict(cell.get("mechanism_extras") or {})
     resolved_kv_heads = n_head // 2 if mechanism_base == "reversible" else n_kv_head
+    arm_flags = dict(_SCORECARD_TRAINING_ARMS.get(mechanism_base, {}))
+    attention_type = "standard" if mechanism_base in _SCORECARD_TRAINING_ARMS else mechanism_base
     cmd = [
         sys.executable,
         "-m",
@@ -7285,7 +7295,7 @@ def _scorecard_train_command(
         "--learning-rate",
         str(learning_rate),
         "--optimizer-type",
-        optimizer_type,
+        arm_flags.pop("--optimizer-type", optimizer_type),
         "--tokenizer",
         tokenizer,
         "--warmup-steps",
@@ -7293,7 +7303,7 @@ def _scorecard_train_command(
         "--log-interval",
         str(log_interval),
         "--attention-type",
-        mechanism_base,
+        attention_type,
         "--target-flops",
         str(cell["budget_flops"]),
         "--checkpoint-interval",
@@ -7316,6 +7326,8 @@ def _scorecard_train_command(
     ]
     if val_interval > 0:
         cmd.extend(["--val-interval", str(val_interval), "--val-batches", str(val_batches)])
+    for flag, value in arm_flags.items():  # training arms: ordinal scheduler, hoss optimizer
+        cmd.extend([flag, value])
     cmd.extend(_scorecard_arm_train_flags(mechanism_extras))  # per-arm variant knobs (bead 63ko)
     return cmd
 
@@ -7405,7 +7417,7 @@ def _scorecard_flops_per_step(
                 n_head=n_head,
                 n_kv_head=resolved_kv_heads,
                 n_embd=n_embd,
-                attention_type=mechanism,
+                attention_type="standard" if mechanism in _SCORECARD_TRAINING_ARMS else mechanism,
             )
         )
         estimates[mechanism] = int(model.estimate_flops()) * int(batch_size) * int(sequence_len)
@@ -8200,7 +8212,7 @@ def scorecard(
         mechanism_options=mechanism,
         task_options=task,
         cell_options=matrix_cell,
-        supported_mechanisms=list(SUPPORTED_ATTENTION_TYPES),
+        supported_mechanisms=[*SUPPORTED_ATTENTION_TYPES, *_SCORECARD_TRAINING_ARMS],
         supported_tasks=set(TASKS),
         default_tasks=list(DEFAULT_TASKS),
     )
@@ -8239,6 +8251,11 @@ def scorecard(
         raise typer.BadParameter(
             "reversible scorecards require campaign-global --n-kv-head to equal --n-head / 2 so every arm "
             "uses identical KV geometry"
+        )
+    if optimizer_type == "hoss":
+        raise typer.BadParameter(
+            "hoss is a training arm (--mechanism hoss), not a campaign-global optimizer: the standard "
+            "baseline must train with a non-hoss optimizer for the verdict engine to tell the arms apart"
         )
     git_info = _get_git_info()
     if hypothesis_ids and not dry_run:

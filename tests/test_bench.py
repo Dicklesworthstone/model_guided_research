@@ -553,6 +553,28 @@ def test_scorecard_rejects_reversible_campaign_with_mismatched_kv_geometry(tmp_p
     assert not artifacts.exists()
 
 
+def test_scorecard_rejects_hoss_as_the_campaign_optimizer(tmp_path):
+    """hoss is an arm: a hoss baseline would be indistinguishable from the hoss
+    arm under the verdict engine's arm matching."""
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--cell",
+            "hoss:regime",
+            "--optimizer-type",
+            "hoss",
+            "--artifacts-dir",
+            str(artifacts),
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "training arm" in result.output
+    assert not artifacts.exists()
+
+
 def test_scorecard_rejects_unknown_hypothesis_before_writing(tmp_path):
     artifacts = tmp_path / "artifacts"
     result = runner.invoke(
@@ -1340,6 +1362,73 @@ def test_scorecard_variant_arm_reaches_the_trainer_and_the_manifest(tmp_path, mo
     plain_cmds = [cmd for cmd in launched if "--control-zero-attention" not in cmd]
     assert len(variant_cmds) == 2 and len(plain_cmds) == 2  # arith + placebo per arm
     assert all(cmd[cmd.index("--attention-type") + 1] == "standard" for cmd in variant_cmds)
+
+
+def test_scorecard_training_arms_train_standard_attention_with_one_knob(tmp_path, monkeypatch):
+    """ordinal and hoss are registry mechanisms but not attention types: their
+    cells train standard attention with the scheduler / optimizer flag the
+    verdict engine's arm matching keys on, and nothing else changes."""
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    launched: list[list[str]] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            launched.append(list(cmd))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--mechanism",
+            "ordinal",
+            "--mechanism",
+            "hoss",
+            "--task",
+            "regime",
+            "--seeds",
+            "1",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--run-id",
+            "training-arms",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "training-arms" / "manifest.json").read_text())
+    assert manifest["config"]["mechanisms"] == ["standard", "ordinal", "hoss"]
+    assert len(launched) == 6  # regime + placebo for standard, ordinal, hoss
+    assert all(cmd[cmd.index("--attention-type") + 1] == "standard" for cmd in launched)
+    ordinal_cmds = [cmd for cmd in launched if "ordinal" in cmd[cmd.index("--artifacts-topic") + 1]]
+    hoss_cmds = [cmd for cmd in launched if "hoss" in cmd[cmd.index("--artifacts-topic") + 1]]
+    plain_cmds = [cmd for cmd in launched if cmd not in ordinal_cmds and cmd not in hoss_cmds]
+    assert len(ordinal_cmds) == 2 and len(hoss_cmds) == 2 and len(plain_cmds) == 2
+    assert all(cmd[cmd.index("--scheduler-type") + 1] == "ordinal" for cmd in ordinal_cmds)
+    assert all(cmd[cmd.index("--optimizer-type") + 1] == "adamw" for cmd in ordinal_cmds)
+    assert all(cmd[cmd.index("--optimizer-type") + 1] == "hoss" for cmd in hoss_cmds)
+    assert all("--scheduler-type" not in cmd for cmd in hoss_cmds + plain_cmds)
+    assert all(cmd[cmd.index("--optimizer-type") + 1] == "adamw" for cmd in plain_cmds)
+
+
+def test_scorecard_flops_estimate_covers_training_arms():
+    estimates = cli._scorecard_flops_per_step(
+        ["standard", "ordinal", "hoss"], batch_size=1, sequence_len=8, n_layer=1, n_head=2, n_kv_head=2, n_embd=16
+    )
+    assert estimates["ordinal"] == estimates["standard"] == estimates["hoss"] > 0
 
 
 def test_scorecard_coverage_accepts_variant_selectors_when_the_arm_exists():

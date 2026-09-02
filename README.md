@@ -902,6 +902,8 @@ mgr scorecard \
     --seeds 3 --dry-run
 # Each selected task gets a standard baseline; every selected mechanism gets a
 # placebo cell. The exact hypothesis definitions are snapshotted in the manifest.
+# --mechanism ordinal / --mechanism hoss are training arms: standard attention
+# with --scheduler-type ordinal or --optimizer-type hoss.
 # This hierarchy-only slice remains publication-blocked: the final scorecard must
 # also select every arm of hyp-placebo-no-winner. A reversible campaign must set
 # one campaign-wide KV geometry with --n-kv-head equal to --n-head / 2.
