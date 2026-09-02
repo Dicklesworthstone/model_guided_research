@@ -1355,3 +1355,58 @@ def test_scorecard_coverage_accepts_variant_selectors_when_the_arm_exists():
 
     with pytest.raises(typer.BadParameter, match="missing baseline arm"):
         cli._scorecard_validate_hypothesis_coverage([hypothesis], [("standard", "arith")])
+
+
+def test_bench_variant_arm_trains_with_its_flag_and_keeps_its_own_aggregate(tmp_path, monkeypatch):
+    """bead 63ko, bench half: `-a MECH@key=value` is a distinct arm - the trainer
+    receives the extra flag with the base mechanism, results live under the
+    directory token, and the aggregate is keyed by the full label."""
+    suite = "synthetic-variant-arm"
+    arts = tmp_path / "artifacts"
+    _write_bench_run(arts, suite, "standard", 0, val_ce=3.0, losses=[3.1, 3.0])
+    _write_bench_run(arts, suite, "standard+control_zero_attention-true", 0, val_ce=3.4, losses=[3.5, 3.4])
+
+    import subprocess as _sub
+
+    commands: list[list[str]] = []
+
+    class _FakeProc:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    def _fake_run(cmd, **kw):
+        commands.append(list(cmd))
+        return _FakeProc()
+
+    monkeypatch.setattr(_sub, "run", _fake_run)
+    result = runner.invoke(
+        cli.app,
+        [
+            "bench-fixed-flops",
+            "-a",
+            "standard",
+            "-a",
+            "standard@control_zero_attention=true",
+            "--seeds",
+            "0",
+            "--device",
+            "cpu",
+            "--target-flops",
+            "1e6",
+            "--no-auto-download-data",
+            "--artifacts-dir",
+            str(arts),
+            "--run-id",
+            suite,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    train_cmds = [cmd for cmd in commands if "nanochat.train" in cmd]
+    variant_cmd = next(cmd for cmd in train_cmds if "--control-zero-attention" in cmd)
+    plain_cmd = next(cmd for cmd in train_cmds if "--control-zero-attention" not in cmd)
+    assert variant_cmd[variant_cmd.index("--attention-type") + 1] == "standard"
+    assert plain_cmd[plain_cmd.index("--attention-type") + 1] == "standard"
+    summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
+    assert set(summary["aggregates"]) >= {"standard", "standard@control_zero_attention=true"}
+    assert summary["aggregates"]["standard@control_zero_attention=true"]["metric_mean"] == pytest.approx(3.4)

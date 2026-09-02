@@ -1525,7 +1525,11 @@ def bench_fixed_flops(
             "reversible",
             "gauge",
         ]
-    attention_types = [str(attn).strip() for attn in attention_types if str(attn).strip()]
+    # canonical arm labels: MECHANISM (or a comma schedule) with optional
+    # @key=value extras (bead 63ko: within-mechanism ablations are arms too)
+    attention_types = [
+        _scorecard_arm_label(*_scorecard_parse_arm(str(attn))) for attn in attention_types if str(attn).strip()
+    ]
     if not attention_types:
         raise typer.BadParameter("--attention-type must be provided at least once")
     seed_list = [int(s) for s in seeds.split(",") if s.strip()] or [int(seed)]
@@ -1571,9 +1575,11 @@ def bench_fixed_flops(
     }
 
     def _run_train(attn: str, run_seed: int) -> dict[str, Any]:
-        run_topic = f"fixed_flops/nanochat/{suite_run_id}/{attn}"
+        attn_base, attn_extras = _scorecard_parse_arm(attn)
+        attn_token = _scorecard_arm_path_token(attn)
+        run_topic = f"fixed_flops/nanochat/{suite_run_id}/{attn_token}"
         run_id_local = f"seed_{run_seed}"
-        attention_flag = "--attention-schedule" if "," in attn else "--attention-type"
+        attention_flag = "--attention-schedule" if "," in attn_base else "--attention-type"
         train_cmd = [
             sys.executable,
             "-m",
@@ -1599,7 +1605,8 @@ def bench_fixed_flops(
             "--optimizer-type",
             str(optimizer_type),
             attention_flag,
-            attn,
+            attn_base,
+            *_scorecard_arm_train_flags(attn_extras),
             "--target-flops",
             str(float(target_flops)),
             "--warmup-steps",
@@ -1643,8 +1650,8 @@ def bench_fixed_flops(
             returncode = 124
         t1 = time.perf_counter()
 
-        stdout_path = logs_dir / f"nanochat_{attn}_seed{run_seed}.stdout.txt"
-        stderr_path = logs_dir / f"nanochat_{attn}_seed{run_seed}.stderr.txt"
+        stdout_path = logs_dir / f"nanochat_{attn_token}_seed{run_seed}.stdout.txt"
+        stderr_path = logs_dir / f"nanochat_{attn_token}_seed{run_seed}.stderr.txt"
         stdout_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
 

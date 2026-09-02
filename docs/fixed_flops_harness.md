@@ -141,7 +141,10 @@ selectors find the arm at adjudication (a selector equal to the config
 default resolves to the plain arm). Model shape keys are campaign-global and
 refused as extras. Cells and directories carry the arm label
 (`standard+control_zero_attention-true`), the FLOPs estimate and the placebo
-coverage are per mechanism.
+coverage are per mechanism. `mgr bench-fixed-flops -a MECH@key=value` takes
+the same syntax, so a within-mechanism ablation (two arms of one mechanism
+differing in one flag) goes through the same Welch / CI / FDR path as a
+mechanism comparison.
 
 ## JAX demos (current status)
 
