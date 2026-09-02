@@ -6424,10 +6424,13 @@ def _load_eval_checkpoint(
 ) -> tuple[Any, dict[str, Any], int]:
     """Load a nanochat GPT checkpoint for evaluation.
 
-    Deliberately NOT checkpoint_manager.build_model: that helper asserts the
-    tokenizer vocab matches the model config, but nanochat training configs
-    use the padded default (50304) with the 50257-token GPT-2 tokenizer -
-    a deliberate mismatch (every tokenizer id is still a valid input).
+    Deliberately NOT checkpoint_manager.build_model: eval needs the
+    model_overrides merge below, and it does not need a tokenizer at all -
+    callers that decode or encode text fetch the checkpoint's own tokenizer
+    with nanochat.tokenizer.checkpoint_tokenizer(checkpoint_dir, meta), which
+    is the task-scoped one saved beside the weights when the run used
+    --tokenizer task, else the shared GPT-2 tokenizer (its 50,257 ids all fit
+    the padded 50,304-row table).
 
     model_overrides (bead 8gk.4): eval-time config knobs (e.g.
     ultrametric_digits_k for valuation-truncation sweeps) merged into the

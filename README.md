@@ -814,6 +814,14 @@ python -m nanochat.train --activation-checkpointing every-k --activation-ckpt-ev
 # refill stalls behind GPU steps; 0 = synchronous loading)
 python -m nanochat.train --dataloader-prefetch 4
 
+# Task-scoped tokenizer: train a byte-level BPE (default 512 tokens) on the
+# --data-dir corpus and size the embedding table from it. At d=64 the 50k
+# GPT-2 vocabulary is ~97% of every FLOP, so a fixed-FLOPs comparison on a
+# generated task otherwise measures the tokenizer, not the mechanism. The
+# tokenizer is saved inside the checkpoint dir; eval-tasks / sample / probes
+# load it from there automatically.
+python -m nanochat.train --data-dir data/arith --tokenizer task --tokenizer-vocab-size 512
+
 # Hyperparameter tuning
 python -m nanochat.train \
     --batch-size 16 \

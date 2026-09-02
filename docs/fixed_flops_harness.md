@@ -68,6 +68,28 @@ This writes into:
 
 ---
 
+### The tokenizer is part of the FLOPs coordinate
+
+`GPT.estimate_flops` counts the embedding and lm_head matmuls, and at the
+widths the CPU campaigns use they dominate: at d=64 the 50,304-row GPT-2
+vocabulary is 96.6% of the FLOPs per token (19,955,712 vs 688,128 with a
+128-row vocabulary). A fixed-FLOPs budget therefore bought almost no
+transformer body, which is how the copyops sizing ladder (5e10 to 8e12)
+floored at every rung (bead r7qn, 2026-09-01).
+
+`nanochat.train --tokenizer task` (bead n6y1) trains a byte-level BPE on the
+corpus's train split (default 512 tokens, `--tokenizer-vocab-size`), pads the
+embedding table to a multiple of 64, saves the tokenizer inside the checkpoint
+directory, and records `tokenizer.kind == "task"` in the checkpoint meta and
+`summary.json` hparams. `mgr scorecard --tokenizer task` threads it into every
+cell and records it in the manifest config. Two rules follow:
+
+- **One tokenizer per comparison.** Cells trained with different tokenizers
+  sit at different coordinates; never adjudicate across them.
+- **Re-probe the rung.** Budgets found with the GPT-2 tokenizer do not carry
+  over: the body sees ~25x more tokens per FLOP at d=64, so the floor-clearing
+  rung moves. Preregister the new ladder before spending compute.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.
