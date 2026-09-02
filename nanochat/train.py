@@ -820,6 +820,15 @@ def train(args) -> None:
     # uninterrupted run consumes the checkpoint step's real reading.
     semiring_resume_coverage: float | None = None
 
+    # Document order per epoch (bead r7qn): a small corpus replayed in file
+    # order every epoch teaches the model which document follows which
+    # instead of the task (the 1e12 copyops probe: train-stream loss 0.9 in
+    # corpus order, 4.5 on the same documents shuffled). 'epoch' permutes each
+    # row group's documents with a permutation seeded by (--seed, epoch,
+    # position), so the stream stays a deterministic function of the seed.
+    data_shuffle = str(getattr(args, "data_shuffle", "epoch"))
+    data_shuffle_seed: int | None = int(args.seed) if data_shuffle == "epoch" else None
+
     # Task-scoped tokenizer (nanochat.tokenizer.train_task_tokenizer explains
     # why): trained from the corpus's train split BEFORE the config is built,
     # because the embedding table is sized from it. BPE training is
@@ -1219,7 +1228,11 @@ def train(args) -> None:
             # recorded position. Cheap for huge runs; may skip a few documents
             # (never repeats), so trajectories are NOT bitwise-comparable.
             saved_loader = (resume_train_state or {}).get("dataloader") or {}
-            loader_resume_state = {"pq_idx": int(saved_loader["pq_idx"]), "rg_idx": int(saved_loader["rg_idx"])}
+            loader_resume_state = {
+                "pq_idx": int(saved_loader["pq_idx"]),
+                "rg_idx": int(saved_loader["rg_idx"]),
+                "epoch": int(saved_loader.get("epoch", 0)),
+            }
     loader = tokenizing_distributed_data_loader_with_state(
         B=args.batch_size,
         T=config.sequence_len,
@@ -1229,6 +1242,7 @@ def train(args) -> None:
         data_dir=data_dir,
         prefetch_chunks=int(getattr(args, "dataloader_prefetch", 0)),
         tokenizer=task_tokenizer,
+        shuffle_seed=data_shuffle_seed,
     )
     if resume_meta is not None and resume_data_mode == "exact" and batches_consumed > 0:
         # Exact resume: replay the deterministic stream from the beginning and
@@ -1461,6 +1475,7 @@ def train(args) -> None:
                 "batches_consumed": step + 1,
                 "pq_idx": int(last_loader_state.get("pq_idx", 0)),
                 "rg_idx": int(last_loader_state.get("rg_idx", 0)),
+                "epoch": int(last_loader_state.get("epoch", 0)),
             },
             "rng": rng_state,
         }
@@ -1478,6 +1493,7 @@ def train(args) -> None:
             "model_config": asdict(config),
             "model_type": model_type,
             "tokenizer": tokenizer_meta,
+            "data_shuffle": data_shuffle,
             "optimizer_type": str(args.optimizer_type),
             "scheduler_type": str(args.scheduler_type),
             "seed": int(args.seed),
@@ -2180,6 +2196,7 @@ def train(args) -> None:
             "grad_clip_norm": (float(grad_clip_norm) if grad_clip_norm is not None else None),
             "model_type": model_type,
             "tokenizer": tokenizer_meta,
+            "data_shuffle": data_shuffle,
             "scheduler_type": str(args.scheduler_type),  # arm detection for the G2 verdict engine
             # arm detection for semiring_beta variants (rgyl): the RAW spec -
             # "linear:1:32" vs "32.0" vs null (exact tropical) - so annealed,
@@ -2601,6 +2618,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(_SUPPORTED_TOKENIZERS),
         help="gpt2 = the shared 50,257-token tokenizer; task = train a byte-level BPE on --data-dir's train split "
         "and save it inside the checkpoint dir (at small width the GPT-2 vocabulary is ~97%% of every FLOP).",
+    )
+    parser.add_argument(
+        "--data-shuffle",
+        type=str,
+        default="epoch",
+        choices=["epoch", "none"],
+        help="epoch = visit each parquet row group's documents in a per-epoch permutation seeded by --seed "
+        "(a small corpus replayed in file order every epoch is memorized as a sequence); none = file order.",
     )
     parser.add_argument(
         "--tokenizer-vocab-size",

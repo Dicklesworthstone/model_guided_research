@@ -1,0 +1,288 @@
+{"correct": false, "doc_index": 0, "eval_seed": 0, "expected": "f a m a t v s", "got": " v p f", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 0, "expected": "x h r m", "got": " q v p s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 0, "expected": "l o g t c x a s", "got": " q w m d p m s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 0, "expected": "l i x q a n p g", "got": " i o g t y r i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 0, "expected": "o h z d a o c", "got": " e h y o a f t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 0, "expected": "l j v p y c p", "got": " w q a s w y w", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 0, "expected": "x n j c o m", "got": " s k n s l x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 0, "expected": "w m s", "got": " y r s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 0, "expected": "k o d e x", "got": " e s b k s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 0, "expected": "z d g l f", "got": " l w q y z", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 0, "expected": "t w j u p r m z", "got": " q w j z e z j q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 0, "expected": "c l b x r s", "got": " s j OUT m x n y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 0, "expected": "x d c r p z k", "got": " x p l l k l o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 0, "expected": "c f m", "got": " y b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 0, "expected": "e t s e k f a i", "got": " i v n m p z m q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 0, "expected": "d l f r e o d", "got": " i i l o f d o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 0, "expected": "e t t u", "got": " i n z b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 0, "expected": "n s t", "got": " q s p", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 0, "expected": "b i x p c e u k", "got": " s i r m x p i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 0, "expected": "k w x", "got": " w v q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 0, "expected": "x x z p r w", "got": " s i v x z", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 0, "expected": "k j b s o e r w", "got": " m z e p j p p c", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 0, "expected": "h o y", "got": " o m o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 0, "expected": "y k g w l s", "got": " k w w w m t m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 0, "expected": "m x p", "got": " y n l", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 0, "expected": "s b b", "got": " s b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 0, "expected": "l t x x d g o k", "got": " x o f a k d l", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 0, "expected": "u z v y q", "got": " v b r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 0, "expected": "k k j v u b f r", "got": " m k b y b y j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 0, "expected": "c j h o x b j p", "got": " h c q v j k b s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 0, "expected": "p n w", "got": " y x f", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 0, "expected": "f h l", "got": " y b r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 0, "expected": "m w w q a r y r", "got": " v x m s w p t s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 0, "expected": "i n l o x", "got": " u y o v", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 0, "expected": "m u g y", "got": " s v y z", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 0, "expected": "e r u", "got": " y q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 0, "expected": "w t t h k e h v", "got": " h p g w i v i y y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 0, "expected": "k k q r x l z w", "got": " x j q x t q x x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 0, "expected": "w j y j", "got": " j w w c p p", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 0, "expected": "e t w n d", "got": " j d s u y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 0, "expected": "a q r u r", "got": " z q l l a g OUT", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 0, "expected": "f q s y", "got": "", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 0, "expected": "w f d r p h g", "got": " f f s h l g y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 0, "expected": "v r r w", "got": " q w w m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 0, "expected": "q x f", "got": " y b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 0, "expected": "q x u h o q", "got": " c k o c", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 0, "expected": "q q p d z k", "got": " k w q k s w", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 0, "expected": "p c d e f i", "got": " f j i z b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 0, "eval_seed": 0, "expected": "j y l y x x m a u", "got": " x e x x e x e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 0, "expected": "z l b e j i d s k p s z i", "got": " r s b s b s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 0, "expected": "p p j i j d m b k v r w f l", "got": " m u o", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 0, "expected": "r i f o z c j m s", "got": " i s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 0, "expected": "w r p b g w i r c h", "got": " q x b a g t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 0, "expected": "t o j t v y d k v u z g", "got": " v e s v k y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 0, "expected": "b f y i f f v y y d o x p b m", "got": " y z", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 0, "expected": "s u i b f b d s w e d k a i q o", "got": " j o b y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 0, "expected": "d k v b g a z w f x f d", "got": " c e p y q t r", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 0, "expected": "y c a p l t f e h l q r a p", "got": " c p c a OUT c r p m p w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 0, "expected": "k e i b o t v s m s x f z", "got": " j y x e k a y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 0, "expected": "z e j o q f h f o j i e i i y", "got": " h l a y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 0, "expected": "u i e d z w a c n h z k", "got": " e h w u v e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 0, "expected": "f h n g q s v d s c w", "got": " f s t q f a e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 0, "expected": "f r i o n x d s v b", "got": " f j v r", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 0, "expected": "a h o v r v s q b a a u", "got": " v r k o u v r", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 0, "expected": "h l k f o m x p a k w k e g k y", "got": " x e t y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 0, "expected": "b t q w r i k u o", "got": " b t m t w m s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 0, "expected": "b l u j t i o h u t y a g", "got": " b w y w j u q a", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 0, "expected": "q i d v b g x a e w o", "got": " n k b v i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 0, "expected": "n g g k z v s t f e", "got": " f e y t x e t y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 0, "expected": "v a w z k o q z x b v w", "got": " w a b y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 0, "expected": "r h t v e z h p s x d j g s", "got": " n x k v x z t y y y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 0, "expected": "h m x i s y b q p n w d o a g", "got": " i r s w i j k OUT y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 0, "expected": "q k l m u h p s f b", "got": " n k b k k n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 0, "expected": "h p f r b u r w m m u a n k", "got": " b s m m m m w f", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 0, "expected": "x u k s f z c a t o s r m", "got": " x t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 0, "expected": "r x w x o x s h b z i n", "got": " s b x p n x b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 0, "expected": "s k n l c o p q u y u w c w", "got": " v x w m s w y x a", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 0, "expected": "c n b z f d d j v s", "got": " q i d w y x j", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 0, "expected": "z l r b w d n t e", "got": " i r i j z j r s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 0, "expected": "y l m b s x a y h s r b q i", "got": " q f z e x d q i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 0, "expected": "g f p j n h c n z b a", "got": " f s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 0, "expected": "w a z r p q w s h l l u f m r", "got": " d v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 0, "expected": "q k w c h m e d t w z a z f g f", "got": " p p m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 0, "expected": "r p o i b c e k c l w m g m a y", "got": " c", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 0, "expected": "y h z w h n v u p m g o p r", "got": " m v m v i t e q", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 0, "expected": "b o p s y u c z y z h u s f f", "got": " i m m o k s w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 0, "expected": "p p m x m o i s k q u x u l j u", "got": " f t k g", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 0, "expected": "e w k f u m h i j", "got": " n k t t e x w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 0, "expected": "z s x g z s u y p d k i y", "got": " n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 0, "expected": "u z m w a n c f q u u", "got": " n OUT a e a e w u", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 0, "expected": "r r u g f k i q c c g p v f", "got": " h y n x n t g", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 0, "expected": "l i f w j v x p d w f v", "got": " f v d p f v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 0, "expected": "q u y p q w y z e", "got": " q f w z w m s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 0, "expected": "u l v t h h d n p v c", "got": " c t h v i q", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 0, "expected": "q u d f g n r e v", "got": " f v z p n x p n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 0, "expected": "e h p s n i f c c", "got": " f e s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 0, "eval_seed": 1, "expected": "m a e z r x h", "got": " x l g x j x o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 1, "expected": "d i n i", "got": " g j i d j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 1, "expected": "o u t m", "got": " s s s s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 1, "expected": "w g o", "got": " y r o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 1, "expected": "e j a", "got": " w m s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 1, "expected": "t g i k r", "got": " s e s k", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 1, "expected": "d r k p k j", "got": " k b h p t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 1, "expected": "t w n a v y h", "got": " v k p t s t s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 1, "expected": "y i r v t u z", "got": " z q OUT j e p j y e", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 1, "expected": "b e t", "got": " y x k y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 1, "expected": "m e f y b g", "got": " b o b k b l", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 1, "expected": "q j l g y w m k", "got": " r x k t t x k", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 1, "expected": "t f o e e", "got": " s d v d s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 1, "expected": "w x p k n q", "got": " p OUT i w OUT f s i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 1, "expected": "c d n q h a y", "got": " j OUT n p y k k k y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 1, "expected": "s l b q q t c", "got": " v r k g x y", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 1, "expected": "w u g", "got": " y q OUT v", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 1, "expected": "e c u z n r e a", "got": " a a h c r s c r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 1, "expected": "e b h", "got": " m u x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 1, "expected": "x m e t g o n", "got": " p n m c t t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 1, "expected": "w c y a c l t", "got": " q t w p v p t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 1, "expected": "z d u b l h b", "got": " z g m o u r g", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 1, "expected": "r g x i", "got": " i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 1, "expected": "w i e", "got": " q i r w", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 1, "expected": "k l u j o g w j", "got": " m o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 1, "expected": "q f p s a k s", "got": " x p g i p t y x r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 1, "expected": "f p e q", "got": " j q v r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 1, "expected": "c u a h r x j i", "got": " q t j q p t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 1, "expected": "s g w", "got": " y r s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 1, "expected": "o j d o z", "got": " s o m d s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 1, "expected": "y r a", "got": " y r k", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 1, "expected": "t m x", "got": " y r n", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 1, "expected": "k p z k z m", "got": " j z z z p OUT q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 1, "expected": "e y z", "got": "", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 1, "expected": "l f x", "got": " y b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 1, "expected": "u c x q i b", "got": " i v j i r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 1, "expected": "w x g h a a", "got": " k o v p x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 1, "expected": "x n j y x b b", "got": " n p g n p x f", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 1, "expected": "h l b j", "got": " q v i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 1, "expected": "b j t j m j", "got": " b m x z b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 1, "expected": "z m g x k l", "got": " k z o k x OUT x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 1, "expected": "s y j", "got": " y r s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 1, "expected": "s z f", "got": " y r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 1, "expected": "l i p n i", "got": " k x OUT f s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 1, "expected": "l i l l e e u u", "got": " d f a a x b l b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 1, "expected": "x i o y b p o", "got": " e o g m o q v", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 1, "expected": "x s c q", "got": " s k g x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 1, "expected": "x p p i o x g t", "got": " c x q v i x l", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 0, "eval_seed": 1, "expected": "v x t g p r e h t d", "got": " h b v r i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 1, "expected": "e x v n z o i c a", "got": " w u x o r i f n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 1, "expected": "g n b v u i r n q q", "got": " n l k n k w p t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 1, "expected": "e d c q i q y v y q w y", "got": " e d w m m h a", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 1, "expected": "i l t d i f g o k b z y t m o k", "got": " w o s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 1, "expected": "q q k l l f o l p k b r c", "got": " m q w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 1, "expected": "t j r w v s r s q n a d", "got": " p t x p c p t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 1, "expected": "q m z h s z y l i x s h", "got": " p d t e t k i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 1, "expected": "u c m c d c b u m l e u c n", "got": " s i v t u k u l", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 1, "expected": "p e a i c n u s i z s t", "got": " n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 1, "expected": "y q q f v t r c d s", "got": " h v d s q i a v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 1, "expected": "s e n d f e b l k a k y c l i", "got": " y x e s w b w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 1, "expected": "m t m r n l v t k x g l", "got": " p t b t s t y", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 1, "expected": "b f x o k e a l e a j g g u w t", "got": " c i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 1, "expected": "t t u j j u x w n e f t l u", "got": " h u m x m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 1, "expected": "l x w l x q u p y a b", "got": " n b l o a x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 1, "expected": "g u d r v d c m n b g g i u n", "got": " n r e b v t k d", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 1, "expected": "c g c e p p r r f", "got": " f c", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 1, "expected": "x h l e b e n z w x l s b p", "got": " s b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 1, "expected": "i a v m o t t q q", "got": " v l f t m p t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 1, "expected": "g d z u q u j u k n z q n s", "got": " d w h u o w h u OUT n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 1, "expected": "s r w a s n v u p", "got": " s p x t w p e w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 1, "expected": "r w n n z m q e f w", "got": " s w m t r s u", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 1, "expected": "h r u u f b q y i", "got": " i w h x y w e h", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 1, "expected": "y b o y u j x q x i z y d o", "got": " s u OUT y q m n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 1, "expected": "k q f t l b r j j v l u", "got": " l c u k e s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 1, "expected": "z s p q a i z r t g f", "got": " f m p i r p", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 1, "expected": "b i z o y f n e z f i r k s", "got": " b o l a j k", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 1, "expected": "t c x s i m c o s z u o b l t", "got": " i k a i c", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 1, "expected": "q i b b r i m f z q g i q", "got": " b z b z b a b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 1, "expected": "l u h l c q o h i k u", "got": " a o b h", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 1, "expected": "f u n z s d n o o f r n l f", "got": "", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 1, "expected": "y e e g s r x w t p o b", "got": " s b v x j s b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 1, "expected": "p w r e z o h p q s v s z x", "got": " s s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 1, "expected": "c j z p a c b w f w m d s y m y", "got": " q p x b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 1, "expected": "m j y f x s g e p r e g o", "got": " f r m x j s t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 1, "expected": "p t w m w r y a t t", "got": " i r p m p w p", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 1, "expected": "y h j z r v p k j", "got": " q x t t q f q", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 1, "expected": "n j y f t w i r b m x g r x", "got": " s b y w j k x e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 1, "expected": "h m b f y b n l d v q m d m d", "got": " q f q", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 1, "expected": "k f q l s v o n q k j b k s s", "got": " u o s c", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 1, "expected": "u l t e f m a h y k w q f r n", "got": " n t t r", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 1, "expected": "v n b i e l i i r h f v", "got": " f j i p f v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 1, "expected": "k c l d v z m c u v u a b m u", "got": " p p p p p m b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 1, "expected": "o u r j c t z u n y", "got": " n r m m m k w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 1, "expected": "f k n o p y x v h", "got": " f o y d t h e t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 1, "expected": "s x x o o x l t s f t t", "got": " f s s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 1, "expected": "w i y l s m g q h d l j k y n y", "got": " h", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 0, "eval_seed": 2, "expected": "m w x x", "got": " m s p", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 2, "expected": "u x f y p d h f", "got": " f j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 2, "expected": "d z v c k a g", "got": " w q x e x o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 2, "expected": "v l u r f", "got": " l v o x v", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 2, "expected": "q n c", "got": " y k m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 2, "expected": "f b j p m o j", "got": " b q w p p o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 2, "expected": "q z n o x", "got": " n r i m n", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 2, "expected": "c o x t p t b x", "got": " h i x k x o x OUT x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 2, "expected": "m x q g e", "got": " s g d s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 2, "expected": "s r h i p f", "got": " f j j i p g", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 2, "expected": "o b d g z u q i", "got": " q o g w z o p", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 2, "expected": "j x f c", "got": " m b i f", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 2, "expected": "w l m j a c", "got": " w w m w q t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 2, "expected": "w s f", "got": " m m m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 2, "expected": "c r m f e n h", "got": " a k a m y x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 2, "expected": "m m e z a b t", "got": " q t m p r s s", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 2, "expected": "h s i u d n", "got": " o i i n m a", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 2, "expected": "h h s", "got": " y i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 2, "expected": "y b x d i", "got": " i j r i j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 2, "expected": "c r o", "got": " o c", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 2, "expected": "f o b k j d", "got": " b r o m o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 2, "expected": "d l g u f a i", "got": " i v OUT f e x v i x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 2, "expected": "t p v w d", "got": " v j z OUT c a", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 2, "expected": "f b w v", "got": " m b i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 2, "expected": "s j l w a q", "got": " l c f q w u", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 2, "expected": "z j e v r q w", "got": " s w z f w m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 2, "expected": "o i d", "got": " y g j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 2, "expected": "g j f w b", "got": " b m x q", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 2, "expected": "e c y w h q l e", "got": " q y j OUT n t x u s u", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 2, "expected": "h t x w h k p q", "got": " h p d t q t q w", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 2, "expected": "b l a i", "got": " m b i j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 2, "expected": "m y y d z n", "got": " k k k k t t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 2, "expected": "y o t", "got": "", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 2, "expected": "g k i d", "got": " j o x o", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 2, "expected": "j d j k z", "got": " k v k k n", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 2, "expected": "m d e i h t b", "got": " p b i r s b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 2, "expected": "c p s s f r", "got": " f s v u v r", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 2, "expected": "s l x", "got": " v j m", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 2, "expected": "a r r m h", "got": " y d v d v", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 2, "expected": "m j o v w m n", "got": " v r m q v j", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 2, "expected": "k m p m m c p p", "got": " p g m k x q x", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 2, "expected": "i y y i", "got": " i n b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 2, "expected": "f m q", "got": " y b", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 2, "expected": "q b u f x u z t", "got": " q i i b l k b c", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 2, "expected": "w v m k", "got": " s i", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 2, "expected": "v e n c z j i", "got": " s v j s t t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 2, "expected": "j g e o t r w z", "got": " z e x p j e p z", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 2, "expected": "c i g", "got": " y g t", "mode": "greedy", "region": "in_range", "task": "copyops"}
+{"correct": false, "doc_index": 0, "eval_seed": 2, "expected": "t f h e z w h d l f w c c i i s", "got": " h y x s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 1, "eval_seed": 2, "expected": "f d x a w b r r t u l z w m w", "got": " q p w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 2, "eval_seed": 2, "expected": "j f e v j f u u i w i u p p", "got": " i f v i r g v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 3, "eval_seed": 2, "expected": "x k i g m c l t j", "got": " x w x t q t q", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 4, "eval_seed": 2, "expected": "e m k o j r x r w g", "got": " q x y j k i", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 5, "eval_seed": 2, "expected": "w g b t r r y j q j s h h", "got": " f r s d t t r", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 6, "eval_seed": 2, "expected": "y g g n e h r d q q e", "got": " n q r y k y x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 7, "eval_seed": 2, "expected": "t m f g s g a t h u m m i f j", "got": " f a e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 8, "eval_seed": 2, "expected": "s f v a s m e n x m b d j l", "got": " r s t m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 9, "eval_seed": 2, "expected": "v o g o v d g w y u m v w x p", "got": " a v w n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 10, "eval_seed": 2, "expected": "m a w s r q c n v q f", "got": " p t t t t m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 11, "eval_seed": 2, "expected": "q i o p a m k r r c q k p e o x", "got": " x b h r m n", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 12, "eval_seed": 2, "expected": "t c c g e q h x g p b", "got": " k e q t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 13, "eval_seed": 2, "expected": "d q z z u e h w q d", "got": " i d m m m w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 14, "eval_seed": 2, "expected": "q d i o u k u w y p z o g", "got": " i v z v e k", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 15, "eval_seed": 2, "expected": "w o s h q u o o d r q s", "got": " s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 16, "eval_seed": 2, "expected": "o l e t h l j j q c z q x p y", "got": " h m y a w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 17, "eval_seed": 2, "expected": "q w m l z j q t v k t k h v y", "got": " q l", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 18, "eval_seed": 2, "expected": "t j x r s c l u y s z f j w w l", "got": " q y l p c v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 19, "eval_seed": 2, "expected": "s a r o w n g b d a v", "got": " l u k k m p t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 20, "eval_seed": 2, "expected": "s j e u p w h o k a i g", "got": " p b n k e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 21, "eval_seed": 2, "expected": "g e u r w a s q e n z g m q", "got": " v e a q x j w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 22, "eval_seed": 2, "expected": "q q s e y j m y i", "got": " q m t e p d e", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 23, "eval_seed": 2, "expected": "t o i o z b r h l", "got": " n f m y m o x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 24, "eval_seed": 2, "expected": "c q h h m i i z k", "got": " q i x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 25, "eval_seed": 2, "expected": "p h b l i x b m l", "got": " b v d r r m m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 26, "eval_seed": 2, "expected": "p b v x x j i f x h x e d a", "got": " x e s i r w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 27, "eval_seed": 2, "expected": "t t i y o u m b o", "got": " o o a o a b v", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 28, "eval_seed": 2, "expected": "s p q i i n a j s m h d t d x y", "got": " h n e j", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 29, "eval_seed": 2, "expected": "b h c t u z f j h", "got": " f s m e s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 30, "eval_seed": 2, "expected": "i l x k q s g f y i n", "got": " l k", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 31, "eval_seed": 2, "expected": "g r n l p r i u l m", "got": " n r w y x y w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 32, "eval_seed": 2, "expected": "x h r g j y z v s m x y a y", "got": " q t y x p h k d", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 33, "eval_seed": 2, "expected": "s c d c e m w r b h", "got": " q q m m m m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 34, "eval_seed": 2, "expected": "k y x q t a g b o h z n d", "got": " i r i u OUT i j h", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 35, "eval_seed": 2, "expected": "x c c s m v m a x b", "got": " x v p f s s m", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 36, "eval_seed": 2, "expected": "i z e u q j m s k r j h s", "got": " a e p o x j", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 37, "eval_seed": 2, "expected": "m d a v v b t w s w h e o", "got": " w f q w t t t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 38, "eval_seed": 2, "expected": "j h c q c h w g z e g", "got": " s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 39, "eval_seed": 2, "expected": "m n i u f j a y h x h o d u a j", "got": " a e t", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 40, "eval_seed": 2, "expected": "p w e n a a d u w k w v n m y", "got": " y w b", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 41, "eval_seed": 2, "expected": "i l u s c i g p l x k r z k f", "got": " n k x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 42, "eval_seed": 2, "expected": "h n j u a f w e n e p", "got": " n e t e x w", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 43, "eval_seed": 2, "expected": "g q g e o w z m s", "got": " q w m w m o s", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 44, "eval_seed": 2, "expected": "j s h s a g h u l f k v", "got": " p g h g o f", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 45, "eval_seed": 2, "expected": "s e j r l p n l v s x w m", "got": " s t s t t s z", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 46, "eval_seed": 2, "expected": "p p l b j r e x n n q", "got": " f t q x q x", "mode": "greedy", "region": "held_out", "task": "copyops"}
+{"correct": false, "doc_index": 47, "eval_seed": 2, "expected": "t a n k s u b r z x", "got": " b v e x j s n", "mode": "greedy", "region": "held_out", "task": "copyops"}

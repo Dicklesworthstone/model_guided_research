@@ -10,7 +10,7 @@
   change must update the fixture deliberately (set MGR_CAPTURE_EVAL_GOLDEN=1)
   with a justification in the commit message.
 - End-to-end: train a tiny CPU checkpoint (synthetic loader), eval it through
-  the CLI, validate the mgr.evaltasks.v3 schema + artifacts (answer_prior
+  the CLI, validate the mgr.evaltasks.v4 schema + artifacts (answer_prior
   floors + generations.jsonl receipts included).
 """
 
@@ -49,13 +49,20 @@ def _host_fingerprint() -> dict[str, str]:
 
 
 class _StubTok:
-    """Whitespace 'tokenizer': one token per character group, ids are ords."""
+    """Character 'tokenizer': one token per character, ids are ords; carries the
+    project tokenizer contract the evaluator relies on (``prepend`` and a BOS id)."""
 
-    def encode(self, text):
-        return [ord(c) for c in text]
+    BOS = 0xE000  # sentinel id: prepended to prompts, emitted by stub models as the separator
+
+    def encode(self, text, prepend=None):
+        ids = [ord(c) for c in text]
+        return ([prepend] + ids) if prepend is not None else ids
 
     def decode(self, ids):
         return "".join(chr(i) for i in ids)
+
+    def get_bos_token_id(self):
+        return self.BOS
 
 
 class _StubModel:
@@ -364,7 +371,7 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     assert result.exit_code == 0, result.output
     run_dir = tmp_path / "artifacts" / "evals" / "tasks" / f"eval-{attention_type}"
     summary = json.loads((run_dir / "summary.json").read_text())
-    assert summary["schema_version"] == "mgr.evaltasks.v3"
+    assert summary["schema_version"] == "mgr.evaltasks.v4"
     # dz9i: a real trained checkpoint has a run summary beside it -> the
     # TRAINING provenance must be carried (taintedness mirrors whatever
     # tree state the tiny train ran under - assert shape, not state)

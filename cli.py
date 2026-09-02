@@ -6543,7 +6543,10 @@ def _read_train_provenance(checkpoint_dir: Path) -> dict[str, Any] | None:
     return prov if isinstance(prov, dict) else None
 
 
-_EVAL_TASKS_SCHEMA_VERSION = "mgr.evaltasks.v3"
+#: v4 (2026-09-02): prompts and perplexity documents are prefixed with the
+#: trainer's <|bos|>; v3 and earlier scored them bare. Scores are not
+#: comparable across that boundary, so never mix v3 and v4 artifacts in one arm.
+_EVAL_TASKS_SCHEMA_VERSION = "mgr.evaltasks.v4"
 # SCHEMA CONTRACT (consumed by C4 scorecards and the G2 verdict engine):
 # {"schema_version", "kind": "eval-tasks",
 #  "meta": {run_id, generated_at, checkpoint{dir, step, attention_type, n_params,
@@ -6610,7 +6613,9 @@ def _eval_split_examples(
 def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any) -> float:
     import torch
 
-    ids = tok.encode(doc)[: model.config.sequence_len + 1]
+    # The trainer prepends <|bos|> to every document; score the document the
+    # way the model saw documents (evaluator contract mgr.evaltasks.v4).
+    ids = tok.encode(doc, prepend=tok.get_bos_token_id())[: model.config.sequence_len + 1]
     if len(ids) < 2:
         return float("nan")
     x = torch.tensor([ids[:-1]], dtype=torch.long, device=device)
@@ -6636,7 +6641,12 @@ def _eval_score_doc(
     if sp is None:
         return (None, "", "")
     prompt, expected = sp
-    prompt_ids = tok.encode(prompt)
+    # Prompts start with the same <|bos|> the trainer puts before every
+    # document (mgr.evaltasks.v4); without it the prompt is off-distribution
+    # for the model (per-document loss 4.66 vs 4.28 with it on the 1e12
+    # copyops probe checkpoint).
+    bos_id = tok.get_bos_token_id()
+    prompt_ids = tok.encode(prompt, prepend=bos_id)
     expected_words = expected.split()
     # answer + a small margin; canonicalize via whitespace split so tokenizer
     # quirks (leading spaces, merged pieces) cannot fail a correct answer
@@ -6648,13 +6658,10 @@ def _eval_score_doc(
     # IMMEDIATELY followed by <|endoftext|> - and decode() glues that marker
     # onto the answer with no whitespace, which would fail a correct answer
     # under whitespace canonicalization (found by the first real campaign, kbj2).
-    stop_id = None
-    get_bos = getattr(tok, "get_bos_token_id", None)
-    if callable(get_bos):
-        stop_id = get_bos()
+    stop_id = bos_id
     pieces: list[int] = []
     for piece in model.generate(prompt_ids, max_tokens=max_new, temperature=temperature, seed=seed):
-        if stop_id is not None and piece == stop_id:
+        if piece == stop_id:
             break
         pieces.append(piece)
     got = tok.decode(pieces)
@@ -6696,7 +6703,7 @@ def eval_tasks(
     Headline output: extrapolation curves (accuracy vs difficulty, in-range vs
     held-out marked) per task, exact-match via the vdc.1 brute-force format,
     per-task perplexity as the secondary metric. Writes summary.json (schema
-    mgr.evaltasks.v3 - a versioned contract), per-example receipts
+    mgr.evaltasks.v4 - a versioned contract), per-example receipts
     (generations.jsonl), run.md, and curve PNGs.
     """
     import statistics as stats_mod
@@ -7009,6 +7016,8 @@ def eval_tasks(
         "meta": {
             "run_id": resolved_run_id,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "evaluator": {"bos_prefixed": True},  # v4: prompts/docs carry the trainer's <|bos|>
+            "tokenizer": ckpt_meta.get("tokenizer") or {"kind": "gpt2"},
             "checkpoint": {
                 "dir": str(checkpoint),
                 "step": resolved_step,
@@ -7084,7 +7093,7 @@ def eval_tasks(
         f"- seeds: {seed_list} · examples/seed: {examples} · decode: {[m for m, _ in decode_modes]}\n\n"
         "| task | EM in-range | EM held-out | ppl in/held | slope held-out [CI95] | curve |\n|---|---|---|---|---|---|\n"
         + "\n".join(md_rows)
-        + "\n\nSee `summary.json` (schema mgr.evaltasks.v3) for the full contract output and "
+        + "\n\nSee `summary.json` (schema mgr.evaltasks.v4) for the full contract output and "
         "`generations.jsonl` for per-example receipts.\n"
     )
     (run_dir / "run.md").write_text(report_md)
@@ -8502,7 +8511,7 @@ def probe_charges(
             if parts is None or cat is None:
                 continue
             prompt, expected = parts
-            ids = tok.encode(prompt)
+            ids = tok.encode(prompt, prepend=tok.get_bos_token_id())  # as the trainer presented documents
             if len(ids) > model.config.sequence_len:
                 skipped += 1
                 continue
@@ -9298,7 +9307,7 @@ def sample(
         # task-scoped vocabulary travels inside the checkpoint dir); the prompt
         # TEXT is shared across the comparison, its ids need not be.
         tok = checkpoint_tokenizer(str(ckpt_dir), ckpt_meta)
-        prompt_ids = tok.encode(prompt)
+        prompt_ids = tok.encode(prompt, prepend=tok.get_bos_token_id())  # documents start with <|bos|> in training
         attn = str((ckpt_meta.get("model_config") or {}).get("attention_type", "?"))
         n_params = sum(p.numel() for p in model.parameters())
         if device.type == "cuda":
@@ -10999,7 +11008,7 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
             if not isinstance(data, dict):
                 continue
             sv = data.get("schema_version")
-            if sv in ("mgr.evaltasks.v1", "mgr.evaltasks.v2", "mgr.evaltasks.v3"):
+            if sv in ("mgr.evaltasks.v1", "mgr.evaltasks.v2", "mgr.evaltasks.v3", "mgr.evaltasks.v4"):
                 schema = "evaltasks"
             elif sv == "mgr.telemetry.v1":
                 schema = "train"

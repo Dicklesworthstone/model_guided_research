@@ -10,7 +10,7 @@ distillation teachers C6, scaling rungs E1, sampling D5) depend on this layout:
                                       #   {"optimizers": [state_dict, ...],   # in setup_optimizers order
                                       #    "schedulers": [state_dict, ...],   # OrdinalLRScheduler counters
                                       #    "dataloader": {"batches_consumed": int,
-                                      #                    "pq_idx": int, "rg_idx": int},
+                                      #                    "pq_idx": int, "rg_idx": int, "epoch": int},
                                       #    "rng": {"torch_cpu": Tensor,
                                       #             "cuda": list[Tensor] | None,
                                       #             "numpy": tuple, "python": tuple}}

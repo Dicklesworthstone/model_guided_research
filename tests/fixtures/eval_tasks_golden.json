@@ -1,27 +1,27 @@
 {
   "host": {
-    "hostname": "sensedemobox",
+    "hostname": "hetzner2",
     "machine": "x86_64",
-    "torch_version": "2.9.1+cu128"
+    "torch_version": "2.13.0+cu130"
   },
   "scores": {
     "arith": {
       "em_held": 0.0,
       "em_in": 0.0,
-      "ppl_held": 59524.611328125,
-      "ppl_in": 58976.81689453125
+      "ppl_held": 58442.84716796875,
+      "ppl_in": 58126.01953125
     },
     "bag": {
       "em_held": 0.0,
       "em_in": 0.0,
-      "ppl_held": 60173.029296875,
-      "ppl_in": 57204.89892578125
+      "ppl_held": 59375.61767578125,
+      "ppl_in": 56528.93310546875
     },
     "copyops": {
       "em_held": 0.0,
       "em_in": 0.0,
-      "ppl_held": 60051.0537109375,
-      "ppl_in": 63368.5
+      "ppl_held": 59233.2998046875,
+      "ppl_in": 61983.90576171875
     }
   },
   "seed": 20260610

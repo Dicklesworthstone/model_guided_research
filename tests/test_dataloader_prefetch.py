@@ -130,3 +130,36 @@ def test_prefetch_thread_stops_when_the_generator_is_closed(tmp_path):
     while time.monotonic() < deadline and any(t.is_alive() for t in started):
         time.sleep(0.05)
     assert not any(t.is_alive() for t in started), "prefetch thread must exit after the generator is closed"
+
+
+def test_shuffle_seed_permutes_documents_per_epoch_deterministically(tmp_path):
+    """bead r7qn: with ``shuffle_seed`` the documents of each row group are
+    visited in a seeded per-epoch permutation - the same stream on every
+    instantiation (resume-safe), different from file order, and the recorded
+    state carries the epoch the permutation depends on."""
+    data_dir = _make_corpus(tmp_path / "shuffle_corpus")
+
+    def stream(n, **kw):
+        loader = tokenizing_distributed_data_loader_with_state(
+            B=2, T=8, split="train", device="cpu", data_dir=str(data_dir), **kw
+        )
+        out = []
+        for _ in range(n):
+            inputs, _targets, state = next(loader)
+            out.append((inputs.clone(), dict(state)))
+        return out
+
+    plain = stream(160)
+    shuffled = stream(160, shuffle_seed=3)
+    again = stream(160, shuffle_seed=3)
+    other_seed = stream(160, shuffle_seed=4)
+    assert all(bool((a == b).all()) for (a, _), (b, _) in zip(shuffled, again, strict=True)), "not deterministic"
+    assert any(not bool((a == b).all()) for (a, _), (b, _) in zip(plain, shuffled, strict=True)), "file order kept"
+    assert any(not bool((a == b).all()) for (a, _), (b, _) in zip(shuffled, other_seed, strict=True))
+    assert all(state["epoch"] == 0 for _, state in plain[:5])
+    # the train split is 48 short documents (~1500 tokens): 160 batches of 16
+    # tokens cross into the next epoch, and the state must say so (the
+    # permutation is keyed on it)
+    assert any(state["epoch"] >= 1 for _, state in shuffled)
+    for (_, s_prev), (_, s_next) in zip(shuffled, shuffled[1:], strict=False):
+        assert s_next["epoch"] >= s_prev["epoch"], "epoch counter must be monotonic"
