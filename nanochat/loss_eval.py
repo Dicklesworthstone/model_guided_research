@@ -1,5 +1,13 @@
 """
-A number of functions that help with evaluating a base model.
+Validation loss in two units: cross-entropy per token and bits per byte.
+
+Cross-entropy per token depends on the tokenizer: a coarser vocabulary packs
+more bytes into each token and reports a HIGHER per-token loss for the same
+model quality, so runs trained with different vocabularies (the shared GPT-2
+tokenizer vs a task-scoped one, `nanochat.train --tokenizer task`) cannot be
+compared on it. Bits per byte divides the summed loss by the number of BYTES
+the target tokens spell instead, which is the same quantity for any
+tokenizer; nanochat.train reports both (`val_ce_final`, `val_bpb_final`).
 """
 
 import math
@@ -13,56 +21,49 @@ dist = cast(Any, torch_dist)
 
 
 @torch.no_grad()
-def evaluate_bpb(model, batches, steps, token_bytes):
-    """
-    Instead of the naive 'mean loss', this function returns the bits per byte (bpb),
-    which is a tokenization vocab size-independent metric, meaning you are still comparing
-    apples:apples if you change the vocab size. The way this works is that instead of just
-    calculating the average loss as usual, you calculate the sum loss, and independently
-    also the sum bytes (of all the target tokens), and divide. This normalizes the loss by
-    the number of bytes that the target tokens represent.
+def evaluate_loss_and_bpb(model, batches, steps, token_bytes) -> tuple[float, float]:
+    """Mean cross-entropy per target token and bits per byte over ``steps``
+    batches from ``batches`` (an iterator of ``(inputs, targets)``).
 
-    The added complexity is so that:
-    1) All "normal" tokens are normalized by the length of the token in bytes
-    2) No special tokens (e.g. <|bos|>) are included in the metric - they are masked out.
-    3) No actively masked tokens (using ignore_index of e.g. -1) are included in the metric.
+    ``token_bytes`` is a 1D int64 tensor of shape ``(vocab_size,)`` holding the
+    byte length of each token id, 0 for tokens that must not count (special
+    tokens such as ``<|bos|>``; see ``HuggingFaceTokenizer.token_bytes``).
+    The model is called with ``loss_reduction="none"`` and must return the
+    per-token loss ``(B, T)``.
 
-    In addition to evaluate_loss, we need the token_bytes tensor:
-    It is a 1D tensor of shape (vocab_size,), indicating the number of bytes for
-    each token id, or 0 if the token is to not be counted (e.g. special tokens).
+    Rules, so the two numbers mean what they say:
+    1) the cross-entropy is the mean over every target that is not
+       ``ignore_index`` (-1): the same population as the model's own mean loss;
+    2) bits per byte counts only tokens with a positive byte length - special
+       tokens contribute neither nats nor bytes;
+    3) ignored targets (-1) contribute nothing to either.
+    Both are summed across ranks under torch.distributed, so every rank gets
+    the global figures. Returns ``(ce, bpb)``; ``bpb`` is ``inf`` when no byte
+    was counted.
     """
-    # record the losses
-    total_nats = torch.tensor(0.0, dtype=torch.float32, device=model.get_device())
-    total_bytes = torch.tensor(0, dtype=torch.int64, device=model.get_device())
+    device = model.get_device()
+    # [nats over valid targets, valid targets, nats over byte tokens, bytes]
+    totals = torch.zeros(4, dtype=torch.float64, device=device)
     batch_iter = iter(batches)
     for _ in range(steps):
-        x, y = next(batch_iter)
-        loss2d = model(x, y, loss_reduction="none")  # (B, T)
-        loss2d = loss2d.view(-1)  # flatten
-        y = y.view(-1)  # flatten
-        if (y.int() < 0).any():  # mps does not currently have kernel for < 0 for int64, only int32
-            # slightly more complex code path if some target tokens are ignore_index (e.g. -1)
-            # any target token < 0 is to be ignored: do NOT index token_bytes with negatives
-            valid = y >= 0
-            y_safe = torch.where(valid, y, torch.zeros_like(y))
-            # map valid targets to their byte length; ignored targets contribute 0 bytes
-            num_bytes2d = torch.where(valid, token_bytes[y_safe], torch.zeros_like(y, dtype=token_bytes.dtype))
-            total_nats += (loss2d * (num_bytes2d > 0)).sum()
-            total_bytes += num_bytes2d.sum()
-        else:
-            # fast path: no ignored targets, safe to index directly
-            num_bytes2d = token_bytes[y]
-            total_nats += (loss2d * (num_bytes2d > 0)).sum()
-            total_bytes += num_bytes2d.sum()
-    # sum reduce across all ranks
-    world_size = dist.get_world_size() if dist.is_initialized() else 1
-    if world_size > 1:
-        dist.all_reduce(total_nats, op=dist.ReduceOp.SUM)
-        dist.all_reduce(total_bytes, op=dist.ReduceOp.SUM)
-    # move both to cpu, calculate bpb and return
-    total_nats = total_nats.item()
-    total_bytes = total_bytes.item()
-    if total_bytes == 0:
-        return float("inf")
-    bpb = total_nats / (math.log(2) * total_bytes)
-    return bpb
+        try:
+            x, y = next(batch_iter)
+        except StopIteration:
+            break
+        loss2d = model(x, y, loss_reduction="none").view(-1).to(torch.float64)
+        y = y.view(-1)
+        valid = y >= 0
+        # never index token_bytes with ignore_index values
+        y_safe = torch.where(valid, y, torch.zeros_like(y))
+        num_bytes = torch.where(valid, token_bytes[y_safe], torch.zeros_like(y, dtype=token_bytes.dtype))
+        counted = num_bytes > 0
+        totals[0] += (loss2d * valid).sum()
+        totals[1] += valid.sum()
+        totals[2] += (loss2d * counted).sum()
+        totals[3] += num_bytes.sum()
+    if dist.is_initialized() and dist.get_world_size() > 1:
+        dist.all_reduce(totals, op=dist.ReduceOp.SUM)
+    nats_all, n_valid, nats_bytes, n_bytes = totals.tolist()
+    ce = nats_all / n_valid if n_valid > 0 else float("nan")
+    bpb = nats_bytes / (math.log(2) * n_bytes) if n_bytes > 0 else float("inf")
+    return ce, bpb

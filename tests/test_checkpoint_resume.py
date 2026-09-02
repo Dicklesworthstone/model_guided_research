@@ -1301,3 +1301,50 @@ def test_task_tokenizer_flag_validation(tmp_path):
         args = train_mod.build_parser().parse_args(["--device", "cpu", "--max-steps", "1", *extra])
         with pytest.raises(ValueError, match=match):
             train_mod.train(args)
+
+
+def test_validation_reports_bits_per_byte(tmp_path):
+    """Validation records bits per byte next to cross-entropy. bpb divides the
+    summed loss by the BYTES the target tokens spell, so it stays comparable
+    when the vocabulary changes (val_ce does not: a coarser tokenizer packs
+    more bytes per token and reports a higher per-token loss for the same
+    model). Special tokens count for neither."""
+    import math
+
+    from nanochat.diagnostics_data import generate_task
+    from nanochat.tokenizer import checkpoint_tokenizer
+
+    generate_task("arith", out_dir=tmp_path / "corpus", size=60, seed=4)
+    data_dir = tmp_path / "corpus" / "arith"
+    args = train_mod.build_parser().parse_args(
+        [
+            "--device", "cpu", "--max-steps", "2", "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2",
+            "--n-embd", "32", "--sequence-len", "32", "--batch-size", "2", "--warmup-steps", "0",
+            "--checkpoint-interval", "2", "--val-interval", "1", "--val-batches", "2",
+            "--data-dir", str(data_dir), "--tokenizer", "task", "--tokenizer-vocab-size", "320",
+            "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "bpb",
+        ]
+    )  # fmt: skip
+    train_mod.train(args)
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "bpb"
+    results = json.loads((run_dir / "summary.json").read_text())["results"]
+    ce, bpb = results["val_ce_final"], results["val_bpb_final"]
+    assert ce is not None and bpb is not None and math.isfinite(bpb) and bpb > 0
+    # every counted token is at least one byte, so bpb <= ce / ln 2
+    assert bpb <= ce / math.log(2) + 1e-6
+    assert len(results["val_bpbs"]) == len(results["val_losses"]) == 2
+    val_records = [
+        json.loads(line) for line in (run_dir / "metrics.jsonl").read_text().splitlines() if '"type": "val"' in line
+    ]
+    assert val_records and all(math.isfinite(r["val_bpb"]) for r in val_records)
+
+    # the byte table itself: special tokens weigh 0, and the byte-level BPE's
+    # token lengths add up to the document's UTF-8 length exactly
+    meta = json.loads(sorted((run_dir / "checkpoints").glob("meta_*.json"))[-1].read_text())
+    tok = checkpoint_tokenizer(run_dir / "checkpoints", meta)
+    table = tok.token_bytes()
+    assert len(table) == tok.get_vocab_size()
+    assert table[tok.get_bos_token_id()] == 0
+    doc = "TASK arith CMP 3.10e+01 9.00e-03 OUT"
+    assert sum(table[i] for i in tok.encode(doc)) == len(doc.encode("utf-8"))
+    assert min(table[i] for i in tok.encode(doc)) >= 1

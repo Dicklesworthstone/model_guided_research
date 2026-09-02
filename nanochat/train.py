@@ -44,6 +44,7 @@ from nanochat.gpt import (
     resolve_attention_schedule,
 )
 from nanochat.gpt_synaptic import GPTSynaptic, GPTSynapticConfig
+from nanochat.loss_eval import evaluate_loss_and_bpb
 from nanochat.ordinal_scheduler import OrdinalLRScheduler
 from nanochat.profiling import ProfileConfig, render_profile_table, summarize_profile, torch_profiler
 from nanochat.report import (
@@ -60,6 +61,7 @@ from nanochat.tokenizer import (
     TASK_TOKENIZER_DIRNAME,
     TASK_TOKENIZER_MIN_VOCAB,
     HuggingFaceTokenizer,
+    get_tokenizer,
     padded_vocab_size,
     train_task_tokenizer,
 )
@@ -1249,27 +1251,38 @@ def train(args) -> None:
             return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         return nullcontext()
 
+    # Byte length per token id for the validation tokenizer (set with the val
+    # loader below); None for model types whose forward has no per-token loss.
+    val_token_bytes: torch.Tensor | None = None
+
     @torch.no_grad()
-    def evaluate_validation(val_loader_iter, num_batches: int) -> float:
-        """Evaluate cross-entropy loss on validation data."""
+    def evaluate_validation(val_loader_iter, num_batches: int) -> tuple[float, float | None]:
+        """Validation cross-entropy per token and, when the model exposes a
+        per-token loss, bits per byte (tokenizer-independent; see
+        nanochat.loss_eval). Returns ``(val_ce, val_bpb_or_None)``."""
         model.eval()
-        total_loss = 0.0
-        count = 0
-        for _ in range(num_batches):
-            try:
-                val_inputs, val_targets = next(val_loader_iter)
-            except StopIteration:
-                break
-            with autocast_ctx():
-                output = model(val_inputs, val_targets)
-                loss = _extract_loss(output)
-            if ddp:
-                dist.all_reduce(loss, op=dist.ReduceOp.SUM)
-                loss = loss / ddp_world_size
-            total_loss += loss.item()
-            count += 1
-        model.train()
-        return total_loss / count if count > 0 else float("nan")
+        try:
+            if val_token_bytes is not None:
+                with autocast_ctx():
+                    return evaluate_loss_and_bpb(model, val_loader_iter, num_batches, val_token_bytes)
+            total_loss = 0.0
+            count = 0
+            for _ in range(num_batches):
+                try:
+                    val_inputs, val_targets = next(val_loader_iter)
+                except StopIteration:
+                    break
+                with autocast_ctx():
+                    output = model(val_inputs, val_targets)
+                    loss = _extract_loss(output)
+                if ddp:
+                    dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                    loss = loss / ddp_world_size
+                total_loss += loss.item()
+                count += 1
+            return (total_loss / count if count > 0 else float("nan")), None
+        finally:
+            model.train()
 
     if ddp_rank == 0:
         console.print(
@@ -1544,6 +1557,7 @@ def train(args) -> None:
 
     losses: list[float] = []
     val_losses: list[tuple[int, float]] = []  # (step, val_loss) pairs
+    val_bpbs: list[tuple[int, float]] = []  # (step, bits per byte) pairs; empty when the model has no per-token loss
     # Tie-locus trend trackers (bead y4r8): first/last certificate coverage
     # seen during training, promoted into the summary so the registered
     # hyp-tie-locus-density-decreases observable is adjudicable from the
@@ -1577,9 +1591,28 @@ def train(args) -> None:
             split="val",
             device=device.type,
             data_dir=data_dir,
+            tokenizer=task_tokenizer,
         )
+        if model_type == "gpt":
+            # bits per byte needs the byte length of every token id, padded to
+            # the embedding table so any target id is a valid index.
+            try:
+                byte_lengths = (task_tokenizer if task_tokenizer is not None else get_tokenizer()).token_bytes()
+            except Exception as exc:  # noqa: BLE001 - reported, and the run records val_bpb = null
+                byte_lengths = None
+                if ddp_rank == 0:
+                    console.print(
+                        f"[yellow]validation: tokenizer unavailable for bits-per-byte ({type(exc).__name__}: {exc}); "
+                        "val_bpb will be null[/yellow]"
+                    )
+            if byte_lengths is not None:
+                byte_lengths += [0] * max(0, int(config.vocab_size) - len(byte_lengths))
+                val_token_bytes = torch.tensor(byte_lengths, dtype=torch.int64, device=device)
         if ddp_rank == 0:
-            console.print(f"[bold cyan]validation[/bold cyan] interval={val_interval} batches={val_batches}")
+            console.print(
+                f"[bold cyan]validation[/bold cyan] interval={val_interval} batches={val_batches} "
+                f"metrics=val_ce{' + val_bpb' if val_token_bytes is not None else ''}"
+            )
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize(device)
@@ -1933,17 +1966,26 @@ def train(args) -> None:
 
             # Periodic validation evaluation
             if val_loader is not None and val_interval > 0 and (step + 1) % val_interval == 0:
-                val_loss = evaluate_validation(val_loader, val_batches)
+                val_loss, val_bpb = evaluate_validation(val_loader, val_batches)
                 val_losses.append((step, val_loss))
+                if val_bpb is not None:
+                    val_bpbs.append((step, val_bpb))
                 if ddp_rank == 0:
                     console.print(
                         f"[bold magenta]val[/bold magenta] step={step}  "
                         f"[dim]val_ce[/dim] {val_loss:.4f}  "
-                        f"[dim]train_ce[/dim] {loss_item:.4f}"
+                        + (f"[dim]val_bpb[/dim] {val_bpb:.4f}  " if val_bpb is not None else "")
+                        + f"[dim]train_ce[/dim] {loss_item:.4f}"
                     )
                     if metrics_stream is not None:
                         metrics_stream.write(
-                            {"type": "val", "step": step, "val_loss": float(val_loss), "train_loss": loss_item}
+                            {
+                                "type": "val",
+                                "step": step,
+                                "val_loss": float(val_loss),
+                                "val_bpb": (float(val_bpb) if val_bpb is not None else None),
+                                "train_loss": loss_item,
+                            }
                         )
                         metrics_stream.flush()  # val cadence is the bead's flush point
                     if dashboard is not None:
@@ -2071,6 +2113,7 @@ def train(args) -> None:
     # Compute final train/val CE statistics
     final_train_ce = losses[-1] if losses else float("nan")
     final_val_ce = val_losses[-1][1] if val_losses else None
+    final_val_bpb = val_bpbs[-1][1] if val_bpbs else None
 
     results: dict[str, Any] = {
         "losses": losses,
@@ -2078,6 +2121,10 @@ def train(args) -> None:
         "train_ce_final": final_train_ce,
         "val_losses": val_losses,
         "val_ce_final": final_val_ce,
+        # bits per byte: comparable across tokenizers (val_ce is not); null
+        # when validation is off or the model type has no per-token loss
+        "val_bpbs": val_bpbs,
+        "val_bpb_final": final_val_bpb,
         "step_times_s": step_times_s,
         "measured_steps": measured_steps,
         "measured_tokens": measured_tokens,
@@ -2215,6 +2262,8 @@ def train(args) -> None:
         report_table.add_row("Val Batches", str(val_batches))
         if final_val_ce is not None:
             report_table.add_row("Final Val CE", f"{final_val_ce:.4f}")
+        if final_val_bpb is not None:
+            report_table.add_row("Final Val bits/byte", f"{final_val_bpb:.4f}")
     console.print(report_table)
 
     report_md = f"""# nanochat run (fixed FLOPs)
@@ -2266,6 +2315,7 @@ def train(args) -> None:
 - val_interval: {val_interval}
 - val_batches: {val_batches if val_interval > 0 else "n/a"}
 - final_val_ce: {final_val_ce if final_val_ce is not None else "n/a"}
+- final_val_bpb: {final_val_bpb if final_val_bpb is not None else "n/a"} (bits per byte; comparable across tokenizers)
 
 See `summary.json` for full details.
 """

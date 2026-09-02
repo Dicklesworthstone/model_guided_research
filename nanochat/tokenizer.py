@@ -113,6 +113,21 @@ class HuggingFaceTokenizer:
         special_tokens = [w.content for w in special_tokens_map.values()]
         return special_tokens
 
+    def token_bytes(self) -> list[int]:
+        """Byte length of every token id, 0 for special tokens: the weights that
+        turn a per-token loss into bits per byte (nanochat.loss_eval), the
+        loss that stays comparable when the vocabulary changes. Byte-level BPE
+        spells each byte as exactly one printable character, so a token's
+        byte length is its string length; a ``<0xNN>`` byte-fallback token is
+        one byte."""
+        out = [0] * self.get_vocab_size()
+        special = set(self.get_special_tokens())
+        for token, idx in self.tokenizer.get_vocab().items():
+            if idx >= len(out) or token in special:
+                continue
+            out[idx] = 1 if (len(token) == 6 and token.startswith("<0x") and token.endswith(">")) else len(token)
+        return out
+
     def id_to_token(self, id):
         return self.tokenizer.id_to_token(id)
 

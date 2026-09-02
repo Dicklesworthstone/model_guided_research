@@ -822,6 +822,11 @@ python -m nanochat.train --dataloader-prefetch 4
 # load it from there automatically.
 python -m nanochat.train --data-dir data/arith --tokenizer task --tokenizer-vocab-size 512
 
+# Periodic validation: records val_ce (per token) AND val_bpb (bits per byte,
+# the tokenizer-independent loss) in metrics.jsonl and summary.json; compare
+# runs trained with different tokenizers on val_bpb, never on val_ce
+python -m nanochat.train --val-interval 100 --val-batches 10
+
 # Hyperparameter tuning
 python -m nanochat.train \
     --batch-size 16 \
