@@ -292,4 +292,4 @@ After the bridge work, each vision goal is checked by a command, not a claim:
 - [ ] V11: every mechanism's observable asserted by a test.
 - [ ] V13: at least one committed campaign trained with `--tokenizer task`, its checkpoints carrying `tokenizer/tokenizer.json`.
 - [ ] V14: one adjudicated verdict per compute-bound study.
-- [ ] V16: `scripts/e2e_pipeline.py --scenario resume --scenario determinism` green.
+- [x] V16: `scripts/e2e_pipeline.py --scenario resume --scenario determinism` green (2026-09-02 on CPU at e7f5845; run separately because the flag kept only its last value until the same-day fix).
