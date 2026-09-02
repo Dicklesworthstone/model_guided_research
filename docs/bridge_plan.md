@@ -255,6 +255,16 @@ flowchart LR
   G8 --> G10[Gap 10: theory epics]
 ```
 
+## Progress log
+
+Dated entries only; each names the gap it moves and the evidence.
+
+- **2026-09-02 (Gap 4).** Certificates refreshed for all 13 mechanisms at commit 0eeb168 from a clean worktree (64/64 checks pass, `artifacts/certs/nanochat/cert-refresh-2026-09-02`). `mgr status` staleness is now decided by git history (source changed after the certificate's commit) instead of file mtimes, which had flagged every certificate stale after any checkout; all 13 read fresh.
+- **2026-09-02 (Gap 5).** Root cause of "no CI run completes" found in two parts: pushes arrive in bursts and each push also produces a run on `master` (the mirror branch), and one run whose jobs were cancelled kept its aggregate job queued forever, holding the concurrency group. That zombie run was cancelled. A manually dispatched run then also sat `pending` with zero jobs for 20 minutes on a public repo with Actions enabled and GitHub reporting Actions operational, so job scheduling itself is not happening for this repository: an account-level condition the owner has to look at on the Actions page.
+- **2026-09-02 (Gap 1).** Successor coordinate preregistered on bead r7qn (task tokenizer, d64/L2, budgets 1e12/2e12/4e12 then 8e12, seeds 0-2, metric `exact_match.greedy.held_out`, rule "all three seeds >= floor + 0.10"). The 1e12 rung is running from worktree `vdc4-copyops-tasktok-f76c159`; the 2e12 and 4e12 suites were started and stopped (the host was loaded to 50 by other sessions' jobs) and resume with the same command minus `--fresh`. Measured alone, the coordinate trains at 6.6k tokens/s, so a rung is minutes of compute, not hours; contention is the only obstacle.
+- **2026-09-02 (Gap 11, bead 43dd).** `nanochat/loss_eval.py` is no longer orphaned: validation now reports bits per byte next to cross-entropy (`val_bpb_final`), the metric that stays comparable when the tokenizer changes. The remaining orphans are listed on the bead for the owner's per-file decision.
+- **2026-09-02 (bead pni6).** `scripts/run_campaign.py` validates by default, so every campaign records `val_ce_final`.
+
 ## Verification plan
 
 After the bridge work, each vision goal is checked by a command, not a claim:
