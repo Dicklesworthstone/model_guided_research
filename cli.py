@@ -8271,9 +8271,6 @@ def scorecard(
     config = {
         "budgets": budgets,
         "mechanisms": mechanisms,
-        "mechanism_arms": {
-            label: {"mechanism": base, "extras": dict(extras)} for label, (base, extras) in mechanism_arms.items()
-        },
         "tasks": tasks,
         "matrix": [{"mechanism": mechanism_name, "task": task_name} for mechanism_name, task_name in matrix],
         "hypothesis_ids": hypothesis_ids,
@@ -8352,6 +8349,11 @@ def scorecard(
         "updated_at": None,
         "git": git_info,
         "config": config,
+        # derived from config.mechanisms; kept OUTSIDE the compared config so
+        # suites created before the arm syntax existed still resume
+        "mechanism_arms": {
+            label: {"mechanism": base, "extras": dict(extras)} for label, (base, extras) in mechanism_arms.items()
+        },
         "cells": cells,
     }
     if dry_run:

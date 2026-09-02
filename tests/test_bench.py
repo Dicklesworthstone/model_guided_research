@@ -1330,7 +1330,7 @@ def test_scorecard_variant_arm_reaches_the_trainer_and_the_manifest(tmp_path, mo
     assert result.exit_code == 0, result.output
     manifest = json.loads((artifacts / "scorecards" / "variant-arm" / "manifest.json").read_text())
     assert manifest["config"]["mechanisms"] == ["standard", "standard@control_zero_attention=true"]
-    assert manifest["config"]["mechanism_arms"]["standard@control_zero_attention=true"] == {
+    assert manifest["mechanism_arms"]["standard@control_zero_attention=true"] == {
         "mechanism": "standard",
         "extras": {"control_zero_attention": "true"},
     }
