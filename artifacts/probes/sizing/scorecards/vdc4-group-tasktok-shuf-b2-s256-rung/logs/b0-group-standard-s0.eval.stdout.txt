@@ -1,0 +1,29 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 1806                                                 
+  attention_type    standard                                                    
+  n_params          139,264                                                     
+  training budget   {"max_steps": 1807, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 1107296256, "flops_consumed_est":     
+                    2000884334592}                                              
+  lineage           {"run_id": "seed_0", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-gro
+ up-tasktok-shuf-b2-s256-rung/runs/budget_0/group/standard/seed_0/checkpoints @ 
+                                      1806                                      
+                                                                                
+                                                           slope                
+                                                        held-out                
+  task    EM in-range   EM held-out   ppl in/held         [CI95]   axis         
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  group         0.493         0.035      1.6/15.7        +0.0013   word_length  
+                                                    [-0.0009,+0…                
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-gro
+up-tasktok-shuf-b2-s256-rung/evals/tasks/eval-b0-group-standard-s0

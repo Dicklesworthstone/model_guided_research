@@ -1,0 +1,28 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 1806                                                 
+  attention_type    standard                                                    
+  n_params          139,264                                                     
+  training budget   {"max_steps": 1807, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 1107296256, "flops_consumed_est":     
+                    2000884334592}                                              
+  lineage           {"run_id": "seed_1", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-gro
+up-tasktok-shuf-b2-s256-rung/runs/budget_0/placebo/standard/seed_1/checkpoints @
+                                      1806                                      
+                                                                                
+                                                             slope              
+                                                          held-out              
+  task      EM in-range   EM held-out   ppl in/held         [CI95]   axis       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  placebo             -             -      4.3/79.8              -   (lm-only)  
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-gro
+up-tasktok-shuf-b2-s256-rung/evals/tasks/eval-b0-placebo-standard-s1
