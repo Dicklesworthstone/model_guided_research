@@ -822,6 +822,12 @@ python -m nanochat.train --dataloader-prefetch 4
 # load it from there automatically.
 python -m nanochat.train --data-dir data/arith --tokenizer task --tokenizer-vocab-size 512
 
+# Document order: each epoch visits every parquet row group's documents in a
+# permutation seeded by --seed (default). A small corpus replayed in file
+# order every epoch is memorized as a sequence (train-stream loss 0.9 in
+# corpus order vs 4.5 shuffled on the 1e12 copyops probe); `none` = file order
+python -m nanochat.train --data-shuffle epoch
+
 # Periodic validation: records val_ce (per token) AND val_bpb (bits per byte,
 # the tokenizer-independent loss) in metrics.jsonl and summary.json; compare
 # runs trained with different tokenizers on val_bpb, never on val_ce

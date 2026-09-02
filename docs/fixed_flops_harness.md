@@ -90,6 +90,24 @@ cell and records it in the manifest config. Two rules follow:
   over: the body sees ~25x more tokens per FLOP at d=64, so the floor-clearing
   rung moves. Preregister the new ladder before spending compute.
 
+### Epochs are part of the coordinate too
+
+A FLOPs budget buys tokens; a corpus fixes how many DISTINCT tokens exist. When
+the budget is many epochs of a small corpus, the model learns the corpus, not
+the task: the 1e12 task-tokenizer copyops probe (dataset_size 1000, ~93
+epochs) reached train loss 0.9 on the stream in corpus order and 4.5 on the
+same documents shuffled, with exact match 0.0. Two rules:
+
+- **Scale the corpus to the budget.** Keep every rung at or below about two
+  epochs (`mgr scorecard --dataset-size`); at ~18 task-tokenizer tokens per
+  copyops document that is 40k documents per 1e12 FLOPs at d=64.
+- **Shuffle per epoch.** `nanochat.train --data-shuffle epoch` (the default
+  since 2026-09-02) visits each row group's documents in a per-epoch seeded
+  permutation, so no run can learn document order; `none` restores file
+  order. The evaluator has prefixed prompts and perplexity documents with the
+  trainer's `<|bos|>` since the same date (`mgr.evaltasks.v4`); v3 and v4
+  artifacts must never share an arm.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.
