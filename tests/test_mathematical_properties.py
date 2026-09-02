@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import math
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 import torch
 from jax import random
@@ -2291,3 +2292,58 @@ class TestHyperbolicLorentz:
 if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)
+
+
+class TestBCHNilpotentTermination:
+    """thm-bch-nilpotent-termination: for generators in a nilpotent Lie algebra
+    of step k the Baker-Campbell-Hausdorff series terminates at nested-commutator
+    weight k, so a composite of L exponentials is ONE exponential of a polynomial
+    in the generators. Checked on the concrete nilpotent algebras of strictly
+    upper-triangular n x n matrices (step n-1), with a kill witness: the weight-2
+    truncation the gauge demo fuses with is exact on the step-2 (Heisenberg)
+    algebra and NOT exact on the step-3 algebra, where the weight-3 polynomial is.
+    """
+
+    @staticmethod
+    def _strictly_upper(rng: np.random.Generator, n: int, scale: float = 0.7) -> np.ndarray:
+        return np.triu(rng.standard_normal((n, n)) * scale, k=1)
+
+    @staticmethod
+    def _comm(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        return a @ b - b @ a
+
+    def _bch_weight3(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        c = self._comm
+        return a + b + 0.5 * c(a, b) + (c(a, c(a, b)) + c(b, c(b, a))) / 12.0
+
+    def test_weight_two_fusion_is_exact_on_the_step_two_algebra(self):
+        import jax
+        from scipy.linalg import expm
+
+        rng = np.random.default_rng(11)
+        mats = [self._strictly_upper(rng, 3) for _ in range(4)]  # 3x3 strictly upper: step 2
+        product = expm(mats[0])
+        for m in mats[1:]:
+            product = product @ expm(m)
+        # every weight-3 commutator vanishes on a step-2 algebra
+        depth3 = max(float(np.abs(self._comm(a, self._comm(b, d))).max()) for a in mats for b in mats for d in mats)
+        require(depth3 == 0.0, f"step-2 algebra must kill every weight-3 commutator, got {depth3:.2e}")
+        with jax.enable_x64(True):
+            fused = np.asarray(gauge._bch_fuse_sequence([jnp.asarray(m) for m in mats], order=2))
+        err = float(np.abs(expm(fused) - product).max())
+        require(
+            err < 1e-10, f"four-layer composite must be ONE exponential of the weight-2 BCH polynomial, err {err:.2e}"
+        )
+        print(f"  ✅ BCH terminates at weight 2 on the Heisenberg algebra (composite error {err:.1e})")
+
+    def test_weight_two_fails_and_weight_three_is_exact_on_the_step_three_algebra(self):
+        from scipy.linalg import expm
+
+        rng = np.random.default_rng(12)
+        a, b = self._strictly_upper(rng, 4), self._strictly_upper(rng, 4)  # 4x4 strictly upper: step 3
+        target = expm(a) @ expm(b)
+        err2 = float(np.abs(expm(a + b + 0.5 * self._comm(a, b)) - target).max())
+        err3 = float(np.abs(expm(self._bch_weight3(a, b)) - target).max())
+        require(err2 > 1e-6, f"kill witness: weight-2 truncation must NOT be exact at step 3, err {err2:.2e}")
+        require(err3 < 1e-10, f"weight-3 BCH polynomial must be exact at step 3, err {err3:.2e}")
+        print(f"  ✅ step-3 algebra: weight-2 error {err2:.1e} (expected nonzero), weight-3 error {err3:.1e}")

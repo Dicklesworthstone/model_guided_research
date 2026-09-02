@@ -414,7 +414,11 @@ theorems:
       path: pending
       anchor: null
     proof_location: "metric-geometry literature (CAT(kappa) asymptotics), cited per bead 8gk.6 Proposition 3"
-    numerical_checks: []
+    numerical_checks:
+      # the c -> 0 endpoint only (attention output matches standard SDPA at
+      # minimum curvature); the R-tree endpoint has no numerical check yet
+      - kind: certify
+        ref: hyperbolic.energy_gromov_reduces_to_standard
     used_by: [model_guided_research-8gk.6, model_guided_research-mnn.4]
     depends_on: []
 
@@ -506,7 +510,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical (BCH for nilpotent algebras); compression program in bead u55.1"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestBCHNilpotentTermination
     used_by: [model_guided_research-u55.1]
     depends_on: []
 
@@ -703,7 +709,11 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical backward error analysis (Hairer-Lubich-Wanner), adapted in bead u55.5"
-    numerical_checks: []
+    numerical_checks:
+      # tied 64-layer symplectic composition keeps a bounded energy band while
+      # the wrong-sign composition drifts: the depth consequence of the theorem
+      - kind: certify
+        ref: reversible.energy_drift_separation
     used_by: [model_guided_research-u55.5]
     depends_on: [thm-kick-kick-symplectic]
 
