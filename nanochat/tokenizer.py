@@ -526,7 +526,13 @@ def checkpoint_tokenizer(checkpoint_dir: str | os.PathLike[str], meta: dict | No
     ids beyond its embedding table."""
     tok_meta = (meta or {}).get("tokenizer")
     if isinstance(tok_meta, dict) and tok_meta.get("kind") == "task":
-        return get_tokenizer(os.path.join(str(checkpoint_dir), str(tok_meta.get("dir", TASK_TOKENIZER_DIRNAME))))
+        tokenizer_dir = os.path.join(str(checkpoint_dir), str(tok_meta.get("dir", TASK_TOKENIZER_DIRNAME)))
+        if not os.path.isfile(os.path.join(tokenizer_dir, "tokenizer.json")):
+            raise FileNotFoundError(
+                f"checkpoint {checkpoint_dir} was trained with a task-scoped tokenizer but {tokenizer_dir}/tokenizer.json "
+                "is missing; copy the whole checkpoint directory (the tokenizer subdirectory travels with the weights)"
+            )
+        return get_tokenizer(tokenizer_dir)
     return get_tokenizer()
 
 
