@@ -1071,6 +1071,51 @@ class TestIntegrableRMatrix:
             f"restricted ({q1_soft:.1e},{q2_soft:.1e}) vs ybe ({q1_ybe:.1e},{q2_ybe:.1e})"
         )
 
+    def test_rmatrix_kernel_finite_at_long_rapidity_spans(self):
+        """sinh(w) overflows fp32 past w ~ 89 - a ~900-token span at the init
+        increment 0.1, i.e. every held-out-length forward of the 2x-8x
+        word-problem protocol used to come out NaN. The stochastic gauge is
+        evaluated in log space now: finite outputs, finite gradients, and the
+        exact Q1 mass partition at spans of several hundred."""
+        from types import SimpleNamespace
+
+        import torch
+
+        from nanochat.braid_attention_torch import BraidCausalSelfAttention, _softplus_inv
+
+        torch.manual_seed(3)
+        T, n_head, n_embd = 64, 2, 32
+        cfg = SimpleNamespace(
+            n_head=n_head,
+            n_kv_head=n_head,
+            n_embd=n_embd,
+            sequence_len=T,
+            braid_crossing_law="rmatrix",
+            braid_mode="soft",
+            braid_tau=0.0,
+            braid_record_schedule=False,
+            braid_verify=False,
+            braid_rmatrix_probes=1,
+        )
+        attn = BraidCausalSelfAttention(cfg, layer_idx=0)
+        with torch.no_grad():
+            attn.rmatrix_rho.fill_(_softplus_inv(5.0))  # increments ~5: causal spans up to ~315
+            attn.rmatrix_probe_gate.fill_(0.5)  # exercise the probe view too
+        x = torch.randn(1, T, n_embd)
+        half = n_embd // n_head // 2
+        cos, sin = torch.ones(1, T, 1, half), torch.zeros(1, T, 1, half)
+        y = attn(x, (cos, sin), None)
+        require(bool(torch.isfinite(y).all()), "rmatrix output must be finite at long rapidity spans")
+        charges = attn.last_braid_charges
+        assert isinstance(charges, dict)
+        defect = float(charges["q1_mass_defect"])
+        require(defect < 1e-5, f"Q1 mass partition must survive the log-space kernel, defect {defect:.2e}")
+        y.square().sum().backward()
+        for name, p in attn.named_parameters():
+            if p.grad is not None:
+                require(bool(torch.isfinite(p.grad).all()), f"non-finite gradient at {name}")
+        print("  ✅ rmatrix kernel finite (values, gradients, Q1) at rapidity spans ~300")
+
     def test_stochastic_gauge_does_not_satisfy_lifted_braid_relation(self):
         """Documented subtlety: per-crossing stochastic normalization breaks the
         LIFTED braid relation (identity slots do not rescale) - which is why the

@@ -68,3 +68,65 @@ def test_prefetch_states_are_monotonic(tmp_path):
     batches = _collect(data_dir, 6, prefetch_chunks=4)
     keys = [(pq, rg) for _, pq, rg in batches]
     assert keys == sorted(keys)
+
+
+def _next_with_deadline(loader, seconds: float):
+    """Pull one batch on a helper thread; returns ("ok", batch) | ("error", exc) | ("hang", None)."""
+    import threading
+
+    box: dict[str, object] = {}
+
+    def run():
+        try:
+            box["value"] = next(loader)
+        except BaseException as exc:  # noqa: BLE001 - the test inspects whatever escaped
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout=seconds)
+    if worker.is_alive():
+        return "hang", None
+    if "error" in box:
+        return "error", box["error"]
+    return "ok", box["value"]
+
+
+def test_prefetch_producer_failure_reaches_the_consumer(tmp_path):
+    """An unreadable shard must surface as an exception at the consumer within
+    seconds. Before the fix the producer thread died silently and the consumer
+    spun forever on an empty queue: a training run that never stepped and
+    never failed."""
+    data_dir = tmp_path / "broken_corpus"
+    data_dir.mkdir()
+    (data_dir / "shard_a.parquet").write_bytes(b"this is not a parquet file")  # train split
+    _make_corpus(tmp_path / "good")
+    (data_dir / "shard_z.parquet").write_bytes((tmp_path / "good" / "shard_a.parquet").read_bytes())  # val
+    loader = tokenizing_distributed_data_loader_with_state(
+        B=2, T=8, split="train", device="cpu", data_dir=str(data_dir), prefetch_chunks=4
+    )
+    status, payload = _next_with_deadline(loader, seconds=30.0)
+    assert status == "error", f"consumer must raise, got {status}"
+    assert isinstance(payload, RuntimeError) and "prefetch thread failed" in str(payload)
+    assert payload.__cause__ is not None, "the producer's original exception must be chained"
+
+
+def test_prefetch_thread_stops_when_the_generator_is_closed(tmp_path):
+    """Closing the consumer generator releases the producer thread instead of
+    leaking a daemon that tokenizes ahead into a queue nobody drains."""
+    import threading
+    import time
+
+    data_dir = _make_corpus(tmp_path / "close_corpus")
+    before = {t.name for t in threading.enumerate()}
+    loader = tokenizing_distributed_data_loader_with_state(
+        B=2, T=8, split="train", device="cpu", data_dir=str(data_dir), prefetch_chunks=2
+    )
+    next(loader)
+    started = [t for t in threading.enumerate() if t.name == "dataloader-prefetch" and t.name not in before]
+    assert started, "prefetch thread should be running after the first batch"
+    loader.close()
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline and any(t.is_alive() for t in started):
+        time.sleep(0.05)
+    assert not any(t.is_alive() for t in started), "prefetch thread must exit after the generator is closed"

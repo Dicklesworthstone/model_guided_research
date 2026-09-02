@@ -113,34 +113,56 @@ def tokenizing_distributed_data_loader_with_state(
         buf_cond = threading.Condition()
         pending: deque = deque()  # (token_list, (pq_idx, rg_idx)) not yet poured
         latest_pos = {"pq_idx": 0, "rg_idx": 0}
+        stop = threading.Event()  # set when the consumer generator is closed
+        failure: list[BaseException] = []  # the producer's exception, if it died
 
         def _refill():
-            while True:
-                doc_batch, pos = next(batches)
-                token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
+            # Any error in the producer (unreadable shard, tokenizer failure)
+            # is handed to the consumer, which re-raises it at its next pour.
+            # A silently dead producer left the consumer spinning forever on an
+            # empty queue with no message - a training run that never stepped
+            # and never failed.
+            try:
+                while not stop.is_set():
+                    doc_batch, pos = next(batches)
+                    token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
+                    with buf_cond:
+                        while len(pending) >= prefetch_chunks and not stop.is_set():
+                            buf_cond.wait(timeout=0.05)
+                        for tl in token_lists:
+                            pending.append((tl, pos))
+                        buf_cond.notify_all()
+            except Exception as exc:  # noqa: BLE001 - deliberately forwarded, never swallowed
                 with buf_cond:
-                    while len(pending) >= prefetch_chunks:
-                        buf_cond.wait(timeout=0.05)
-                    for tl in token_lists:
-                        pending.append((tl, pos))
+                    failure.append(exc)
                     buf_cond.notify_all()
 
         threading.Thread(target=_refill, daemon=True, name="dataloader-prefetch").start()
 
-        while True:
+        try:
+            while True:
+                with buf_cond:
+                    while len(token_buffer) < needed_tokens:
+                        if pending:
+                            tl, pos = pending.popleft()
+                            token_buffer.extend(tl)
+                            latest_pos["pq_idx"], latest_pos["rg_idx"] = pos
+                            buf_cond.notify_all()
+                        elif failure:
+                            raise RuntimeError("dataloader prefetch thread failed while tokenizing") from failure[0]
+                        else:
+                            buf_cond.wait(timeout=0.02)
+                    tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
+                    state_dict = {"pq_idx": latest_pos["pq_idx"], "rg_idx": latest_pos["rg_idx"]}
+                    buf_cond.notify_all()
+                yield _emit(tokens, state_dict)
+        finally:
+            # Generator closed (resume rebuilt the loader, training ended):
+            # release the producer instead of leaking a thread that tokenizes
+            # ahead into a queue nobody drains.
+            stop.set()
             with buf_cond:
-                while len(token_buffer) < needed_tokens:
-                    if pending:
-                        tl, pos = pending.popleft()
-                        token_buffer.extend(tl)
-                        latest_pos["pq_idx"], latest_pos["rg_idx"] = pos
-                        buf_cond.notify_all()
-                    else:
-                        buf_cond.wait(timeout=0.02)
-                tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
-                state_dict = {"pq_idx": latest_pos["pq_idx"], "rg_idx": latest_pos["rg_idx"]}
                 buf_cond.notify_all()
-            yield _emit(tokens, state_dict)
     else:
         while True:
             # Accumulate enough tokens for one iteration before yielding.

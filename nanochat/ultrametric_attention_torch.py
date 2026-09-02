@@ -258,9 +258,17 @@ class UltrametricCausalSelfAttention(AttentionCore):
                 trie.reset()
         state.seen_Tk = 0
 
-    def _update_trie_from_kv(self, state: _TrieCacheState, k: torch.Tensor, v: torch.Tensor) -> None:
+    def _update_trie_from_kv(
+        self, state: _TrieCacheState, k: torch.Tensor, v: torch.Tensor, *, pos0: int | None = None
+    ) -> None:
         Tk = int(k.size(2))
-        if Tk < state.seen_Tk:
+        # A cache rewound past what the trie has ingested (reset() followed by
+        # a re-prefill, or a shorter prefill into a reused cache) invalidates
+        # every stored key. Comparing Tk alone missed the equal-length case -
+        # a new prompt of the same length as the previous one was served the
+        # previous prompt's subtree sums - so the cache's own write position
+        # (pos0, the keys present BEFORE this forward) is the authority.
+        if Tk < state.seen_Tk or (pos0 is not None and pos0 < state.seen_Tk):
             self._reset_trie_state(state)
         if state.seen_Tk >= Tk:
             return
@@ -374,7 +382,7 @@ class UltrametricCausalSelfAttention(AttentionCore):
             # chunks included) so single-token decode can read it; only the
             # Tq == 1 read path short-circuits the kernel computation.
             state = self._get_trie_state(kv_cache, B=int(B), H=int(k.size(1)), device=q.device)
-            self._update_trie_from_kv(state, k, v)
+            self._update_trie_from_kv(state, k, v, pos0=pos0)
             if Tq == 1:
                 return self._trie_decode(state, q, out_dtype=v.dtype)  # (B, H, 1, D)
 

@@ -68,6 +68,14 @@ _RMATRIX_ETA_MIN = 1e-2
 _RMATRIX_GAP_MIN = 1e-3
 
 
+_LOG2 = math.log(2.0)
+
+
+def _log_sinh_pos(x: torch.Tensor) -> torch.Tensor:
+    """log sinh(x) for x > 0 without overflow: x + log(1 - e^{-2x}) - log 2."""
+    return x + torch.log1p(-torch.exp(-2.0 * x)) - _LOG2
+
+
 def rmatrix_bc(w: torch.Tensor, eta: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """A-normalized trigonometric six-vertex weights b(w), c(w) (broadcasting)."""
     den = torch.sinh(w + eta)
@@ -260,16 +268,13 @@ class BraidCausalSelfAttention(AttentionCore):
             return
         cls._ybe_checked = True
 
-        # Quick set-theoretic YBE (R3) sanity check on random tensors.
-        torch.manual_seed(0)
+        # Quick set-theoretic YBE (R3) sanity check on random tensors. A local
+        # generator: reseeding the GLOBAL RNG here made every later parameter
+        # draw depend on whether --braid-verify was set.
+        gen = torch.Generator().manual_seed(0)
         n = 64
         d = 8
-        ax = torch.randn(n, d)
-        ay = torch.randn(n, d)
-        bx = torch.randn(n, d)
-        by = torch.randn(n, d)
-        cx = torch.randn(n, d)
-        cy = torch.randn(n, d)
+        ax, ay, bx, by, cx, cy = (torch.randn(n, d, generator=gen) for _ in range(6))
 
         def apply12(ax, ay, bx, by, cx, cy):
             nax, nay, nbx, nby = cls._crossing_update_ybe(ax, ay, bx, by)
@@ -346,14 +351,26 @@ class BraidCausalSelfAttention(AttentionCore):
         w = uq.unsqueeze(-1) - uk.unsqueeze(1)  # (H, Tq, Tk); >= 0 iff j <= qpos_i
         valid = w >= 0
 
+        log_sh_e = _log_sinh_pos(eta)  # eta >= _RMATRIX_ETA_MIN > 0
+
         def kernel_rows(w_arg: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             # (weights, leftover) of one monodromy sweep family; exact mass
             # partition per row: weights.sum(-1) + leftover = 1.
-            sh_w = torch.where(valid, torch.sinh(w_arg), torch.zeros((), device=w_arg.device))
-            sh_e = torch.sinh(eta)
-            denom = sh_w + sh_e
-            bg = torch.where(valid, sh_w / denom, torch.zeros((), device=w_arg.device))
-            log_cg = torch.where(valid, torch.log(sh_e / denom), torch.zeros((), device=w_arg.device))
+            #   bg = sinh(w) / (sinh(w) + sinh(eta)),  cg = sinh(eta) / (sinh(w) + sinh(eta))
+            # sinh(w) overflows fp32 past w ~ 89 - a ~900-token causal span at
+            # the init increment 0.1 - which turned every held-out-length
+            # forward (the 2x-8x word-problem protocol) into NaN. The gauge is
+            # therefore evaluated in log space. A query against its own
+            # position has w == 0 exactly, where bg = 0 and cg = 1; those
+            # entries get a finite placeholder argument so neither branch of
+            # the where() can produce a non-finite gradient (0 * inf).
+            strict = valid & (w_arg > 0)
+            zero = torch.zeros((), device=w_arg.device, dtype=w_arg.dtype)
+            w_safe = torch.where(strict, w_arg, torch.ones_like(w_arg))
+            log_sh_w = _log_sinh_pos(w_safe)
+            log_den = torch.logaddexp(log_sh_w, log_sh_e)
+            bg = torch.where(strict, torch.exp(log_sh_w - log_den), zero)
+            log_cg = torch.where(strict, log_sh_e - log_den, zero)
             cum = torch.cumsum(log_cg, dim=-1)  # (H, Tq, Tk)
             total = cum[..., -1:]
             return bg * torch.exp(total - cum), torch.exp(total).squeeze(-1)

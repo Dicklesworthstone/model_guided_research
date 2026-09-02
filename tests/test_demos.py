@@ -878,6 +878,51 @@ def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
     torch.testing.assert_close(out_trie, out_kernel, rtol=1e-3, atol=1e-2)
 
 
+def test_nanochat_ultrametric_trie_is_rebuilt_when_a_reused_cache_is_rewound():
+    """A KVCache that is reset() and re-prefilled with a DIFFERENT prompt of the
+    SAME length must not be served the previous prompt's subtree sums. The trie
+    used to invalidate only on a shorter Tk, so the equal-length rewind read
+    stale keys; the cache write position is now the authority."""
+    import torch
+
+    from nanochat.engine import KVCache
+    from nanochat.gpt import GPT, GPTConfig
+
+    torch.manual_seed(0)
+    cfg = GPTConfig(
+        sequence_len=32,
+        vocab_size=128,
+        n_layer=2,
+        n_head=4,
+        n_kv_head=2,
+        n_embd=64,
+        attention_type="ultrametric",
+        ultrametric_mode="trie",
+        ultrametric_hard_digits=True,
+        ultrametric_lcp_beta=128.0,
+    )
+    model = GPT(cfg).train(False)
+    prompt_a = torch.randint(0, 128, (1, 12), dtype=torch.long)
+    prompt_b = torch.randint(0, 128, (1, 12), dtype=torch.long)
+
+    def make_cache():
+        return KVCache(batch_size=1, num_heads=cfg.n_kv_head, seq_len=12, head_dim=cfg.n_embd // cfg.n_head, num_layers=2)
+
+    with torch.inference_mode():
+        fresh = make_cache()
+        _ = model(prompt_b[:, :-1], kv_cache=fresh)
+        expected = model(prompt_b[:, -1:], kv_cache=fresh)[:, -1, :].float()
+
+        reused = make_cache()
+        _ = model(prompt_a[:, :-1], kv_cache=reused)
+        _ = model(prompt_a[:, -1:], kv_cache=reused)
+        reused.reset()
+        _ = model(prompt_b[:, :-1], kv_cache=reused)
+        got = model(prompt_b[:, -1:], kv_cache=reused)[:, -1, :].float()
+
+    torch.testing.assert_close(got, expected, rtol=1e-5, atol=1e-5)
+
+
 def test_kv_cache_prefill_expands_batch_dimension():
     """KVCache.prefill should broadcast a batch-1 prefix to a larger batch."""
     import torch

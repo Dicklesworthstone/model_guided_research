@@ -244,7 +244,17 @@ def build_model(checkpoint_dir, step, device, phase):
 
     # Load the model state
     model.to_empty(device=device)
-    model.init_weights()  # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init
+    # init_weights is what (re)builds the NON-persistent buffers (rotary
+    # cos/sin, diagnostic buffers) after to_empty; the parameter draws it also
+    # makes are discarded by the strict load below. Fork the RNG around it so
+    # that loading a checkpoint never advances the caller's global stream -
+    # a sampler that seeds once and then loads two checkpoints of different
+    # sizes must see the same subsequent draws.
+    fork_devices: list[int] = []
+    if device.type == "cuda":
+        fork_devices = [device.index if device.index is not None else torch.cuda.current_device()]
+    with torch.random.fork_rng(devices=fork_devices):
+        model.init_weights()
     model.load_state_dict(model_data, strict=True, assign=True)
     # Put the model in the right training phase / mode
     if phase == "eval":
