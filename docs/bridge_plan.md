@@ -287,7 +287,7 @@ After the bridge work, each vision goal is checked by a command, not a claim:
 
 - [ ] V4/V5: `mgr status --json` shows `evidence_missing` empty and at least 7 mechanism-vs-standard hypotheses with verdicts at floor-passing rungs; `mgr scorecard` report for vdc.4 has a non-empty predicted-vs-observed table.
 - [ ] V2/V3: docs/new_mechanism_checklist.md audit table has no "no" in the coordinate-check column and no proxy rows; `mgr certify --all` fresh at HEAD. (2026-09-02: certificates fresh for all 13 mechanisms; `mgr coord-check` covers standard, reversible and tropical, the other eight are still unchecked; fractal, simplicial and surreal remain proxies.)
-- [ ] V6: `scripts/e2e_pipeline.py --scenario all` exits 0 on CPU.
+- [x] V6: `scripts/e2e_pipeline.py --scenario all` exits 0 on CPU (2026-09-02 at HEAD: full-loop, resume, determinism, regression-gate, scorecard, word-problem, symplectic all PASS).
 - [ ] V7: latest CI and nightly runs completed with success.
 - [ ] V9: GPU goldens committed; `mgr certify --all --device cuda` green.
 - [ ] V11: every mechanism's observable asserted by a test.
