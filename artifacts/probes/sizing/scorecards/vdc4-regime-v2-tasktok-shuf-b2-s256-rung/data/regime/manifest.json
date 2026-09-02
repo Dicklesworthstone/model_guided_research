@@ -1,0 +1,31 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "b3e50da664a71749ce49f41eca26e2e3d24f168e9152557649961452c91c27df",
+    "train_000.parquet": "0edfb017ce7338ca8bb5258ca32604911d8ad811817f91a02d1d5d7774ba3c2e",
+    "val_000.parquet": "f92e78f29e2c1ae7e3efda4fd37355d947704bcdcdf23e96b763fee4dc034cac"
+  },
+  "dials": {
+    "answer_len": 4,
+    "n_regimes": 3,
+    "segment_len": 12
+  },
+  "generator_version": 2,
+  "hypothesis": "distribution flips reward principled restart/anneal; recovery time is the signal",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "ce81409f59cbab98fd88a1016e377a967afd7b0cdcbcd80cc72ff912ab95949b",
+    "train_000.parquet": "b79e349e3844ab36dcb7d126f5ae1f17e884f2c71080623f6d5f29f4bc603e66",
+    "val_000.parquet": "038f145c8347be77252455c0c564a732074ae588e134e8b1df61d8977b3c88e8"
+  },
+  "size": 100000,
+  "split_sizes": {
+    "test": 10000,
+    "train": 80000,
+    "val": 10000
+  },
+  "target_mechanisms": [
+    "ordinal",
+    "hoss"
+  ],
+  "task": "regime"
+}
