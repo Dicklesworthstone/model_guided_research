@@ -1,0 +1,28 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 1766                                                 
+  attention_type    standard                                                    
+  n_params          147,456                                                     
+  training budget   {"max_steps": 1767, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 1132462080, "flops_consumed_est":     
+                    2001060495360}                                              
+  lineage           {"run_id": "seed_0", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-nee
+dle-tasktok-shuf-b2-s256-rung/runs/budget_0/needle/standard/seed_0/checkpoints @
+                                      1766                                      
+                                                                                
+                                                           slope                
+                                                        held-out                
+  task     EM in-range   EM held-out   ppl in/held        [CI95]   axis         
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  needle         0.021         0.000     19.7/33.1             -   context_wo…  
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-nee
+dle-tasktok-shuf-b2-s256-rung/evals/tasks/eval-b0-needle-standard-s0
