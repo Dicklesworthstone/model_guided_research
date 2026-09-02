@@ -1,0 +1,191 @@
+{
+  "checks": [
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 29.52,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 85.317,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "rope_pairwise_norm_preservation",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 1.315,
+      "family": "classical",
+      "measured": 2.384185791015625e-07,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "causal_mask_structure",
+      "comparator": "le",
+      "detail": "mismatch count vs spec across train/decode/chunk regimes",
+      "duration_ms": 10.206,
+      "family": "classical",
+      "measured": 0.0,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 0.0
+    },
+    {
+      "check": "rmsnorm_unit_rms",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 0.826,
+      "family": "classical",
+      "measured": 1.7881393432617188e-07,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 0.001
+    },
+    {
+      "check": "softmax_row_stochastic",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 7.121,
+      "family": "classical",
+      "measured": 5.960464477539063e-08,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-06
+    },
+    {
+      "check": "ybe_law_holds",
+      "comparator": "le",
+      "detail": "R3 residual for the swap-output crossing law",
+      "duration_ms": 0.699,
+      "family": "classical",
+      "measured": 8.881784197001252e-16,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "restricted_law_violates_ybe",
+      "comparator": "ge",
+      "detail": "separation witness: the heuristic law must NOT satisfy YBE (proves the test has teeth)",
+      "duration_ms": 0.678,
+      "family": "classical",
+      "measured": 4.26722921764451,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.001
+    },
+    {
+      "check": "payload_multiset_invariance",
+      "comparator": "le",
+      "detail": "crossings must preserve the payload multiset {y} exactly",
+      "duration_ms": 4.757,
+      "family": "classical",
+      "measured": 0.0,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.0
+    },
+    {
+      "check": "rmatrix_braid_relation_holds",
+      "comparator": "le",
+      "detail": "spectral-parameter braid relation for the trigonometric six-vertex law (rapidities ride)",
+      "duration_ms": 1.541,
+      "family": "classical",
+      "measured": 1.4210854715202004e-14,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_inversion_relation_holds",
+      "comparator": "le",
+      "detail": "inversion relation N(w) N(-w) = I (protected memory: the mixing is exactly invertible)",
+      "duration_ms": 0.115,
+      "family": "classical",
+      "measured": 1.3766765505351941e-14,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_transfer_matrices_commute",
+      "comparator": "le",
+      "detail": "[T(u), T(v)] = 0 for the inhomogeneous transfer family (one-particle closed form, fp64)",
+      "duration_ms": 6.779,
+      "family": "classical",
+      "measured": 4.330951145420019e-17,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-10
+    },
+    {
+      "check": "rmatrix_perturbed_transfer_separates",
+      "comparator": "ge",
+      "detail": "separation witness: perturbing one Boltzmann weight must break commutativity (teeth)",
+      "duration_ms": 1.527,
+      "family": "classical",
+      "measured": 3.355590876246121e-05,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-06
+    },
+    {
+      "check": "rmatrix_mass_partition_charge_conserved",
+      "comparator": "le",
+      "detail": "Q1: sum_j A_ij + leftover_i = 1 exactly (stochastic gauge; live module forward)",
+      "duration_ms": 80.141,
+      "family": "classical",
+      "measured": 1.7763568394002505e-15,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "heuristic_mass_partition_violated",
+      "comparator": "ge",
+      "detail": "separation witness: additive heuristic accumulation has NO mass partition (Q1 defect >> 0)",
+      "duration_ms": 18.909,
+      "family": "classical",
+      "measured": 2.1733720302581787,
+      "mechanism": "braid",
+      "status": "pass",
+      "tolerance": 0.001
+    }
+  ],
+  "counts": {
+    "error": 0,
+    "fail": 0,
+    "pass": 15
+  },
+  "device": "cpu",
+  "dtype": "fp32",
+  "duration_s": 1.735,
+  "git": {
+    "branch": "main",
+    "commit": "dbd2d50",
+    "commit_full": "dbd2d509e4ebb6e5b310236afb10e359041b1d22",
+    "dirty": false
+  },
+  "kind": "certify",
+  "mechanisms": [
+    "braid",
+    "standard"
+  ],
+  "run_id": "cert-refresh-2026-09-02b",
+  "schema_version": 1,
+  "seed": 42
+}
