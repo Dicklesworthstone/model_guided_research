@@ -594,13 +594,13 @@ nanochat/*_block_torch.py      # Special block types
 from nanochat.gpt import GPT, GPTConfig
 
 config = GPTConfig(
-    n_layer=4,           # Number of transformer blocks
-    n_head=4,            # Number of attention heads
-    n_kv_head=4,         # Number of KV heads (GQA)
-    n_embd=128,          # Embedding dimension
-    sequence_len=256,    # Max sequence length
+    n_layer=4,  # Number of transformer blocks
+    n_head=4,  # Number of attention heads
+    n_kv_head=4,  # Number of KV heads (GQA)
+    n_embd=128,  # Embedding dimension
+    sequence_len=256,  # Max sequence length
     attention_type="tropical",  # One type, a CSV pattern, or a list[str]
-    optimizer_type="hoss",      # One of 3 optimizers
+    optimizer_type="hoss",  # One of 3 optimizers
 )
 
 model = GPT(config)

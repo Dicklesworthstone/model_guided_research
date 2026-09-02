@@ -2448,7 +2448,7 @@ def _scaling_report_md(manifest: dict[str, Any]) -> str:
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in m["rungs"]:
-        fmt = lambda v: ("—" if v is None else f"{v:,}")  # noqa: E731
+        fmt = lambda v: "—" if v is None else f"{v:,}"  # noqa: E731
         lines.append(
             f"| {r['name']} | {r['n_layer']} | {r['n_embd']} | {r['n_head']} | {fmt(r['param_count'])} | "
             f"{fmt(r['flops_per_token_est'])} | {fmt(r['token_budget'])} | {fmt(r['planned_max_steps'])} | "
@@ -2470,7 +2470,7 @@ def _scaling_report_md(manifest: dict[str, Any]) -> str:
             loss = metrics.get("final_loss")
             val_ce = metrics.get("val_ce_final")
             tps = metrics.get("tokens_per_second")
-            fmt2 = lambda v: ("—" if v is None else f"{v:.4g}")  # noqa: E731
+            fmt2 = lambda v: "—" if v is None else f"{v:.4g}"  # noqa: E731
             summary = run.get("summary_path") or "—"
             lines.append(
                 f"| {r['name']} | {run['seed']} | {run['status']} | {fmt2(loss)} | {fmt2(val_ce)} | "
@@ -2670,7 +2670,7 @@ def scaling_sweep(
         table.add_column(col)
     for r in rows:
         shape = f"L{r['n_layer']} E{r['n_embd']} H{r['n_head']}"
-        fmt = lambda v: ("—" if v is None else f"{v:,}")  # noqa: E731
+        fmt = lambda v: "—" if v is None else f"{v:,}"  # noqa: E731
         feas = "[green]yes[/green]" if r["feasible"] else f"[red]{r['reason']}[/red]"
         note = f"\n[dim]{r['notes']}[/dim]" if r["notes"] and r["feasible"] else ""
         table.add_row(

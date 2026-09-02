@@ -22,7 +22,7 @@ mechanisms — the clear #1 Triton target. The root cause is concrete:
 `tropical_inner` (`nanochat/tropical_attention_torch.py:21`) computes scores as
 
 ```python
-torch.max(q.unsqueeze(-2) + k.unsqueeze(-3), dim=-1).values   # (B,H,T,T) from a (B,H,T,T,d) broadcast
+torch.max(q.unsqueeze(-2) + k.unsqueeze(-3), dim=-1).values  # (B,H,T,T) from a (B,H,T,T,d) broadcast
 ```
 
 i.e. it **materializes a `(B,H,T,T,d)` tensor** then reduces — O(T²·d) memory,

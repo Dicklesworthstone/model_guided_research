@@ -906,7 +906,9 @@ def test_nanochat_ultrametric_trie_is_rebuilt_when_a_reused_cache_is_rewound():
     prompt_b = torch.randint(0, 128, (1, 12), dtype=torch.long)
 
     def make_cache():
-        return KVCache(batch_size=1, num_heads=cfg.n_kv_head, seq_len=12, head_dim=cfg.n_embd // cfg.n_head, num_layers=2)
+        return KVCache(
+            batch_size=1, num_heads=cfg.n_kv_head, seq_len=12, head_dim=cfg.n_embd // cfg.n_head, num_layers=2
+        )
 
     with torch.inference_mode():
         fresh = make_cache()

@@ -18,7 +18,7 @@ with nvtx_range("attention"):
     out = attn(x, cos_sin, kv_cache)
 
 # A profiling session (CPU + CUDA activities, shapes, memory). None when off.
-cfg = ProfileConfig.from_env()            # NANOCHAT_PROFILE=1 enables
+cfg = ProfileConfig.from_env()  # NANOCHAT_PROFILE=1 enables
 with torch_profiler(cfg) as prof:
     train_step()
 if prof is not None:
@@ -92,8 +92,9 @@ peak device memory, trace path) for machine consumption / regression tracking.
   reports CPU time/memory; the same code yields CUDA kernel times on a GPU.
 - **Trainer integration** — wired: `python -m nanochat.train --profile
   [--profile-steps N]` opens a `torch_profiler` session around the training
-  steps (train.py, `_profile_session`), and the attention/optimizer steps are
-  bracketed with `nvtx_range`, so a run emits a trace with zero overhead when
-  off. The standalone microbench above remains the quickest entry point for
-  the same forward/backward hot paths.
+  steps (the `prof_stack` block in `nanochat/train.py`), so a run emits a
+  kernel/memory trace with zero overhead when off. The trainer does not add
+  its own `nvtx_range` markers; those are used by the standalone microbench
+  above, which remains the quickest entry point for the same forward/backward
+  hot paths.
 </content>

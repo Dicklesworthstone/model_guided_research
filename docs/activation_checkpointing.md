@@ -56,6 +56,7 @@ behavior-preserving) and wrap each block call in the `GPT.forward` block loop:
 
 ```python
 from torch.utils.checkpoint import checkpoint
+
 # in the per-block loop (gpt.py forward):
 if self.training and self.ckpt_mode == "full":
     x = checkpoint(block, x, cos_sin, kv_cache, use_reentrant=False)

@@ -130,7 +130,20 @@ class OrdinalLRScheduler:
         }
 
     def load_state_dict(self, state: dict) -> None:
-        keys = ("A", "B", "C", "B_init", "P_init", "gamma", "min_lr", "best_loss", "ema_loss", "alpha", "base_lrs", "scale")
+        keys = (
+            "A",
+            "B",
+            "C",
+            "B_init",
+            "P_init",
+            "gamma",
+            "min_lr",
+            "best_loss",
+            "ema_loss",
+            "alpha",
+            "base_lrs",
+            "scale",
+        )
         for key in keys:
             if key not in state:
                 raise KeyError(f"OrdinalLRScheduler.load_state_dict missing key {key!r}")

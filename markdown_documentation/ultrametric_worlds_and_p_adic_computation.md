@@ -329,34 +329,49 @@ If LTA fails either task (can’t hit 1.0 on A or can’t localize exceptions on
 # Tries: for each head h and depth d:
 #   B[h][d]: succinct bitset; A[h][d]: array of S; R[h][d]: array of small counters
 
+
 def lookup(q):
-    y = [0]*m
+    y = [0] * m
     for h in range(H):
-        r = 0; last_idx = None; last_d = -1
+        r = 0
+        last_idx = None
+        last_d = -1
         for d in range(K):
-            r += q[d]*(p**d)
-            if not B[h][d].test(r): break
-            last_idx = B[h][d].rank(r); last_d = d
+            r += q[d] * (p**d)
+            if not B[h][d].test(r):
+                break
+            last_idx = B[h][d].rank(r)
+            last_d = d
         if last_d >= 0:
             s = A[h][last_d][last_idx]
             y = (y + U[h][last_d] @ s) % p
     return y
 
+
 def volf_step(q, y_star):
-    y = lookup(q); e = (y_star - y) % p
-    if e == [0]*m: return
+    y = lookup(q)
+    e = (y_star - y) % p
+    if e == [0] * m:
+        return
     for h in range(H):
-        r = 0; path = []
+        r = 0
+        path = []
         for d in range(K):
-            r += q[d]*(p**d); path.append((d,r))
-            if not B[h][d].test(r): break
+            r += q[d] * (p**d)
+            path.append((d, r))
+            if not B[h][d].test(r):
+                break
         # choose shallowest compatible node
         chosen = None
-        for (d,r) in path:
+        for d, r in path:
             idx = B[h][d].rank(r)
             if compatible(R[h][d][idx], e):
-                chosen = (d,idx); break
-        if chosen is None: chosen = path[-1]; d, r = chosen; idx = B[h][d].rank(r)
+                chosen = (d, idx)
+                break
+        if chosen is None:
+            chosen = path[-1]
+            d, r = chosen
+            idx = B[h][d].rank(r)
         A[h][d][idx] = (A[h][d][idx] + e) % p
         R[h][d][idx] = saturating_add(R[h][d][idx], sign(e))
 ```

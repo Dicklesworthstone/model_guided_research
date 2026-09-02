@@ -204,210 +204,304 @@ This is two 2×2 real blocks; each block is a single complex multiply micro-kern
 import jax, jax.numpy as jnp
 from jax import random, jit, grad, vmap
 
-def qmul(a,b):
-    aw,ax,ay,az=a[...,0],a[...,1],a[...,2],a[...,3]
-    bw,bx,by,bz=b[...,0],b[...,1],b[...,2],b[...,3]
-    return jnp.stack([aw*bw-ax*bx-ay*by-az*bz,
-                      aw*bx+ax*bw+ay*bz-az*by,
-                      aw*by-ax*bz+ay*bw+az*bx,
-                      aw*bz+ax*by-ay*bx+az*bw],-1)
 
-def qconj(q): return jnp.concatenate([q[...,:1],-q[...,1:]],-1)
-def qnorm(q): return jnp.linalg.norm(q,axis=-1)
-def qnormalize(q,eps=1e-12): n=qnorm(q)[...,None]; return q/(n+eps)
+def qmul(a, b):
+    aw, ax, ay, az = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+    bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+    return jnp.stack(
+        [
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        ],
+        -1,
+    )
+
+
+def qconj(q):
+    return jnp.concatenate([q[..., :1], -q[..., 1:]], -1)
+
+
+def qnorm(q):
+    return jnp.linalg.norm(q, axis=-1)
+
+
+def qnormalize(q, eps=1e-12):
+    n = qnorm(q)[..., None]
+    return q / (n + eps)
+
 
 def expmap(omega):
-    theta=jnp.linalg.norm(omega,axis=-1,keepdims=True)
-    small=theta<1e-6
-    st=jnp.where(small,1-theta**2/6+theta**4/120,jnp.sin(theta)/theta)
-    ct=jnp.where(small,1-theta**2/2+theta**4/24,jnp.cos(theta))
-    v=omega*st
-    return jnp.concatenate([ct,v],-1)
+    theta = jnp.linalg.norm(omega, axis=-1, keepdims=True)
+    small = theta < 1e-6
+    st = jnp.where(small, 1 - theta**2 / 6 + theta**4 / 120, jnp.sin(theta) / theta)
+    ct = jnp.where(small, 1 - theta**2 / 2 + theta**4 / 24, jnp.cos(theta))
+    v = omega * st
+    return jnp.concatenate([ct, v], -1)
+
 
 def rotor_from_raw(raw):
     return expmap(raw)
 
-def slerp_id_to(u,lam):
+
+def slerp_id_to(u, lam):
     # u=exp(omega), slerp(1,u,lam)=exp(lam*omega)
-    w=u[...,1:]; ct=u[..., :1]; theta=jnp.arctan2(jnp.linalg.norm(w,axis=-1,keepdims=True),ct)
-    n=jnp.where(theta<1e-9,jnp.zeros_like(w),w/(jnp.linalg.norm(w,axis=-1,keepdims=True)+1e-12))
-    return jnp.concatenate([jnp.cos(lam[...,None]*theta), jnp.sin(lam[...,None]*theta)*n],-1)
+    w = u[..., 1:]
+    ct = u[..., :1]
+    theta = jnp.arctan2(jnp.linalg.norm(w, axis=-1, keepdims=True), ct)
+    n = jnp.where(theta < 1e-9, jnp.zeros_like(w), w / (jnp.linalg.norm(w, axis=-1, keepdims=True) + 1e-12))
+    return jnp.concatenate([jnp.cos(lam[..., None] * theta), jnp.sin(lam[..., None] * theta) * n], -1)
+
 
 def left_mat_4x4(q):
-    a,b,c,d=q[...,0],q[...,1],q[...,2],q[...,3]
-    return jnp.stack([jnp.stack([a,-b,-c,-d],-1),
-                      jnp.stack([b, a,-d, c],-1),
-                      jnp.stack([c, d, a,-b],-1),
-                      jnp.stack([d,-c, b, a],-1)],-2)
+    a, b, c, d = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    return jnp.stack(
+        [
+            jnp.stack([a, -b, -c, -d], -1),
+            jnp.stack([b, a, -d, c], -1),
+            jnp.stack([c, d, a, -b], -1),
+            jnp.stack([d, -c, b, a], -1),
+        ],
+        -2,
+    )
+
 
 def right_mat_4x4(q):
-    a,b,c,d=q[...,0],q[...,1],q[...,2],q[...,3]
-    return jnp.stack([jnp.stack([a,-b,-c,-d],-1),
-                      jnp.stack([b, a, d,-c],-1),
-                      jnp.stack([c,-d, a, b],-1),
-                      jnp.stack([d, c,-b, a],-1)],-2)
+    a, b, c, d = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    return jnp.stack(
+        [
+            jnp.stack([a, -b, -c, -d], -1),
+            jnp.stack([b, a, d, -c], -1),
+            jnp.stack([c, -d, a, b], -1),
+            jnp.stack([d, c, -b, a], -1),
+        ],
+        -2,
+    )
 
-def left_2x2_blocks(q,x):
-    a,b,c,d=q[...,0],q[...,1],q[...,2],q[...,3]
-    w,x1,y,z=x[...,0],x[...,1],x[...,2],x[...,3]
-    A00,A01,A10,A11=a,-b,b,a
-    B00,B01,B10,B11=c,d,d,-c
-    t0=A00*w+A01*x1; t1=A10*w+A11*x1; t2=B00*y+B01*z; t3=B10*y+B11*z
-    o0=t0-t2; o1=t1-t3
-    s0=B00*w+B01*x1; s1=B10*w+B11*x1; u0=A00*y+A01*z; u1=A10*y+A11*z
-    o2=s0+u0; o3=s1+u1
-    return jnp.stack([o0,o1,o2,o3],-1)
 
-def right_2x2_blocks(x,q):
-    a,b,c,d=q[...,0],q[...,1],q[...,2],q[...,3]
-    w,x1,y,z=x[...,0],x[...,1],x[...,2],x[...,3]
-    A00,A01,A10,A11=a,-b,b,a
+def left_2x2_blocks(q, x):
+    a, b, c, d = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    w, x1, y, z = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
+    A00, A01, A10, A11 = a, -b, b, a
+    B00, B01, B10, B11 = c, d, d, -c
+    t0 = A00 * w + A01 * x1
+    t1 = A10 * w + A11 * x1
+    t2 = B00 * y + B01 * z
+    t3 = B10 * y + B11 * z
+    o0 = t0 - t2
+    o1 = t1 - t3
+    s0 = B00 * w + B01 * x1
+    s1 = B10 * w + B11 * x1
+    u0 = A00 * y + A01 * z
+    u1 = A10 * y + A11 * z
+    o2 = s0 + u0
+    o3 = s1 + u1
+    return jnp.stack([o0, o1, o2, o3], -1)
+
+
+def right_2x2_blocks(x, q):
+    a, b, c, d = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    w, x1, y, z = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
+    A00, A01, A10, A11 = a, -b, b, a
     # derived to match right_mat_4x4 sign pattern
-    B00,B01,B10,B11=c,-d,d,c
-    t0=A00*w+A01*x1; t1=A10*w+A11*x1; t2=B00*y+B01*z; t3=B10*y+B11*z
-    o0=t0-t2; o1=t1+t3*(-1)
-    s0=B00*w+B01*x1; s1=B10*w+B11*x1; u0=A00*y+A01*z; u1=A10*y+A11*z
-    o2=-s1+u0; o3=s0+u1
-    return jnp.stack([o0,o1,o2,o3],-1)
+    B00, B01, B10, B11 = c, -d, d, c
+    t0 = A00 * w + A01 * x1
+    t1 = A10 * w + A11 * x1
+    t2 = B00 * y + B01 * z
+    t3 = B10 * y + B11 * z
+    o0 = t0 - t2
+    o1 = t1 + t3 * (-1)
+    s0 = B00 * w + B01 * x1
+    s1 = B10 * w + B11 * x1
+    u0 = A00 * y + A01 * z
+    u1 = A10 * y + A11 * z
+    o2 = -s1 + u0
+    o3 = s0 + u1
+    return jnp.stack([o0, o1, o2, o3], -1)
 
-def apply_left(q,x,mode="2x2"):
-    return left_2x2_blocks(q,x) if mode=="2x2" else (left_mat_4x4(q)@x[...,None])[...,0]
-def apply_right(x,q,mode="2x2"):
-    return right_2x2_blocks(x,q) if mode=="2x2" else (right_mat_4x4(q)@x[...,None])[...,0]
+
+def apply_left(q, x, mode="2x2"):
+    return left_2x2_blocks(q, x) if mode == "2x2" else (left_mat_4x4(q) @ x[..., None])[..., 0]
+
+
+def apply_right(x, q, mode="2x2"):
+    return right_2x2_blocks(x, q) if mode == "2x2" else (right_mat_4x4(q) @ x[..., None])[..., 0]
+
 
 class RotorGate:
-    def __init__(self,key,d,init_scale=0.0):
-        k1,k2,k3,k4,k5=random.split(key,5)
-        self.wL=0.01*random.normal(k1,(d,3))
-        self.wR=0.01*random.normal(k2,(d,3))
-        self.aL=jnp.zeros((d,))
-        self.aR=jnp.zeros((d,))
-        self.tau=jnp.full((d,),init_scale)
-    def params(self): return (self.wL,self.wR,self.aL,self.aR,self.tau)
-    def set_params(self,ps): self.wL,self.wR,self.aL,self.aR,self.tau=ps
-    def __call__(self,x):
-        lamL=jax.nn.sigmoid(self.aL); lamR=jax.nn.sigmoid(self.aR)
-        u=slerp_id_to(expmap(self.wL),lamL)
-        v=slerp_id_to(expmap(self.wR),lamR)
-        y=vmap(apply_left,in_axes=(0,0,None))(u,x,"2x2")
-        y=vmap(apply_right,in_axes=(0,0,None))(y,v,"2x2")
-        s=jnp.exp(self.tau)[...,None]
-        return s*y
+    def __init__(self, key, d, init_scale=0.0):
+        k1, k2, k3, k4, k5 = random.split(key, 5)
+        self.wL = 0.01 * random.normal(k1, (d, 3))
+        self.wR = 0.01 * random.normal(k2, (d, 3))
+        self.aL = jnp.zeros((d,))
+        self.aR = jnp.zeros((d,))
+        self.tau = jnp.full((d,), init_scale)
 
-def param_count_rotorgate(d): return d*(3+3+1+1+1)
-def param_count_dense(d): return d*16
+    def params(self):
+        return (self.wL, self.wR, self.aL, self.aR, self.tau)
 
-def loss_map_rg(ps,layer,x,xt):
+    def set_params(self, ps):
+        self.wL, self.wR, self.aL, self.aR, self.tau = ps
+
+    def __call__(self, x):
+        lamL = jax.nn.sigmoid(self.aL)
+        lamR = jax.nn.sigmoid(self.aR)
+        u = slerp_id_to(expmap(self.wL), lamL)
+        v = slerp_id_to(expmap(self.wR), lamR)
+        y = vmap(apply_left, in_axes=(0, 0, None))(u, x, "2x2")
+        y = vmap(apply_right, in_axes=(0, 0, None))(y, v, "2x2")
+        s = jnp.exp(self.tau)[..., None]
+        return s * y
+
+
+def param_count_rotorgate(d):
+    return d * (3 + 3 + 1 + 1 + 1)
+
+
+def param_count_dense(d):
+    return d * 16
+
+
+def loss_map_rg(ps, layer, x, xt):
     layer.set_params(ps)
-    y=layer(x)
-    return jnp.mean((y-xt)**2)
+    y = layer(x)
+    return jnp.mean((y - xt) ** 2)
 
-def loss_map_dense(W,x,xt):
-    y=(W@x[...,None])[...,0]
-    return jnp.mean((y-xt)**2)
 
-@jit
-def step_rg(ps,layer,x,xt,lr=1e-2):
-    l,gr=jax.value_and_grad(lambda p:loss_map_rg(p,layer,x,xt))(ps)
-    newp=tuple(p-lr*g for p,g in zip(ps,gr))
-    return newp,l
+def loss_map_dense(W, x, xt):
+    y = (W @ x[..., None])[..., 0]
+    return jnp.mean((y - xt) ** 2)
+
 
 @jit
-def step_dense(W,x,xt,lr=1e-2):
-    l,g=jax.value_and_grad(lambda w:loss_map_dense(w,x,xt))(W)
-    return W-lr*g,l
+def step_rg(ps, layer, x, xt, lr=1e-2):
+    l, gr = jax.value_and_grad(lambda p: loss_map_rg(p, layer, x, xt))(ps)
+    newp = tuple(p - lr * g for p, g in zip(ps, gr))
+    return newp, l
 
-def compose_rg(layer,x,n):
-    y=x
-    for _ in range(n): y=layer(y)
+
+@jit
+def step_dense(W, x, xt, lr=1e-2):
+    l, g = jax.value_and_grad(lambda w: loss_map_dense(w, x, xt))(W)
+    return W - lr * g, l
+
+
+def compose_rg(layer, x, n):
+    y = x
+    for _ in range(n):
+        y = layer(y)
     return y
 
-def compose_dense(W,x,n):
-    y=x
-    for _ in range(n): y=(W@y[...,None])[...,0]
+
+def compose_dense(W, x, n):
+    y = x
+    for _ in range(n):
+        y = (W @ y[..., None])[..., 0]
     return y
 
-def angle_error(a,b,eps=1e-12):
-    aa=qnormalize(a); bb=qnormalize(b)
-    dot=(aa*bb).sum(-1).clip(-1+1e-6,1-1e-6)
+
+def angle_error(a, b, eps=1e-12):
+    aa = qnormalize(a)
+    bb = qnormalize(b)
+    dot = (aa * bb).sum(-1).clip(-1 + 1e-6, 1 - 1e-6)
     return jnp.arccos(jnp.abs(dot))
 
-def build_target(key,d):
-    k1,k2=random.split(key)
-    wL=0.3*random.normal(k1,(d,3))
-    wR=0.3*random.normal(k2,(d,3))
-    u=expmap(wL); v=expmap(wR)
-    return u,v
 
-def apply_target(u,v,x):
-    y=vmap(apply_left,in_axes=(0,0,None))(u,x,"2x2")
-    y=vmap(apply_right,in_axes=(0,0,None))(y,v,"2x2")
+def build_target(key, d):
+    k1, k2 = random.split(key)
+    wL = 0.3 * random.normal(k1, (d, 3))
+    wR = 0.3 * random.normal(k2, (d, 3))
+    u = expmap(wL)
+    v = expmap(wR)
+    return u, v
+
+
+def apply_target(u, v, x):
+    y = vmap(apply_left, in_axes=(0, 0, None))(u, x, "2x2")
+    y = vmap(apply_right, in_axes=(0, 0, None))(y, v, "2x2")
     return y
 
-def experiment(seed=0,d=8,batch=1024,steps=600,n_compose=512):
-    key=random.PRNGKey(seed)
-    u_tgt,v_tgt=build_target(key,d)
-    kx=random.split(key,1)[0]
-    x=0.5*random.normal(kx,(batch,d,4))
-    xt=apply_target(u_tgt,v_tgt,x)
-    layer=RotorGate(random.PRNGKey(seed+1),d,init_scale=0.0)
-    ps=layer.params()
-    W=jnp.tile(jnp.eye(4),(d,1,1))
+
+def experiment(seed=0, d=8, batch=1024, steps=600, n_compose=512):
+    key = random.PRNGKey(seed)
+    u_tgt, v_tgt = build_target(key, d)
+    kx = random.split(key, 1)[0]
+    x = 0.5 * random.normal(kx, (batch, d, 4))
+    xt = apply_target(u_tgt, v_tgt, x)
+    layer = RotorGate(random.PRNGKey(seed + 1), d, init_scale=0.0)
+    ps = layer.params()
+    W = jnp.tile(jnp.eye(4), (d, 1, 1))
     for t in range(steps):
-        ps,lr=step_rg(ps,layer,x,xt,1e-1)
-        W,ld=step_dense(W,x,xt,1e-1)
+        ps, lr = step_rg(ps, layer, x, xt, 1e-1)
+        W, ld = step_dense(W, x, xt, 1e-1)
     layer.set_params(ps)
-    y_rg=compose_rg(layer,x[0],n_compose)
-    y_dn=compose_dense(W,x[0],n_compose)
-    y_true=apply_target(expmap(layer.wL*n_compose*0+layer.wL*0+layer.wL*0+layer.wL),expmap(layer.wR*0+layer.wR*0+layer.wR*0+layer.wR),x[0]) # placeholder removed by true composition below
+    y_rg = compose_rg(layer, x[0], n_compose)
+    y_dn = compose_dense(W, x[0], n_compose)
+    y_true = apply_target(
+        expmap(layer.wL * n_compose * 0 + layer.wL * 0 + layer.wL * 0 + layer.wL),
+        expmap(layer.wR * 0 + layer.wR * 0 + layer.wR * 0 + layer.wR),
+        x[0],
+    )  # placeholder removed by true composition below
     # true composition uses the fitted rotors raised n times: exp(n*ω)
-    u_fit=expmap(layer.wL); v_fit=expmap(layer.wR)
-    u_true=slerp_id_to(u_fit,jnp.ones((d,))*n_compose)
-    v_true=slerp_id_to(v_fit,jnp.ones((d,))*n_compose)
-    y_true=apply_target(u_true,v_true,x[0])
-    err_rg=jnp.mean(angle_error(y_rg,y_true))
-    err_dn=jnp.mean(angle_error(y_dn,y_true))
-    drift_dn=jnp.mean(jnp.abs(qnorm(y_dn)-qnorm(x[0])))
-    drift_rg=jnp.mean(jnp.abs(qnorm(y_rg)-qnorm(x[0])))
-    prg=param_count_rotorgate(d); pdc=param_count_dense(d)
-    return {"angle_err_rotorgate":float(err_rg),
-            "angle_err_dense":float(err_dn),
-            "norm_drift_rotorgate":float(drift_rg),
-            "norm_drift_dense":float(drift_dn),
-            "params_rotorgate":int(prg),
-            "params_dense":int(pdc)}
+    u_fit = expmap(layer.wL)
+    v_fit = expmap(layer.wR)
+    u_true = slerp_id_to(u_fit, jnp.ones((d,)) * n_compose)
+    v_true = slerp_id_to(v_fit, jnp.ones((d,)) * n_compose)
+    y_true = apply_target(u_true, v_true, x[0])
+    err_rg = jnp.mean(angle_error(y_rg, y_true))
+    err_dn = jnp.mean(angle_error(y_dn, y_true))
+    drift_dn = jnp.mean(jnp.abs(qnorm(y_dn) - qnorm(x[0])))
+    drift_rg = jnp.mean(jnp.abs(qnorm(y_rg) - qnorm(x[0])))
+    prg = param_count_rotorgate(d)
+    pdc = param_count_dense(d)
+    return {
+        "angle_err_rotorgate": float(err_rg),
+        "angle_err_dense": float(err_dn),
+        "norm_drift_rotorgate": float(drift_rg),
+        "norm_drift_dense": float(drift_dn),
+        "params_rotorgate": int(prg),
+        "params_dense": int(pdc),
+    }
+
 
 def test_invariants(key=0):
-    k=random.PRNGKey(key)
-    x=random.normal(k,(32,4))
-    x=x/jnp.linalg.norm(x,axis=-1,keepdims=True)
-    d=1; layer=RotorGate(random.PRNGKey(1),d,init_scale=0.0)
-    ps=layer.params(); layer.set_params(ps)
-    y=layer(x[None,...].swapaxes(0,1))[0]
-    a=jnp.max(jnp.abs(qnorm(y)-qnorm(x)))
+    k = random.PRNGKey(key)
+    x = random.normal(k, (32, 4))
+    x = x / jnp.linalg.norm(x, axis=-1, keepdims=True)
+    d = 1
+    layer = RotorGate(random.PRNGKey(1), d, init_scale=0.0)
+    ps = layer.params()
+    layer.set_params(ps)
+    y = layer(x[None, ...].swapaxes(0, 1))[0]
+    a = jnp.max(jnp.abs(qnorm(y) - qnorm(x)))
     return float(a)
 
+
 def test_associativity(key=0):
-    k1,k2,k3,k4=random.split(random.PRNGKey(key),4)
-    a=qnormalize(random.normal(k1,(1000,4)))
-    b=qnormalize(random.normal(k2,(1000,4)))
-    c=qnormalize(random.normal(k3,(1000,4)))
-    x=random.normal(k4,(1000,4))
-    lhs=qmul(a,qmul(b,x)); rhs=qmul(qmul(a,b),x)
-    return float(jnp.max(jnp.abs(lhs-rhs)))
+    k1, k2, k3, k4 = random.split(random.PRNGKey(key), 4)
+    a = qnormalize(random.normal(k1, (1000, 4)))
+    b = qnormalize(random.normal(k2, (1000, 4)))
+    c = qnormalize(random.normal(k3, (1000, 4)))
+    x = random.normal(k4, (1000, 4))
+    lhs = qmul(a, qmul(b, x))
+    rhs = qmul(qmul(a, b), x)
+    return float(jnp.max(jnp.abs(lhs - rhs)))
+
 
 def test_block_paths(key=0):
-    k1,k2=random.split(random.PRNGKey(key))
-    q=qnormalize(random.normal(k1,(1000,4)))
-    x=random.normal(k2,(1000,4))
-    l4=(left_mat_4x4(q)@x[...,None])[...,0]
-    l2=left_2x2_blocks(q,x)
-    r4=(right_mat_4x4(q)@x[...,None])[...,0]
-    r2=right_2x2_blocks(x,q)
-    return float(jnp.max(jnp.abs(l4-l2))), float(jnp.max(jnp.abs(r4-r2)))
+    k1, k2 = random.split(random.PRNGKey(key))
+    q = qnormalize(random.normal(k1, (1000, 4)))
+    x = random.normal(k2, (1000, 4))
+    l4 = (left_mat_4x4(q) @ x[..., None])[..., 0]
+    l2 = left_2x2_blocks(q, x)
+    r4 = (right_mat_4x4(q) @ x[..., None])[..., 0]
+    r2 = right_2x2_blocks(x, q)
+    return float(jnp.max(jnp.abs(l4 - l2))), float(jnp.max(jnp.abs(r4 - r2)))
 
-if __name__=="__main__":
-    print("tests:", {"inv":test_invariants(),"assoc":test_associativity(),"blocks":test_block_paths()})
+
+if __name__ == "__main__":
+    print("tests:", {"inv": test_invariants(), "assoc": test_associativity(), "blocks": test_block_paths()})
     print("experiment:", experiment())
 ```
 

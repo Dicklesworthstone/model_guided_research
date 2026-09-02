@@ -698,7 +698,9 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
         sval = str(val)
         segments = sval.replace("\\", "/").split("/")
         if not sval.strip() or sval.startswith("/") or any(seg in {"", ".", ".."} for seg in segments):
-            errors.append(f"--{flag.replace('_', '-')} must be a relative path with no empty or '..' segments, got {sval!r}")
+            errors.append(
+                f"--{flag.replace('_', '-')} must be a relative path with no empty or '..' segments, got {sval!r}"
+            )
 
     if errors:
         if ddp_rank == 0:

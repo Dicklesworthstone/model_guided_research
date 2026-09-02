@@ -421,136 +421,165 @@ At every layer:
 ```python
 import numpy as np
 
+
 def build_complete_complex_K2(p):
     vs = np.arange(p)
-    edges = [(i,j) for i in range(p) for j in range(i+1,p)]
-    e2idx = {e:i for i,e in enumerate(edges)}
+    edges = [(i, j) for i in range(p) for j in range(i + 1, p)]
+    e2idx = {e: i for i, e in enumerate(edges)}
     n0, n1 = p, len(edges)
-    D1 = np.zeros((n0,n1), dtype=np.int8)
-    for (i,(u,v)) in enumerate(edges):
-        D1[u,i] = -1; D1[v,i] = 1
-    tris = [(i,j,k) for i in range(p) for j in range(i+1,p) for k in range(j+1,p)]
-    t2idx = {t:i for i,t in enumerate(tris)}
+    D1 = np.zeros((n0, n1), dtype=np.int8)
+    for i, (u, v) in enumerate(edges):
+        D1[u, i] = -1
+        D1[v, i] = 1
+    tris = [(i, j, k) for i in range(p) for j in range(i + 1, p) for k in range(j + 1, p)]
+    t2idx = {t: i for i, t in enumerate(tris)}
     n2 = len(tris)
-    D2 = np.zeros((n1,n2), dtype=np.int8)
-    for (t,(i,j,k)) in enumerate(tris):
-        e_jk = e2idx[(j,k)]; e_ik = e2idx[(i,k)]; e_ij = e2idx[(i,j)]
-        D2[e_jk,t] = 1; D2[e_ik,t] = -1; D2[e_ij,t] = 1
+    D2 = np.zeros((n1, n2), dtype=np.int8)
+    for t, (i, j, k) in enumerate(tris):
+        e_jk = e2idx[(j, k)]
+        e_ik = e2idx[(i, k)]
+        e_ij = e2idx[(i, j)]
+        D2[e_jk, t] = 1
+        D2[e_ik, t] = -1
+        D2[e_ij, t] = 1
     return [None, D1, D2], edges, tris
+
 
 class SimplicialMixer:
     def __init__(self, D_list, d, seed=0):
         rng = np.random.default_rng(seed)
-        self.K = len(D_list)-1
+        self.K = len(D_list) - 1
         self.D = D_list
-        self.A = [None]+[np.abs(D_list[k]) if D_list[k] is not None else None for k in range(1,self.K+1)]
-        self.Wd = [None]+[rng.standard_normal((d,d))/np.sqrt(d) for _ in range(1,self.K+1)]
-        self.Ud = [None]+[rng.standard_normal((d,d))/np.sqrt(d) for _ in range(1,self.K+1)]
-        self.Wu = [rng.standard_normal((d,d))/np.sqrt(d) for _ in range(0,self.K)]
-        self.Uu = [rng.standard_normal((d,d))/np.sqrt(d) for _ in range(0,self.K)]
-        self.wgd = [None]+[rng.standard_normal((d,1))/np.sqrt(d) for _ in range(1,self.K+1)]
-        self.wgu = [rng.standard_normal((d,1))/np.sqrt(d) for _ in range(0,self.K)]
-        self.bg_d = [None]+[np.array([0.]) for _ in range(1,self.K+1)]
-        self.bg_u = [np.array([0.]) for _ in range(0,self.K)]
-    def sigmoid(self,x): return 1/(1+np.exp(-x))
-    def odd(self,x): return np.tanh(x)
+        self.A = [None] + [np.abs(D_list[k]) if D_list[k] is not None else None for k in range(1, self.K + 1)]
+        self.Wd = [None] + [rng.standard_normal((d, d)) / np.sqrt(d) for _ in range(1, self.K + 1)]
+        self.Ud = [None] + [rng.standard_normal((d, d)) / np.sqrt(d) for _ in range(1, self.K + 1)]
+        self.Wu = [rng.standard_normal((d, d)) / np.sqrt(d) for _ in range(0, self.K)]
+        self.Uu = [rng.standard_normal((d, d)) / np.sqrt(d) for _ in range(0, self.K)]
+        self.wgd = [None] + [rng.standard_normal((d, 1)) / np.sqrt(d) for _ in range(1, self.K + 1)]
+        self.wgu = [rng.standard_normal((d, 1)) / np.sqrt(d) for _ in range(0, self.K)]
+        self.bg_d = [None] + [np.array([0.0]) for _ in range(1, self.K + 1)]
+        self.bg_u = [np.array([0.0]) for _ in range(0, self.K)]
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+
+    def odd(self, x):
+        return np.tanh(x)
+
     def step_down(self, h, m):
         K = self.K
-        dh = [None]+[np.zeros_like(h[k]) for k in range(1,K+1)]
-        dm = [m[0].copy()]+[np.zeros_like(m[k]) for k in range(1,K+1)]
-        for k in range(1,K+1):
+        dh = [None] + [np.zeros_like(h[k]) for k in range(1, K + 1)]
+        dm = [m[0].copy()] + [np.zeros_like(m[k]) for k in range(1, K + 1)]
+        for k in range(1, K + 1):
             Dk, Ak = self.D[k], self.A[k]
-            jk = (self.sigmoid(h[k]@self.wgd[k]+self.bg_d[k]).ravel())*m[k]
+            jk = (self.sigmoid(h[k] @ self.wgd[k] + self.bg_d[k]).ravel()) * m[k]
             dm[k] -= jk
-            share = jk/(k+1)
-            dm[k-1] += Ak@share
-            dh[k-1] += Dk@(h[k]@self.Wd[k])
-            dh[k]   -= Dk.T@(h[k-1]@self.Ud[k])
-        for k in range(1,K+1):
-            h[k] = self.odd(h[k]+dh[k])
-            m[k] = m[k]+dm[k]
+            share = jk / (k + 1)
+            dm[k - 1] += Ak @ share
+            dh[k - 1] += Dk @ (h[k] @ self.Wd[k])
+            dh[k] -= Dk.T @ (h[k - 1] @ self.Ud[k])
+        for k in range(1, K + 1):
+            h[k] = self.odd(h[k] + dh[k])
+            m[k] = m[k] + dm[k]
         m[0] = m[0]
-        return h,m,dh,dm
+        return h, m, dh, dm
+
     def step_up(self, h, m):
         K = self.K
-        dh = [None]+[np.zeros_like(h[k]) for k in range(1,K+1)]
-        dm = [m[0].copy()]+[np.zeros_like(m[k]) for k in range(1,K+1)]
-        for k in range(0,K):
-            Dkp1, Akp1 = self.D[k+1], self.A[k+1]
-            et = (self.sigmoid(h[k+1]@self.wgu[k]+self.bg_u[k]).ravel())*m[k+1]
-            dm[k]   += Akp1@ (et/(k+2))
-            dm[k+1] -= et
-            dh[k]   += Dkp1@(h[k+1]@self.Wu[k])
-            dh[k+1] -= Dkp1.T@(h[k]@self.Uu[k])
-        for k in range(1,K+1):
-            h[k] = self.odd(h[k]+dh[k])
-            m[k] = m[k]+dm[k]
+        dh = [None] + [np.zeros_like(h[k]) for k in range(1, K + 1)]
+        dm = [m[0].copy()] + [np.zeros_like(m[k]) for k in range(1, K + 1)]
+        for k in range(0, K):
+            Dkp1, Akp1 = self.D[k + 1], self.A[k + 1]
+            et = (self.sigmoid(h[k + 1] @ self.wgu[k] + self.bg_u[k]).ravel()) * m[k + 1]
+            dm[k] += Akp1 @ (et / (k + 2))
+            dm[k + 1] -= et
+            dh[k] += Dkp1 @ (h[k + 1] @ self.Wu[k])
+            dh[k + 1] -= Dkp1.T @ (h[k] @ self.Uu[k])
+        for k in range(1, K + 1):
+            h[k] = self.odd(h[k] + dh[k])
+            m[k] = m[k] + dm[k]
         m[0] = m[0]
-        return h,m,dh,dm
+        return h, m, dh, dm
+
     def layer(self, h, m):
-        h,m,dh_d,dm_d = self.step_down(h,m)
-        h,m,dh_u,dm_u = self.step_up(h,m)
-        return h,m,(dh_d,dh_u),(dm_d,dm_u)
+        h, m, dh_d, dm_d = self.step_down(h, m)
+        h, m, dh_u, dm_u = self.step_up(h, m)
+        return h, m, (dh_d, dh_u), (dm_d, dm_u)
+
 
 def boundary_inconsistency_loss(h, mixer):
-    D = mixer.D; K = mixer.K
+    D = mixer.D
+    K = mixer.K
     L = 0.0
-    for k in range(1,K+1):
-        L += np.sum((D[k]@h[k] - h[k-1]@(np.eye(h[k].shape[1])) )**2)
-    for k in range(0,K):
-        L += np.sum((D[k+1].T@h[k] - h[k+1]@(np.eye(h[k].shape[1])) )**2)
+    for k in range(1, K + 1):
+        L += np.sum((D[k] @ h[k] - h[k - 1] @ (np.eye(h[k].shape[1]))) ** 2)
+    for k in range(0, K):
+        L += np.sum((D[k + 1].T @ h[k] - h[k + 1] @ (np.eye(h[k].shape[1]))) ** 2)
     return L
 
+
 def total_mass(m):
-    return sum([m[k].sum() for k in range(1,len(m))])+m[0].sum()
+    return sum([m[k].sum() for k in range(1, len(m))]) + m[0].sum()
+
 
 def generate_dataset(p, cycles, num, seed=1):
     D, edges, tris = build_complete_complex_K2(p)
     rng = np.random.default_rng(seed)
     n0, n1, n2 = p, len(edges), len(tris)
-    e2idx = {e:i for i,e in enumerate(edges)}
+    e2idx = {e: i for i, e in enumerate(edges)}
     r = np.zeros(n1)
     for cyc in cycles:
         for i in range(len(cyc)):
-            u, v = cyc[i], cyc[(i+1)%len(cyc)]
-            a,b = min(u,v), max(u,v)
-            s = 1 if u< v else -1
-            r[e2idx[(a,b)]] += s
-    X2 = []; Y = []
+            u, v = cyc[i], cyc[(i + 1) % len(cyc)]
+            a, b = min(u, v), max(u, v)
+            s = 1 if u < v else -1
+            r[e2idx[(a, b)]] += s
+    X2 = []
+    Y = []
     for _ in range(num):
-        sel = rng.integers(0,2,size=n2)
-        sgn = rng.choice([-1,1], size=n2)
-        x2 = sel*sgn
-        y = int((D[2]@x2).dot(r)!=0)
-        X2.append(x2.astype(float)); Y.append(y)
+        sel = rng.integers(0, 2, size=n2)
+        sgn = rng.choice([-1, 1], size=n2)
+        x2 = sel * sgn
+        y = int((D[2] @ x2).dot(r) != 0)
+        X2.append(x2.astype(float))
+        Y.append(y)
     return D, np.array(X2), np.array(Y)
 
-def run_sanity():
-    p=6
-    D, edges, tris = build_complete_complex_K2(p)
-    K=2; d=4
-    mixer = SimplicialMixer(D_list=D,d=d,seed=0)
-    n0, n1, n2 = p, len(edges), len(tris)
-    h = [np.zeros((n0,d)) , np.zeros((n1,d)) , np.zeros((n2,d))]
-    m = [np.zeros(n0), np.ones(n1)*0.0, np.ones(n2)*1.0]
-    h[2] = np.random.standard_normal((n2,d))*0.1
-    M0 = total_mass(m)
-    h1,m1,(dh_d,dh_u),(dm_d,dm_u) = mixer.layer([None,h[1],h[2]], [np.zeros(n0),m[1],m[2]])
-    M1 = total_mass([np.zeros(n0),m1[1],m1[2]])
-    cons_ok = np.allclose(M0,M1,atol=1e-10)
-    D1,D2 = D[1],D[2]
-    hom_ok = True
-    hom_ok &= np.allclose(D1@(dh_d[0]), 0.0)
-    hom_ok &= np.allclose(D2.T@(dh_d[1]), 0.0)
-    hom_ok &= np.allclose(D1@(dh_u[0]), 0.0)
-    hom_ok &= np.allclose(D2.T@(dh_u[1]), 0.0)
-    Lb = boundary_inconsistency_loss([np.zeros((n0,d)),h1[1],h1[2]], mixer)
-    return {"mass_conserved":cons_ok,"homology_subupdates_zero":hom_ok,"boundary_loss":float(Lb),"M0":float(M0),"M1":float(M1)}
 
-if __name__=="__main__":
+def run_sanity():
+    p = 6
+    D, edges, tris = build_complete_complex_K2(p)
+    K = 2
+    d = 4
+    mixer = SimplicialMixer(D_list=D, d=d, seed=0)
+    n0, n1, n2 = p, len(edges), len(tris)
+    h = [np.zeros((n0, d)), np.zeros((n1, d)), np.zeros((n2, d))]
+    m = [np.zeros(n0), np.ones(n1) * 0.0, np.ones(n2) * 1.0]
+    h[2] = np.random.standard_normal((n2, d)) * 0.1
+    M0 = total_mass(m)
+    h1, m1, (dh_d, dh_u), (dm_d, dm_u) = mixer.layer([None, h[1], h[2]], [np.zeros(n0), m[1], m[2]])
+    M1 = total_mass([np.zeros(n0), m1[1], m1[2]])
+    cons_ok = np.allclose(M0, M1, atol=1e-10)
+    D1, D2 = D[1], D[2]
+    hom_ok = True
+    hom_ok &= np.allclose(D1 @ (dh_d[0]), 0.0)
+    hom_ok &= np.allclose(D2.T @ (dh_d[1]), 0.0)
+    hom_ok &= np.allclose(D1 @ (dh_u[0]), 0.0)
+    hom_ok &= np.allclose(D2.T @ (dh_u[1]), 0.0)
+    Lb = boundary_inconsistency_loss([np.zeros((n0, d)), h1[1], h1[2]], mixer)
+    return {
+        "mass_conserved": cons_ok,
+        "homology_subupdates_zero": hom_ok,
+        "boundary_loss": float(Lb),
+        "M0": float(M0),
+        "M1": float(M1),
+    }
+
+
+if __name__ == "__main__":
     res = run_sanity()
     print(res)
-    D, X2, Y = generate_dataset(p=6, cycles=[[0,1,2,3,4,5]], num=8, seed=2)
+    D, X2, Y = generate_dataset(p=6, cycles=[[0, 1, 2, 3, 4, 5]], num=8, seed=2)
     print("pairwise‑baseline impossible: all 0/1‑features identical across samples; labels:", Y.tolist())
 ```
 
