@@ -64,7 +64,7 @@ GENERATOR_VERSIONS: dict[str, int] = {
     "rel": 1,
     "rot": 1,
     "arith": 1,
-    "regime": 1,
+    "regime": 2,  # v2: OUT answer block continuing the final regime (bead w76r)
     "needle": 1,
     "group": 1,
     "bag": 1,
@@ -545,46 +545,70 @@ def _gen_arith(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[
 # task 7: regime-shift streams — ordinal scheduler / HOSS
 # Hypothesis: distribution flips at known boundaries reward principled
 # restart/anneal behavior (ordinal) and curvature-aware steps (HOSS); LM loss
-# recovery time after each SHIFT marker is the measured signal (consumed by D4).
+# recovery time after each SHIFT marker is the finer signal (deferred to D4).
+# The scored answer is the OUT block: `answer_len` further values of the LAST
+# regime's rule. Generator v1 had no answer block, so the exact-match metric
+# the regime hypotheses register was null on every evaluation (bead w76r).
 
 
 def check_regime(text: str) -> bool | None:
     parts = text.split()
-    if parts[:2] != ["TASK", "regime"]:
+    if parts[:2] != ["TASK", "regime"] or "OUT" not in parts:
         return None
-    # LM-style stream: validate every segment continues its arithmetic rule.
+    oi = parts.index("OUT")
+    # LM-style stream: validate every segment continues its arithmetic rule,
+    # then the OUT block continues the LAST segment's rule past the stream.
     i = 2
     ok = True
-    while i < len(parts):
+    m = 0
+    expected: int | None = None
+    while i < oi:
         if parts[i] != "SEG":
             return False
         m, a = int(parts[i + 1][1:]), int(parts[i + 2][1:])
         j = i + 3
         expected = a
-        while j < len(parts) and parts[j] not in {"SEG"}:
+        while j < oi and parts[j] != "SEG":
             if parts[j] != f"n{expected}":
                 ok = False
             expected = (expected + m) % 97
             j += 1
         i = j
+    answer = parts[oi + 1 :]
+    if expected is None or not answer:
+        return False
+    for word in answer:
+        if word != f"n{expected}":
+            ok = False
+        expected = (expected + m) % 97
     return ok
+
+
+def _difficulty_shift_count(doc: str) -> float:
+    return float(doc.split().count("SEG"))
 
 
 def _gen_regime(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[str]]:
     seg_len = int(dials["segment_len"])
     n_regimes = int(dials["n_regimes"])
+    answer_len = int(dials["answer_len"])
     splits: dict[str, list[str]] = {}
     for split, n in _split_sizes(size).items():
         rng = _rng("regime", split, seed)
         regimes = n_regimes * 2 if split == "test" else n_regimes  # held-out SHIFT COUNT
         docs = []
         for _ in range(n):
+            params = [(rng.randint(2, 9), rng.randint(0, 96)) for _ in range(regimes)]
             chunks = []
-            for _ in range(regimes):
-                m, a = rng.randint(2, 9), rng.randint(0, 96)
+            for m, a in params:
                 vals = [(a + k * m) % 97 for k in range(seg_len)]
                 chunks.append(f"SEG m{m} a{a} " + " ".join(f"n{v}" for v in vals))
-            docs.append("TASK regime " + " ".join(chunks))
+            # the answer continues the final regime: the eval harness prompts
+            # through OUT and scores these values by exact match, so a model
+            # must carry the newest (m, a) rule across every preceding shift
+            m, a = params[-1]
+            answer = [(a + k * m) % 97 for k in range(seg_len, seg_len + answer_len)]
+            docs.append("TASK regime " + " ".join(chunks) + " OUT " + " ".join(f"n{v}" for v in answer))
         splits[split] = docs
     return splits
 
@@ -1045,12 +1069,22 @@ TASKS: dict[str, TaskSpec] = {
             target_mechanisms=("ordinal", "hoss"),
             hypothesis="distribution flips reward principled restart/anneal; recovery time is the signal",
             dials=(
-                Dial("segment_len", 24, "tokens per regime segment", 8, 128),
-                Dial("n_regimes", 4, "regimes per document (train; test uses 2x)", 2, 16),
+                # v2 defaults fit the CPU coordinate: a held-out document (2x
+                # regimes) is ~190 GPT-2 tokens, about 3x a sequence_len-64
+                # training window and inside the 10x rotary cache down to
+                # sequence_len 32; v1's 24 x 4 held-out documents (~445 tokens)
+                # were 7x the window and exceeded the cache at sequence_len 32
+                # (the evaluator skips such prompts rather than scoring them)
+                Dial("segment_len", 12, "values per regime segment", 8, 128),
+                Dial("n_regimes", 3, "regimes per document (train; test uses 2x)", 2, 16),
+                Dial("answer_len", 4, "scored values continuing the final regime after OUT", 1, 16),
             ),
             generate=_gen_regime,
             checker=check_regime,
-            delimiters=("SEG",),
+            delimiters=("SEG", "OUT"),
+            answer_marker="OUT",
+            difficulty_axis="shift_count",
+            difficulty=_difficulty_shift_count,
         ),
         TaskSpec(
             name="needle",

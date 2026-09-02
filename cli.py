@@ -10266,6 +10266,9 @@ _HYP_MECHANISMS = frozenset(
     }
 )
 _HYP_METRIC_SCHEMAS = ("evaltasks", "train", "certify", "bench", "chargeprobe")
+# evaltasks metric families that only exist for tasks with an answer marker
+# (LM-only tasks report perplexity alone)
+_HYP_ANSWER_METRIC_FAMILIES = frozenset({"exact_match", "answer_prior", "length_slope", "curve"})
 _HYP_COMPARATORS = (">=", "<=")
 _HYP_THRESHOLD_KINDS = ("absolute_delta", "ratio")
 
@@ -10334,6 +10337,17 @@ def _validate_hypothesis_prediction(pred: Any, where: str, errors: list[str], wa
                     errors.append(
                         f"{where}: evaltasks metric_path names unknown task {segs[1]!r} "
                         f"(known: {', '.join(sorted(_diag_tasks))})"
+                    )
+                elif _diag_tasks[segs[1]].answer_marker is None and any(
+                    seg in _HYP_ANSWER_METRIC_FAMILIES for seg in segs[2:]
+                ):
+                    # an answer-dependent metric on an LM-only task is null on
+                    # every evaluation, so the prediction could never be
+                    # adjudicated as registered (the regime task shipped this
+                    # way for two hypotheses, bead w76r)
+                    errors.append(
+                        f"{where}: evaltasks metric_path {dotted!r} scores answers but task {segs[1]!r} "
+                        "has no answer marker (LM-only: only tasks.<task>.perplexity.* exists)"
                     )
         elif schema == "certify":
             segs = dotted.split(".")

@@ -27,6 +27,7 @@ from nanochat.diagnostics_data import (
     TASKS,
     apply_embedding_perturbation,
     check_hier,
+    check_regime,
     generate_task,
     generate_texts,
 )
@@ -176,6 +177,11 @@ def test_heldout_difficulty_actually_held_out():
     assert train_max <= 4, f"group: train word length {train_max} exceeds the dial"
     assert test_min >= 8, f"group: held-out lengths must start at 2x the dial (got {test_min})"
 
+    splits = TASKS["regime"].generate(120, 9, TASKS["regime"].resolve_dials({"n_regimes": 3}))
+    train_max = max(d.split().count("SEG") for d in splits["train"])
+    test_min = min(d.split().count("SEG") for d in splits["test"])
+    assert train_max == 3 and test_min == 6, f"regime: held-out must double the shift count ({train_max}, {test_min})"
+
 
 # ---------------------------------------------------------------------------
 # dial monotonicity (brute-force statistics; the profiler cross-check is 77l.3)
@@ -302,6 +308,23 @@ def test_hier_checker_missing_and_wrong_paths():
     assert check_hier("TASK hier TREE ( a ( b v1 ) ) PATH a b OUT v9") is False  # wrong value
 
 
+def test_regime_checker_scores_the_continuation():
+    """regime v2 (bead w76r): the OUT block must continue the LAST regime's
+    rule; a checker that accepted any continuation could not fail."""
+    doc = "TASK regime SEG m2 a1 n1 n3 n5 SEG m5 a90 n90 n95 n3 OUT n8 n13"
+    assert check_regime(doc) is True
+    assert check_regime("TASK regime SEG m2 a1 n1 n3 n5 SEG m5 a90 n90 n95 n3 OUT n8 n14") is False  # wrong value
+    assert check_regime("TASK regime SEG m2 a1 n1 n3 n5 SEG m5 a90 n90 n95 n3 OUT n5 n7") is False  # first regime
+    assert check_regime("TASK regime SEG m2 a1 n1 n4 n5 SEG m5 a90 n90 n95 n3 OUT n8 n13") is False  # broken stream
+    assert check_regime("TASK regime SEG m2 a1 n1 n3 n5 OUT") is False  # empty answer
+    assert check_regime("TASK regime SEG m2 a1 n1 n3 n5") is None  # v1 stream without an answer block
+    spec = TASKS["regime"]
+    for doc in spec.generate(30, 4, spec.resolve_dials({"answer_len": 3}))["test"]:
+        split = spec.split_prompt(doc)
+        assert split is not None and len(split[1].split()) == 3
+        assert doc.split().count("SEG") == 6  # held-out doubles the default shift count (3)
+
+
 def test_group_task_covers_solvable_and_nonsolvable():
     docs = generate_texts("group", size=200, seed=13)
     groups = {d.split()[3] for d in docs}
@@ -400,7 +423,7 @@ def test_generated_parquet_loads_through_existing_dataloader(monkeypatch, tmp_pa
         inputs, targets, state = next(loader)
         assert inputs.shape == (2, 64) and targets.shape == (2, 64)
         assert int(inputs.max()) < 50257
-        assert set(state) == {"pq_idx", "rg_idx"}
+        assert set(state) == {"pq_idx", "rg_idx", "epoch"}  # epoch: per-epoch shuffle state (2026-09-02)
 
 
 # ---------------------------------------------------------------------------

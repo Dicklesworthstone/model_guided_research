@@ -180,7 +180,9 @@ def test_split_prompt_uses_last_marker_occurrence():
     prompt, expected = split
     assert prompt.endswith(" OUT") and expected == "c1"
     assert spec.split_prompt("TASK bag no marker here") is None
-    assert TASKS["regime"].split_prompt("TASK regime SEG m2 a1 n1 n3") is None  # LM-only
+    assert TASKS["placebo"].split_prompt("TASK placebo x y z") is None  # LM-only
+    regime = TASKS["regime"].split_prompt("TASK regime SEG m2 a1 n1 n3 OUT n5 n7")
+    assert regime == ("TASK regime SEG m2 a1 n1 n3 OUT", "n5 n7")  # v2: the answer continues the final regime
 
 
 def test_difficulty_axes_hand_computed():
@@ -190,6 +192,7 @@ def test_difficulty_axes_hand_computed():
     assert _difficulty("rel", "TASK rel FACT a r b ; FACT b r c QUERY a r r OUT c") == 2.0
     assert _difficulty("arith", "TASK arith CMP 1.00e-05 2.00e+03 OUT lt") == 5.0
     assert _difficulty("bag", "TASK bag INS a ; INS b ; QUERY a OUT c1") == 2.0
+    assert _difficulty("regime", "TASK regime SEG m2 a1 n1 n3 SEG m3 a0 n0 n3 OUT n6 n9") == 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -429,8 +432,12 @@ def test_e2e_lm_only_task_and_sampled_mode(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     summary = json.loads((tmp_path / "artifacts" / "evals" / "tasks" / "eval-mixed" / "summary.json").read_text())
     regime = summary["tasks"]["regime"]
-    assert regime["exact_match"] is None and regime["curve"] is None  # LM-only: perplexity is the metric
-    assert regime["answer_prior"] is None  # no answers -> no constant-answer floor
+    # regime v2 scores the OUT continuation: the registered metric for the
+    # ordinal/hoss regime hypotheses (exact_match.greedy.held_out.mean) exists
+    assert set(regime["exact_match"]) == {"greedy", "sampled"}
+    assert regime["exact_match"]["greedy"]["held_out"]["mean"] is not None
+    assert regime["answer_prior"]["held_out"]["mean"] is not None  # constant-answer floor recorded
+    assert regime["difficulty_axis"] == "shift_count" and regime["curve"] is not None
     assert regime["perplexity"]["in_range"] > 0
     dyck = summary["tasks"]["dyck"]
     assert set(dyck["exact_match"]) == {"greedy", "sampled"}

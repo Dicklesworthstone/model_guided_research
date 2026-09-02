@@ -147,6 +147,9 @@ def test_prediction_contract_enforced():
         ({**bad_pred, "metric_path": "nope"}, "metric_path"),
         ({**bad_pred, "metric_path": "magic:tasks.dyck.x"}, "schema 'magic'"),
         ({**bad_pred, "metric_path": "evaltasks:tasks.notatask.x"}, "unknown task"),
+        # an answer metric on an LM-only task is null on every eval (the regime
+        # hypotheses were registered that way for 9 days, bead w76r)
+        ({**bad_pred, "metric_path": "evaltasks:tasks.placebo.exact_match.greedy.held_out.mean"}, "no answer marker"),
         ({**bad_pred, "metric_path": "evaltasks:foo.dyck.x"}, "must start with 'tasks."),
         ({**bad_pred, "comparator": "=="}, "comparator"),
         ({**bad_pred, "threshold_kind": "percent"}, "threshold_kind"),

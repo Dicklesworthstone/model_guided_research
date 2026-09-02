@@ -32,8 +32,8 @@
     "train_content_sha256": "db0909056dc910cfbe1e7b711cda8e22404ba1fd8b6be55684392aba20837ab3"
   },
   "regime": {
-    "generator_version": 1,
-    "train_content_sha256": "f0d9a2c162499fe8080dbf7ac8db54546621cedffb124b50d84624eddc2f6a1a"
+    "generator_version": 2,
+    "train_content_sha256": "21663112bbb614820fd2ba61267c1ab4506cdd7f03530eded6430bc09f7ece47"
   },
   "rel": {
     "generator_version": 1,
