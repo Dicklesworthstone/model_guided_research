@@ -1362,12 +1362,16 @@ def test_depth_telemetry_lands_in_metrics_and_summary(monkeypatch, tmp_path):
     steps = [rec for rec in steps if rec.get("type") == "step"]
     assert len(steps) == 3
     for rec in steps:
+        # step 0 legitimately reports zero block gradients: lm_head is
+        # zero-initialized, so nothing flows back into the blocks until the
+        # first optimizer step has moved it
         assert len(rec["grad_norm_by_block"]) == 2 and all(
-            math.isfinite(x) and x > 0 for x in rec["grad_norm_by_block"]
+            math.isfinite(x) and x >= 0 for x in rec["grad_norm_by_block"]
         )
         assert len(rec["activation_rms_by_block"]) == 2 and all(
             math.isfinite(x) and x > 0 for x in rec["activation_rms_by_block"]
         )
+    assert all(x > 0 for x in steps[-1]["grad_norm_by_block"]), "block gradients must be live after the first step"
     telemetry = summary["results"]["depth_telemetry"]
     assert telemetry["logged_steps"] == 3
     assert telemetry["grad_norm_spike_ratio"] >= 1.0
