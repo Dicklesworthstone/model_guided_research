@@ -460,11 +460,19 @@ class GaugeAttentionBlock(nn.Module):
             "time_scale", nn.initializers.constant(math.log(math.expm1(self.cfg.band_time_init))), (H,)
         )
 
-        # SPD channel gate
-        self.spd_gate = nn.Dense(self.cfg.d_model, name="spd_gate")
+        # SPD channel gate and nilpotent channel band. Both start at the
+        # IDENTITY (zero kernel -> exp(0) = 1 and W_nilp = 0), the same
+        # each-block-starts-as-identity convention as the zero-init c_proj in
+        # nanochat. With default random kernels the two exponentials
+        # compounded into an activation growth of ~8e7x through ONE block at
+        # init, so the demo's "structured blocks control norm" comparison was
+        # measured against a pathological baseline.
+        self.spd_gate = nn.Dense(self.cfg.d_model, name="spd_gate", kernel_init=nn.initializers.zeros)
 
         # Nilpotent channel band
-        self.nilp_band = nn.Dense(self.cfg.bn_channel * self.cfg.d_model, name="nilp_band")
+        self.nilp_band = nn.Dense(
+            self.cfg.bn_channel * self.cfg.d_model, name="nilp_band", kernel_init=nn.initializers.zeros
+        )
 
         # MLP
         self.mlp_hidden_layer = nn.Dense(self.cfg.mlp_hidden, name="mlp_hidden")
@@ -704,7 +712,9 @@ class GaugeAttentionBlock(nn.Module):
 
         # SPD channel gate (exp(S))
         gate = self.spd_gate(x_in)  # (B,N,D)
-        scale = jnp.exp(jnp.clip(gate, -8.0, 8.0))
+        # exp(+-2) bounds the per-channel gain to [0.14, 7.4]; the earlier +-8
+        # clip allowed a 3000x gain per channel per block.
+        scale = jnp.exp(jnp.clip(gate, -2.0, 2.0))
         y = y * scale
 
         # Nilpotent channel exponential (upper band)

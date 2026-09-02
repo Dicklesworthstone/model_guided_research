@@ -12040,6 +12040,7 @@ def status(
     for h in entries:
         st_h = str(h.get("status", "?"))
         ledger_counts[st_h] = ledger_counts.get(st_h, 0) + 1
+    evidence_missing = _status_evidence_missing(entries, repo_root)
 
     payload: dict[str, Any] = {
         "kind": "status",
@@ -12054,6 +12055,7 @@ def status(
         },
         "certificates": certs,
         "ledger": ledger_counts,
+        "evidence_missing": evidence_missing,
         "engine_today": {
             "would_rule": sum(1 for a in adjudicable if a["state"] == "would_rule"),
             "blocked": sum(1 for a in adjudicable if a["state"] == "blocked"),
@@ -12102,6 +12104,22 @@ def status(
             ct.add_row(c["mechanism"], c["cert_age"], mark)
         console.print(ct)
 
+    if evidence_missing:
+        et = Table(
+            title="ledger verdicts whose cited evidence is NOT in the checkout (unreproducible)",
+            box=box.SIMPLE_HEAVY,
+        )
+        for col in ("hypothesis", "status", "missing / cited", "first missing path"):
+            et.add_column(col)
+        for row in evidence_missing:
+            et.add_row(
+                row["id"],
+                f"[red]{row['status']}[/red]",
+                f"{len(row['missing'])} / {row['cited']}",
+                row["missing"][0],
+            )
+        console.print(et)
+
     eng = payload["engine_today"]
     reasons = ", ".join(f"{k}: {n}" for k, n in sorted(blocked_reasons.items())) or "-"
     console.print(
@@ -12109,12 +12127,44 @@ def status(
             f"ledger: {' · '.join(f'{k}: {n}' for k, n in sorted(ledger_counts.items()))}\n"
             f"evidence pool: {payload['evidence_pool']['indexed']} artifacts "
             f"({payload['evidence_pool']['tainted']} tainted)\n"
+            f"verdicts with missing evidence: [bold]{len(evidence_missing)}[/bold]\n"
             f"engine today: would rule on [bold]{eng['would_rule']}[/bold], "
             f"refuses [bold]{eng['blocked']}[/bold] ({reasons})"
             + ("\nindex written → artifacts/index.json" if write_index else ""),
             border_style="blue",
         )
     )
+
+
+def _status_evidence_missing(entries: list[dict[str, Any]], repo_root: Path) -> list[dict[str, Any]]:
+    """Ledger verdicts whose cited artifacts are absent from the checkout.
+
+    Every verdict_history entry records the artifact paths it ruled on. With
+    artifacts/ gitignored and force-added piecemeal, a verdict can outlive
+    its evidence - the ledger then asserts a SUPPORTED/REFUTED result that
+    nobody can re-derive from the repository. Reported per hypothesis for
+    the LATEST history entry (the one the status line rests on)."""
+    out: list[dict[str, Any]] = []
+    for h in entries:
+        history = h.get("verdict_history")
+        if not isinstance(history, list) or not history:
+            continue
+        last = history[-1]
+        if not isinstance(last, dict):
+            continue
+        cited = [str(p) for p in (last.get("artifacts") or []) if isinstance(p, str)]
+        missing = [p for p in cited if not (repo_root / p).exists()]
+        if missing:
+            out.append(
+                {
+                    "id": str(h.get("id")),
+                    "status": str(h.get("status", "?")),
+                    "verdict": str(last.get("verdict", "?")),
+                    "cited": len(cited),
+                    "missing": missing,
+                }
+            )
+    return out
 
 
 @app.command("adjudicate")

@@ -1894,3 +1894,36 @@ def test_coord_curve_single_arm_hypothesis_adjudicates(tmp_path):
     )
     v = cli._adjudicate_hypothesis(hyp, cli._adj_collect_artifacts([tmp_path]))
     assert v["verdict"] == "supported", v
+
+
+def test_status_flags_verdicts_whose_cited_artifacts_are_absent(tmp_path):
+    """A ledger verdict must be re-derivable from the checkout. artifacts/ is
+    gitignored and force-added piecemeal, so a SUPPORTED entry can cite paths
+    nobody committed (six entries did on 2026-09-01); mgr status now lists
+    them instead of letting the status line stand unsupported."""
+    (tmp_path / "artifacts" / "bench" / "kept").mkdir(parents=True)
+    (tmp_path / "artifacts" / "bench" / "kept" / "summary.json").write_text("{}")
+    entries = [
+        {
+            "id": "hyp-kept",
+            "status": "supported",
+            "verdict_history": [{"verdict": "supported", "artifacts": ["artifacts/bench/kept/summary.json"]}],
+        },
+        {
+            "id": "hyp-lost",
+            "status": "supported",
+            "verdict_history": [
+                {"verdict": "inconclusive", "artifacts": ["artifacts/bench/kept/summary.json"]},
+                {
+                    "verdict": "supported",
+                    "artifacts": ["artifacts/bench/kept/summary.json", "artifacts/bench/gone/summary.json"],
+                },
+            ],
+        },
+        {"id": "hyp-open", "status": "open"},
+        {"id": "hyp-malformed", "status": "blocked", "verdict_history": ["not a dict"]},
+    ]
+    flagged = cli._status_evidence_missing(entries, tmp_path)
+    assert [row["id"] for row in flagged] == ["hyp-lost"]
+    assert flagged[0]["missing"] == ["artifacts/bench/gone/summary.json"]
+    assert flagged[0]["cited"] == 2 and flagged[0]["verdict"] == "supported"
