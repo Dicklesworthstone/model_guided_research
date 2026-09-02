@@ -8128,7 +8128,14 @@ def scorecard(
         int,
         typer.Option(help="Cells below this planned optimizer-step count are smoke-only and quarantined", min=1),
     ] = 10,
-    timeout_s: Annotated[float, typer.Option(help="Timeout per train or eval subprocess", min=1.0)] = 3600.0,
+    timeout_s: Annotated[
+        float,
+        typer.Option(
+            help="Timeout per train or eval subprocess. Generous by default: on a shared host a one-minute cell can "
+            "take hours, and a timed-out cell is retried from its last checkpoint only on the next resume.",
+            min=1.0,
+        ),
+    ] = 36000.0,
     artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
     governance_registry: Annotated[
         Path | None,
@@ -8437,6 +8444,30 @@ def scorecard(
                     val_batches=val_batches,
                     checkpoint_interval=checkpoint_interval,
                 )
+                # A retried cell resumes from its last committed checkpoint
+                # instead of retraining from scratch: a per-cell timeout on a
+                # loaded host (rc 124 with checkpoints on disk) is the common
+                # failure, and exact resume reproduces the uninterrupted run.
+                cell["resumed_from_step"] = None
+                retry_checkpoints = _scorecard_train_dir(suite_dir, cell) / "checkpoints"
+                if int(cell["attempts"]) > 1 and retry_checkpoints.is_dir():
+                    try:
+                        from nanochat.checkpoint_manager import find_last_step
+
+                        resume_step = int(find_last_step(str(retry_checkpoints)))
+                    except (FileNotFoundError, ValueError):
+                        resume_step = None
+                    if resume_step is not None:
+                        cell["resumed_from_step"] = resume_step
+                        train_cmd = [
+                            *train_cmd,
+                            "--resume-from",
+                            str(retry_checkpoints),
+                            "--resume-step",
+                            str(resume_step),
+                            "--resume-data-mode",
+                            "exact",
+                        ]
                 cell_t0 = time.perf_counter()
                 returncode, stdout, stderr = _scorecard_launch(train_cmd, timeout_s=timeout_s)
                 train_out = logs_dir / f"{cell['id']}.train.stdout.txt"

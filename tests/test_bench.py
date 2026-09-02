@@ -1413,3 +1413,75 @@ def test_bench_variant_arm_trains_with_its_flag_and_keeps_its_own_aggregate(tmp_
     summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
     assert set(summary["aggregates"]) >= {"standard", "standard@control_zero_attention=true"}
     assert summary["aggregates"]["standard@control_zero_attention=true"]["metric_mean"] == pytest.approx(3.4)
+
+
+def test_scorecard_retry_resumes_from_the_cells_last_checkpoint(tmp_path, monkeypatch):
+    """A cell that failed (a timeout on a loaded host leaves checkpoints but no
+    summary) is retried on resume with --resume-from its last committed
+    checkpoint, not retrained from scratch."""
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    artifacts = tmp_path / "artifacts"
+    suite_dir = artifacts / "scorecards" / "retry-resume"
+    train_cmds: list[list[str]] = []
+
+    def failing_launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            train_cmds.append(list(cmd))
+            # leave a committed checkpoint behind, like a killed trainer would
+            topic = cmd[cmd.index("--artifacts-topic") + 1]
+            run_id = cmd[cmd.index("--run-id") + 1]
+            ckpt = artifacts / "scorecards" / "retry-resume" / topic / run_id / "checkpoints"
+            ckpt.mkdir(parents=True, exist_ok=True)
+            (ckpt / "meta_000007.json").write_text("{}", encoding="utf-8")
+            return 124, "", "timeout"
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    argv = [
+        "scorecard",
+        "--mechanism",
+        "standard",
+        "--task",
+        "arith",
+        "--seeds",
+        "1",
+        "--budget",
+        "1e6",
+        "--dataset-size",
+        "6",
+        "--examples",
+        "1",
+        "--artifacts-dir",
+        str(artifacts),
+        "--run-id",
+        "retry-resume",
+    ]
+    monkeypatch.setattr(cli, "_scorecard_launch", failing_launch)
+    first = runner.invoke(cli.app, [*argv, "--fresh"])
+    assert first.exit_code != 0
+    manifest = json.loads((suite_dir / "manifest.json").read_text())
+    assert all(cell["status"] == "failed" and cell["returncode"] == 124 for cell in manifest["cells"])
+    assert all("--resume-from" not in cmd for cmd in train_cmds), "a first attempt never resumes"
+
+    resumed_cmds: list[list[str]] = []
+
+    def resuming_launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            resumed_cmds.append(list(cmd))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", resuming_launch)
+    second = runner.invoke(cli.app, argv)
+    assert second.exit_code == 0, second.output
+    assert resumed_cmds and all("--resume-from" in cmd for cmd in resumed_cmds)
+    for cmd in resumed_cmds:
+        assert cmd[cmd.index("--resume-step") + 1] == "7"
+        assert cmd[cmd.index("--resume-data-mode") + 1] == "exact"
+        assert cmd[cmd.index("--resume-from") + 1].endswith("/checkpoints")
+    manifest = json.loads((suite_dir / "manifest.json").read_text())
+    assert all(cell["resumed_from_step"] == 7 and cell["attempts"] == 2 for cell in manifest["cells"])

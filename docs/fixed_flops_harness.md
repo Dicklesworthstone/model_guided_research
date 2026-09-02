@@ -129,6 +129,15 @@ shown able to find one. The harness carries both controls:
   so the registry's `baseline.variant` / `candidate_variant` selectors tell
   the two arms apart.
 
+### Timeouts and retries on a shared host
+
+`mgr scorecard --timeout-s` is a per-cell limit (default ten hours). On a
+host shared with other jobs a cell that takes a minute alone can take hours;
+a cell killed by the limit is marked failed with its checkpoints on disk, and
+the next resume of the suite (same command without `--fresh`) retries it with
+`--resume-from` its last committed checkpoint in exact-replay mode rather than
+retraining from scratch. The manifest records `resumed_from_step` per cell.
+
 ### Per-arm variants
 
 `mgr scorecard --mechanism MECHANISM@key=value[,key=value]` trains the same
