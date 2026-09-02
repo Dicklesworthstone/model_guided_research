@@ -1377,3 +1377,9 @@ def test_depth_telemetry_lands_in_metrics_and_summary(monkeypatch, tmp_path):
     assert telemetry["grad_norm_spike_ratio"] >= 1.0
     assert len(telemetry["grad_norm_by_block_final"]) == 2 and len(telemetry["activation_rms_by_block_mean"]) == 2
     assert telemetry["grad_norm_depth_ratio"] > 0 and telemetry["activation_rms_depth_ratio"] > 0
+    # balance = min(r, 1/r): one-sided "bounded across depth" observable
+    for key in ("grad_norm", "activation_rms"):
+        r = telemetry[f"{key}_depth_ratio"]
+        assert telemetry[f"{key}_depth_balance"] == pytest.approx(min(r, 1.0 / r))
+        assert 0.0 < telemetry[f"{key}_depth_balance"] <= 1.0
+    assert summary["dataset"]["task"] is None  # FineWeb-shaped fixture corpus carries no task manifest

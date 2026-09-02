@@ -316,7 +316,29 @@ hypotheses:
       kind: model
       provenance: "reversible doc '## 2) Gradient propagation in volume-preserving, reversible stacks'"
     date_registered: "2026-06-10"
-    prediction: null
+    prediction:
+      metric_path: "train:results.depth_telemetry.grad_norm_depth_balance"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.20
+      baseline:
+        mechanism: standard
+        equal_flops: true
+        variant: {n_layer: 8}
+      candidate_variant: {n_layer: 8}
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-02, the day the depth telemetry landed: nanochat.train
+        records results.depth_telemetry.grad_norm_by_block_final (per-block gradient norm
+        at the last logged step) and grad_norm_depth_balance = min(r, 1/r) with r =
+        last-block / first-block norm, so 1.0 is perfectly balanced and 0 is explosion or
+        vanishing in either direction (the registry's comparators are one-sided). Claim as
+        registered: at depth 8 (the n_layer selector pins both arms; shallow runs never
+        count) the reversible stack keeps block gradient norms at least 0.20 more balanced
+        than standard attention at equal FLOPs, three seeds per arm within one budget
+        cohort; the task is not part of the claim. Asymmetric knowledge disclosed: no
+        depth-8 telemetry exists at registration; the only reading seen so far is a
+        d64/L2 standard run on regime with balance 0.84.
     operationalization_note: >-
       needs per-step gradient-norm telemetry (D2 / bead rz8.2 metrics.jsonl);
       register the depth-sweep comparison once that stream exists.
@@ -543,7 +565,29 @@ hypotheses:
       kind: model
       provenance: "octonion doc '## 4) Attention as a constrained product' (norm preservation without separate normalization)"
     date_registered: "2026-06-10"
-    prediction: null
+    prediction:
+      metric_path: "train:results.depth_telemetry.activation_rms_depth_balance"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.10
+      baseline:
+        mechanism: standard
+        equal_flops: true
+        variant: {n_layer: 8}
+      candidate_variant: {n_layer: 8}
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-02 with the depth telemetry that landed the same day:
+        activation_rms_depth_balance = min(r, 1/r) with r = last-block / first-block
+        residual-stream RMS at the last logged step (1.0 balanced, 0 blow-up or collapse).
+        FOR-ALL over octonion and quaternion: each keeps activation magnitudes at least 0.10
+        more balanced across depth 8 than standard attention at equal FLOPs, three seeds per
+        arm in one budget cohort. LIMITATION disclosed: the statement's "without explicit
+        normalization layers" cannot be tested as written because GPTConfig refuses
+        disable_block_norms for any non-standard attention (the z4xx falsification arm), so
+        both arms train with their default block norms and the claim is the weaker
+        architectural one - the rotor mixing's exact norm preservation should still show as
+        a more balanced depth profile. No depth-8 telemetry exists at registration.
     operationalization_note: >-
       needs per-layer activation-magnitude telemetry (D2 / rz8.2); the
       mathematical half is already certified (rotor_norm_preservation in
@@ -691,7 +735,33 @@ hypotheses:
       provenance: "README 'Why It Matters' (gauge: provable stability, prevents gradient pathologies); Expected Performance table row 'Gauge -> Stability'"
     date_registered: "2026-06-10"
     theorem_refs: [thm-curvature-gauge-invariance]
-    prediction: null
+    prediction:
+      metric_path: "train:results.depth_telemetry.grad_norm_spike_ratio"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.5
+      baseline:
+        mechanism: standard
+        equal_flops: true
+        variant: {n_layer: 8}
+      candidate_variant: {n_layer: 8}
+      min_seeds: 3
+      validity:
+        baseline_floor: 2.0
+        floor_source: >-
+          grad_norm_spike_ratio is max/median of the total gradient norm over the run
+          (1.0 = perfectly flat). The statement presupposes that standard attention shows
+          gradient pathologies at this depth; a standard arm whose spike ratio is below
+          2.0 has none to remove, so a refutation there is vacuous and the engine's
+          baseline-floor gate downgrades it to inconclusive.
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-02 with the depth telemetry that landed the same day. Claim
+        as registered: at depth 8 (n_layer selector on both arms) the gauge arm's gradient
+        spike ratio is at most half the standard arm's at equal FLOPs, three seeds per arm
+        in one budget cohort. "Ill-conditioned inputs" is read as whatever corpus the
+        cohort trained on; the validity floor above is what makes the premise checkable
+        rather than assumed. No depth-8 telemetry exists at registration (a d64/L2 standard
+        regime run showed spike ratio 3.97, so spikes do occur at this width).
     operationalization_note: >-
       needs per-step grad-norm telemetry (D2 / rz8.2). NOTE: gauge was
       untrainable until 1fr6 (zero-init residual deadlock, fixed 2026-06-10);

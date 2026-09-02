@@ -11512,7 +11512,11 @@ def _adj_variant_matches(art: dict[str, Any], variant: dict[str, Any] | None) ->
         bench_meta = data.get("meta")
         sources = [res if isinstance(res, dict) else {}, bench_meta if isinstance(bench_meta, dict) else {}]
     else:
-        sources = [data.get("hparams") or {}, data.get("config") or {}]
+        # train artifacts: hparams, then model config, then the dataset block
+        # (dataset.task names the diagnostics task the run trained on, so a
+        # selector like {task: hier} keeps hierarchy runs apart from placebo
+        # runs of the same mechanism - hyp-hyperbolic-curvature-readout)
+        sources = [data.get("hparams") or {}, data.get("config") or {}, data.get("dataset") or {}]
     for key, wanted in variant.items():
         found = None
         for src in sources:

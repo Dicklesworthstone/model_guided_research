@@ -556,6 +556,25 @@ def _install_activation_rms_hooks(model: torch.nn.Module) -> dict[str, Any] | No
     return state
 
 
+def _dataset_task(data_dir: str | None) -> str | None:
+    """The diagnostics task a corpus directory was generated for (its
+    manifest.json names it), recorded as dataset.task in the summary so the
+    verdict engine's variant selectors can tell a hierarchy run from a placebo
+    run of the same mechanism; None for FineWeb or any corpus without a task
+    manifest."""
+    if data_dir is None:
+        return None
+    manifest = Path(data_dir) / "manifest.json"
+    if not manifest.is_file():
+        return None
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    task = payload.get("task") if isinstance(payload, dict) else None
+    return str(task) if isinstance(task, str) and task else None
+
+
 def _summarize_depth_telemetry(
     grad_norms: list[float],
     block_grad_norms: list[list[float]],
@@ -587,7 +606,13 @@ def _summarize_depth_telemetry(
         final = list(rows[-1])
         out[f"{key}_by_block_final"] = final
         out[f"{key}_by_block_mean"] = [st.fmean(col) for col in zip(*rows, strict=True)]
-        out[f"{key}_depth_ratio"] = (final[-1] / final[0]) if len(final) > 1 and final[0] > 0 else None
+        ratio = (final[-1] / final[0]) if len(final) > 1 and final[0] > 0 else None
+        out[f"{key}_depth_ratio"] = ratio
+        # balance folds explosion and vanishing onto one side: min(r, 1/r) is
+        # 1.0 when the last block matches the first and falls toward 0 either
+        # way, so a one-sided registry comparator can state "stays bounded
+        # across depth" (hyp-reversible-gradient-stability and friends)
+        out[f"{key}_depth_balance"] = min(ratio, 1.0 / ratio) if ratio is not None and ratio > 0 else None
 
     _by_block(block_grad_norms, "grad_norm")
     _by_block(activation_rms, "activation_rms")
@@ -2339,6 +2364,7 @@ def train(args) -> None:
         "config": config_artifact,
         "dataset": {
             "data_dir": data_dir,  # null = the FineWeb cache
+            "task": _dataset_task(data_dir),  # diagnostics task name (arm selector), null for FineWeb
             "parquet_files_count": len(parquet_files),
             "parquet_files": parquet_files,
         },

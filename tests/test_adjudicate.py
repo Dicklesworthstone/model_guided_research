@@ -350,6 +350,49 @@ def test_train_schema_arm_detection(tmp_path):
     assert v["arms"]["ordinal"]["n_candidate"] == 3
 
 
+def test_train_variant_selector_resolves_dataset_task(tmp_path):
+    """A {task: ...} selector reads the summary's dataset.task, so hierarchy
+    runs and placebo runs of the same mechanism never pool as one arm
+    (hyp-hyperbolic-curvature-readout's blocker)."""
+
+    def train_artifact(name, *, task, frac):
+        run = tmp_path / name
+        run.mkdir(parents=True)
+        (run / "summary.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "mgr.telemetry.v1",
+                    "config": {"attention_type": "hyperbolic", "optimizer_type": "adamw"},
+                    "hparams": {"scheduler_type": "none"},
+                    "dataset": {"data_dir": f"/corpora/{task}", "task": task},
+                    "budget": {"max_steps": 100, "target_flops": 1e9, "flops_per_step_est": 1e7},
+                    "provenance": CLEAN_PROV,
+                    "results": {"hyperbolic_frac_heads_hier": frac},
+                }
+            )
+        )
+
+    for i, frac in enumerate([0.50, 0.55, 0.60]):
+        train_artifact(f"hier{i}", task="hier", frac=frac)
+    for i, frac in enumerate([0.00, 0.05, 0.02]):
+        train_artifact(f"placebo{i}", task="placebo", frac=frac)
+    spec = {
+        "metric_path": "train:results.hyperbolic_frac_heads_hier",
+        "comparator": ">=",
+        "threshold_kind": "absolute_delta",
+        "threshold": 0.25,
+        "baseline": None,
+        "candidate_variant": {"task": "hier"},
+    }
+    v = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["hyperbolic"]), _index(tmp_path))
+    assert v["verdict"] == "supported", v
+    assert v["arms"]["hyperbolic"]["n_candidate"] == 3  # the three placebo runs are not in the arm
+    pooled = cli._adjudicate_hypothesis(
+        _hyp({**spec, "candidate_variant": None}, mechanisms=["hyperbolic"]), _index(tmp_path)
+    )
+    assert pooled["arms"]["hyperbolic"]["n_candidate"] == 6  # without the selector they would pool
+
+
 # ---------------------------------------------------------------------------
 # ci-v2: floor validity gate, budget cohorts, lineage dedupe
 
