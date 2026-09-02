@@ -1,0 +1,28 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 10254                                                
+  attention_type    standard                                                    
+  n_params          131,072                                                     
+  training budget   {"max_steps": 10255, "target_flops": 2000000000000.0,       
+                    "flops_per_step_est": 195035136, "flops_consumed_est":      
+                    2000085319680}                                              
+  lineage           {"run_id": "seed_2", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-rot
+  -tasktok-shuf-b2-rung/runs/budget_0/rot/standard/seed_2/checkpoints @ 10254   
+                                                                                
+                                                          slope                 
+                                                       held-out                 
+  task   EM in-range   EM held-out   ppl in/held         [CI95]   axis          
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  rot          0.090         0.035       2.2/6.6        -0.0122   rotation_co…  
+                                                   [-0.0297,+0…                 
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-rot
+-tasktok-shuf-b2-rung/evals/tasks/eval-b0-rot-standard-s2
