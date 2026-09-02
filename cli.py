@@ -7941,6 +7941,16 @@ def scorecard(
         ),
     ] = None,
     seeds: Annotated[int, typer.Option(help="Number of independent training seeds", min=1)] = 3,
+    seed_offset: Annotated[
+        int,
+        typer.Option(
+            "--seed-offset",
+            min=0,
+            help="First training seed (seeds are seed_offset .. seed_offset+seeds-1). A comparison at a coordinate "
+            "chosen by a rung-finding probe must use seeds the probe did not: evidence that selected the "
+            "coordinate cannot also test at it.",
+        ),
+    ] = 0,
     eval_seeds: Annotated[str, typer.Option(help="Comma-separated repeated-measure eval seeds per checkpoint")] = "0",
     examples: Annotated[int, typer.Option(help="Evaluation examples per split per eval seed", min=1)] = 24,
     dataset_size: Annotated[int, typer.Option(help="Generated documents per task corpus", min=3)] = 2000,
@@ -8090,7 +8100,7 @@ def scorecard(
         )
         if preflight_governance_error is not None:
             raise typer.BadParameter(f"live governance registry failed validation: {preflight_governance_error}")
-    training_seeds = list(range(seeds))
+    training_seeds = list(range(seed_offset, seed_offset + seeds))
     flops_per_step = _scorecard_flops_per_step(
         mechanisms,
         batch_size=batch_size,

@@ -1190,3 +1190,56 @@ def test_quickstart_failure_names_the_stage_and_reproduction(tmp_path):
 def test_quickstart_rejects_a_single_mechanism(tmp_path):
     result = runner.invoke(cli.app, ["quickstart", "--out", str(tmp_path / "qs"), "--mechanisms", "standard"])
     assert result.exit_code == 2 and "at least two" in result.output
+
+
+def test_scorecard_seed_offset_trains_on_seeds_the_probe_never_used(tmp_path, monkeypatch):
+    """A comparison at a coordinate chosen by a rung-finding probe must not reuse
+    the probe's training seeds (evidence that selected the coordinate cannot
+    also test at it): --seed-offset shifts the training seeds, and the seeds
+    that reach nanochat.train are the shifted ones."""
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    launched_seeds: list[int] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            launched_seeds.append(int(cmd[cmd.index("--seed") + 1]))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        [
+            "scorecard",
+            "--mechanism",
+            "standard",
+            "--task",
+            "copyops",
+            "--seeds",
+            "3",
+            "--seed-offset",
+            "3",
+            "--budget",
+            "1e6",
+            "--dataset-size",
+            "6",
+            "--examples",
+            "1",
+            "--artifacts-dir",
+            str(artifacts),
+            "--run-id",
+            "seed-offset",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "seed-offset" / "manifest.json").read_text())
+    assert manifest["config"]["training_seeds"] == [3, 4, 5]
+    assert sorted({cell["seed"] for cell in manifest["cells"]}) == [3, 4, 5]
+    assert all(cell["id"].endswith(("-s3", "-s4", "-s5")) for cell in manifest["cells"])
+    assert sorted(launched_seeds) == [3, 3, 4, 4, 5, 5]  # copyops + placebo, three seeds each
