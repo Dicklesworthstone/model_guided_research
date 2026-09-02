@@ -1,0 +1,26 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "c9a96e06f7a33b96c681a9d2894f63bbbb1caee0b57b7afef34a90b5d6b2d66c",
+    "train_000.parquet": "9943546b6545aebe6ff6247b241f8ce300a2089414de2ddd9e3878005cec6182",
+    "val_000.parquet": "9c0127b85e162a8499c81d52e0081b1e11890a018cbe24935fe6770ffe4be089"
+  },
+  "dials": {
+    "structure": 0.0
+  },
+  "generator_version": 1,
+  "hypothesis": "NO mechanism should win here; a significant gap is a harness fairness bug or a pure-optimization effect and blocks publication of affected comparisons until root-caused",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "0076eafac9d326fd8dff451650627b158f46a59f24e3f80045443fb257d70c16",
+    "train_000.parquet": "f337af159629c861b15cfac6858d849310d1b048dedeaa62359c974a2f779b2f",
+    "val_000.parquet": "a80124afebc917d989a2106897d733a2270b41dd30a835f9c12b5d37e3bc1ab4"
+  },
+  "size": 40000,
+  "split_sizes": {
+    "test": 4000,
+    "train": 32000,
+    "val": 4000
+  },
+  "target_mechanisms": [],
+  "task": "placebo"
+}
