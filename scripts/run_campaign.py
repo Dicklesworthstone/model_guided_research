@@ -159,9 +159,10 @@ def main() -> int:
     parser.add_argument(
         "--val-interval",
         type=int,
-        default=0,
-        help="validation cadence in steps (0 = off, the historical campaign default; "
-        "REQUIRED >0 for any registration on train:results.val_ce_final)",
+        default=250,
+        help="validation cadence in steps; 0 = off. On by default (bead pni6): campaigns launched with val off "
+        "recorded results.val_ce_final = null, which made every registration on that metric (hyp-ordinal-*, "
+        "hyp-symplectic-nonorm-*) unfulfillable by the evidence they produced",
     )
     parser.add_argument("--val-batches", type=int, default=16, help="batches per validation evaluation")
     parser.add_argument("--workers", type=int, default=8)
