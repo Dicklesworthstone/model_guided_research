@@ -9545,7 +9545,7 @@ def coord_check(
     console.print(table)
     if skipped:
         console.print(
-            f"[dim]skipped no-op arms: {', '.join(skipped)} (nsa changes only the tropical E[max] constants "
+            f"[dim]skipped no-op arms: {', '.join(skipped)} (nsa changes only the tropical E\\[max] constants "
             "and the quaternion/octonion rotor LR rule)[/dim]"
         )
     run_dir.mkdir(parents=True, exist_ok=True)
