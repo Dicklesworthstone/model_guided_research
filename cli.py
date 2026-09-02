@@ -6216,7 +6216,7 @@ def _run_doctor_checks() -> list[dict[str, Any]]:
 
     # Tokenizer
     try:
-        from nanochat.tokenizer import get_tokenizer
+        from nanochat.tokenizer import checkpoint_tokenizer
 
         tok = get_tokenizer()
         n_vocab = tok.get_vocab_size() if hasattr(tok, "get_vocab_size") else "?"
@@ -6701,7 +6701,7 @@ def eval_tasks(
     import torch
 
     from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
-    from nanochat.tokenizer import get_tokenizer
+    from nanochat.tokenizer import checkpoint_tokenizer
 
     device = torch.device(device_str)
     if task and all_tasks:
@@ -6756,7 +6756,7 @@ def eval_tasks(
     model, ckpt_meta, resolved_step = _load_eval_checkpoint(
         checkpoint, step, device, model_overrides=model_overrides or None
     )
-    tok = get_tokenizer()
+    tok = checkpoint_tokenizer(str(checkpoint), ckpt_meta)
     n_params = sum(p.numel() for p in model.parameters())
 
     # Run header: every eval artifact is self-identifying (D1 meta lineage).
@@ -8398,7 +8398,7 @@ def probe_charges(
 
     from nanochat.braid_attention_torch import BraidCausalSelfAttention, one_particle_transfer
     from nanochat.diagnostics_data import TASKS
-    from nanochat.tokenizer import get_tokenizer
+    from nanochat.tokenizer import checkpoint_tokenizer
 
     device = torch.device(device_str)
     if task not in TASKS:
@@ -8418,6 +8418,7 @@ def probe_charges(
         dial_overrides[key.strip()] = float(value)
 
     model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device)
+    tok = checkpoint_tokenizer(str(checkpoint), ckpt_meta)
     model_cfg = ckpt_meta.get("model_config", {})
     if model_cfg.get("attention_type") != "braid" or model_cfg.get("braid_crossing_law") != "rmatrix":
         console.print(
@@ -8426,7 +8427,6 @@ def probe_charges(
             f"braid_crossing_law={model_cfg.get('braid_crossing_law')!r}).[/bold red]"
         )
         raise typer.Exit(code=2)
-    tok = get_tokenizer()
 
     braid_layers = [m for m in model.modules() if isinstance(m, BraidCausalSelfAttention)]
     final_attn = braid_layers[-1]
@@ -9250,7 +9250,7 @@ def sample(
     """
     import torch
 
-    from nanochat.tokenizer import get_tokenizer
+    from nanochat.tokenizer import checkpoint_tokenizer
 
     ckpts: list[Path] = ([checkpoint] if checkpoint else []) + list(compare or [])
     if not ckpts:
@@ -9261,12 +9261,15 @@ def sample(
         raise typer.Exit(code=2)
 
     device = torch.device(device_str)
-    tok = get_tokenizer()
-    prompt_ids = tok.encode(prompt)
     results: list[dict[str, Any]] = []
 
     for ckpt_dir in ckpts:
         model, ckpt_meta, resolved_step = _load_eval_checkpoint(ckpt_dir, step, device)
+        # Each checkpoint decodes with the tokenizer it was trained with (a
+        # task-scoped vocabulary travels inside the checkpoint dir); the prompt
+        # TEXT is shared across the comparison, its ids need not be.
+        tok = checkpoint_tokenizer(str(ckpt_dir), ckpt_meta)
+        prompt_ids = tok.encode(prompt)
         attn = str((ckpt_meta.get("model_config") or {}).get("attention_type", "?"))
         n_params = sum(p.numel() for p in model.parameters())
         if device.type == "cuda":
@@ -12634,6 +12637,14 @@ def quickstart(
     max_steps: Annotated[
         int | None, typer.Option("--max-steps", min=1, help="Fixed training step count (skips the budget calibration).")
     ] = None,
+    tokenizer: Annotated[
+        str,
+        typer.Option(
+            "--tokenizer",
+            help="task = a byte-level BPE trained on the showcase corpus (default: the 50k GPT-2 vocabulary would "
+            "eat ~97%% of this tiny model's FLOPs); gpt2 = the shared tokenizer.",
+        ),
+    ] = "task",
 ):
     """The five-minute showcase: two mathematically different transformers
     train on a generated task, their invariants are certified, they generate
@@ -12654,6 +12665,8 @@ def quickstart(
         raise typer.BadParameter(f"unknown attention type(s) {unknown}; choose from {list(SUPPORTED_ATTENTION_TYPES)}")
     if data is not None and not data.is_dir():
         raise typer.BadParameter(f"--data must be an existing directory, got {data}")
+    if tokenizer not in ("gpt2", "task"):
+        raise typer.BadParameter(f"--tokenizer must be gpt2 or task, got {tokenizer!r}")
     dev = device
     if dev == "auto":
         import torch
@@ -12738,7 +12751,7 @@ def quickstart(
             + ["--n-kv-head", "2" if mech == "reversible" else "4"]
             + ["--checkpoint-interval", str(steps), "--seed", str(seed), "--log-interval", "1"]
             + ["--artifacts-dir", str(run_dir / "artifacts"), "--artifacts-kind", kind]
-            + ["--artifacts-topic", "nanochat", "--run-id", run_id]
+            + ["--artifacts-topic", "nanochat", "--run-id", run_id, "--tokenizer", tokenizer]
             + ([flag] if flag else [])
         )
 

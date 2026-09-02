@@ -36,6 +36,13 @@ from nanochat.checkpoint_manager import (
 from nanochat.common import autodetect_device_type, compute_cleanup, compute_init, print0
 from nanochat.dataloader import tokenizing_distributed_data_loader, tokenizing_distributed_data_loader_with_state
 from nanochat.dataset import ensure_min_parquet_files, list_parquet_files
+from nanochat.tokenizer import (
+    TASK_TOKENIZER_DIRNAME,
+    TASK_TOKENIZER_MIN_VOCAB,
+    HuggingFaceTokenizer,
+    padded_vocab_size,
+    train_task_tokenizer,
+)
 from nanochat.gpt import (
     GPT,
     SUPPORTED_ATTENTION_TYPES,
@@ -62,6 +69,7 @@ console = Console()
 _SUPPORTED_MODEL_TYPES = ("gpt", "synaptic")
 _SUPPORTED_OPTIMIZER_TYPES = ("adamw", "muon", "hoss")
 _SUPPORTED_SCHEDULER_TYPES = ("none", "ordinal")
+_SUPPORTED_TOKENIZERS = ("gpt2", "task")
 _SUPPORTED_ATTENTION_TYPES = SUPPORTED_ATTENTION_TYPES
 
 # FFN structure variants (bead 8gk.8): the semiring axis extended to the MLP.
@@ -600,6 +608,20 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
             "--scheduler-type ordinal (the ordinal scheduler drives the LR); use one or the other"
         )
 
+    tokenizer_kind = str(getattr(args, "tokenizer", "gpt2"))
+    if tokenizer_kind not in _SUPPORTED_TOKENIZERS:
+        errors.append(f"--tokenizer must be one of: {', '.join(_SUPPORTED_TOKENIZERS)}")
+    elif tokenizer_kind == "task":
+        if getattr(args, "data_dir", None) is None:
+            errors.append("--tokenizer task trains its vocabulary from --data-dir; pass a parquet corpus directory")
+        if int(getattr(args, "vocab_size", GPTConfig().vocab_size)) != GPTConfig().vocab_size:
+            errors.append("--vocab-size is derived from the task tokenizer; do not pass it with --tokenizer task")
+        if int(getattr(args, "tokenizer_vocab_size", 0)) < TASK_TOKENIZER_MIN_VOCAB:
+            errors.append(
+                f"--tokenizer-vocab-size must be >= {TASK_TOKENIZER_MIN_VOCAB} "
+                f"(256 byte symbols + special tokens), got {getattr(args, 'tokenizer_vocab_size', None)}"
+            )
+
     attention_type = str(getattr(args, "attention_type", "standard"))
     if attention_type not in _SUPPORTED_ATTENTION_TYPES:
         errors.append(f"--attention-type must be one of: {', '.join(_SUPPORTED_ATTENTION_TYPES)}")
@@ -795,10 +817,38 @@ def train(args) -> None:
     # uninterrupted run consumes the checkpoint step's real reading.
     semiring_resume_coverage: float | None = None
 
+    # Task-scoped tokenizer (nanochat.tokenizer.train_task_tokenizer explains
+    # why): trained from the corpus's train split BEFORE the config is built,
+    # because the embedding table is sized from it. BPE training is
+    # deterministic for a fixed corpus, so a resumed run rebuilds the identical
+    # vocabulary and the resume config check still guards it.
+    task_tokenizer: HuggingFaceTokenizer | None = None
+    tokenizer_meta: dict[str, Any] = {"kind": "gpt2"}
+    if str(getattr(args, "tokenizer", "gpt2")) == "task":
+        corpus_files = list_parquet_files(str(args.data_dir))
+        train_files = corpus_files[:-1] if len(corpus_files) > 1 else corpus_files  # last file is the val split
+        task_tokenizer = train_task_tokenizer(train_files, int(args.tokenizer_vocab_size))
+        tokenizer_meta = {
+            "kind": "task",
+            "dir": TASK_TOKENIZER_DIRNAME,
+            "vocab_size": int(task_tokenizer.get_vocab_size()),
+            "requested_vocab_size": int(args.tokenizer_vocab_size),
+        }
+        print0(
+            f"[tokenizer] task-scoped BPE: {task_tokenizer.get_vocab_size()} tokens "
+            f"(requested {args.tokenizer_vocab_size}) from {len(train_files)} train shard(s); "
+            f"embedding table {padded_vocab_size(task_tokenizer.get_vocab_size())}"
+        )
+
     attention_schedule: list[str] = []
     attention_label = model_type
     if model_type == "gpt":
         config = GPTConfig()
+        config.vocab_size = (
+            padded_vocab_size(task_tokenizer.get_vocab_size())
+            if task_tokenizer is not None
+            else int(getattr(args, "vocab_size", GPTConfig().vocab_size))
+        )
         config.n_layer = args.n_layer
         config.n_head = args.n_head
         config.n_kv_head = args.n_kv_head
@@ -977,7 +1027,11 @@ def train(args) -> None:
             syn_cfg = SynapticConfig()
 
         config = GPTSynapticConfig()
-        config.vocab_size = int(getattr(args, "vocab_size", GPTConfig().vocab_size))
+        config.vocab_size = (
+            padded_vocab_size(task_tokenizer.get_vocab_size())
+            if task_tokenizer is not None
+            else int(getattr(args, "vocab_size", GPTConfig().vocab_size))
+        )
         config.n_layer = args.n_layer
         config.n_head = args.n_head
         config.n_kv_head = args.n_kv_head
@@ -1171,6 +1225,7 @@ def train(args) -> None:
         resume_state_dict=loader_resume_state,
         data_dir=data_dir,
         prefetch_chunks=int(getattr(args, "dataloader_prefetch", 0)),
+        tokenizer=task_tokenizer,
     )
     if resume_meta is not None and resume_data_mode == "exact" and batches_consumed > 0:
         # Exact resume: replay the deterministic stream from the beginning and
@@ -1294,6 +1349,10 @@ def train(args) -> None:
     run_dir = Path(args.artifacts_dir) / artifacts_kind / artifacts_topic / resolved_run_id
 
     checkpoint_dir = str(getattr(args, "checkpoint_dir", None) or (run_dir / "checkpoints"))
+    if task_tokenizer is not None and ddp_rank == 0:
+        # The vocabulary travels with the weights: every checkpoint consumer
+        # loads it through nanochat.tokenizer.checkpoint_tokenizer.
+        task_tokenizer.save(str(Path(checkpoint_dir) / TASK_TOKENIZER_DIRNAME))
     checkpoint_saved_steps: list[int] = []
 
     # Per-step metrics stream (bead rz8.2): rank-0 only; the header (with the
@@ -1404,6 +1463,7 @@ def train(args) -> None:
             "step": step,
             "model_config": asdict(config),
             "model_type": model_type,
+            "tokenizer": tokenizer_meta,
             "optimizer_type": str(args.optimizer_type),
             "scheduler_type": str(args.scheduler_type),
             "seed": int(args.seed),
@@ -2071,6 +2131,7 @@ def train(args) -> None:
             "weight_decay": float(weight_decay),
             "grad_clip_norm": (float(grad_clip_norm) if grad_clip_norm is not None else None),
             "model_type": model_type,
+            "tokenizer": tokenizer_meta,
             "scheduler_type": str(args.scheduler_type),  # arm detection for the G2 verdict engine
             # arm detection for semiring_beta variants (rgyl): the RAW spec -
             # "linear:1:32" vs "32.0" vs null (exact tropical) - so annealed,
@@ -2480,7 +2541,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--vocab-size",
         type=int,
         default=GPTConfig().vocab_size,
-        help="Vocabulary size (model embedding table size).",
+        help="Vocabulary size (model embedding table size) for the GPT-2 tokenizer; derived automatically with --tokenizer task.",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        type=str,
+        default="gpt2",
+        choices=list(_SUPPORTED_TOKENIZERS),
+        help="gpt2 = the shared 50,257-token tokenizer; task = train a byte-level BPE on --data-dir's train split "
+        "and save it inside the checkpoint dir (at small width the GPT-2 vocabulary is ~97%% of every FLOP).",
+    )
+    parser.add_argument(
+        "--tokenizer-vocab-size",
+        type=int,
+        default=512,
+        help=f"Target vocabulary for --tokenizer task (>= {TASK_TOKENIZER_MIN_VOCAB}); the embedding table is padded to a multiple of 64.",
     )
     parser.add_argument(
         "--synaptic-config",

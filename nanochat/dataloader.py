@@ -19,6 +19,7 @@ def tokenizing_distributed_data_loader_with_state(
     resume_state_dict=None,
     data_dir=None,
     prefetch_chunks=0,
+    tokenizer=None,
 ):
     """
     Stream pretraining text from parquet files, tokenize, yield training batches.
@@ -87,8 +88,8 @@ def tokenizing_distributed_data_loader_with_state(
 
     # Now emit batches of tokens.
     needed_tokens = B * T + 1  # +1 is because we also need the target at the last token
-    # get the tokenizer and the bos token
-    tokenizer = get_tokenizer()
+    # the tokenizer (a task-scoped one when the trainer built one) and its bos token
+    tokenizer = tokenizer if tokenizer is not None else get_tokenizer()
     bos_token = tokenizer.get_bos_token_id()
     # scratch buffer holds the tokens for one iteration
     token_buffer = deque()  # we stream tokens on the right and pop from the left

@@ -1232,3 +1232,63 @@ def test_activation_checkpointing_preserves_trajectories_bitwise(monkeypatch, tm
     assert runs["full"] == runs["none"], "full ckpt changed the trajectory"
     assert runs["every-k"] == runs["none"], "every-k ckpt changed the trajectory"
     assert summary is not None and summary["config"]["activation_ckpt"] == "every-k"
+
+
+def test_task_tokenizer_travels_with_the_checkpoint(tmp_path):
+    """`--tokenizer task` trains a byte-level BPE on the corpus, sizes the
+    embedding table from it, saves it INSIDE the checkpoint dir, and every
+    checkpoint consumer loads it back through checkpoint_tokenizer. With the
+    GPT-2 tokenizer this tiny model would spend ~97% of its FLOPs on the
+    50k-row vocabulary matrices."""
+    from nanochat import train as train_mod
+    from nanochat.diagnostics_data import generate_task
+    from nanochat.tokenizer import TASK_TOKENIZER_DIRNAME, checkpoint_tokenizer, padded_vocab_size
+
+    generate_task("arith", out_dir=tmp_path / "corpus", size=60, seed=3)
+    data_dir = tmp_path / "corpus" / "arith"
+    args = train_mod.build_parser().parse_args(
+        [
+            "--device", "cpu", "--max-steps", "2", "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2",
+            "--n-embd", "32", "--sequence-len", "32", "--batch-size", "2", "--warmup-steps", "0",
+            "--checkpoint-interval", "2", "--data-dir", str(data_dir), "--tokenizer", "task",
+            "--tokenizer-vocab-size", "320", "--artifacts-dir", str(tmp_path / "artifacts"), "--run-id", "tok",
+        ]
+    )  # fmt: skip
+    train_mod.train(args)
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "tok"
+    ckpt_dir = run_dir / "checkpoints"
+    assert (ckpt_dir / TASK_TOKENIZER_DIRNAME / "tokenizer.json").exists()
+    meta = json.loads((ckpt_dir / "meta_000001.json").read_text())
+    tok_meta = meta["tokenizer"]
+    assert tok_meta["kind"] == "task" and tok_meta["dir"] == TASK_TOKENIZER_DIRNAME
+    assert 256 < tok_meta["vocab_size"] <= 320
+    assert meta["model_config"]["vocab_size"] == padded_vocab_size(tok_meta["vocab_size"]) < 1000
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["tokenizer"]["kind"] == "task"
+
+    tok = checkpoint_tokenizer(ckpt_dir, meta)
+    doc = "TASK arith CMP 1.00e-02 2.00e+03 OUT"
+    ids = tok.encode(doc)
+    assert max(ids) < meta["model_config"]["vocab_size"]
+    assert tok.decode(ids) == doc
+
+    # the sampler must decode with the checkpoint's tokenizer, not GPT-2 ids
+    # (which would index past this 320-row embedding table)
+    result = runner.invoke(
+        cli.app,
+        ["sample", "--checkpoint", str(ckpt_dir), "--prompt", doc, "--max-tokens", "3", "--device", "cpu", "--json"],
+    )
+    assert result.exit_code == 0, result.output[-2000:]
+
+
+def test_task_tokenizer_flag_validation(tmp_path):
+    from nanochat import train as train_mod
+
+    for extra, match in (
+        (["--tokenizer", "task"], "data-dir"),
+        (["--tokenizer", "task", "--data-dir", str(tmp_path), "--vocab-size", "1024"], "vocab-size"),
+        (["--tokenizer", "task", "--data-dir", str(tmp_path), "--tokenizer-vocab-size", "100"], "tokenizer-vocab-size"),
+    ):
+        args = train_mod.build_parser().parse_args(["--device", "cpu", "--max-steps", "1", *extra])
+        with pytest.raises(ValueError, match=match):
+            train_mod.train(args)

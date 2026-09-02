@@ -477,9 +477,67 @@ class RustBPETokenizer:
 # nanochat-specific convenience functions
 
 
-def get_tokenizer() -> HuggingFaceTokenizer:
+TASK_TOKENIZER_MIN_VOCAB = 300  # 256 byte-level symbols + the special tokens + room for merges
+TASK_TOKENIZER_DIRNAME = "tokenizer"  # saved INSIDE the checkpoint directory so it travels with the weights
+
+
+def padded_vocab_size(n_tokens: int, multiple: int = 64) -> int:
+    """Embedding-table size for a tokenizer with ``n_tokens`` ids: rounded up to
+    a multiple of 64 (the GPT-2 50257 -> 50304 convention)."""
+    return ((int(n_tokens) + multiple - 1) // multiple) * multiple
+
+
+def train_task_tokenizer(parquet_paths: Iterable[str | os.PathLike[str]], vocab_size: int) -> HuggingFaceTokenizer:
+    """Train a byte-level BPE tokenizer on the ``text`` column of parquet files.
+
+    Why this exists: at small width the 50,304-token GPT-2 vocabulary dominates
+    a fixed-FLOPs budget - at d=64 the embedding and lm_head matrices are 97%
+    of every FLOP (GPT.estimate_flops: 19.96M FLOPs/token vs 0.69M with a
+    128-token vocabulary) - so a fixed-FLOPs comparison on a generated task
+    measured the tokenizer, not the mechanism. A task-scoped vocabulary of a
+    few hundred tokens gives the transformer body ~25x more tokens per FLOP.
+    Byte fallback keeps every input encodable; the special tokens are the
+    project's usual ones, so ``get_bos_token_id`` works unchanged.
+    """
+    import pyarrow.parquet as pq
+
+    paths = [str(p) for p in parquet_paths]
+    if not paths:
+        raise ValueError("train_task_tokenizer needs at least one parquet file")
+    if int(vocab_size) < TASK_TOKENIZER_MIN_VOCAB:
+        raise ValueError(
+            f"vocab_size must be >= {TASK_TOKENIZER_MIN_VOCAB} (256 byte symbols + special tokens), got {vocab_size}"
+        )
+
+    def texts() -> Iterable[str]:
+        for path in paths:
+            for text in pq.read_table(path, columns=["text"]).column("text").to_pylist():
+                if text:
+                    yield str(text)
+
+    return HuggingFaceTokenizer.train_from_iterator(texts(), int(vocab_size))
+
+
+def checkpoint_tokenizer(checkpoint_dir: str | os.PathLike[str], meta: dict | None) -> HuggingFaceTokenizer:
+    """The tokenizer a checkpoint was trained with: the task-scoped one saved
+    beside the weights when the checkpoint meta says so, else the shared GPT-2
+    tokenizer. Every consumer of a checkpoint (eval-tasks, sample, probes,
+    build_model) must go through this, or a task-trained model is fed GPT-2
+    ids beyond its embedding table."""
+    tok_meta = (meta or {}).get("tokenizer")
+    if isinstance(tok_meta, dict) and tok_meta.get("kind") == "task":
+        return get_tokenizer(os.path.join(str(checkpoint_dir), str(tok_meta.get("dir", TASK_TOKENIZER_DIRNAME))))
+    return get_tokenizer()
+
+
+def get_tokenizer(tokenizer_dir: str | os.PathLike[str] | None = None) -> HuggingFaceTokenizer:
+    """The project tokenizer. With ``tokenizer_dir`` the tokenizer saved there
+    (a task-scoped one that travels with its checkpoint); otherwise the shared
+    GPT-2 tokenizer under the nanochat base dir, downloaded once."""
     from nanochat.common import get_base_dir
 
+    if tokenizer_dir is not None:
+        return HuggingFaceTokenizer.from_directory(str(tokenizer_dir))
     base_dir = get_base_dir()
     tokenizer_dir = os.path.join(base_dir, "tokenizer")
     try:

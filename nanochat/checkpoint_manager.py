@@ -37,7 +37,7 @@ import re
 
 from nanochat.common import get_base_dir, setup_default_logging
 from nanochat.gpt import GPT, GPTConfig
-from nanochat.tokenizer import get_tokenizer
+from nanochat.tokenizer import checkpoint_tokenizer
 from nanochat.torch_imports import torch
 
 # Set up logging
@@ -261,11 +261,16 @@ def build_model(checkpoint_dir, step, device, phase):
         model.train(mode=False)
     else:
         model.train(mode=True)
-    # Load the Tokenizer
-    tokenizer = get_tokenizer()
-    # Sanity check: compatibility between model and tokenizer
-    if tokenizer.get_vocab_size() != model_config_kwargs["vocab_size"]:
-        raise ValueError("Tokenizer vocab size does not match model config")
+    # Load the tokenizer the checkpoint was trained with (task-scoped ones
+    # live inside the checkpoint dir; see nanochat.tokenizer.checkpoint_tokenizer)
+    tokenizer = checkpoint_tokenizer(checkpoint_dir, meta_data)
+    # Sanity check: every token id must be a valid row of the embedding table
+    # (the table is padded to a multiple of 64, so > is the violation, not !=)
+    if tokenizer.get_vocab_size() > model_config_kwargs["vocab_size"]:
+        raise ValueError(
+            f"Tokenizer has {tokenizer.get_vocab_size()} ids but the model's embedding table holds "
+            f"{model_config_kwargs['vocab_size']}"
+        )
     return model, tokenizer, meta_data
 
 
