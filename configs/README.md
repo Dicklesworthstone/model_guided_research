@@ -43,8 +43,9 @@ Baked into every template; see `docs/config_parity.md` (wyf) and
 3. **Match `(B, T, ddp_world_size)`** — `tokens_per_step = B·T·world_size`.
    There is no loader-level grad-accum, so `--batch-size` *is* the micro-batch.
 4. **LR schedule caveat** — `--scheduler-type none` (default) holds LR flat
-   (no warmdown). Within-repo A/B is fair; absolute `val_ce` is not comparable
-   to `bio_inspired` until bead `kj8s` (`--lr-warmdown-ratio`) lands.
+   unless `--lr-warmdown-ratio` is passed (bead `kj8s` landed). Within-repo
+   A/B is fair either way; for an absolute `val_ce` comparable to
+   `bio_inspired`, pass the same warmdown ratio bio uses.
 5. **Use ≥2 dataset shards** (`train.py:865`) or `--data-dir <corpus>`.
 
 ## The FLOPs lesson (why annotate at all)

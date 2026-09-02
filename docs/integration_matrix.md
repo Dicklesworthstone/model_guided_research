@@ -49,6 +49,14 @@ attention (`gpt.py:366`).
 | 9 | Knot / Braid | `knot_theoretic_programs_and_braid_based_attention.py` | `braid_attention_torch.py` | `--attention-type braid` | ✅ soft; ⚠️ discrete/YBE partial |
 | 10 | Surreal / Transseries | `surreal_numbers_transseries_and_scaling.py` | `surreal_torch.py` (+ `parameterization.py`) | `--attention-type surreal` | ✅ attn; ⏳ NSA width param (lab.1) |
 | 11 | Nonstandard / Hyperreal | `nonstandard_analysis_and_hyperreal_training.py` | `hoss_opt_torch.py` | `--optimizer-type hoss` | ✅ integrated (optimizer, not attn) |
+| 12 | Clifford Cl(3,0) | `clifford_algebra_and_geometric_attention.py` | `clifford_attention_torch.py` | `--attention-type clifford` | ✅ integrated (`head_dim % 8 == 0`) |
+| 13 | Hyperbolic / Lorentz | `hyperbolic_geometry_and_negative_curvature_attention.py` | `hyperbolic_attention_torch.py` | `--attention-type hyperbolic` | ✅ integrated (per-head learnable curvature) |
+
+Knob caveat: not every mechanism hyperparameter has a CLI flag. Ultrametric
+exposes `--ultrametric-mode`, `--ultrametric-hard-digits`, and
+`--ultrametric-K`; `ultrametric_alpha`, `ultrametric_p`, and
+`ultrametric_digits_k` are GPTConfig fields only (set them from Python or a
+config file).
 
 (Plus the CA initializer — `--ca-init-rule rule30|rule116` — an init-time
 experiment that applies to any mechanism; `GPTConfig.ca_init_*`, `gpt.py:163`.)

@@ -22,7 +22,7 @@
     "_grad_clip_comment": "ours defaults to OFF; bio_inspired defaults to 1.0. Set 1.0 on every arm of a comparison (HOSS ignores it by design, train.py:1393).",
     "compile": "match across arms (omit on all, or pass --compile on all). bio_inspired always compiles dynamic=False; ours is opt-in. compile changes throughput, not loss.",
     "tokens_per_step_rule": "tokens_per_step = batch_size * sequence_len * ddp_world_size; keep identical across arms",
-    "lr_schedule_caveat": "scheduler_type=none holds LR flat (no warmdown). Within-repo A/B is fair; absolute val_ce is not comparable to bio until bead kj8s (--lr-warmdown-ratio) lands."
+    "lr_schedule_caveat": "scheduler_type=none holds LR flat unless --lr-warmdown-ratio is passed (bead kj8s landed). Within-repo A/B is fair either way; for absolute val_ce comparable to bio, pass the same warmdown ratio bio uses."
   },
   "flops_reference": {
     "steps_formula": "est_steps = round(target_flops / (flops_per_token * batch_size * sequence_len * ddp_world_size))",

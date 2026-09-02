@@ -47,7 +47,7 @@ robustness wins, independent of the GPU work.
 | 10 | Divergence guard (spike/NaN → skip/backoff/rollback) | `divergence_guard.py:1-209` | missing | med / no | port; wire `guard.check(loss,model,step)` into loop |
 | 11 | Pre-run VRAM estimator | `scripts/scale_memory.py` | missing | med / no | port; extend for the 11 attention footprints |
 | 12 | Structured JSONL telemetry + provenance | `run_logging.py` | partial (`report.py`) | med / no | align metrics.jsonl schema; stamp git/torch/cfg |
-| 13 | SynapticFlexAttention (O(N) score_mod) | `flex_synaptic.py:1-102` | missing | high / GPU+torch≥2.5 | port (see `gpu_flex_diff.md`) |
+| 13 | SynapticFlexAttention (O(N) score_mod) | `flex_synaptic.py:1-102` | landed: `nanochat/synaptic.py` (`SynapticFlexAttention`, `use_flex_attention`), certs under `artifacts/certs/synaptic_flex_attention/` (2025-12-18) | high / GPU+torch≥2.5 | done |
 | 14 | GQA scaling experiments | `gpt.py:32-33,69-96` | partial (`gpt.py` GQA) | low / GPU-opt | scaling-law sweep with `n_kv_head<n_head` |
 
 ## Notes on prioritization

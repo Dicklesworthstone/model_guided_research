@@ -244,8 +244,9 @@ Before evidence, an independent cohort was frozen with `search_seed=23`,
 calibration, and the same dataset fingerprint
 `9ed31c98e6496157db24586949e5d15c9e46a5c6253d24dfc817b486fb8dc415`.
 Each candidate received exactly one two-batch endpoint validation: step 22 for
-the 1e9-FLOP proxy and step 87 for the 4e9-FLOP reference. The complete local
-artifacts are retained at `/data/tmp/mgr-cma-valce-OBhfM6`.
+the 1e9-FLOP proxy and step 87 for the 4e9-FLOP reference. The local
+artifacts lived at `/data/tmp/mgr-cma-valce-OBhfM6`; that directory no longer
+exists (2026-09-01 check), so the tables in this section are the only record.
 
 | candidate | proxy val CE | reference val CE | proxy seconds | reference seconds |
 |---:|---:|---:|---:|---:|
@@ -286,8 +287,9 @@ the bead froze fresh `search_seed=31` and `eval_seed=777`, six candidates, the
 same model/data coordinates and fingerprint, and a one-shot stopping rule.
 The proxy used `1.35e9` FLOPs (30 steps, `val_interval=30`); the reference used
 `4e9` FLOPs (87 steps, `val_interval=87`). Each candidate again received one
-two-batch endpoint validation. Complete local artifacts are retained at
-`/data/tmp/mgr-cma-valce-mid-PbsdRT`.
+two-batch endpoint validation. The local artifacts lived at
+`/data/tmp/mgr-cma-valce-mid-PbsdRT`; that directory no longer exists
+(2026-09-01 check), so this section is the only record.
 
 | candidate | proxy val CE | reference val CE | proxy seconds | reference seconds |
 |---:|---:|---:|---:|---:|

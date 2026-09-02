@@ -79,9 +79,10 @@ audits, both of which shift absolute CE so **match them before comparing
 numbers**:
 
 - bio defaults `grad_clip=1.0` (we now pass `--grad-clip-norm 1.0` to match);
-- bio applies a **WSD warmdown** while ours holds LR flat (bead `kj8s`) — at 20
-  steps with `warmdown_ratio=0.2` the tails differ, so expect a small offset
-  until `kj8s` lands.
+- bio applies a **WSD warmdown**; ours holds LR flat unless
+  `--lr-warmdown-ratio` is passed (bead `kj8s` landed). Pass
+  `--lr-warmdown-ratio 0.2` to match bio's tail at 20 steps; without it expect
+  a small offset in the final CE.
 
 ## Scope / caveats
 

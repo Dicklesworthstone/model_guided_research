@@ -23,7 +23,8 @@ scripts/ci_lite.sh --help
 | 1. Lint | `uv run ruff check <files>` | config in `pyproject.toml` (`[tool.ruff.lint]`) |
 | 2. Format | `uv run ruff format --check <files>` | non-mutating; fails if a file would reformat |
 | 3. Bugs | `ubs --diff` / `--staged` / `.` | skipped with a note if `ubs` not installed (see `docs/ubs_usage.md`) |
-| 4. Tests | fast subset, or `uv run pytest -q` under `--all` | exits non-zero on first failure |
+| 4. Types | `uv run ty check` (repository-wide, exact extras set) | the same gate CI's typecheck job runs; `--typecheck` runs only this stage |
+| 5. Tests | fast subset, or `uv run pytest -q` under `--all` | exits non-zero on first failure |
 
 The **fast test subset** is the deterministic, CPU-cheap core-contract gate
 (~1 min, 73 tests): attention goldens, `estimate_flops`, parameterization, and

@@ -55,13 +55,16 @@ training loop.
 
 ## Recommendations
 
-### 1. (high-leverage, follow-up) Async prefetch / double-buffering
-Overlap the `encode()` refill with compute: run the document→token tokenization
-in a daemon thread that fills the buffer ahead of the consumer, so the training
-step never blocks on a refill. The stall is fully hidden iff
+### 1. Async prefetch / double-buffering — delivered (`--dataloader-prefetch N`, bead atkp)
+Overlap the `encode()` refill with compute: a daemon thread runs the
+document→token tokenization ahead of the consumer into a bounded queue, so the
+training step never blocks on a refill. The stall is fully hidden iff
 `encode_time < buffer_drain_time = (tokens_per_encode / (B·T)) · step_time`.
 At GPU step times this is the difference between a fed and a periodically
-starved device. Filed as a follow-up bead.
+starved device. Default `0` keeps the synchronous loop; the yielded batches
+and the recorded resume positions are identical in both modes
+(`tests/test_dataloader_prefetch.py`). A producer error is raised at the
+consumer, and the thread exits when the loader generator is closed.
 
 ### 2. `tokenizer_threads` — set to physical cores **on GPU**
 Irrelevant at steady state (amortized), but it parallelizes each refill burst,
