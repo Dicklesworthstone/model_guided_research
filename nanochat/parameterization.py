@@ -371,6 +371,7 @@ def coord_check_artifact(
         meta["run_id"] = run_id
     if git:
         meta["git"] = git
+    slope = result.get("loglog_slope")
     return {
         "schema_version": COORD_CURVES_SCHEMA,
         "kind": "coord-curve",
@@ -381,7 +382,10 @@ def coord_check_artifact(
         "results": {
             "widths": result.get("widths", []),
             "activation_rms": result.get("activation_rms", {}),
-            "loglog_slope": result.get("loglog_slope"),
+            "loglog_slope": slope,
+            # flatness is a two-sided claim (|slope| <= 0.05): the registry's
+            # comparators are one-sided, so the magnitude is its own observable
+            "abs_loglog_slope": abs(float(slope)) if slope is not None else None,
             "r_squared": result.get("r_squared"),
             "concentration_class": result.get("concentration_class"),
             "parameterization": parameterization,

@@ -874,6 +874,11 @@ python -m nanochat.train \
     --run-id flops_single_cpu \
     --device cpu
 
+# Coordinate check: activation RMS vs width at init (no training), one
+# mgr.bench.coord_curves.v1 artifact per (mechanism, parameterization arm, seed);
+# the evidence for hyp-coordcheck-clt-flat and hyp-tropical-evt-miscoupling.
+mgr coord-check -m standard -m reversible -m tropical -p current -p nsa --seeds 0,1,2 --run-id coordcheck_cpu
+
 # Fixed-FLOPs A/B suite across attention types (aggregated report + optional demo certificates)
 mgr bench-fixed-flops \
     --run-id flops_suite_cpu \

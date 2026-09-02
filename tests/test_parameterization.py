@@ -259,3 +259,150 @@ def test_coordinate_check_exposes_both_evt_arms():
         assert all(v > 0 for v in res["activation_rms"].values())
     ctl = P.coordinate_check("standard", [64, 128], seed=0)
     assert abs(ctl["loglog_slope"]) < 0.05
+
+
+def test_coord_check_artifact_records_abs_slope():
+    """Flatness is two-sided (|slope| <= 0.05) but registry comparators are
+    one-sided, so the artifact carries the magnitude as its own observable."""
+    res = {
+        "attention_type": "standard",
+        "widths": [16, 32],
+        "activation_rms": {16: 1.0, 32: 1.0},
+        "loglog_slope": -0.02,
+    }
+    payload = P.coord_check_artifact(res, provenance={"tainted": False})
+    assert payload["results"]["abs_loglog_slope"] == pytest.approx(0.02)
+    assert payload["results"]["loglog_slope"] == -0.02
+
+
+def test_coord_check_command_writes_one_artifact_per_arm_and_seed(tmp_path):
+    """mgr coord-check (bead bp08): one mgr.bench.coord_curves.v1 artifact per
+    (mechanism, parameterization arm, seed), the tropical FFN for the tropical
+    arms, and no-op nsa arms skipped rather than written as fake evidence."""
+    import json
+
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    result = CliRunner().invoke(
+        mgr_cli.app,
+        [
+            "coord-check",
+            "-m",
+            "standard",
+            "-m",
+            "tropical",
+            "-p",
+            "current",
+            "-p",
+            "nsa",
+            "--widths",
+            "32,64",
+            "--seeds",
+            "0,1",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--run-id",
+            "cc",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    run_dir = tmp_path / "bench" / "coord_curves" / "cc"
+    names = sorted(p.parent.name for p in run_dir.rglob("summary.json"))
+    assert names == [
+        "standard_current_s0",
+        "standard_current_s1",
+        "tropical_current_s0",
+        "tropical_current_s1",
+        "tropical_nsa_s0",
+        "tropical_nsa_s1",
+    ]
+    payload = json.loads((run_dir / "tropical_nsa_s1" / "summary.json").read_text())
+    assert payload["schema_version"] == P.COORD_CURVES_SCHEMA and payload["mechanism"] == "tropical"
+    assert payload["results"]["parameterization"] == "nsa" and payload["meta"]["seed"] == 1
+    assert payload["meta"]["run_id"] == "cc" and "git" in payload["meta"]
+    assert payload["results"]["abs_loglog_slope"] == pytest.approx(abs(payload["results"]["loglog_slope"]))
+    assert set(payload["results"]["activation_rms"]) == {"32", "64"}
+    assert (run_dir / "run.md").read_text().count("| tropical | nsa |") == 2
+    assert "skipped no-op arms: standard@nsa" in result.output
+    bad = CliRunner().invoke(
+        mgr_cli.app, ["coord-check", "-m", "standard", "--widths", "64", "--artifacts-dir", str(tmp_path)]
+    )
+    assert bad.exit_code == 2 and "at least two widths" in bad.output
+
+
+def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(tmp_path):
+    """The operationalized predictions (bp08) resolve against exactly the
+    artifact shape the command writes: planted slopes give SUPPORTED for both
+    hypotheses, and a tropical pair that is flat under BOTH arms REFUTES the
+    EVT separation claim (a check that cannot fail is not evidence)."""
+    import json
+
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    clean = {
+        "schema_version": "mgr.metrics.v1",
+        "git_sha": "deadbeef",
+        "git_dirty": False,
+        "config_hash": "abc",
+        "data_snapshot_hash": None,
+        "tainted": False,
+    }
+
+    def plant(root, mech, arm, seed, slope):
+        res = {
+            "attention_type": mech,
+            "widths": [64, 128, 256],
+            "activation_rms": {64: 1.0, 128: 1.0, 256: 1.0},
+            "loglog_slope": slope,
+            "r_squared": 1.0,
+            "concentration_class": "clt",
+        }
+        P.write_coord_check_artifact(
+            res, root / f"{mech}_{arm}_s{seed}", parameterization=arm, seed=seed, provenance=clean
+        )
+
+    def verdicts(root, out):
+        result = CliRunner().invoke(
+            mgr_cli.app,
+            [
+                "adjudicate",
+                "--hypothesis",
+                "hyp-coordcheck-clt-flat",
+                "--hypothesis",
+                "hyp-tropical-evt-miscoupling",
+                "--dry-run",
+                "--artifacts",
+                str(root),
+                "--artifacts-dir",
+                str(out),
+                "--run-id",
+                "x",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads((out / "adjudications" / "x" / "verdicts.json").read_text())
+        return {v["id"]: v for v in payload["verdicts"]}
+
+    supported = tmp_path / "supported"
+    for seed, slope in enumerate((0.003, -0.004, 0.006)):
+        plant(supported, "standard", "current", seed, slope)
+        plant(supported, "reversible", "current", seed, 2 * slope)
+        plant(supported, "tropical", "current", seed, 0.15 + 0.01 * seed)  # drifts under the CLT rule
+        plant(supported, "tropical", "nsa", seed, 0.02 + 0.005 * seed)  # flat under the EVT correction
+    got = verdicts(supported, tmp_path / "out-supported")
+    assert got["hyp-coordcheck-clt-flat"]["verdict"] == "supported", got["hyp-coordcheck-clt-flat"]
+    assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "supported", got["hyp-tropical-evt-miscoupling"]
+
+    refuted = tmp_path / "refuted"
+    for seed in range(3):
+        plant(refuted, "standard", "current", seed, 0.30 + 0.01 * seed)  # a drifting CLT mechanism
+        plant(refuted, "reversible", "current", seed, 0.004 * seed)
+        plant(refuted, "tropical", "current", seed, 0.02 + 0.003 * seed)  # flat under both arms:
+        plant(refuted, "tropical", "nsa", seed, 0.02 + 0.002 * seed)  # the EVT account is refuted
+    got = verdicts(refuted, tmp_path / "out-refuted")
+    assert got["hyp-coordcheck-clt-flat"]["verdict"] == "refuted", got["hyp-coordcheck-clt-flat"]
+    assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "refuted", got["hyp-tropical-evt-miscoupling"]

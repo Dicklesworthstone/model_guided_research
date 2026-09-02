@@ -1373,7 +1373,25 @@ hypotheses:
       kind: model
       provenance: "EPIC THEORY-III lab.1; theory note nonstandard_analysis_width_scaling.md section 4"
     date_registered: "2026-06-13"
-    prediction: null
+    prediction:
+      metric_path: "bench:results.abs_loglog_slope"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: null
+      candidate_variant: {parameterization: current}
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-02 (bead bp08): `mgr coord-check` writes one
+        mgr.bench.coord_curves.v1 artifact per (mechanism, arm, seed) whose
+        results.abs_loglog_slope is the fitted |slope| of activation RMS vs
+        width over the ladder 64..2048 (one init-time forward per width; the
+        bench schema is budget-exempt, no training). FOR-ALL over the listed
+        mechanisms: standard and reversible must each satisfy |slope| <= 0.05
+        on three seeds. Asymmetric knowledge disclosed: the unit test had
+        already shown standard flat at widths 64/128 (slope +0.003) before
+        this operationalization; reversible and the full ladder are
+        unmeasured at registration.
     operationalization_note: >-
       Observable: nanochat.parameterization.coordinate_check(mechanism,
       widths).loglog_slope over widths {64,128,256,512,1024,2048}; CLASS
@@ -1402,7 +1420,31 @@ hypotheses:
       kind: model
       provenance: "EPIC THEORY-III lab.1 (the novel EVT-class contribution); theory note sections 2a, 4"
     date_registered: "2026-06-13"
-    prediction: null
+    prediction:
+      metric_path: "bench:results.abs_loglog_slope"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: -0.05
+      baseline:
+        mechanism: tropical
+        equal_flops: true
+        variant: {parameterization: current}
+      candidate_variant: {parameterization: nsa}
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-02 (bead bp08): the SEPARATION is the claim -
+        tropical@nsa |slope| minus tropical@current |slope| <= -0.05 over the
+        width ladder 64..2048 with the tropical FFN (`mgr coord-check` with
+        --ffn-type auto: the exact-E[max] correction lives in the tropical MLP
+        stage-1 bias, so standard-FFN arms are provably identical and are not
+        evidence). The two component predictions (current |slope| >= 0.10,
+        nsa |slope| <= 0.05) are read from the same artifacts next to the
+        verdict; a flat pair and a drifting pair both give a delta near zero
+        and REFUTE, exactly as the statement demands. equal_flops is vacuous
+        for the budget-exempt bench schema (no training). Asymmetric knowledge
+        disclosed: the unit test only checks that both arms run and are finite
+        at widths 64/128; no slope had been measured before this
+        operationalization.
     operationalization_note: >-
       Both-ways observable: coordinate_check('tropical', widths) under
       --parameterization current (predict |slope| >= 0.10, score scale drifts)

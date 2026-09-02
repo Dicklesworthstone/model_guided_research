@@ -9415,6 +9415,156 @@ def bench_ultrametric(
     console.print(f"[bold green]Wrote bench artifacts[/bold green] → {run_dir}")
 
 
+@app.command("coord-check")
+def coord_check(
+    mechanism: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--mechanism", "-m", help="Attention mechanism (repeatable; default standard, reversible, tropical)"
+        ),
+    ] = None,
+    parameterization: Annotated[
+        list[str] | None,
+        typer.Option("--parameterization", "-p", help="Width-scaling arm: current | nsa (repeatable; default current)"),
+    ] = None,
+    widths: Annotated[
+        str, typer.Option(help="Comma-separated width ladder (at least two)")
+    ] = "64,128,256,512,1024,2048",
+    seeds: Annotated[str, typer.Option(help="Comma-separated init seeds; one artifact per seed")] = "0,1,2",
+    ffn_type: Annotated[
+        str,
+        typer.Option(
+            "--ffn-type",
+            help="auto | standard | tropical (auto: the tropical FFN for the tropical mechanism, where the E[max] "
+            "correction lives; the standard FFN elsewhere so the CLT controls keep their historical numbers)",
+        ),
+    ] = "auto",
+    device_str: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
+    artifacts_dir: Annotated[Path, typer.Option(help="Artifacts root")] = Path("artifacts"),
+    run_id: Annotated[str | None, typer.Option(help="Run identifier (default: timestamp)")] = None,
+) -> None:
+    """Coordinate check (bead bp08): activation RMS vs width at init, one
+    forward per width, and the log-log slope per (mechanism, parameterization,
+    seed). Writes one mgr.bench.coord_curves.v1 artifact per arm and seed under
+    artifacts/bench/coord_curves/<run-id>/ - the evidence hyp-coordcheck-clt-flat
+    (CLT-class mechanisms: |slope| <= 0.05) and hyp-tropical-evt-miscoupling
+    (tropical flattens under nsa but not under current) adjudicate against.
+    No training is involved: the observable is the init-time forward pass.
+    """
+    from nanochat.gpt import SUPPORTED_ATTENTION_TYPES
+    from nanochat.parameterization import coordinate_check, write_coord_check_artifact
+
+    mechanisms = list(dict.fromkeys(mechanism or ["standard", "reversible", "tropical"]))
+    unknown = [m for m in mechanisms if m not in SUPPORTED_ATTENTION_TYPES]
+    if unknown:
+        console.print(
+            f"[bold red]unknown mechanism(s) {unknown}; choose from {list(SUPPORTED_ATTENTION_TYPES)}[/bold red]"
+        )
+        raise typer.Exit(code=2)
+    arms = list(dict.fromkeys(parameterization or ["current"]))
+    bad_arms = [arm for arm in arms if arm not in ("current", "nsa")]
+    if bad_arms:
+        console.print(f"[bold red]--parameterization must be current or nsa, got {bad_arms}[/bold red]")
+        raise typer.Exit(code=2)
+    if ffn_type not in ("auto", "standard", "tropical"):
+        console.print("[bold red]--ffn-type must be auto, standard or tropical[/bold red]")
+        raise typer.Exit(code=2)
+    try:
+        width_ladder = sorted({int(w.strip()) for w in widths.split(",") if w.strip()})
+        seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    except ValueError as exc:
+        console.print(f"[bold red]--widths and --seeds must be comma-separated integers ({exc})[/bold red]")
+        raise typer.Exit(code=2) from None
+    if len(width_ladder) < 2 or any(w < 16 for w in width_ladder):
+        console.print("[bold red]--widths needs at least two widths of 16 or more[/bold red]")
+        raise typer.Exit(code=2)
+    if not seed_list:
+        console.print("[bold red]--seeds must name at least one seed[/bold red]")
+        raise typer.Exit(code=2)
+    resolved_run_id = _resolve_run_id(run_id)
+    run_dir = artifacts_dir / "bench" / "coord_curves" / resolved_run_id
+    git_info = _get_git_info()
+    table = Table(title="coordinate check — activation RMS vs width at init", box=box.SIMPLE_HEAVY)
+    for col, justify in (
+        ("mechanism", "left"),
+        ("arm", "left"),
+        ("ffn", "left"),
+        ("seed", "right"),
+        ("slope", "right"),
+        ("|slope|", "right"),
+        ("R²", "right"),
+        ("class", "left"),
+        (f"rms {width_ladder[0]}→{width_ladder[-1]}", "right"),
+    ):
+        table.add_column(col, justify=justify)
+    md_rows: list[str] = []
+    written: list[Path] = []
+    skipped: list[str] = []
+    for mech in mechanisms:
+        ffn = ("tropical" if mech == "tropical" else "standard") if ffn_type == "auto" else ffn_type
+        for arm in arms:
+            if arm == "nsa" and mech not in ("tropical", "quaternion", "octonion"):
+                # GPTConfig refuses nsa where it changes nothing (a silent
+                # no-op arm would be indistinguishable evidence)
+                skipped.append(f"{mech}@nsa")
+                continue
+            for seed in seed_list:
+                with console.status(f"[bold cyan]coordinate check {mech} ({arm}, {ffn} ffn) seed {seed}…[/bold cyan]"):
+                    result = coordinate_check(
+                        mech, width_ladder, seed=seed, device=device_str, parameterization=arm, ffn_type=ffn
+                    )
+                path = write_coord_check_artifact(
+                    result,
+                    run_dir / f"{mech}_{arm}_s{seed}",
+                    parameterization=arm,
+                    seed=seed,
+                    device=device_str,
+                    run_id=resolved_run_id,
+                    git=git_info,
+                )
+                written.append(path)
+                slope = float(result["loglog_slope"])
+                rms = result["activation_rms"]
+                span = f"{rms[width_ladder[0]]:.3f}→{rms[width_ladder[-1]]:.3f}"
+                flat = abs(slope) <= 0.05
+                table.add_row(
+                    mech,
+                    arm,
+                    ffn,
+                    str(seed),
+                    f"{slope:+.4f}",
+                    f"[{'green' if flat else 'yellow'}]{abs(slope):.4f}[/]",
+                    f"{float(result['r_squared']):.3f}",
+                    str(result["concentration_class"]),
+                    span,
+                )
+                md_rows.append(
+                    f"| {mech} | {arm} | {ffn} | {seed} | {slope:+.4f} | {abs(slope):.4f} | "
+                    f"{float(result['r_squared']):.3f} | {result['concentration_class']} | {span} |"
+                )
+    console.print(table)
+    if skipped:
+        console.print(
+            f"[dim]skipped no-op arms: {', '.join(skipped)} (nsa changes only the tropical E[max] constants "
+            "and the quaternion/octonion rotor LR rule)[/dim]"
+        )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    md_lines = [
+        f"# coord-check — {resolved_run_id}",
+        "",
+        f"- widths {width_ladder} · seeds {seed_list} · device {device_str} · schema mgr.bench.coord_curves.v1",
+        "- flat (|slope| <= 0.05) means correctly parameterized in width; one artifact per (mechanism, arm, seed)",
+        "",
+        "| mechanism | arm | ffn | seed | slope | abs slope | R2 | class | rms first→last |",
+        "|---|---|---|---|---|---|---|---|---|",
+        *md_rows,
+    ]
+    if skipped:
+        md_lines += ["", f"skipped no-op arms: {', '.join(skipped)}"]
+    (run_dir / "run.md").write_text("\n".join(md_lines) + "\n")
+    console.print(f"[bold green]Wrote {len(written)} coordinate-check artifacts[/bold green] → {run_dir}")
+
+
 def _sample_stream(
     model: Any,
     tok: Any,
