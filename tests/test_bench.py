@@ -260,6 +260,9 @@ def test_schedule_arm_uses_attention_schedule_flag(tmp_path, monkeypatch):
 
     summary = json.loads((arts / "bench" / "fixed_flops" / "nanochat" / suite / "summary.json").read_text())
     assert "standard,tropical" in summary["aggregates"]
+    # the schedule arm's synthetic summary must actually have been READ from its
+    # historical directory (a silently unread arm would still appear as a key)
+    assert summary["aggregates"]["standard,tropical"]["metric_mean"] == pytest.approx(2.8)
 
 
 def _fake_scorecard_generator(task: str, *, out_dir: Path, size: int, seed: int) -> dict:

@@ -7175,8 +7175,14 @@ def _scorecard_arm_label(base: str, extras: dict[str, str]) -> str:
 
 
 def _scorecard_arm_path_token(label: str) -> str:
-    """A directory-safe form of an arm label: ``braid+braid_crossing_law-rmatrix``."""
-    return label.replace("@", "+").replace("=", "-").replace(",", "+")
+    """A directory-safe form of an arm label: ``braid+braid_crossing_law-rmatrix``.
+    Only the ``@key=value`` part is rewritten; a plain label (including a comma
+    attention schedule such as ``standard,tropical``) keeps its historical
+    directory name."""
+    base, sep, extras = label.partition("@")
+    if not sep:
+        return label
+    return base + "+" + extras.replace("=", "-").replace(",", "+")
 
 
 def _scorecard_arm_train_flags(extras: dict[str, str]) -> list[str]:
