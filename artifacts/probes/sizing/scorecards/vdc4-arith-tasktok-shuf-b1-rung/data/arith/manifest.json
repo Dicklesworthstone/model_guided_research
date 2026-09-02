@@ -1,0 +1,28 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "1106db1d7ab9fdfdf747c755e2c477ff6f34d2921a3273fc437b7d5c6839a0eb",
+    "train_000.parquet": "54012f609db58a07f616939bc0b02b0f7b29db928be7f4c7c7f6f242c0cdd34d",
+    "val_000.parquet": "099380504ad779c1ed2586a094cb0d114c1e51b44a5d8869e5de0aa1e33c08fa"
+  },
+  "dials": {
+    "spread_decades": 6
+  },
+  "generator_version": 1,
+  "hypothesis": "magnitude-direction separation gives native scale arithmetic across decades",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "ac3a5f485a71dd92c292f9d22d4f9b2db5014561154b09658726d661eadc4ecb",
+    "train_000.parquet": "0d47d93993dbd3477f716137c027963100df7592602d945e4fbc206ede854d71",
+    "val_000.parquet": "2e96badf942f6460dac7854953323a8462c8ded8bd7c48575d8e202cda95d7ce"
+  },
+  "size": 50000,
+  "split_sizes": {
+    "test": 5000,
+    "train": 40000,
+    "val": 5000
+  },
+  "target_mechanisms": [
+    "surreal"
+  ],
+  "task": "arith"
+}

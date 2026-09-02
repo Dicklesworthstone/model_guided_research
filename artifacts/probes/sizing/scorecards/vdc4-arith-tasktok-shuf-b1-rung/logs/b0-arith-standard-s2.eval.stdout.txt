@@ -1,0 +1,28 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 4967                                                 
+  attention_type    standard                                                    
+  n_params          139,264                                                     
+  training budget   {"max_steps": 4968, "target_flops": 1000000000000.0,        
+                    "flops_per_step_est": 201326592, "flops_consumed_est":      
+                    1000190509056}                                              
+  lineage           {"run_id": "seed_2", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-ari
+ th-tasktok-shuf-b1-rung/runs/budget_0/arith/standard/seed_2/checkpoints @ 4967 
+                                                                                
+                                                          slope                 
+                                                       held-out                 
+  task    EM in-range   EM held-out   ppl in/held        [CI95]   axis          
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  arith         1.000         0.847      2.7/16.4       -0.0329   exponent_sp…  
+                                                    [-0.0531,-…                 
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-ari
+th-tasktok-shuf-b1-rung/evals/tasks/eval-b0-arith-standard-s2
