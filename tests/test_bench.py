@@ -1434,9 +1434,10 @@ def test_scorecard_retry_resumes_from_the_cells_last_checkpoint(tmp_path, monkey
         if "nanochat.train" in cmd:
             train_cmds.append(list(cmd))
             # leave a committed checkpoint behind, like a killed trainer would
+            kind = cmd[cmd.index("--artifacts-kind") + 1]
             topic = cmd[cmd.index("--artifacts-topic") + 1]
             run_id = cmd[cmd.index("--run-id") + 1]
-            ckpt = artifacts / "scorecards" / "retry-resume" / topic / run_id / "checkpoints"
+            ckpt = artifacts / "scorecards" / "retry-resume" / kind / topic / run_id / "checkpoints"
             ckpt.mkdir(parents=True, exist_ok=True)
             (ckpt / "meta_000007.json").write_text("{}", encoding="utf-8")
             return 124, "", "timeout"
