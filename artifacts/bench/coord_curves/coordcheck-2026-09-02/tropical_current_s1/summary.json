@@ -1,0 +1,49 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "tropical",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-09-02T21:06:45Z",
+    "git": {
+      "branch": "main",
+      "commit": "1a38250",
+      "commit_full": "1a38250f419c1a34c8fd3dce597cb2ea863847a0",
+      "dirty": false
+    },
+    "run_id": "coordcheck-2026-09-02",
+    "seed": 1
+  },
+  "provenance": {
+    "config_hash": "e9989e2260109190d76d3eca95fef17292fe764dafcc8e18e9204f8caf48f930",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "1a38250f419c1a34c8fd3dce597cb2ea863847a0",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.11782332109228605,
+    "activation_rms": {
+      "64": 2.632727861404419,
+      "128": 2.7157750129699707,
+      "256": 3.287888526916504,
+      "512": 3.4393935203552246,
+      "1024": 3.547879219055176,
+      "2048": 3.9366469383239746
+    },
+    "concentration_class": "EVT (Gumbel max)",
+    "loglog_slope": 0.11782332109228605,
+    "parameterization": "current",
+    "r_squared": 0.9406643340432592,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}

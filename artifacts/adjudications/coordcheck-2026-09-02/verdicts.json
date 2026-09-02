@@ -1,0 +1,109 @@
+{
+  "date": "2026-09-02",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 2,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 1,
+    "supported_fdr_survivors": [
+      "hyp-coordcheck-clt-flat"
+    ]
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "reversible": {
+          "budget_flops": null,
+          "ci95": [
+            -0.00018670622037709908,
+            0.0013131810419042453
+          ],
+          "effect": 0.0005632374107635732,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 6.215076991944457e-06,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "standard": {
+          "budget_flops": null,
+          "ci95": [
+            0.0004646400117790233,
+            0.0019271560039004322
+          ],
+          "effect": 0.0011958980078397277,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 6.063426502334046e-06,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s2/summary.json"
+      ],
+      "id": "hyp-coordcheck-clt-flat",
+      "p_value": 6.215076991944457e-06,
+      "policy_version": "ci-v6",
+      "q_value": 1.2430153983888914e-05,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    },
+    {
+      "arms": {
+        "tropical": {
+          "budget_flops": null,
+          "ci95": [
+            -0.008587934189322702,
+            0.0474432082064699
+          ],
+          "effect": 0.019427637008573598,
+          "n_baseline": 6,
+          "n_candidate": 6,
+          "n_for_80pct": 3,
+          "p_value": 0.9998677001422058,
+          "power": 0.9785907494250454,
+          "refutation_margin": 2.4781803133033016,
+          "verdict": "refuted"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s2/summary.json"
+      ],
+      "id": "hyp-tropical-evt-miscoupling",
+      "p_value": 0.9998677001422058,
+      "policy_version": "ci-v6",
+      "q_value": 0.9998677001422058,
+      "tainted_artifacts_seen": false,
+      "verdict": "refuted"
+    }
+  ]
+}
