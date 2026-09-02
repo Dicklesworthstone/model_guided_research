@@ -1,0 +1,26 @@
+                         eval-tasks — checkpoint header                         
+                                                                                
+  field             value                                                       
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  checkpoint        /data/projects/model_guided_research/artifacts/probes/siz…  
+                    @ step 1848                                                 
+  attention_type    standard                                                    
+  n_params          131,072                                                     
+  training budget   {"max_steps": 1849, "target_flops": 2000000000000.0,        
+                    "flops_per_step_est": 1082130432, "flops_consumed_est":     
+                    2000859168768}                                              
+  lineage           {"run_id": "seed_1", "parent_run_ids": []}                  
+  seeds             [0, 1, 2]                                                   
+                                                                                
+                                  eval-tasks —                                  
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-rel
+-tasktok-shuf-b2-s256-rung/runs/budget_0/rel/standard/seed_1/checkpoints @ 1848 
+                                                                                
+                                                   slope held-out               
+  task   EM in-range   EM held-out   ppl in/held           [CI95]   axis        
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  rel          0.097         0.062      2.4/15.8                -   fact_count  
+                                                                                
+Wrote eval artifacts → 
+/data/projects/model_guided_research/artifacts/probes/sizing/scorecards/vdc4-rel
+-tasktok-shuf-b2-s256-rung/evals/tasks/eval-b0-rel-standard-s1
