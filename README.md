@@ -142,6 +142,14 @@ python -m nanochat.train --help
 ### Quick Tour
 
 ```bash
+# 0. The five-minute showcase, one command, no downloads: generate a task,
+#    train two mathematical transformers on it, certify their invariants
+#    live, watch them generate side by side, read the comparison table.
+#    (A minute-scale model learns a toy task, not language; the certificates
+#    and the pipeline are the demonstration.)
+mgr quickstart                                  # standard vs tropical, ~5 min on a laptop CPU
+mgr quickstart --mechanisms clifford,hyperbolic --budget-seconds 120
+
 # 1. Explore a JAX demo (matrix exponential gauge learning)
 mgr run matrix-gauge
 
@@ -262,6 +270,11 @@ Each framework is implemented twice:
 1. **JAX Demo**: Interactive exploration with visualizations
 2. **PyTorch Attention**: Production-ready mechanism in nanochat
 
+Fidelity note: three of the PyTorch mechanisms (simplicial, fractal, surreal)
+are deliberately simplified proxies of their JAX demos, and their sections
+below say exactly what is implemented. Treat their registry verdicts as
+verdicts about the proxy.
+
 ### 1. Matrix Exponential Gauge Learning
 **Key Idea**: Lie group/algebra machinery for stable neural architectures
 **JAX Demo**: `matrix-gauge` | [Documentation](markdown_documentation/matrix_exponential_gauge_learning.md) | [Code](matrix_exponential_gauge_learning.py)
@@ -348,11 +361,13 @@ Each framework is implemented twice:
 - Group dynamics beyond individual relationships
 - Combinatorial structure for discrete reasoning
 
-**Implementation Highlights**:
-- 1-hop (edges) and 2-hop (triangles) aggregation
-- Learnable mixing weights
-- Training vs inference considerations
-- Hodge-theoretic flow
+**What the PyTorch mechanism implements (a proxy)**:
+- Standard scaled-dot-product scores; the output is `m1 · (A v) + m2 · (A (A v))`
+  with two learned scalars, i.e. a two-hop diffusion on the attention graph
+- KV-cache decode keeps the 1-hop history so the 2-hop term stays consistent
+- No boundary operators, Laplacians, or Hodge decomposition in nanochat; those
+  live in the JAX demo (`--simplicial-hodge`). Registry claims about this
+  mechanism are claims about two-hop diffusion, not about simplicial structure.
 
 ### 5. Quaternion & Octonion Attention (Hypercomplex Algebra)
 **Key Idea**: 4D/8D hypercomplex numbers for rotation-aware features
@@ -445,11 +460,13 @@ Each framework is implemented twice:
 - Infinite capacity in principle
 - Natural for recursive/hierarchical data
 
-**Implementation Highlights**:
-- m-ary tree routing (m=4, depth=4)
-- Soft hierarchical addressing
-- Path matching for similarity
-- Differentiable routing network
+**What the PyTorch mechanism implements (a proxy)**:
+- One linear router turns each query/key into 4 depth-wise softmaxes over 4
+  branches (m=4, depth=4, fixed)
+- The score is the dot product of the flattened branch probabilities scaled by
+  1/sqrt(depth): a proxy for path overlap, not the per-depth product of matches
+- The IFS fixed-point read `x*_w` of the JAX demo is not implemented in
+  nanochat; the weighted-ultrametric formulation is tracked in bead 8gk.5
 
 ### 9. Knot-Theoretic Programs & Braid-Based Attention
 **Key Idea**: Topological invariants for robust representations
@@ -491,11 +508,12 @@ Each framework is implemented twice:
 - Natural handling of wide dynamic ranges
 - Separation of magnitude and direction
 
-**Implementation Highlights**:
-- Scale-direction decomposition: w = exp(s) * normalize(v)
-- Log-scale parameterization
-- Exponential sensitivity to magnitude
-- Geometric optimization structure
+**What the PyTorch mechanism implements (a parameterization, not new attention math)**:
+- Standard scaled-dot-product attention whose four projections use the
+  scale-direction decomposition `w = exp(s) * normalize(v)`
+- `--attention-type surreal` therefore changes the optimization geometry of an
+  otherwise standard layer; its registry claims are about optimization
+  (the surreal-optimization-rate placebo result), not about routing
 
 ### 11. Nonstandard Analysis & Hyperreal Training (HOSS)
 **Key Idea**: Infinitesimal perturbations for second-order optimization
