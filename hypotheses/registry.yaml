@@ -153,7 +153,7 @@ hypotheses:
       validity:
         baseline_floor: 0.014
         floor_source: "population majority-answer prior of the hier held-out split (10 generator seeds x 3000 docs, 2026-06-10); ci-v2 prefers the artifact-recorded answer_prior"
-      scale_caveats: "registered at nanochat research scale"
+      scale_caveats: "registered at nanochat research scale. PROXY TIER (2026-09-03): this entry tests the router-simplex proxy in nanochat/fractal_attention_torch.py, not the IFS memory of the theory; the faithful-tier claim is hyp-fractal-hier-heldout-depth-faithful (selector fractal_ifs=true, bead 8gk.5)."
     status: inconclusive
     evidence: []
     verdict_history:
@@ -617,7 +617,7 @@ hypotheses:
       validity:
         baseline_floor: 0.059
         floor_source: "population majority-answer prior of the rel held-out split (10 generator seeds x 3000 docs, 2026-06-10); ci-v2 prefers the artifact-recorded answer_prior"
-      scale_caveats: "the doc's provably-impossible construction is stronger than this LM proxy; a dedicated task may sharpen the threshold later"
+      scale_caveats: "the doc's provably-impossible construction is stronger than this LM proxy; a dedicated task may sharpen the threshold later. PROXY TIER (2026-09-03): this entry tests the pairwise-only proxy in nanochat/simplicial_attention_torch.py; the faithful-tier claim is hyp-simplicial-two-hop-composition-faithful (selector simplicial_triplet=true, bead jida.14)."
     status: inconclusive
     evidence: []
     verdict_history:
@@ -649,7 +649,7 @@ hypotheses:
       validity:
         baseline_floor: 0.521
         floor_source: "population majority-answer prior of the arith held-out split (10 generator seeds x 3000 docs, 2026-06-10); ci-v2 prefers the artifact-recorded answer_prior"
-      scale_caveats: "registered at nanochat research scale"
+      scale_caveats: "registered at nanochat research scale. PROXY TIER (2026-09-03): this entry tests the scaled-attention proxy in nanochat/surreal_torch.py; the faithful-tier claim is hyp-surreal-wide-dynamic-range-faithful (selector surreal_scaling_axis=true, bead jida.15)."
     status: refuted
     evidence: []
     verdict_history:
@@ -969,7 +969,7 @@ hypotheses:
       threshold: 0.85
       baseline: {mechanism: standard, equal_flops: true}
       min_seeds: 5
-      scale_caveats: "E1 rung; the observed ratio ~0.55 leaves wide margin; if supported, hyp-placebo-no-winner will trip on surreal BY DESIGN and the 2x-budget root-cause run is mandatory before publication-grade claims"
+      scale_caveats: "E1 rung; the observed ratio ~0.55 leaves wide margin; if supported, hyp-placebo-no-winner will trip on surreal BY DESIGN and the 2x-budget root-cause run is mandatory before publication-grade claims. PROXY TIER (2026-09-03): the SUPPORTED verdict is about the scaled-attention proxy; the faithful-tier claim is hyp-surreal-optimization-rate-faithful (selector surreal_scaling_axis=true). Note: the 2026-09-02 placebo guard did NOT trip on the proxy at the task-tokenizer 1e12 rung (surreal ratio 0.989), so the E1 result and the 2x-budget obligation stand as recorded."
     status: supported
     evidence: []
     verdict_history:
@@ -1725,7 +1725,7 @@ hypotheses:
       threshold: 0.03
       baseline: {mechanism: standard, equal_flops: true}
       min_seeds: 3
-      scale_caveats: "realhier is opt-in (--include-real); byte identity conditional on Python version. Floor: artifact-recorded answer_prior governs."
+      scale_caveats: "realhier is opt-in (--include-real); byte identity conditional on Python version. Floor: artifact-recorded answer_prior governs. PROXY TIER (2026-09-03): tests the router-simplex proxy; the faithful-tier claim is hyp-fractal-realhier-wild-faithful (selector fractal_ifs=true, bead 8gk.5)."
     status: open
     evidence: []
     verdict_history: []
@@ -2044,3 +2044,161 @@ hypotheses:
     evidence: []
     verdict_history:
       - {date: "2026-09-02", verdict: supported, artifacts: ["artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s3/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s4/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s5/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s3/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s4/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s5/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s3/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s4/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s5/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s3/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s4/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s5/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s3/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s4/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s5/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s0/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s1/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s2/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s0/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s1/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s2/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s0/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s1/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s2/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s0/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s1/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s2/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s0/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s1/summary.json", "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s2/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"braid": {"budget_flops": null, "ci95": [0.0005901343171649616, 0.0015252078028035363], "effect": 0.001057671059984249, "n_baseline": 0, "n_candidate": 6, "n_for_80pct": 2, "p_value": 6.725286993969348e-12, "power": 1.0, "single_arm": true, "verdict": "supported"}, "fractal": {"budget_flops": null, "ci95": [0.00040691648398533543, 0.0018502024700481037], "effect": 0.0011285594770167196, "n_baseline": 0, "n_candidate": 6, "n_for_80pct": 2, "p_value": 5.933342706043732e-11, "power": 1.0, "single_arm": true, "verdict": "supported"}, "gauge": {"budget_flops": null, "ci95": [-0.00027695947789582075, 0.001229479344691067], "effect": 0.00047625993339762317, "n_baseline": 0, "n_candidate": 6, "n_for_80pct": 2, "p_value": 6.878508873597866e-11, "power": 1.0, "single_arm": true, "verdict": "supported"}, "simplicial": {"budget_flops": null, "ci95": [0.00032640656213011644, 0.0014710101370685631], "effect": 0.0008987083495993398, "n_baseline": 0, "n_candidate": 6, "n_for_80pct": 2, "p_value": 1.8183676786520664e-11, "power": 1.0, "single_arm": true, "verdict": "supported"}, "surreal": {"budget_flops": null, "ci95": [-6.936750380443684e-06, 0.00234288751836406], "effect": 0.0011679753839918083, "n_baseline": 0, "n_candidate": 6, "n_for_80pct": 2, "p_value": 6.811023967046026e-10, "power": 1.0, "single_arm": true, "verdict": "supported"}}}
+  - id: hyp-fractal-hier-heldout-depth-faithful
+    statement: >-
+      Fractal (IFS memory with learned contraction maps, capacity measured by
+      the Moran dimension) attention beats standard attention on hierarchical
+      retrieval at held-out depths: m-ary path addressing should generalize
+      across depth where flat attention does not.
+    mechanisms: [fractal]
+    source:
+      kind: model
+      provenance: >-
+        Faithful-tier successor of hyp-fractal-hier-heldout-depth (which tests
+        the router-simplex PROXY in nanochat/fractal_attention_torch.py; README
+        labels it a proxy). Registered 2026-09-03 before the faithful mechanism
+        exists (bead 8gk.5 builds it; bridge bead jida.16 scopes the tiers);
+        selector fractal_ifs=true is the config knob 8gk.5 must record.
+    date_registered: "2026-09-03"
+    theorem_refs: [thm-ifs-cylinder-ultrametric]
+    prediction:
+      metric_path: "evaltasks:tasks.hier.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      candidate_variant: {fractal_ifs: true}
+      min_seeds: 3
+      scale_caveats: >-
+        Same threshold as the proxy entry; adjudicable only from artifacts whose
+        model_config records fractal_ifs true, so proxy runs never pool in. Runs at
+        the first cleared hier rung (bridge bead jida.6), seeds 3-5.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-fractal-realhier-wild-faithful
+    statement: >-
+      Fractal (IFS memory) attention beats standard attention by at least 0.03
+      held-out exact match on real-world hierarchical structure (stdlib AST path
+      retrieval) at equal FLOPs, testing whether self-similar routing exploits
+      naturally occurring trees.
+    mechanisms: [fractal]
+    source:
+      kind: model
+      provenance: >-
+        Faithful-tier successor of hyp-fractal-realhier-wild (proxy tier);
+        registered 2026-09-03 pre-evidence; selector fractal_ifs=true (bead 8gk.5).
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "evaltasks:tasks.realhier.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.03
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      candidate_variant: {fractal_ifs: true}
+      min_seeds: 3
+      scale_caveats: >-
+        Same threshold as the proxy entry; the realhier rung must be found by
+        the ladder first (it is not on the 2026-09-02 ladder).
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-simplicial-two-hop-composition-faithful
+    statement: >-
+      Genuine 2-simplex (triplet) attention answers two-hop relation queries at
+      held-out context sizes better than standard attention: the triangle term
+      composes two hops in one layer, which pairwise attention lacks.
+    mechanisms: [simplicial]
+    source:
+      kind: model
+      provenance: >-
+        Faithful-tier successor of hyp-simplicial-two-hop-composition (which
+        tests the pairwise-only PROXY in nanochat/simplicial_attention_torch.py).
+        Registered 2026-09-03 before the faithful mechanism exists (bridge bead
+        jida.14 builds it with the simplicial_triplet config knob).
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "evaltasks:tasks.rel.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      candidate_variant: {simplicial_triplet: true}
+      min_seeds: 3
+      scale_caveats: >-
+        Same threshold as the proxy entry; runs at the first cleared rel rung
+        (bridge bead jida.5), seeds 3-5; the randomized-triangle placebo arm
+        (simplicial_triplet true with the placebo knob) serves the specificity check.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-surreal-wide-dynamic-range-faithful
+    statement: >-
+      Surreal attention with the transseries scaling axis compares and orders
+      numbers spanning many decades better than standard attention at held-out
+      magnitude spreads: explicit scale exponents give the model native scale
+      arithmetic.
+    mechanisms: [surreal]
+    source:
+      kind: model
+      provenance: >-
+        Faithful-tier successor of hyp-surreal-wide-dynamic-range (REFUTED on the
+        scaled-attention PROXY in nanochat/surreal_torch.py at the arith rung).
+        Registered 2026-09-03 before the faithful mechanism exists (bridge bead
+        jida.15 builds it with the surreal_scaling_axis config knob). Asymmetric
+        knowledge: the proxy's refutation on arith is known; the faithful build
+        starts from zero evidence on fresh seeds.
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "evaltasks:tasks.arith.exact_match.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      candidate_variant: {surreal_scaling_axis: true}
+      min_seeds: 3
+      scale_caveats: >-
+        arith clears at 1e12 (d64/L2, seq 64); standard's seeds 0-5 at that rung
+        are spent (rung probe and the positive control), so both arms use seeds
+        6-8 or a fresh rung.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-surreal-optimization-rate-faithful
+    statement: >-
+      Surreal attention with the transseries scaling axis optimizes faster than
+      standard at equal FLOPs on structure-free data: held-out perplexity on the
+      placebo task at most 0.85x standard's. A training-dynamics claim; its
+      confirmation obligates the two-cause protocol (re-run at 2x budget) as for
+      the proxy entry.
+    mechanisms: [surreal]
+    source:
+      kind: model
+      provenance: >-
+        Faithful-tier successor of hyp-surreal-optimization-rate (SUPPORTED on the
+        proxy). Registered 2026-09-03 pre-evidence; selector surreal_scaling_axis=true.
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "evaltasks:tasks.placebo.perplexity.held_out"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.85
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      candidate_variant: {surreal_scaling_axis: true}
+      min_seeds: 5
+      scale_caveats: >-
+        Same ratio and seed floor as the proxy entry; the placebo cells of any
+        scorecard that includes the faithful surreal arm qualify.
+    status: open
+    evidence: []
+    verdict_history: []
