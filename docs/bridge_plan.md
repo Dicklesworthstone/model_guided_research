@@ -2,7 +2,7 @@
 
 **Reality check date:** 2026-09-01 (Phase 1, commit fc6afa8); bridge plan written 2026-09-02 against commit e0792c6.
 **Gap count:** 6 critical, 5 major, 5 minor.
-**Beads:** 272 total (5 open + 5 in progress before this plan). Every gap below says whether the existing beads would close it. Bead creation from this plan (Phase 3a) is the next step and is deliberately not done here.
+**Beads:** 272 total (5 open + 5 in progress before this plan). Every gap below says whether the existing beads would close it. Phase 3a was done on 2026-09-03: epic `model_guided_research-jida` (EPIC BRIDGE) parents 31 self-contained beads, one per gap item, with `blocks`/`related` edges to the existing beads that already cover parts of a gap (`br dep tree model_guided_research-jida.1` shows the rung ladder's dependents). The beads carry the background, commands, preregistrations, acceptance criteria and no-claim lines, so this document is now the measuring stick and the progress log, not the work queue.
 **Estimated work:** the critical path is compute-bound, not code-bound. On this CPU-only box a single off-floor training run at d128/L4 and 1e14 FLOPs takes about 2 hours; the campaigns below need roughly 40 such runs. One GPU turns that into an afternoon.
 
 This document is the measuring stick for the next ambition and refinement rounds. Revise it in place; do not fork it.
