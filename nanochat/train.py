@@ -318,6 +318,41 @@ def _semiring_beta_at(schedule: _SemiringSpec, step: int, max_steps: int) -> flo
     return b0  # "const"
 
 
+def _collect_ultrametric_route_stats(model: torch.nn.Module) -> dict[str, float] | None:
+    """Latest ultrametric route observables (bridge beads jida.23/jida.28):
+    mean over layers of the recorded route LCP depth and of the tie fraction;
+    None unless some ultrametric layer recorded them on its last forward."""
+    transformer = getattr(model, "transformer", None)
+    if transformer is None:
+        return None
+    try:
+        blocks = transformer["h"]
+    except Exception:
+        return None
+    depths: list[float] = []
+    ties: list[float] = []
+    for block in blocks:
+        attn = getattr(block, "attn", None)
+        depth = getattr(attn, "ultrametric_route_depth_mean", None)
+        tie = getattr(attn, "ultrametric_tie_fraction", None)
+        if torch.is_tensor(depth) and depth.numel() == 1:
+            value = float(depth.detach().float().item())
+            if not math.isnan(value):
+                depths.append(value)
+        if torch.is_tensor(tie) and tie.numel() == 1:
+            value = float(tie.detach().float().item())
+            if not math.isnan(value):
+                ties.append(value)
+    if not depths and not ties:
+        return None
+    out: dict[str, float] = {}
+    if depths:
+        out["route_depth_mean"] = sum(depths) / len(depths)
+    if ties:
+        out["tie_fraction"] = sum(ties) / len(ties)
+    return out
+
+
 def _collect_tropical_route_coverage(model: torch.nn.Module) -> float | None:
     """Mean certificate coverage across tropical attention layers (8gk.1):
     the fraction of routes whose tropical margin clears the route-stability
@@ -1018,6 +1053,12 @@ def train(args) -> None:
             ultra_k = getattr(args, "ultrametric_K", None)
             if ultra_k is not None:
                 config.ultrametric_K = int(ultra_k)
+            ultra_routes = getattr(args, "ultrametric_record_routes", None)
+            if ultra_routes is not None:
+                config.ultrametric_record_routes = bool(ultra_routes)
+            ultra_tie = getattr(args, "ultrametric_tie_margin", None)
+            if ultra_tie is not None:
+                config.ultrametric_tie_margin = float(ultra_tie)
         if has_standard:
             no_norms = getattr(args, "disable_block_norms", None)
             if no_norms is not None:
@@ -1702,6 +1743,13 @@ def train(args) -> None:
     # train artifact alone (metrics.jsonl streams are not engine-readable).
     route_coverage_first: float | None = None
     route_coverage_last: float | None = None
+    # Ultrametric route observables (bridge beads jida.23/jida.28): first and
+    # last logged tie fraction and route depth, promoted into the summary for
+    # hyp-tie-locus-density-decreases-ultrametric.
+    ultrametric_tie_first: float | None = None
+    ultrametric_tie_last: float | None = None
+    ultrametric_depth_first: float | None = None
+    ultrametric_depth_last: float | None = None
     # Shadow-energy trend trackers (bead u55.5): first/final mean shadow
     # energy and final activation norm, promoted into the summary so the
     # symplectic no-norm program's diagnostics are engine-readable.
@@ -2068,6 +2116,23 @@ def train(args) -> None:
                             record["tropical_gamma_min"] = trop_stats.get("gamma_min")
                             record["tropical_gamma_mean"] = trop_stats.get("gamma_mean")
                             record["tropical_gamma_head_mean"] = trop_stats.get("head_mean")
+                    if (
+                        model_type == "gpt"
+                        and "ultrametric" in attention_schedule
+                        and bool(getattr(config, "ultrametric_record_routes", False))
+                    ):
+                        ultra_stats = _collect_ultrametric_route_stats(raw_model)
+                        if ultra_stats is not None:
+                            if "route_depth_mean" in ultra_stats:
+                                record["ultrametric_route_depth_mean"] = ultra_stats["route_depth_mean"]
+                                ultrametric_depth_last = ultra_stats["route_depth_mean"]
+                                if ultrametric_depth_first is None:
+                                    ultrametric_depth_first = ultrametric_depth_last
+                            if "tie_fraction" in ultra_stats:
+                                record["ultrametric_tie_fraction"] = ultra_stats["tie_fraction"]
+                                ultrametric_tie_last = ultra_stats["tie_fraction"]
+                                if ultrametric_tie_first is None:
+                                    ultrametric_tie_first = ultrametric_tie_last
                     if model_type == "gpt" and "tropical" in attention_schedule and current_semiring_beta is not None:
                         # D2 schema gains the annealing telemetry (8gk.1):
                         # the smoothing level and the certificate coverage
@@ -2304,6 +2369,16 @@ def train(args) -> None:
             results["route_coverage_first"] = route_coverage_first
             results["route_coverage_final"] = route_coverage_last
             results["route_coverage_delta"] = route_coverage_last - route_coverage_first
+    if model_type == "gpt" and "ultrametric" in attention_schedule and ultrametric_tie_first is not None:
+        # Ultrametric tie-locus trend (bridge beads jida.23/jida.28): the
+        # registered observable is the first-to-last change of the tie fraction
+        results["ultrametric_tie_fraction_first"] = ultrametric_tie_first
+        results["ultrametric_tie_fraction_final"] = ultrametric_tie_last
+        results["ultrametric_tie_fraction_delta"] = (
+            (ultrametric_tie_last - ultrametric_tie_first) if ultrametric_tie_last is not None else None
+        )
+        results["ultrametric_route_depth_first"] = ultrametric_depth_first
+        results["ultrametric_route_depth_final"] = ultrametric_depth_last
     if model_type == "gpt" and "hyperbolic" in attention_schedule:
         hyperbolic = _collect_hyperbolic_stats(raw_model)
         if hyperbolic is not None:
@@ -2629,6 +2704,23 @@ def build_parser() -> argparse.ArgumentParser:
             "Ultrametric attention only: number of p-adic digits K (default: GPTConfig.ultrametric_K = 8). "
             "Finer K extends the digit-truncation memory-fraction axis downward (k=1 reaches 1/K; bead kgj1)."
         ),
+    )
+    parser.add_argument(
+        "--ultrametric-record-routes",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Ultrametric attention only: record the route observables on every logged step - the mean LCP depth "
+            "of each query's chosen route and the tie fraction (queries whose two deepest routes are within "
+            "--ultrametric-tie-margin digits; the tie locus of hyp-tie-locus-density-decreases-ultrametric). "
+            "Kernel path only; default off."
+        ),
+    )
+    parser.add_argument(
+        "--ultrametric-tie-margin",
+        type=float,
+        default=None,
+        help="Ultrametric attention only: depth gap (in digits) below which two routes count as tied (default 1.0).",
     )
     parser.add_argument(
         "--reversible-mode",

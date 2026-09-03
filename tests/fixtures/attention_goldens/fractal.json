@@ -47,6 +47,8 @@
     "ultrametric_lcp_beta": 32.0,
     "ultrametric_mode": "kernel",
     "ultrametric_p": 2,
+    "ultrametric_record_routes": false,
+    "ultrametric_tie_margin": 1.0,
     "use_flex_attention": false,
     "vocab_size": 128
   },

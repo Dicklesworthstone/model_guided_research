@@ -2250,3 +2250,41 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+  - id: hyp-tie-locus-density-decreases-ultrametric
+    statement: >-
+      For ultrametric attention trained with route recording on, the tie
+      fraction (queries whose two deepest LCP routes are within one digit of
+      each other, the ultrametric tie locus where the strong triangle
+      inequality's genericity fails and routes switch) DECREASES over
+      training: the model learns to separate its routes by at least a digit.
+    mechanisms: [ultrametric]
+    source:
+      kind: model
+      provenance: >-
+        Successor (ultrametric half) of hyp-tie-locus-density-decreases,
+        registered 2026-09-03 with the route observables added by bridge beads
+        jida.23/jida.28 (nanochat.train records ultrametric_tie_fraction and
+        ultrametric_route_depth_mean per logged step and summarizes
+        ultrametric_tie_fraction_first/final/delta). The theory note calibrates
+        "small" by the Haar baseline 1/(p+1) for the hard-digit variant.
+    date_registered: "2026-09-03"
+    theorem_refs: [thm-tropicalization-of-attention, thm-route-stability]
+    prediction:
+      metric_path: "train:results.ultrametric_tie_fraction_delta"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: -0.01
+      baseline: null
+      candidate_variant: {ultrametric_record_routes: true}
+      min_seeds: 3
+      scale_caveats: >-
+        delta = final minus first logged tie fraction over the run; a decrease
+        of at least one point on three seeds in one budget cohort. Recorded only
+        by ultrametric runs with ultrametric_record_routes true (kernel path;
+        tie margin ultrametric_tie_margin, default 1.0 digit, recorded in
+        model_config). No qualifying run exists at registration; the evidence
+        comes from any preregistered ultrametric campaign (the needle or hier
+        comparison at a cleared rung) that turns the flag on.
+    status: open
+    evidence: []
+    verdict_history: []

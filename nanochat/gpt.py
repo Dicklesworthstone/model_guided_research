@@ -302,6 +302,13 @@ class GPTConfig:
     ultrametric_p: int = 2
     ultrametric_alpha: float = 2.0
     ultrametric_lcp_beta: float = 32.0
+    # Route observables (bridge beads jida.23/jida.28): when on, the kernel
+    # path records the mean LCP depth of each query's chosen route and the
+    # fraction of queries whose top-two route depths are within
+    # ultrametric_tie_margin digits (the ultrametric tie locus). Off by
+    # default so historical runs and goldens are unchanged.
+    ultrametric_record_routes: bool = False
+    ultrametric_tie_margin: float = 1.0
     # Standard-attention falsification arm for the symplectic no-norm program
     # (bead z4xx): strip the per-layer norms from the standard block - the
     # expected-failure control of hyp-symplectic-nonorm-depth-tied/-untied.

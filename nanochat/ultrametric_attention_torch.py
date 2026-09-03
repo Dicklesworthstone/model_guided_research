@@ -157,6 +157,10 @@ class _PackedPrefixTrie:
 
 
 class UltrametricCausalSelfAttention(AttentionCore):
+    # route observables (registered buffers; see __init__)
+    ultrametric_route_depth_mean: torch.Tensor
+    ultrametric_tie_fraction: torch.Tensor
+
     def __init__(self, config, layer_idx):
         super().__init__(config, layer_idx)
 
@@ -183,6 +187,22 @@ class UltrametricCausalSelfAttention(AttentionCore):
         )
         self.ultrametric_mode = mode
         self.ultrametric_hard_digits = bool(getattr(config, "ultrametric_hard_digits", False))
+        # Route observables (bridge beads jida.23/jida.28): the mean LCP depth
+        # of each query's chosen (max-LCP) route and the tie fraction - the
+        # share of queries whose two deepest routes are within
+        # ultrametric_tie_margin digits of each other (the ultrametric tie
+        # locus, where the strong triangle inequality's genericity fails and
+        # routes switch). Recorded on the kernel path only, no gradient.
+        self.ultrametric_record_routes = bool(getattr(config, "ultrametric_record_routes", False))
+        self.ultrametric_tie_margin = float(getattr(config, "ultrametric_tie_margin", 1.0))
+        if not (self.ultrametric_tie_margin > 0.0 and math.isfinite(self.ultrametric_tie_margin)):
+            raise ValueError(f"ultrametric_tie_margin must be finite and > 0, got {self.ultrametric_tie_margin}")
+        self.register_buffer(
+            "ultrametric_route_depth_mean", torch.tensor(float("nan"), dtype=torch.float32), persistent=False
+        )
+        self.register_buffer(
+            "ultrametric_tie_fraction", torch.tensor(float("nan"), dtype=torch.float32), persistent=False
+        )
 
         if self.K <= 0:
             raise ValueError(f"ultrametric_K must be positive, got {self.K}")
@@ -411,6 +431,23 @@ class UltrametricCausalSelfAttention(AttentionCore):
         # similarity scale, not a log scale), so the default attend's
         # -inf/softmax pipeline does not apply here.
         causal_mask = causal_attn_mask(Tq, Tk, device=q.device)  # (Tq, Tk)
+
+        if self.ultrametric_record_routes:
+            with torch.no_grad():
+                # chosen route = the deepest LCP among causal keys; tie = the
+                # runner-up within ultrametric_tie_margin digits (for hard
+                # digits, margin 1.0 means exact equality of integer depths)
+                masked = lcp.detach().to(torch.float32).masked_fill(~causal_mask, float("-inf"))
+                k_top = 2 if Tk >= 2 else 1
+                top = torch.topk(masked, k=k_top, dim=-1).values  # (B, H, Tq, k_top)
+                self.ultrametric_route_depth_mean.copy_(top[..., 0].mean())
+                if k_top == 2:
+                    gap = top[..., 0] - top[..., 1]
+                    valid = torch.isfinite(gap)  # the first query has one causal key: no runner-up
+                    ties = (gap < self.ultrametric_tie_margin) & valid
+                    self.ultrametric_tie_fraction.copy_(ties.float().sum() / valid.float().sum().clamp_min(1.0))
+                else:
+                    self.ultrametric_tie_fraction.fill_(float("nan"))
 
         weights = torch.exp(lcp.to(torch.float32) * self._log_alpha)
         weights = weights.masked_fill(~causal_mask, 0.0)

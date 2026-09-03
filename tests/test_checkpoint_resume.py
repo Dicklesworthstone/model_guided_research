@@ -1383,3 +1383,33 @@ def test_depth_telemetry_lands_in_metrics_and_summary(monkeypatch, tmp_path):
         assert telemetry[f"{key}_depth_balance"] == pytest.approx(min(r, 1.0 / r))
         assert 0.0 < telemetry[f"{key}_depth_balance"] <= 1.0
     assert summary["dataset"]["task"] is None  # FineWeb-shaped fixture corpus carries no task manifest
+
+
+def test_ultrametric_route_observables_land_in_metrics_and_summary(monkeypatch, tmp_path):
+    """Bridge beads jida.23/jida.28: with --ultrametric-record-routes the tie
+    fraction and the route depth are recorded per logged step and the summary
+    carries the first/final/delta tie fraction that
+    hyp-tie-locus-density-decreases-ultrametric registers against."""
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "ultra-routes",
+        max_steps=3,
+        n_layer=2,
+        log_interval=1,
+        attention_type="ultrametric",
+        ultrametric_record_routes=None,  # flag-only: --ultrametric-record-routes
+    )
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "ultra-routes"
+    steps = [json.loads(line) for line in (run_dir / "metrics.jsonl").read_text().splitlines()]
+    steps = [rec for rec in steps if rec.get("type") == "step"]
+    assert len(steps) == 3
+    for rec in steps:
+        assert 0.0 <= rec["ultrametric_tie_fraction"] <= 1.0
+        assert rec["ultrametric_route_depth_mean"] >= 0.0
+    res = summary["results"]
+    assert "ultrametric_tie_fraction_delta" in res
+    assert res["ultrametric_tie_fraction_delta"] == pytest.approx(
+        res["ultrametric_tie_fraction_final"] - res["ultrametric_tie_fraction_first"]
+    )
+    assert summary["config"]["ultrametric_record_routes"] is True  # the arm selector

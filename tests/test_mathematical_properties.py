@@ -2347,3 +2347,53 @@ class TestBCHNilpotentTermination:
         require(err2 > 1e-6, f"kill witness: weight-2 truncation must NOT be exact at step 3, err {err2:.2e}")
         require(err3 < 1e-10, f"weight-3 BCH polynomial must be exact at step 3, err {err3:.2e}")
         print(f"  ✅ step-3 algebra: weight-2 error {err2:.1e} (expected nonzero), weight-3 error {err3:.1e}")
+
+
+class TestUltrametricRouteObservables:
+    """Bridge beads jida.23/jida.28: the kernel path records the mean LCP depth
+    of each query's chosen route and the tie fraction (two deepest routes within
+    ultrametric_tie_margin digits). The counters must be able to move: a tiny
+    margin finds no ties in soft digits, an enormous margin ties everything,
+    and recording off leaves the buffers NaN."""
+
+    @staticmethod
+    def _forward(record: bool, margin: float):
+        import torch
+
+        from cli import _certify_cos_sin
+        from nanochat.gpt import Block, GPTConfig
+
+        torch.manual_seed(0)
+        cfg = GPTConfig(
+            sequence_len=16,
+            vocab_size=64,
+            n_layer=1,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=32,
+            attention_type="ultrametric",
+            ultrametric_record_routes=record,
+            ultrametric_tie_margin=margin,
+        )
+        block = Block(cfg, 0).eval()
+        attn = block.attn
+        T = 8
+        cos, sin = _certify_cos_sin(T, cfg.n_embd // cfg.n_head, torch.device("cpu"), torch.float32)
+        with torch.no_grad():
+            block(torch.randn(1, T, cfg.n_embd), (cos, sin), None)
+        return float(attn.ultrametric_route_depth_mean), float(attn.ultrametric_tie_fraction), attn.K
+
+    def test_recording_off_leaves_nan(self):
+        import math
+
+        depth, ties, _ = self._forward(False, 1.0)
+        assert math.isnan(depth) and math.isnan(ties)
+
+    def test_depth_in_range_and_margin_moves_the_tie_fraction(self):
+        depth, ties_default, K = self._forward(True, 1.0)
+        assert 0.0 <= depth <= K
+        assert 0.0 <= ties_default <= 1.0
+        _, ties_none, _ = self._forward(True, 1e-9)  # soft digits never tie exactly
+        _, ties_all, _ = self._forward(True, 1e9)  # every runner-up is within an enormous margin
+        assert ties_none == 0.0
+        assert ties_all == 1.0
