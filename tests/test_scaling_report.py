@@ -227,3 +227,26 @@ def test_g2_schema_contract_present(tmp_path):
     for key in ("exponent_b", "exponent_b_ci95", "amplitude_a", "floor_c", "r2_original_scale", "n_rungs"):
         assert key in fit
     assert math.isfinite(fit["exponent_b"])
+
+
+def test_per_mechanism_scaling_fit_artifacts_are_engine_readable(tmp_path):
+    """Bridge bead jida.26: besides the multi-mechanism fits.json the report
+    writes one mgr.bench.scaling_fit.v1 summary.json per mechanism under
+    arms/<mechanism>/ that the verdict engine indexes as bench evidence with
+    the mechanism as its arm, so a registry claim on bench:results.exponent_b
+    resolves."""
+    cs, ls = _known_law_points()
+    suite = _make_suite(tmp_path, "synthB", cs_flops=cs, true_losses=ls, rng_seed=3)
+    out = tmp_path / "report"
+    assert _invoke(out, suite).exit_code == 0
+    fits = json.loads((out / "fits.json").read_text())["fits"]["synthB"]
+    arm = json.loads((out / "arms" / "synthB" / "summary.json").read_text())
+    assert arm["schema_version"] == "mgr.bench.scaling_fit.v1" and arm["mechanism"] == "synthB"
+    assert arm["results"]["exponent_b"] == fits["exponent_b"]
+    assert arm["results"]["exponent_b_ci95"] == fits["exponent_b_ci95"]
+    assert arm["meta"]["generated_from"] == [str(suite)]
+    assert "provenance" in arm and "tainted" in arm["provenance"]
+    index = cli._adj_collect_artifacts([out])
+    bench = [a for a in index if a["schema"] == "bench"]
+    assert len(bench) == 1 and cli._adj_artifact_matches_arm(bench[0], "synthB")
+    assert not cli._adj_artifact_matches_arm(bench[0], "standard")

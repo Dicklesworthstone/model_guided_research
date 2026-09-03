@@ -3283,6 +3283,47 @@ def scaling_report(
     fits_json_text = json.dumps(_clean(g2_json), indent=2, sort_keys=True) + "\n"
     (out / "fits.json").write_text(fits_json_text, encoding="utf-8")
 
+    # ---- per-mechanism bench artifacts (bridge bead jida.26) -------------------
+    # fits.json is one multi-mechanism file, which the verdict engine cannot
+    # attribute to an arm; each mechanism's fit is therefore also written as a
+    # mgr.bench.scaling_fit.v1 summary.json under arms/<mechanism>/ so
+    # registry claims on bench:results.exponent_b (candidate vs baseline
+    # standard) adjudicate like any other bench evidence. The artifact is
+    # derived: its provenance names the runs it was fitted from.
+    from nanochat.report import build_provenance
+
+    git_info = _get_git_info()
+    generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    for mech, fit in g2_json["fits"].items():
+        arm_dir = out / "arms" / str(mech)
+        arm_dir.mkdir(parents=True, exist_ok=True)
+        arm_payload = {
+            "schema_version": "mgr.bench.scaling_fit.v1",
+            "kind": "scaling-fit",
+            "bead": "model_guided_research-jida.26",
+            "mechanism": str(mech),
+            "meta": {
+                "run_id": out.name,
+                "generated_at": generated_at,
+                "generated_from": g2_json["generated_from"],
+                "config": g2_json["config"],
+                "git": git_info,
+            },
+            "provenance": build_provenance(
+                {
+                    "scaling_fit": {
+                        "mechanism": str(mech),
+                        "runs": g2_json["generated_from"],
+                        "config": g2_json["config"],
+                    }
+                }
+            ),
+            "results": dict(_clean(fit)),
+        }
+        (arm_dir / "summary.json").write_text(
+            json.dumps(arm_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
     # ---- plot -----------------------------------------------------------------
     plot_name = "scaling_overlay.png"
     if not no_plot:
@@ -11685,6 +11726,7 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 "mgr.bench.precision_curves.v1",
                 "mgr.bench.depth_curves.v1",
                 "mgr.bench.coord_curves.v1",
+                "mgr.bench.scaling_fit.v1",  # per-mechanism scaling-law fits (mgr scaling-report, jida.26)
             ):
                 # coord_curves (bp08): coordinate-check curves from
                 # nanochat.parameterization.write_coord_check_artifact -
