@@ -10220,6 +10220,7 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "gauge.rotation_additivity_cumsum_law",
         "gauge.rotation_inverse_roundtrip",
         "gauge.rotation_pairwise_norm_preservation",
+        "gauge.zero_transport_reduces_to_standard_attention",
         "hyperbolic.energy_gromov_reduces_to_standard",
         "hyperbolic.exp_log_origin_roundtrip",
         "hyperbolic.lorentz_constraint_residual",
