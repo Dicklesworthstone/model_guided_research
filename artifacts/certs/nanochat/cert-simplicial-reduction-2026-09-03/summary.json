@@ -1,0 +1,58 @@
+{
+  "checks": [
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 1801.183,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "simplicial",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "mass_conservation_two_hop",
+      "comparator": "le",
+      "detail": "row-stochastic 1-hop and 2-hop aggregation must preserve constants",
+      "duration_ms": 83.698,
+      "family": "classical",
+      "measured": 1.1920928955078125e-07,
+      "mechanism": "simplicial",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "zero_triangle_reduces_to_standard_attention",
+      "comparator": "le",
+      "detail": "max attention-output error against causal SDPA with the two-hop weight zeroed",
+      "duration_ms": 152.933,
+      "family": "reduction",
+      "measured": 2.384185791015625e-07,
+      "mechanism": "simplicial",
+      "status": "pass",
+      "tolerance": 2e-05
+    }
+  ],
+  "counts": {
+    "error": 0,
+    "fail": 0,
+    "pass": 3
+  },
+  "device": "cpu",
+  "dtype": "fp32",
+  "duration_s": 4.39,
+  "git": {
+    "branch": "main",
+    "commit": "c4cf6cb",
+    "commit_full": "c4cf6cb4c12e1f92ca4c2ea7015a4f1cdec1a26c",
+    "dirty": false
+  },
+  "kind": "certify",
+  "mechanisms": [
+    "simplicial"
+  ],
+  "run_id": "cert-simplicial-reduction-2026-09-03",
+  "schema_version": 1,
+  "seed": 42
+}
