@@ -1,0 +1,91 @@
+{
+  "checks": [
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 768.577,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "rotation_inverse_roundtrip",
+      "comparator": "le",
+      "detail": "R(-theta) R(theta) = I (orthogonality of the Givens transport)",
+      "duration_ms": 5.076,
+      "family": "classical",
+      "measured": 2.384185791015625e-07,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "rotation_pairwise_norm_preservation",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 10.876,
+      "family": "classical",
+      "measured": 4.76837158203125e-07,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "rotation_additivity_cumsum_law",
+      "comparator": "le",
+      "detail": "R(t2) R(t1) = R(t1+t2): the property that justifies cumsum-as-transport",
+      "duration_ms": 17.443,
+      "family": "classical",
+      "measured": 2.60770320892334e-07,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "zero_transport_reduces_to_standard_attention",
+      "comparator": "le",
+      "detail": "max attention-output error against plain causal SDPA on the same projections with zero transport",
+      "duration_ms": 342.276,
+      "family": "reduction",
+      "measured": 0.0,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 2e-05
+    },
+    {
+      "check": "kv_decode_matches_full_forward",
+      "comparator": "le",
+      "detail": "token-by-token decode through the fp32 angle lane vs one full forward (frame invariance)",
+      "duration_ms": 537.099,
+      "family": "classical",
+      "measured": 5.960464477539062e-07,
+      "mechanism": "gauge",
+      "status": "pass",
+      "tolerance": 0.0001
+    }
+  ],
+  "counts": {
+    "error": 0,
+    "fail": 0,
+    "pass": 6
+  },
+  "device": "cpu",
+  "dtype": "fp32",
+  "duration_s": 5.566,
+  "git": {
+    "branch": "main",
+    "commit": "53e66e3",
+    "commit_full": "53e66e3d1d3e1b737bb37e24c538b565b1427c4c",
+    "dirty": false
+  },
+  "kind": "certify",
+  "mechanisms": [
+    "gauge"
+  ],
+  "run_id": "cert-gauge-reduction-2026-09-03",
+  "schema_version": 1,
+  "seed": 42
+}
