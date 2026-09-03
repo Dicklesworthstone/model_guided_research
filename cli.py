@@ -6721,11 +6721,13 @@ def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any) -> float:
     return float(torch.exp(loss).item())
 
 
-def _eval_tropical_gamma_min(model: Any) -> float | None:
-    """Smallest recorded tropical routing margin across the model's attention
-    modules after the last forward (None when no module records margins). With
-    the certified 1-Lipschitz sup-norm bound (thm-tropical-1-lipschitz) a
-    perturbation of size eps < gamma cannot switch a route."""
+def _eval_tropical_gamma_stats(model: Any) -> dict[str, float] | None:
+    """Tropical routing margins recorded on the model's last forward: ``min``
+    (the smallest margin over layers; with the certified 1-Lipschitz sup-norm
+    bound, thm-tropical-1-lipschitz, a perturbation of size eps < min cannot
+    switch a route) and ``mean`` (the mean of the per-layer head-mean margins,
+    the location statistic the length-axis EVT signature is about). None when
+    no module records margins."""
     import torch
 
     transformer = getattr(model, "transformer", None)
@@ -6736,6 +6738,7 @@ def _eval_tropical_gamma_min(model: Any) -> float | None:
     except (KeyError, TypeError):
         return None
     mins: list[float] = []
+    means: list[float] = []
     for block in blocks:
         attn = getattr(block, "attn", None)
         gamma = getattr(attn, "tropical_gamma_min", None)
@@ -6743,7 +6746,81 @@ def _eval_tropical_gamma_min(model: Any) -> float | None:
             value = float(gamma.detach().float().item())
             if value == value:  # skip NaN (margins not recorded this forward)
                 mins.append(value)
-    return min(mins) if mins else None
+        head_mean = getattr(attn, "tropical_gamma_head_mean", None)
+        if torch.is_tensor(head_mean) and head_mean.ndim == 1:
+            finite = head_mean.detach().float()
+            finite = finite[torch.isfinite(finite)]
+            if finite.numel():
+                means.append(float(finite.mean().item()))
+    if not mins and not means:
+        return None
+    out: dict[str, float] = {}
+    if mins:
+        out["min"] = min(mins)
+    if means:
+        out["mean"] = sum(means) / len(means)
+    return out
+
+
+def _eval_margin_length_fit(points: list[tuple[float, float]]) -> dict[str, Any] | None:
+    """The length-axis margin record (v5, hyp-tropical-length-evt-signature):
+    per prompt length T the mean/std/n of the recorded mean routing margin,
+    and the least-squares slope of margin vs ln T over documents with a
+    bootstrap 95% interval (fixed seed). None without at least two distinct
+    lengths, which is what makes a flat-length task an honest 'not measurable'
+    rather than a zero slope."""
+    import math
+    import random
+
+    if not points:
+        return None
+    by_len: dict[float, list[float]] = {}
+    for t, g in points:
+        if t > 0 and math.isfinite(g):
+            by_len.setdefault(t, []).append(g)
+    if len(by_len) < 2:
+        return None
+
+    def _slope(sample: list[tuple[float, float]]) -> float | None:
+        xs = [math.log(t) for t, _ in sample]
+        ys = [g for _, g in sample]
+        n = len(xs)
+        mx = sum(xs) / n
+        my = sum(ys) / n
+        sxx = sum((x - mx) ** 2 for x in xs)
+        if sxx <= 0.0:
+            return None
+        return sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sxx
+
+    clean = [(t, g) for t, g in points if t > 0 and math.isfinite(g)]
+    slope = _slope(clean)
+    if slope is None:
+        return None
+    rng = random.Random(1234)
+    boots: list[float] = []
+    for _ in range(200):
+        sample = [clean[rng.randrange(len(clean))] for _ in range(len(clean))]
+        s = _slope(sample)
+        if s is not None:
+            boots.append(s)
+    boots.sort()
+    ci = [boots[int(0.025 * (len(boots) - 1))], boots[int(0.975 * (len(boots) - 1))]] if boots else None
+    xs_all = [math.log(t) for t, _ in clean]
+    ys_all = [g for _, g in clean]
+    intercept = (sum(ys_all) / len(ys_all)) - slope * (sum(xs_all) / len(xs_all))
+
+    def _std(vals: list[float]) -> float:
+        if len(vals) < 2:
+            return 0.0
+        m = sum(vals) / len(vals)
+        return math.sqrt(sum((v - m) ** 2 for v in vals) / (len(vals) - 1))
+
+    return {
+        "gamma_by_length": {
+            str(int(t)): {"mean": sum(v) / len(v), "std": _std(v), "n": len(v)} for t, v in sorted(by_len.items())
+        },
+        "gamma_vs_lnT": {"slope": slope, "intercept": intercept, "ci95": ci, "n_docs": len(clean)},
+    }
 
 
 def _eval_score_doc(
@@ -6756,9 +6833,11 @@ def _eval_score_doc(
     temperature: float,
     seed: int,
     perturb: tuple[float, Any] | None = None,
-) -> tuple[bool | None, str, str, float | None] | None:
-    """(correct, expected, got, gamma_min) for answer-bearing docs; None when
+) -> tuple[bool | None, str, str, dict[str, float] | None] | None:
+    """(correct, expected, got, margins) for answer-bearing docs; None when
     the prompt does not fit the rotary cache (caller counts these as skipped).
+    ``margins`` is the tropical routing-margin record of the last forward
+    ({min, mean, prompt_tokens}) or None for mechanisms without margins.
 
     ``perturb=(eps, generator)`` applies the repository's single perturbation
     spec (nanochat.diagnostics_data.apply_embedding_perturbation: sup-norm
@@ -6812,7 +6891,10 @@ def _eval_score_doc(
     got = tok.decode(pieces)
     got_words = got.split()
     correct = got_words[: len(expected_words)] == expected_words
-    return (correct, expected, got, _eval_tropical_gamma_min(model))
+    margins = _eval_tropical_gamma_stats(model)
+    if margins is not None:
+        margins["prompt_tokens"] = float(len(prompt_ids))
+    return (correct, expected, got, margins)
 
 
 @app.command("eval-tasks")
@@ -6978,6 +7060,8 @@ def eval_tasks(
         # certified docs whose answer flipped) - the certified fraction under
         # the 1-Lipschitz sup-norm bound and the certificate's violation rate
         clean_correct: dict[tuple[str, int, int], bool] = {}
+        # (prompt tokens, mean margin) per scored greedy document, tropical only
+        margin_points: list[tuple[float, float]] = []
         ladder_em: dict[str, dict[str, list[float | None]]] = {
             _eps_key(eps): {"in_range": [], "held_out": []} for eps in perturb_ladder
         }
@@ -7019,7 +7103,7 @@ def eval_tasks(
                                 if mode == "greedy":
                                     skipped += 1
                                 continue
-                            correct, expected, got, _gamma_min = scored
+                            correct, expected, got, margins = scored
                             if correct is None:
                                 continue
                             scored_n += 1
@@ -7027,6 +7111,10 @@ def eval_tasks(
                             if mode == "greedy":
                                 # pairing key for the perturbation ladder below
                                 clean_correct[(region, eval_seed, doc_idx)] = bool(correct)
+                                if margins is not None and "mean" in margins and "prompt_tokens" in margins:
+                                    # length-axis margin record (v5): one point per
+                                    # scored document for the gamma-vs-ln T fit
+                                    margin_points.append((float(margins["prompt_tokens"]), float(margins["mean"])))
                             receipt_rows.append(
                                 {
                                     "task": name,
@@ -7085,11 +7173,12 @@ def eval_tasks(
                             )
                             if scored is None:
                                 continue
-                            correct, _expected, _got, gamma_min = scored
+                            correct, _expected, _got, margins = scored
                             if correct is None:
                                 continue
                             p_scored += 1
                             p_correct += int(correct)
+                            gamma_min = None if margins is None else margins.get("min")
                             if gamma_min is not None:
                                 margin_docs += 1
                                 if gamma_min > eps:
@@ -7198,6 +7287,9 @@ def eval_tasks(
 
         results[name] = {
             "difficulty_axis": spec.difficulty_axis,
+            # v5: tropical routing margins vs prompt length (the length-axis EVT
+            # signature); null for mechanisms without margins or single-length tasks
+            "tropical_margins": _eval_margin_length_fit(margin_points) if spec.answer_marker is not None else None,
             # v5: the perturbation ladder. For each eps: perturbed greedy exact
             # match, the degradation (unperturbed minus perturbed, per seed),
             # and for margin-recording (tropical) checkpoints the certified

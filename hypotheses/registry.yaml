@@ -1569,7 +1569,32 @@ hypotheses:
       kind: model
       provenance: "EPIC THEORY-III lab.1 section 3 (the N-axes extension); cross-links C5/E3 length studies"
     date_registered: "2026-06-13"
-    prediction: null
+    prediction:
+      metric_path: "evaltasks:tasks.group.tropical_margins.gamma_vs_lnT.slope"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.1
+      baseline: null
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-03 (bead jida.24): mgr eval-tasks records, for
+        tropical checkpoints with margins on (trained with
+        tropical_record_margins or evaluated with --model-override
+        tropical_record_margins=true, which the artifact's model_config
+        reflects), the mean routing margin per prompt length and the
+        least-squares slope of that margin against ln T over the scored
+        documents (results.tropical_margins.gamma_vs_lnT.slope, with a
+        bootstrap interval; schema mgr.evaltasks.v5). Task: group, whose
+        prompts span about 22 to 90 tokens across the in-range and held-out
+        splits. Derivation of the threshold: the EVT location of a max over T
+        unit-scale terms grows like sqrt(2 ln T), whose slope in ln T is
+        1/sqrt(2 ln T), about 0.35 at T = 64 and 0.30 at T = 256; the
+        registered claim is the conservative half of that, slope >= 0.1, and
+        its falsifiable content is the sign (CLT reasoning predicts no
+        dependence on T). Single-arm; three eval-seed observations per
+        artifact; no margin-vs-length evidence exists at registration. The
+        width-axis EVT prediction was REFUTED on 2026-09-02; this length-axis
+        entry is independent of it and is not revived by it.
     operationalization_note: >-
       Observable: the tropical margin (gamma) statistics already logged by the
       mechanism, evaluated across a context-length ladder T; fit the gamma

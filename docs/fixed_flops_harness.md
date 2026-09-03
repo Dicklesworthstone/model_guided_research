@@ -163,6 +163,15 @@ seed (schema `mgr.evaltasks.v5`, 2026-09-03). A registry claim about
 robustness names one rung, e.g.
 `evaltasks:tasks.arith.robustness.ladder.e0p1.degradation.held_out.mean`.
 
+The same v5 summary carries the length-axis margin record for tropical
+checkpoints with margins on (`--model-override tropical_record_margins=true`
+at eval time is enough; the artifact's model config reflects it):
+`tasks.<task>.robustness` is joined by `tasks.<task>.tropical_margins` with
+the mean routing margin per prompt length and the slope of margin against
+ln T over documents (bootstrap interval), the observable of
+`hyp-tropical-length-evt-signature`. It is null for mechanisms without
+margins and for tasks whose prompts all have one length.
+
 ### Two controls every comparison needs
 
 An apparatus that has never reported "nothing" has not been shown able to

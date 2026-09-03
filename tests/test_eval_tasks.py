@@ -541,3 +541,52 @@ def test_perturbation_mode_is_identity_at_zero_and_degrades_at_large_eps(monkeyp
         ],
     )
     assert bad.exit_code == 2 and "must be > 0" in bad.output
+
+
+def test_tropical_margins_vs_length_recorded_for_tropical_checkpoints_only(monkeypatch, tmp_path):
+    """v5 (bead jida.24): with margins on (an eval-time model override or a
+    checkpoint trained with them) a tropical checkpoint's summary carries the
+    mean routing margin per prompt length and the slope of margin vs ln T over
+    documents; standard attention records nothing. The group task has several
+    prompt lengths, which is what makes the fit defined."""
+    _tokenizer_or_skip()
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    runner = CliRunner()
+
+    def run(attention_type: str, run_id: str, *extra: str) -> dict:
+        ckpt = _train_tiny_checkpoint(tmp_path / attention_type, attention_type, monkeypatch)
+        result = runner.invoke(
+            mgr_cli.app,
+            [
+                "eval-tasks",
+                "--checkpoint",
+                str(ckpt),
+                "--task",
+                "group",
+                "--examples",
+                "8",
+                "--seeds",
+                "0",
+                "--artifacts-dir",
+                str(tmp_path / "artifacts"),
+                "--run-id",
+                run_id,
+                *extra,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return json.loads((tmp_path / "artifacts" / "evals" / "tasks" / run_id / "summary.json").read_text())
+
+    trop = run("tropical", "trop-margins", "--model-override", "tropical_record_margins=true")
+    block = trop["tasks"]["group"]["tropical_margins"]
+    assert block is not None, "a tropical checkpoint with margins on must record the length-axis block"
+    assert len(block["gamma_by_length"]) >= 2
+    fit = block["gamma_vs_lnT"]
+    assert fit["n_docs"] >= 2 and fit["ci95"] is not None and len(fit["ci95"]) == 2
+    assert all(isinstance(v, float) for v in (fit["slope"], fit["intercept"]))
+    assert trop["meta"]["checkpoint"]["model_config"]["tropical_record_margins"] is True  # the override is recorded
+    std = run("standard", "std-margins")
+    assert std["tasks"]["group"]["tropical_margins"] is None
