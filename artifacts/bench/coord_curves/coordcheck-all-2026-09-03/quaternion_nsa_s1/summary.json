@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "quaternion",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-09-03T01:53:23Z",
+    "git": {
+      "branch": "main",
+      "commit": "585df04",
+      "commit_full": "585df0476e5811754f1c2350e7c3b83d7336af45",
+      "dirty": true
+    },
+    "run_id": "coordcheck-all-2026-09-03",
+    "seed": 1
+  },
+  "provenance": {
+    "config_hash": "99f1e74d0d3d602a4ebb65134909363c6f6614b32257bf81dfe0f8f278f742c7",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "b76cec8eae68bc6e9211c5d612cfa33bedd132ee",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.0018750608221633246,
+    "activation_rms": {
+      "64": 1.033525824546814,
+      "128": 1.0315444469451904,
+      "256": 1.0352754592895508,
+      "512": 1.0374072790145874,
+      "1024": 1.0388697385787964,
+      "2048": 1.0381256341934204
+    },
+    "concentration_class": "isometry (normed algebra)",
+    "ffn_type": "standard",
+    "loglog_slope": 0.0018750608221633246,
+    "parameterization": "nsa",
+    "r_squared": 0.7732970161823691,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}

@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "braid",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-09-03T01:51:57Z",
+    "git": {
+      "branch": "main",
+      "commit": "585df04",
+      "commit_full": "585df0476e5811754f1c2350e7c3b83d7336af45",
+      "dirty": true
+    },
+    "run_id": "coordcheck-all-2026-09-03",
+    "seed": 2
+  },
+  "provenance": {
+    "config_hash": "e75f0a742cdbd8b660c4507a5cc00ed832e091af9f20d313e6d2402ddbf7ef9a",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "b76cec8eae68bc6e9211c5d612cfa33bedd132ee",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.0008740680903726883,
+    "activation_rms": {
+      "64": 1.039932131767273,
+      "128": 1.0452901124954224,
+      "256": 1.043063759803772,
+      "512": 1.0422037839889526,
+      "1024": 1.0445486307144165,
+      "2048": 1.0449689626693726
+    },
+    "concentration_class": "CLT (assumed)",
+    "ffn_type": "standard",
+    "loglog_slope": 0.0008740680903726883,
+    "parameterization": "current",
+    "r_squared": 0.3341789683969306,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}

@@ -93,4 +93,10 @@ numbers**:
   bands there once before using them).
 - Update the bands here whenever a deliberate config change moves them, with the
   commit that caused the move (so the band always reflects intended state).
+- The bands are measured with the GPT-2 tokenizer. `--tokenizer task` (a
+  byte-level BPE trained on the corpus, 512 tokens, embedding padded to a
+  multiple of 64) changes the FLOPs per token by about 25x at d64 and every
+  absolute CE with it; it is a different coordinate, so a task-tokenizer run is
+  never compared against these bands (docs/fixed_flops_harness.md, "The
+  tokenizer is part of the FLOPs coordinate").
 </content>

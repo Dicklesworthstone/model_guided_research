@@ -108,6 +108,40 @@ same documents shuffled, with exact match 0.0. Two rules:
   trainer's `<|bos|>` since the same date (`mgr.evaltasks.v4`); v3 and v4
   artifacts must never share an arm.
 
+### Sequence length is part of the coordinate
+
+A document longer than the training window is never seen whole, so a task
+whose documents exceed `--sequence-len` floors at every budget regardless of
+mechanism. Measured on 2026-09-02 at the default dials (GPT-2 tokens, a lower
+bound for the task tokenizer; in-range / held-out per document):
+
+| task | in-range | held-out | fits a 64-token window? |
+|---|---|---|---|
+| arith | 22 | 22 | yes |
+| copyops | 22 | 34 | yes |
+| dyck | 27 | 38 | yes |
+| rot | 18 | 29 | yes |
+| group | 22 | 67-90 | in range only |
+| bag | 49 | 87 | in range only |
+| rel | 76 | 140 | no |
+| regime (v2) | 103 | 193 | no |
+| needle | 163 | 625 | no |
+| hier | 175 | 685-1044 | no |
+
+Regime made the case directly: floored at 1e12 with a 64-token window, cleared
+at 2e12 with a 256-token window and the same model. Three rules:
+
+- **Measure before the ladder.** `TASKS[name].generate(...)` plus the tokenizer
+  gives the per-split token lengths in one line; record them in the
+  preregistration (the template has a window row).
+- **Choose the window from the held-out documents** where the claim is about
+  extrapolation past them (needle's held-out split is long by design, so a
+  window that holds the in-range documents is the coordinate and the held-out
+  overflow is the test), otherwise from the longest in-range document.
+- **Never compare across windows.** A rung is (model shape, budget, corpus,
+  tokenizer, sequence length); a floored rung at one window says nothing about
+  the task at another.
+
 ### Two controls every comparison needs
 
 An apparatus that has never reported "nothing" has not been shown able to

@@ -200,6 +200,8 @@ Claim type: [ ] sample-efficiency (floored rung)  [ ] asymptotic (off-floor rung
 Hypothesis id(s): <hyp-...>
 Metric: evaltasks:tasks.<task>.exact_match.greedy.held_out.mean   threshold: <ε>  comparator: >=
 Answer-prior floor: <task floor>   (engine prefers artifact-recorded answer_prior)
+Window: sequence_len <N>; document tokens in-range <n> / held-out <m> (measured, task tokenizer);
+        held-out overflow is [ ] the test (extrapolation claim)  [ ] a defect (choose N >= m)
 
 PHASE 0 — rung: probe <bead/path in probes/sizing/>; standard clears floor at <budget>;
           per-seed shape at chosen rung: <unimodal-tight | bimodal-near-floor>; chosen rung: <budget>
