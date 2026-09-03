@@ -273,7 +273,10 @@ Each framework is implemented twice:
 Fidelity note: three of the PyTorch mechanisms (simplicial, fractal, surreal)
 are deliberately simplified proxies of their JAX demos, and their sections
 below say exactly what is implemented. Treat their registry verdicts as
-verdicts about the proxy.
+verdicts about the proxy: since 2026-09-03 each such entry carries a PROXY
+TIER note and has a faithful-tier successor (ids ending in `-faithful`,
+selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
+`surreal_scaling_axis`) that only the faithful implementations can satisfy.
 
 ### 1. Matrix Exponential Gauge Learning
 **Key Idea**: Lie group/algebra machinery for stable neural architectures
