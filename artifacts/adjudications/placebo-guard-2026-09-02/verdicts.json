@@ -1,0 +1,220 @@
+{
+  "date": "2026-09-02",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 1,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            1.0002408556572766,
+            1.0032335470852862
+          ],
+          "effect": 1.0017081228360913,
+          "n_baseline": 6,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "fractal": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            1.015172560100206,
+            1.0315360949753773
+          ],
+          "effect": 1.021491612399579,
+          "n_baseline": 6,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 0.6912308769123088,
+          "power": 0.9959733038334696,
+          "verdict": "inconclusive"
+        },
+        "gauge": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            1.0031927429321583,
+            1.005830834540391
+          ],
+          "effect": 1.0046385063730967,
+          "n_baseline": 8,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "octonion": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            1.000727769215257,
+            1.0044745991294148
+          ],
+          "effect": 1.002734617911301,
+          "n_baseline": 8,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "quaternion": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            1.0062323493225114,
+            1.0107698552041062
+          ],
+          "effect": 1.0083605111119323,
+          "n_baseline": 6,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "reversible": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            0.9978483810203436,
+            1.0010755035326722
+          ],
+          "effect": 0.9995006344656114,
+          "n_baseline": 8,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "simplicial": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            0.9936814079751912,
+            0.9991335681796281
+          ],
+          "effect": 0.9964203707844117,
+          "n_baseline": 6,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "surreal": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            0.9872228316972991,
+            0.9912329684843195
+          ],
+          "effect": 0.9892389156056104,
+          "n_baseline": 6,
+          "n_candidate": 7,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "tropical": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            1.0037043423237775,
+            1.0079052487042919
+          ],
+          "effect": 1.0057960531686336,
+          "n_baseline": 8,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        },
+        "ultrametric": {
+          "budget_flops": 100000000000000.0,
+          "ci95": [
+            1.0095784326973565,
+            1.0135693577191993
+          ],
+          "effect": 1.0116113224687875,
+          "n_baseline": 6,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 1.0,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/evals/tasks/e1-placebo-braid-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-braid-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-braid-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s3/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s7/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s2/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s3/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s4/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s5/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s6/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s7/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s2/summary.json"
+      ],
+      "id": "hyp-placebo-no-winner",
+      "p_value": 0.6912308769123088,
+      "policy_version": "ci-v6",
+      "q_value": 0.6912308769123088,
+      "tainted_artifacts_seen": true,
+      "verdict": "inconclusive"
+    }
+  ]
+}
