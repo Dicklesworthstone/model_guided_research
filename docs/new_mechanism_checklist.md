@@ -131,9 +131,9 @@ Honest snapshot from `mgr certify` (55/55 pass) and the registry.
 | ultrametric | ✓ | ✓ (strong-triangle LCP) | ✓ (trie_decode_matches_hard_kernel) | ✓ flat, 0.0014-0.0024 (2026-09-03) | ✓ |
 | quaternion | ✓ | ✓ (assoc, norm, rotor) | — (is a reduction *target*) | ✓ flat, 0.0008-0.0019; nsa identical at init (rotor rule changes the LR only) | ✓ |
 | octonion | ✓ | ✓ (alternativity, norm, non-assoc) | ✓ (reduces_to_quaternion_on_subalgebra) | ✓ flat, 0.0006-0.0015; nsa identical at init | ✓ |
-| braid | ✓ | ✓ (YBE, charges, r-matrix) | — (no simpler sub-mechanism) | ✓ flat, 0.0006-0.0016 | ✓ |
-| gauge | ✓ | ✓ (rotation roundtrip/additivity) | — (lacks QK-norm; not a clean → standard) | ✓ flat, 0.0001-0.0019 | ✓ |
-| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — (no simpler sub-mechanism) | ✓ flat, 0.0003-0.0009 (hyp-coordcheck-clt-flat SUPPORTED) | ✓ |
+| braid | ✓ | ✓ (YBE, charges, r-matrix) | — analyzed 2026-09-03: sigmoid additive accumulation (not a softmax) has no standard-attention limit; the algebraic laws are the known-answer checks | ✓ flat, 0.0006-0.0016 | ✓ |
+| gauge | ✓ | ✓ (rotation roundtrip/additivity) | ✓ (zero_transport_reduces_to_standard_attention: zero connection = plain SDPA on the same projections, no QK-norm; kill witness in tests) | ✓ flat, 0.0001-0.0019 | ✓ |
+| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — analyzed 2026-09-03: the RevNet coupling y1 = x1 + F(x2), y2 = x2 + G(y1) has no plain-block limit; forward_inverse_roundtrip and symplectic_jacobian are the known-answer checks | ✓ flat, 0.0003-0.0009 (hyp-coordcheck-clt-flat SUPPORTED) | ✓ |
 | hyperbolic | ✓ | ✓ (Lorentz constraint, exp/log roundtrip) | ✓ (energy_gromov_reduces_to_standard) | ✓ flat, 0.0009-0.0013 | ✓ |
 | simplicial | ✓ | ✓ (mass conservation) | — (no simpler sub-mechanism) | ✓ flat, 0.0008-0.0016 | ✓ |
 | surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✓ flat, 0.0001-0.0026 | ✓ |

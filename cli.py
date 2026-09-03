@@ -5270,6 +5270,54 @@ def _run_certify_checks(
             detail="R(t2) R(t1) = R(t1+t2): the property that justifies cumsum-as-transport",
         )
 
+        def gauge_standard_reduction_measure() -> float:
+            # Reduction-to-known-mechanism (checklist item 1, bead jida.17):
+            # with the connection network zeroed every transport is the
+            # identity, so the gauge attention path must equal plain causal
+            # SDPA attention on its own q/k/v projections (RoPE applied, GQA
+            # broadcast, c_proj) - the standard attention sub-block without
+            # QK-norm. The pullback, the cumsum lane and the GQA head layout
+            # are all exercised; a wrong one moves this measure off zero.
+            import torch.nn.functional as t_func
+
+            from nanochat.model_utils import apply_rotary_emb, norm
+
+            block, cfg = make_block("gauge")
+            gb = block.special_block.float()
+            with torch.no_grad():
+                gb.to_angles.weight.zero_()
+            T = 8
+            head_dim = cfg.n_embd // cfg.n_head
+            cos, sin = _certify_cos_sin(T, head_dim, device, torch.float32)
+            torch.manual_seed(seed + 21)
+            x = torch.randn(1, T, cfg.n_embd, device=device)
+            xn = norm(x)
+            with torch.no_grad():
+                gauge_out = gb._gauge_attention(xn, (cos, sin), None)
+                q = gb.c_q(xn).view(1, T, cfg.n_head, head_dim)
+                k = gb.c_k(xn).view(1, T, cfg.n_kv_head, head_dim)
+                v = gb.c_v(xn).view(1, T, cfg.n_kv_head, head_dim)
+                q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+                q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+                ref = t_func.scaled_dot_product_attention(
+                    q, k, v, is_causal=True, enable_gqa=cfg.n_head != cfg.n_kv_head
+                )
+                ref = gb.c_proj(ref.transpose(1, 2).contiguous().view(1, T, cfg.n_embd))
+            if float(ref.abs().max()) == 0.0:
+                # vacuity guard: a zero-initialized c_proj would make both
+                # sides zero and the reduction unfalsifiable
+                return float("inf")
+            return float((gauge_out - ref).abs().max())
+
+        add_check(
+            "gauge",
+            "zero_transport_reduces_to_standard_attention",
+            "reduction",
+            gauge_standard_reduction_measure,
+            tolerance=2e-5,
+            detail="max attention-output error against plain causal SDPA on the same projections with zero transport",
+        )
+
         def gauge_kv_decode_measure() -> float:
             # Cached-mode gauge invariance (bead 7b0.5): the fp32 cumulative-angle
             # lane must rebuild the SAME global frame token-by-token that the

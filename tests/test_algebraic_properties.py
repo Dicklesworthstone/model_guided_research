@@ -866,3 +866,43 @@ def test_mahler_truncation_certificate_exact(p, decay, n_terms, cut):
         err = (mahler_eval(coeffs[: cut + 1], x, modulus) - mahler_eval(coeffs, x, modulus)) % modulus
         if err:
             assert _vp(err, p, prec) >= cert
+
+
+def test_gauge_zero_transport_reduces_to_plain_attention_and_nonzero_does_not():
+    """Reduction-to-known-mechanism for gauge (checklist item 1, bead jida.17):
+    with the connection network zeroed the gauge attention path equals plain
+    causal SDPA on its own projections; with a live connection it does not (the
+    kill witness that keeps the certify check from being vacuous)."""
+    import torch
+    import torch.nn.functional as t_func
+
+    from cli import _certify_cos_sin
+    from nanochat.gpt import Block, GPTConfig
+    from nanochat.model_utils import apply_rotary_emb, norm
+
+    torch.manual_seed(0)
+    cfg = GPTConfig(sequence_len=16, vocab_size=64, n_layer=1, n_head=4, n_kv_head=2, n_embd=32, attention_type="gauge")
+    gb = Block(cfg, 0).eval().special_block.float()
+    T = 8
+    head_dim = cfg.n_embd // cfg.n_head
+    cos, sin = _certify_cos_sin(T, head_dim, torch.device("cpu"), torch.float32)
+    x = torch.randn(1, T, cfg.n_embd)
+    xn = norm(x)
+
+    def reference() -> torch.Tensor:
+        q = gb.c_q(xn).view(1, T, cfg.n_head, head_dim)
+        k = gb.c_k(xn).view(1, T, cfg.n_kv_head, head_dim)
+        v = gb.c_v(xn).view(1, T, cfg.n_kv_head, head_dim)
+        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        y = t_func.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
+        return gb.c_proj(y.transpose(1, 2).contiguous().view(1, T, cfg.n_embd))
+
+    with torch.no_grad():
+        # GPT zero-initializes every c_proj at model level (the block starts as
+        # the identity); randomize it so the comparison can never be 0 == 0
+        gb.c_proj.weight.normal_(std=0.2)
+        gb.to_angles.weight.zero_()
+        assert float((gb._gauge_attention(xn, (cos, sin), None) - reference()).abs().max()) < 2e-5
+        gb.to_angles.weight.normal_(std=0.5)  # live transport: the pullback frame differs per token
+        assert float((gb._gauge_attention(xn, (cos, sin), None) - reference()).abs().max()) > 1e-3
