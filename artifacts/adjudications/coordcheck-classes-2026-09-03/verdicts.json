@@ -1,0 +1,249 @@
+{
+  "date": "2026-09-02",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 3,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 3,
+    "supported_fdr_survivors": [
+      "hyp-coordcheck-branching-radial-flat",
+      "hyp-coordcheck-clt-assumed-flat",
+      "hyp-coordcheck-isometry-flat"
+    ]
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "octonion": {
+          "budget_flops": null,
+          "ci95": [
+            -9.91140277609142e-05,
+            0.0011509924274813945
+          ],
+          "effect": 0.0005259391998602401,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 2.7208346686791174e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "quaternion": {
+          "budget_flops": null,
+          "ci95": [
+            0.00012887875495113668,
+            0.001389145250811122
+          ],
+          "effect": 0.0007590120028811292,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 2.900879536582579e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s2/summary.json"
+      ],
+      "id": "hyp-coordcheck-isometry-flat",
+      "p_value": 2.900879536582579e-11,
+      "policy_version": "ci-v6",
+      "q_value": 8.702638609747737e-11,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    },
+    {
+      "arms": {
+        "hyperbolic": {
+          "budget_flops": null,
+          "ci95": [
+            0.0002230839087565495,
+            0.0012903374606323082
+          ],
+          "effect": 0.0007567106846944288,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 1.2632450641092419e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "ultrametric": {
+          "budget_flops": null,
+          "ci95": [
+            0.0003930316577930227,
+            0.0020574156540379153
+          ],
+          "effect": 0.001225223655915469,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 1.2219492084852845e-10,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s2/summary.json"
+      ],
+      "id": "hyp-coordcheck-branching-radial-flat",
+      "p_value": 1.2219492084852845e-10,
+      "policy_version": "ci-v6",
+      "q_value": 1.8329238127279268e-10,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    },
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": null,
+          "ci95": [
+            0.0005901343171649616,
+            0.0015252078028035363
+          ],
+          "effect": 0.001057671059984249,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 6.725286993969348e-12,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "fractal": {
+          "budget_flops": null,
+          "ci95": [
+            0.00040691648398533543,
+            0.0018502024700481037
+          ],
+          "effect": 0.0011285594770167196,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 5.933342706043732e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "gauge": {
+          "budget_flops": null,
+          "ci95": [
+            -0.00027695947789582075,
+            0.001229479344691067
+          ],
+          "effect": 0.00047625993339762317,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 6.878508873597866e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "simplicial": {
+          "budget_flops": null,
+          "ci95": [
+            0.00032640656213011644,
+            0.0014710101370685631
+          ],
+          "effect": 0.0008987083495993398,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 1.8183676786520664e-11,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        },
+        "surreal": {
+          "budget_flops": null,
+          "ci95": [
+            -6.936750380443684e-06,
+            0.00234288751836406
+          ],
+          "effect": 0.0011679753839918083,
+          "n_baseline": 0,
+          "n_candidate": 6,
+          "n_for_80pct": 2,
+          "p_value": 6.811023967046026e-10,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s2/summary.json"
+      ],
+      "id": "hyp-coordcheck-clt-assumed-flat",
+      "p_value": 6.811023967046026e-10,
+      "policy_version": "ci-v6",
+      "q_value": 6.811023967046026e-10,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    }
+  ]
+}

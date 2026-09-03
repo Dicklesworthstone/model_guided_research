@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "ultrametric",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-09-03T02:01:04Z",
+    "git": {
+      "branch": "main",
+      "commit": "f89066f",
+      "commit_full": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+      "dirty": false
+    },
+    "run_id": "coordcheck-all-2026-09-03-b",
+    "seed": 5
+  },
+  "provenance": {
+    "config_hash": "c4a6cce482e97772ed4487d5b95c8d920b107c639c0d45cf28692cd354f18131",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.0007742807979791881,
+    "activation_rms": {
+      "64": 1.0333223342895508,
+      "128": 1.0350770950317383,
+      "256": 1.0358484983444214,
+      "512": 1.0363571643829346,
+      "1024": 1.036841869354248,
+      "2048": 1.0360503196716309
+    },
+    "concentration_class": "branching / geometric (LCP depth)",
+    "ffn_type": "standard",
+    "loglog_slope": 0.0007742807979791881,
+    "parameterization": "current",
+    "r_squared": 0.6887776246121018,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}

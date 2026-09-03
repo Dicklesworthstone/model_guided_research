@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "hyperbolic",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-09-03T02:01:18Z",
+    "git": {
+      "branch": "main",
+      "commit": "f89066f",
+      "commit_full": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+      "dirty": false
+    },
+    "run_id": "coordcheck-all-2026-09-03-b",
+    "seed": 4
+  },
+  "provenance": {
+    "config_hash": "add1d34c6ffc5dc49ff6abb15b46ef882bbd875f96e5a6fcbf5d3224b06c5cb1",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.00021983642333781654,
+    "activation_rms": {
+      "64": 1.0311108827590942,
+      "128": 1.0349899530410767,
+      "256": 1.0326573848724365,
+      "512": 1.030409336090088,
+      "1024": 1.0319502353668213,
+      "2048": 1.0322808027267456
+    },
+    "concentration_class": "radial / curvature-gated Lorentz energy",
+    "ffn_type": "standard",
+    "loglog_slope": -0.00021983642333781654,
+    "parameterization": "current",
+    "r_squared": 0.03481759213414226,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}
