@@ -135,7 +135,7 @@ Honest snapshot from `mgr certify` (55/55 pass) and the registry.
 | gauge | ✓ | ✓ (rotation roundtrip/additivity) | ✓ (zero_transport_reduces_to_standard_attention: zero connection = plain SDPA on the same projections, no QK-norm; kill witness in tests) | ✓ flat, 0.0001-0.0019 | ✓ |
 | reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — analyzed 2026-09-03: the RevNet coupling y1 = x1 + F(x2), y2 = x2 + G(y1) has no plain-block limit; forward_inverse_roundtrip and symplectic_jacobian are the known-answer checks | ✓ flat, 0.0003-0.0009 (hyp-coordcheck-clt-flat SUPPORTED) | ✓ |
 | hyperbolic | ✓ | ✓ (Lorentz constraint, exp/log roundtrip) | ✓ (energy_gromov_reduces_to_standard) | ✓ flat, 0.0009-0.0013 | ✓ |
-| simplicial | ✓ | ✓ (mass conservation) | — (no simpler sub-mechanism) | ✓ flat, 0.0008-0.0016 | ✓ |
+| simplicial | ✓ | ✓ (mass conservation) | ✓ (zero_triangle_reduces_to_standard_attention: two-hop weight zero = causal SDPA; proxy tier, the faithful 2-simplex build must keep it) | ✓ flat, 0.0008-0.0016 | ✓ |
 | surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✓ flat, 0.0001-0.0026 | ✓ |
 | fractal | ✓ | ✓ (router simplex) | — (no simpler sub-mechanism) | ✓ flat, 0.0012-0.0022 | ✓ |
 

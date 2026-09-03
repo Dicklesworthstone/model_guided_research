@@ -906,3 +906,28 @@ def test_gauge_zero_transport_reduces_to_plain_attention_and_nonzero_does_not():
         assert float((gb._gauge_attention(xn, (cos, sin), None) - reference()).abs().max()) < 2e-5
         gb.to_angles.weight.normal_(std=0.5)  # live transport: the pullback frame differs per token
         assert float((gb._gauge_attention(xn, (cos, sin), None) - reference()).abs().max()) > 1e-3
+
+
+def test_simplicial_zero_triangle_reduces_to_plain_attention_and_two_hop_does_not():
+    """Reduction-to-known-mechanism for the simplicial proxy (checklist item 1,
+    bead jida.14): with the two-hop weight zeroed the mechanism is plain causal
+    softmax attention; with it live the two-hop diffusion changes the output
+    (the kill witness)."""
+    import torch
+    import torch.nn.functional as t_func
+
+    from nanochat.gpt import Block, GPTConfig
+
+    torch.manual_seed(0)
+    cfg = GPTConfig(
+        sequence_len=16, vocab_size=64, n_layer=1, n_head=2, n_kv_head=2, n_embd=32, attention_type="simplicial"
+    )
+    attn = Block(cfg, 0).eval().attn.float()
+    q, k, v = (torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head) for _ in range(3))
+    ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+    with torch.no_grad():
+        attn.mix_1.fill_(1.0)
+        attn.mix_2.zero_()
+        assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) < 2e-5
+        attn.mix_2.fill_(0.5)
+        assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) > 1e-3

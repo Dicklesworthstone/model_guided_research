@@ -5698,6 +5698,38 @@ def _run_certify_checks(
             detail="row-stochastic 1-hop and 2-hop aggregation must preserve constants",
         )
 
+        def simplicial_standard_reduction_measure() -> float:
+            # Reduction-to-known-mechanism (checklist item 1, bead jida.14): the
+            # proxy is y = mix_1 * (A v) + mix_2 * (A (A v)); with the two-hop
+            # weight zeroed and the one-hop weight at one it must equal plain
+            # causal softmax attention on the same q/k/v exactly. The faithful
+            # 2-simplex build must keep this reduction (triangle term zero).
+            import torch.nn.functional as t_func
+
+            block, _cfg = make_block("simplicial")
+            attn = block.attn.float()
+            torch.manual_seed(seed + 23)
+            q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            k = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            v = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            with torch.no_grad():
+                attn.mix_1.fill_(1.0)
+                attn.mix_2.zero_()
+                out = attn.attend(q, k, v, kv_cache=None, pos0=None)
+                ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+            if float(ref.abs().max()) == 0.0:
+                return float("inf")  # vacuity guard
+            return float((out - ref).abs().max())
+
+        add_check(
+            "simplicial",
+            "zero_triangle_reduces_to_standard_attention",
+            "reduction",
+            simplicial_standard_reduction_measure,
+            tolerance=2e-5,
+            detail="max attention-output error against causal SDPA with the two-hop weight zeroed",
+        )
+
     # ----- fractal: router branch distributions are simplex-valued -----
     if "fractal" in mechanisms:
 
@@ -10330,6 +10362,7 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "reversible.forward_inverse_roundtrip",
         "reversible.symplectic_jacobian",
         "simplicial.mass_conservation_two_hop",
+        "simplicial.zero_triangle_reduces_to_standard_attention",
         "standard.causal_mask_structure",
         "standard.rmsnorm_unit_rms",
         "standard.rope_pairwise_norm_preservation",
