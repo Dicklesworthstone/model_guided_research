@@ -10,7 +10,7 @@
   change must update the fixture deliberately (set MGR_CAPTURE_EVAL_GOLDEN=1)
   with a justification in the commit message.
 - End-to-end: train a tiny CPU checkpoint (synthetic loader), eval it through
-  the CLI, validate the mgr.evaltasks.v4 schema + artifacts (answer_prior
+  the CLI, validate the mgr.evaltasks.v5 schema + artifacts (answer_prior
   floors + generations.jsonl receipts included).
 """
 
@@ -91,18 +91,19 @@ def _difficulty(task: str, doc: str) -> float:
 
 
 def test_parser_accepts_exact_answer():
-    correct, expected, got = _score(" lt", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
+    correct, expected, got, gamma_min = _score(" lt", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
     assert correct is True and expected == "lt"
+    assert gamma_min is None  # the stub model records no tropical margins
 
 
 def test_parser_canonicalizes_leading_whitespace_and_trailing_tokens():
     # leading spaces and trailing junk after the answer must not fail a correct answer
-    correct, _, _ = _score("   lt TASK garbage", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
+    correct, _, _, _ = _score("   lt TASK garbage", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
     assert correct is True
 
 
 def test_parser_rejects_wrong_answer():
-    correct, _, got = _score(" gt", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
+    correct, _, got, _ = _score(" gt", "TASK arith CMP 1.00e-02 2.00e+03 OUT lt")
     assert correct is False and got.split()[0] == "gt"
 
 
@@ -150,7 +151,7 @@ def test_parser_stops_at_document_separator():
         seed=0,
     )
     assert out is not None
-    correct, expected, got = out
+    correct, expected, got, _ = out
     assert correct is True, f"answer followed by the separator must score correct: got={got!r}"
     assert chr(_StopTok.BOS) not in got, "the separator must be truncated from the decoded answer"
 
@@ -374,7 +375,12 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     assert result.exit_code == 0, result.output
     run_dir = tmp_path / "artifacts" / "evals" / "tasks" / f"eval-{attention_type}"
     summary = json.loads((run_dir / "summary.json").read_text())
-    assert summary["schema_version"] == "mgr.evaltasks.v4"
+    assert summary["schema_version"] == "mgr.evaltasks.v5"
+    assert summary["meta"]["perturbation"] == {
+        "perturb_eps": 0.0,
+        "perturb_seed": 0,
+        "spec": "nanochat.diagnostics_data.apply_embedding_perturbation",
+    }
     # dz9i: a real trained checkpoint has a run summary beside it -> the
     # TRAINING provenance must be carried (taintedness mirrors whatever
     # tree state the tiny train ran under - assert shape, not state)
@@ -456,3 +462,82 @@ def test_eval_cli_argument_errors(tmp_path):
     assert result.exit_code == 2  # neither --task nor --all-tasks
     result = runner.invoke(mgr_cli.app, ["eval-tasks", "--checkpoint", str(tmp_path), "--task", "not-a-task"])
     assert result.exit_code == 2
+
+
+def test_perturbation_mode_is_identity_at_zero_and_degrades_at_large_eps(monkeypatch, tmp_path):
+    """v5 (bead jida.21): --perturb-eps 0 is byte-identical to the default
+    run; a large eps lowers (or at worst ties) exact match and is recorded in
+    meta.perturbation, so a robustness ladder's runs are distinct arms for the
+    engine's selectors. A standard checkpoint records no certified fraction."""
+    _tokenizer_or_skip()
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    ckpt = _train_tiny_checkpoint(tmp_path, "standard", monkeypatch)
+    runner = CliRunner()
+
+    def run(run_id: str, *extra: str) -> dict:
+        result = runner.invoke(
+            mgr_cli.app,
+            [
+                "eval-tasks",
+                "--checkpoint",
+                str(ckpt),
+                "--task",
+                "arith",
+                "--examples",
+                "6",
+                "--seeds",
+                "0",
+                "--artifacts-dir",
+                str(tmp_path / "artifacts"),
+                "--run-id",
+                run_id,
+                *extra,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return json.loads((tmp_path / "artifacts" / "evals" / "tasks" / run_id / "summary.json").read_text())
+
+    plain = run("plain")
+    ladder = run("ladder", "--perturb-eps", "0.001,25.0", "--perturb-seed", "3")
+    # the unperturbed score is the same field in both runs, ladder or not
+    assert plain["tasks"]["arith"]["exact_match"] == ladder["tasks"]["arith"]["exact_match"]
+    assert plain["meta"]["perturbation"]["perturb_eps"] == []
+    assert plain["tasks"]["arith"]["robustness"] == {"perturb_seed": 0, "ladder": {}}
+    assert ladder["meta"]["perturbation"] == {
+        "perturb_eps": [0.001, 25.0],
+        "perturb_seed": 3,
+        "spec": "nanochat.diagnostics_data.apply_embedding_perturbation",
+    }
+    rungs = ladder["tasks"]["arith"]["robustness"]["ladder"]
+    assert set(rungs) == {"e0p001", "e25"}
+    em_plain = plain["tasks"]["arith"]["exact_match"]["greedy"]["in_range"]["mean"]
+    small = rungs["e0p001"]
+    big = rungs["e25"]
+    assert small["eps"] == 0.001 and big["eps"] == 25.0
+    # a 1e-3 sup-norm nudge of unit-RMS embeddings leaves greedy answers alone;
+    # a sup-norm 25 perturbation cannot help
+    assert small["exact_match"]["in_range"]["mean"] == pytest.approx(em_plain)
+    assert small["degradation"]["in_range"]["mean"] == pytest.approx(0.0)
+    assert big["exact_match"]["in_range"]["mean"] <= em_plain
+    assert big["degradation"]["in_range"]["mean"] == pytest.approx(em_plain - big["exact_match"]["in_range"]["mean"])
+    # standard attention records no margins: no certificate, no violation rate
+    assert big["certified_fraction"] == {"in_range": None, "held_out": None}
+    assert big["certificate_violation_rate"] == {"in_range": None, "held_out": None}
+    bad = runner.invoke(
+        mgr_cli.app,
+        [
+            "eval-tasks",
+            "--checkpoint",
+            str(ckpt),
+            "--task",
+            "arith",
+            "--perturb-eps",
+            "0,0.1",
+            "--artifacts-dir",
+            str(tmp_path / "x"),
+        ],
+    )
+    assert bad.exit_code == 2 and "must be > 0" in bad.output

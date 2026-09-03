@@ -488,12 +488,33 @@ hypotheses:
       provenance: "README 'Why It Matters' (tropical: 1-Lipschitz robustness guarantees, verifiable margins); Expected Performance table row 'Tropical -> Robustness'"
     date_registered: "2026-06-10"
     theorem_refs: [thm-tropical-1-lipschitz, thm-maxplus-ffn-lipschitz]
-    prediction: null
+    prediction:
+      metric_path: "evaltasks:tasks.arith.robustness.ladder.e0p1.certificate_violation_rate.held_out.mean"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: null
+      candidate_variant: {tropical_record_margins: true}
+      min_seeds: 3
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-03 (bead jida.21; mgr eval-tasks --perturb-eps
+        writes the robustness ladder, schema mgr.evaltasks.v5). This is the
+        soundness half of "the gamma-margin certificates predict the safe
+        radius": among held-out arith documents whose last-forward tropical
+        routing margin exceeds eps = 0.1 (certified stable under the
+        1-Lipschitz sup-norm law), at most 5 percent may change their answer
+        under the eps = 0.1 perturbation. Single-arm on tropical checkpoints
+        that record margins (tropical_record_margins in model_config), three
+        eval-seed observations per artifact, at the cleared arith rung
+        (1e12, d64/L2, seq 64, task tokenizer; comparison seeds 3-5 for the
+        tropical arm). The "flatter degradation than standard" half is the
+        companion entry hyp-tropical-robustness-perturbation. No perturbation
+        evidence exists at registration.
     operationalization_note: >-
       the eps-probe spec exists (diagnostics_data.apply_embedding_perturbation,
       vdc.1) but no eval consumer reports a robustness curve yet; vdc.3 / 8gk.7
       own that wiring. Register the slope comparison when the metric exists.
-    status: blocked
+    status: open
     evidence: []
     verdict_history: []
 
@@ -1778,9 +1799,36 @@ hypotheses:
       kind: model
       provenance: "README tropical 1-Lipschitz robustness claims; diagnostics_data.py ROBUSTNESS PROBE SPEC (apply_embedding_perturbation SSOT)"
     date_registered: "2026-08-24"
-    prediction: null
+    prediction:
+      metric_path: "evaltasks:tasks.arith.robustness.ladder.e0p1.degradation.held_out.mean"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.5
+      baseline:
+        mechanism: standard
+        equal_flops: true
+      min_seeds: 3
+      validity:
+        baseline_floor: 0.05
+        floor_source: >-
+          degradation = unperturbed minus perturbed held-out exact match, paired
+          per document; the claim presupposes that standard attention degrades
+          under eps = 0.1 (at least 0.05 points), otherwise the ratio is noise
+          over a zero denominator and the engine's baseline-floor gate downgrades
+          a refutation to inconclusive.
+      scale_caveats: >-
+        OPERATIONALIZED 2026-09-03 (bead jida.21) exactly as this entry's note
+        prescribed: the eval ladder records per-eps exact match and degradation
+        (schema mgr.evaltasks.v5); the pinned rung is eps = 0.1 (about a tenth
+        of the unit-RMS embedding scale) on held-out arith at the cleared arith
+        rung (1e12, d64/L2, seq 64, task tokenizer), tropical vs standard at
+        equal FLOPs, three seeds per arm (comparison seeds 3-5). Ratio space:
+        tropical degradation / standard degradation <= 0.5 is the registered
+        "at most HALF as much". Pure max-plus mode predicts the half ratio
+        exactly under the 1-Lipschitz law; rational mode (2-Lipschitz) would
+        not. No perturbation evidence exists at registration.
     operationalization_note: "BLOCKED, registered before any perturbation evidence exists. Measurement SSOT: apply_embedding_perturbation (uniform U(-eps,+eps) per coordinate, post-wte/post-norm/pre-block-0, caller-pinned Generator; eps=0 byte-identical no-op). Operationalization blocked on the 8gk.7 certified-robustness benchmark emitting per-eps exact-match artifacts with meta.checkpoint.model_config for arm matching; then operationalize as evaltasks:tasks.<probe-task>.exact_match.greedy.<split>.mean at a pinned eps grid, comparator <= threshold_kind ratio threshold 0.5, candidate_variant carrying the probe eps. Pure-mode 1-Lipschitz predicts the half-degradation ratio exactly; rational mode (2-Lipschitz) predicts a weaker factor."
-    status: blocked
+    status: open
     evidence: []
     verdict_history: []
 

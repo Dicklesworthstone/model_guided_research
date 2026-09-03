@@ -142,6 +142,27 @@ at 2e12 with a 256-token window and the same model. Three rules:
   tokenizer, sequence length); a floored rung at one window says nothing about
   the task at another.
 
+### The perturbation coordinate (robustness ladders)
+
+`mgr eval-tasks --perturb-eps 0.03,0.1,0.3 --perturb-seed S` scores greedy
+exact match again under each eps of the ladder with the repository's single
+perturbation spec applied to every scoring forward
+(`nanochat.diagnostics_data.apply_embedding_perturbation`: each coordinate of
+the token-embedding output moved by U(-eps, +eps) before block 0, one pinned
+draw stream per document). The unperturbed score stays in
+`tasks.<task>.exact_match`; each rung lands in
+`tasks.<task>.robustness.ladder.<key>` (`e0p1` for eps 0.1) with its exact
+match, its **degradation** (unperturbed minus perturbed, per seed, paired per
+document) and, for checkpoints that record tropical routing margins, the
+**certified fraction** (documents whose last-forward margin exceeds eps, which
+the certified 1-Lipschitz sup-norm law says cannot switch a route,
+`thm-tropical-1-lipschitz`) and the **certificate violation rate** (certified
+documents whose answer nevertheless flipped: the certificate's falsifier).
+Perplexity is never perturbed; `meta.perturbation` records the ladder and the
+seed (schema `mgr.evaltasks.v5`, 2026-09-03). A registry claim about
+robustness names one rung, e.g.
+`evaltasks:tasks.arith.robustness.ladder.e0p1.degradation.held_out.mean`.
+
 ### Two controls every comparison needs
 
 An apparatus that has never reported "nothing" has not been shown able to

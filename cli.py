@@ -6601,7 +6601,7 @@ def _read_train_provenance(checkpoint_dir: Path) -> dict[str, Any] | None:
 #: v4 (2026-09-02): prompts and perplexity documents are prefixed with the
 #: trainer's <|bos|>; v3 and earlier scored them bare. Scores are not
 #: comparable across that boundary, so never mix v3 and v4 artifacts in one arm.
-_EVAL_TASKS_SCHEMA_VERSION = "mgr.evaltasks.v4"
+_EVAL_TASKS_SCHEMA_VERSION = "mgr.evaltasks.v5"
 # SCHEMA CONTRACT (consumed by C4 scorecards and the G2 verdict engine):
 # {"schema_version", "kind": "eval-tasks",
 #  "meta": {run_id, generated_at, checkpoint{dir, step, attention_type, n_params,
@@ -6680,6 +6680,31 @@ def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any) -> float:
     return float(torch.exp(loss).item())
 
 
+def _eval_tropical_gamma_min(model: Any) -> float | None:
+    """Smallest recorded tropical routing margin across the model's attention
+    modules after the last forward (None when no module records margins). With
+    the certified 1-Lipschitz sup-norm bound (thm-tropical-1-lipschitz) a
+    perturbation of size eps < gamma cannot switch a route."""
+    import torch
+
+    transformer = getattr(model, "transformer", None)
+    if transformer is None:
+        return None
+    try:
+        blocks = transformer["h"]
+    except (KeyError, TypeError):
+        return None
+    mins: list[float] = []
+    for block in blocks:
+        attn = getattr(block, "attn", None)
+        gamma = getattr(attn, "tropical_gamma_min", None)
+        if torch.is_tensor(gamma) and gamma.numel() == 1:
+            value = float(gamma.detach().float().item())
+            if value == value:  # skip NaN (margins not recorded this forward)
+                mins.append(value)
+    return min(mins) if mins else None
+
+
 def _eval_score_doc(
     model: Any,
     tok: Any,
@@ -6689,12 +6714,21 @@ def _eval_score_doc(
     device: Any,
     temperature: float,
     seed: int,
-) -> tuple[bool | None, str, str] | None:
-    """(correct, expected, got) for answer-bearing docs; None when the prompt
-    does not fit the rotary cache (caller counts these as skipped)."""
+    perturb: tuple[float, Any] | None = None,
+) -> tuple[bool | None, str, str, float | None] | None:
+    """(correct, expected, got, gamma_min) for answer-bearing docs; None when
+    the prompt does not fit the rotary cache (caller counts these as skipped).
+
+    ``perturb=(eps, generator)`` applies the repository's single perturbation
+    spec (nanochat.diagnostics_data.apply_embedding_perturbation: sup-norm
+    eps at the token-embedding output, pre-block-0) to EVERY forward of this
+    document's scoring - the prompt and each decoded token - through a
+    forward pre-hook on the first block; the caller pins the generator per
+    document so the draw is reproducible. gamma_min is the smallest tropical
+    routing margin recorded on the last forward (None for other mechanisms)."""
     sp = spec.split_prompt(doc)
     if sp is None:
-        return (None, "", "")
+        return (None, "", "", None)
     prompt, expected = sp
     # Prompts start with the same <|bos|> the trainer puts before every
     # document (mgr.evaltasks.v4); without it the prompt is off-distribution
@@ -6715,14 +6749,29 @@ def _eval_score_doc(
     # under whitespace canonicalization (found by the first real campaign, kbj2).
     stop_id = bos_id
     pieces: list[int] = []
-    for piece in model.generate(prompt_ids, max_tokens=max_new, temperature=temperature, seed=seed):
-        if piece == stop_id:
-            break
-        pieces.append(piece)
+    handle = None
+    if perturb is not None and perturb[0] > 0.0:
+        from nanochat.diagnostics_data import apply_embedding_perturbation
+
+        eps, generator = perturb
+        first_block = model.transformer["h"][0]
+
+        def _perturb_block_input(module: Any, args: tuple[Any, ...]) -> tuple[Any, ...]:
+            return (apply_embedding_perturbation(args[0], eps, generator), *args[1:])
+
+        handle = first_block.register_forward_pre_hook(_perturb_block_input)
+    try:
+        for piece in model.generate(prompt_ids, max_tokens=max_new, temperature=temperature, seed=seed):
+            if piece == stop_id:
+                break
+            pieces.append(piece)
+    finally:
+        if handle is not None:
+            handle.remove()
     got = tok.decode(pieces)
     got_words = got.split()
     correct = got_words[: len(expected_words)] == expected_words
-    return (correct, expected, got)
+    return (correct, expected, got, _eval_tropical_gamma_min(model))
 
 
 @app.command("eval-tasks")
@@ -6736,6 +6785,20 @@ def eval_tasks(
     examples: Annotated[int, typer.Option(help="Examples per split per seed")] = 24,
     sampled: Annotated[bool, typer.Option("--sampled", help="Also score temperature-1 sampled decoding")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", help="Log per-example failures (capped per task)")] = False,
+    perturb_eps: Annotated[
+        str,
+        typer.Option(
+            "--perturb-eps",
+            help=(
+                "Comma-separated sup-norm perturbation ladder applied at the token-embedding output to every "
+                "scoring forward (nanochat.diagnostics_data.apply_embedding_perturbation; empty = off). The "
+                "unperturbed exact match stays in tasks.<task>.exact_match; each eps lands in "
+                "tasks.<task>.robustness.ladder.<key> with its exact match, its degradation (unperturbed minus "
+                "perturbed, per seed) and, for margin-recording checkpoints, the certified fraction."
+            ),
+        ),
+    ] = "",
+    perturb_seed: Annotated[int, typer.Option("--perturb-seed", help="Seed of the perturbation draws")] = 0,
     dial: Annotated[
         list[str] | None,
         typer.Option(help="Difficulty dial override name=value (repeatable; recorded in provenance)"),
@@ -6769,6 +6832,23 @@ def eval_tasks(
     from nanochat.tokenizer import checkpoint_tokenizer
 
     device = torch.device(device_str)
+    try:
+        perturb_ladder = sorted({float(v.strip()) for v in perturb_eps.split(",") if v.strip()})
+    except ValueError:
+        console.print("[bold red]--perturb-eps must be a comma-separated list of numbers.[/bold red]")
+        raise typer.Exit(code=2) from None
+    if any(eps <= 0.0 for eps in perturb_ladder):
+        console.print(
+            "[bold red]--perturb-eps values must be > 0 (the unperturbed score is always recorded).[/bold red]"
+        )
+        raise typer.Exit(code=2)
+    # one generator for the perturbation draws, reseeded per document (v5)
+    perturb_gen = torch.Generator(device=device.type)
+
+    def _eps_key(eps: float) -> str:
+        # identifier-safe key so registry metric paths can name the rung
+        return "e" + f"{eps:g}".replace(".", "p").replace("-", "m").replace("+", "")
+
     if task and all_tasks:
         console.print("[bold red]Provide --task or --all-tasks, not both.[/bold red]")
         raise typer.Exit(code=2)
@@ -6852,6 +6932,17 @@ def eval_tasks(
         # expected answers per region/seed (greedy pass; docs are identical
         # across modes) -> the best-constant-policy floor for this exact sample
         prior_counts: dict[str, list[dict[str, int]]] = {"in_range": [], "held_out": []}
+        # v5 robustness ladder (per eps key, region, seed): perturbed greedy
+        # exact match, and (certified docs, docs with a recorded margin,
+        # certified docs whose answer flipped) - the certified fraction under
+        # the 1-Lipschitz sup-norm bound and the certificate's violation rate
+        clean_correct: dict[tuple[str, int, int], bool] = {}
+        ladder_em: dict[str, dict[str, list[float | None]]] = {
+            _eps_key(eps): {"in_range": [], "held_out": []} for eps in perturb_ladder
+        }
+        ladder_cert: dict[str, dict[str, list[tuple[int, int, int]]]] = {
+            _eps_key(eps): {"in_range": [], "held_out": []} for eps in perturb_ladder
+        }
         ppl_in: list[float] = []
         ppl_out: list[float] = []
         curve_points: list[tuple[float, bool, str, str | None]] = []
@@ -6887,11 +6978,14 @@ def eval_tasks(
                                 if mode == "greedy":
                                     skipped += 1
                                 continue
-                            correct, expected, got = scored
+                            correct, expected, got, _gamma_min = scored
                             if correct is None:
                                 continue
                             scored_n += 1
                             correct_n += int(correct)
+                            if mode == "greedy":
+                                # pairing key for the perturbation ladder below
+                                clean_correct[(region, eval_seed, doc_idx)] = bool(correct)
                             receipt_rows.append(
                                 {
                                     "task": name,
@@ -6918,6 +7012,52 @@ def eval_tasks(
                         per_seed_em[mode][region].append(correct_n / scored_n if scored_n else None)
                         if mode == "greedy":
                             prior_counts[region].append(seed_expected)
+                # v5 perturbation ladder: greedy exact match under each eps,
+                # paired per document with the unperturbed pass above so the
+                # degradation and the certificate's violation rate are exact
+                for eps in perturb_ladder:
+                    key = _eps_key(eps)
+                    for region, docs in (("in_range", in_docs), ("held_out", out_docs)):
+                        p_correct = 0
+                        p_scored = 0
+                        certified = 0
+                        margin_docs = 0
+                        violations = 0
+                        for doc_idx, doc in enumerate(docs):
+                            if (region, eval_seed, doc_idx) not in clean_correct:
+                                continue  # skipped or unscored in the clean pass
+                            # one pinned draw stream per (eps, seed, document):
+                            # a rerun with the same seeds is byte-identical
+                            perturb_gen.manual_seed(
+                                (perturb_seed * 1_000_003 + eval_seed * 10_007 + doc_idx * 7 + int(eps * 1e6))
+                                % (2**63 - 1)
+                            )
+                            scored = _eval_score_doc(
+                                model,
+                                tok,
+                                spec,
+                                doc,
+                                device=device,
+                                temperature=0.0,
+                                seed=eval_seed,
+                                perturb=(eps, perturb_gen),
+                            )
+                            if scored is None:
+                                continue
+                            correct, _expected, _got, gamma_min = scored
+                            if correct is None:
+                                continue
+                            p_scored += 1
+                            p_correct += int(correct)
+                            if gamma_min is not None:
+                                margin_docs += 1
+                                if gamma_min > eps:
+                                    # certified stable: the answer must not
+                                    # have flipped relative to the clean pass
+                                    certified += 1
+                                    violations += int(bool(correct) != clean_correct[(region, eval_seed, doc_idx)])
+                        ladder_em[key][region].append(p_correct / p_scored if p_scored else None)
+                        ladder_cert[key][region].append((certified, margin_docs, violations))
 
         def agg(values: list[float | None]) -> dict[str, Any] | None:
             valid = [v for v in values if v is not None]
@@ -7017,6 +7157,44 @@ def eval_tasks(
 
         results[name] = {
             "difficulty_axis": spec.difficulty_axis,
+            # v5: the perturbation ladder. For each eps: perturbed greedy exact
+            # match, the degradation (unperturbed minus perturbed, per seed),
+            # and for margin-recording (tropical) checkpoints the certified
+            # fraction (last-forward margin above eps, stable under the
+            # 1-Lipschitz sup-norm law) with the certificate's violation rate
+            # (certified documents whose answer flipped); null when the
+            # mechanism records no margins
+            "robustness": (
+                {
+                    "perturb_seed": int(perturb_seed),
+                    "ladder": {
+                        _eps_key(eps): {
+                            "eps": eps,
+                            "exact_match": {region: agg(vals) for region, vals in ladder_em[_eps_key(eps)].items()},
+                            "degradation": {
+                                region: agg(
+                                    [
+                                        (clean - pert) if clean is not None and pert is not None else None
+                                        for clean, pert in zip(per_seed_em["greedy"][region], vals, strict=True)
+                                    ]
+                                )
+                                for region, vals in ladder_em[_eps_key(eps)].items()
+                            },
+                            "certified_fraction": {
+                                region: agg([(c / n if n else None) for c, n, _ in triples])
+                                for region, triples in ladder_cert[_eps_key(eps)].items()
+                            },
+                            "certificate_violation_rate": {
+                                region: agg([(v / c if c else None) for c, _, v in triples])
+                                for region, triples in ladder_cert[_eps_key(eps)].items()
+                            },
+                        }
+                        for eps in perturb_ladder
+                    },
+                }
+                if spec.answer_marker is not None
+                else None
+            ),
             "in_range_max": in_range_max,
             "exact_match": exact_match,
             "answer_prior": answer_prior,
@@ -7072,6 +7250,13 @@ def eval_tasks(
             "run_id": resolved_run_id,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "evaluator": {"bos_prefixed": True},  # v4: prompts/docs carry the trainer's <|bos|>
+            # v5: the perturbation ladder of this run (empty = unperturbed only);
+            # the engine's evaltasks variant selectors read these keys
+            "perturbation": {
+                "perturb_eps": list(perturb_ladder),
+                "perturb_seed": int(perturb_seed),
+                "spec": "nanochat.diagnostics_data.apply_embedding_perturbation",
+            },
             "tokenizer": ckpt_meta.get("tokenizer") or {"kind": "gpt2"},
             "checkpoint": {
                 "dir": str(checkpoint),
@@ -11552,7 +11737,14 @@ def _adj_variant_matches(art: dict[str, Any], variant: dict[str, Any] | None) ->
         # type, probe extras) or in its recorded model_config (every GPTConfig
         # knob - braid_crossing_law, ultrametric_mode, ...)
         model_cfg = ckpt.get("model_config")
-        sources: list[dict[str, Any]] = [ckpt, model_cfg if isinstance(model_cfg, dict) else {}]
+        # v5: the perturbation coordinate (perturb_eps, perturb_seed) is a
+        # selectable knob too, so a robustness ladder's runs are distinct arms
+        perturbation = (data.get("meta") or {}).get("perturbation")
+        sources: list[dict[str, Any]] = [
+            ckpt,
+            model_cfg if isinstance(model_cfg, dict) else {},
+            perturbation if isinstance(perturbation, dict) else {},
+        ]
     elif art["schema"] == "bench":
         # bench protocols (bhjf): window bounds and derived knobs land in
         # results; task/seed/run parameters land in meta
