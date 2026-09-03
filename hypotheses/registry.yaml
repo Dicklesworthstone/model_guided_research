@@ -740,7 +740,13 @@ hypotheses:
     operationalization_note: >-
       tests/test_practical_utility.py contains an LR-robustness benchmark but
       writes no versioned artifact; promote it into the bench schema (or a D2
-      consumer) before registering thresholds.
+      consumer) before registering thresholds. CORRECTION 2026-09-03 (bridge
+      bead jida.22, bug bead wzpx): that benchmark cannot fail - its HOSS sweep
+      never uses its loop variable, so every hyperreal run is identical and the
+      variance it compares is zero by construction. It must not be promoted.
+      This entry stays blocked until a benchmark with a real epsilon or LR
+      sweep exists, and any nanochat-tier successor waits on bead pxyw (HOSS
+      does not train at the CPU coordinate as of 2026-09-02).
     status: blocked
     evidence: []
     verdict_history: []
@@ -911,7 +917,13 @@ hypotheses:
     prediction: null
     operationalization_note: >-
       the practical-utility suite measures this but writes no versioned
-      artifact; same blocker as hyp-hoss-stiff-lr-robustness.
+      artifact; same blocker as hyp-hoss-stiff-lr-robustness. CORRECTION
+      2026-09-03 (bridge bead jida.22, bug bead wzpx): the suite's
+      "matrix exponential" arm is the identity function, so its stability
+      verdict cannot fail and it must not be promoted into evidence. The
+      nanochat-tier test of the same idea is hyp-gauge-gradient-stability
+      (depth-8 cohort); this demo-tier entry stays blocked until the toy has a
+      real matrix-exponential arm.
     status: blocked
     evidence: []
     verdict_history: []
