@@ -12,8 +12,10 @@ the fineweb shards while still exercising the trainer's full state machinery
 including the with-state loader contract and the fast-forward path.
 """
 
+import copy
 import hashlib
 import json
+import math
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -1413,3 +1415,116 @@ def test_ultrametric_route_observables_land_in_metrics_and_summary(monkeypatch, 
         res["ultrametric_tie_fraction_final"] - res["ultrametric_tie_fraction_first"]
     )
     assert summary["config"]["ultrametric_record_routes"] is True  # the arm selector
+
+
+def test_scaling_axis_decision_rule():
+    """Surreal doc 'Decision procedure': argmax of the damage ratios, balanced
+    when the two largest are within 1+epsilon, undefined below two finite ratios."""
+    move, sep = train_mod.scaling_axis_decision({"T_D": 1.5, "T_H": 1.1, "T_W": 1.0})
+    assert move == "data" and sep == pytest.approx(1.5 / 1.1)
+    assert train_mod.scaling_axis_decision({"T_D": 1.0, "T_H": 1.3, "T_W": 1.2})[0] == "depth"
+    assert train_mod.scaling_axis_decision({"T_D": 1.0, "T_H": 1.2, "T_W": 1.3})[0] == "width"
+    assert train_mod.scaling_axis_decision({"T_D": 1.0, "T_H": 1.3, "T_W": 1.29})[0] == "balanced"
+    assert train_mod.scaling_axis_decision({"T_D": 1.0, "T_H": 1.3, "T_W": 1.29}, epsilon=0.0)[0] == "depth"
+    assert train_mod.scaling_axis_decision({"T_D": float("nan"), "T_H": 1.0, "T_W": float("inf")}) == (None, None)
+
+
+def test_scaling_axis_projections_match_explicit_references():
+    """hyp-surreal-scaling-axis-prediction observable: the half-depth
+    projection equals the model with its odd block removed, the half-width
+    projection equals an explicit masked forward, and both differ from the
+    unprojected CE (a hook that silently did nothing would fail here)."""
+    import torch.nn.functional as F
+
+    from nanochat.gpt import GPT, GPTConfig, norm
+
+    torch.manual_seed(3)
+    cfg = GPTConfig(n_layer=2, n_head=2, n_kv_head=2, n_embd=16, sequence_len=8, vocab_size=64)
+    model = GPT(cfg)
+    model.init_weights()
+    # init_weights zeroes the readout (CE == ln V whatever the blocks do), so
+    # perturb every parameter: the projections must be visible at the loss.
+    gen = torch.Generator().manual_seed(11)
+    with torch.no_grad():
+        for p in model.parameters():
+            p.add_(torch.randn(p.shape, generator=gen) * 0.2)
+    model.eval()
+    batches = [
+        (torch.randint(0, 64, (2, 8), generator=gen), torch.randint(0, 64, (2, 8), generator=gen)) for _ in range(3)
+    ]
+
+    def mean_ce(bs):
+        with torch.no_grad():
+            return sum(float(model(i, t).item()) for i, t in bs) / len(bs)
+
+    rec = train_mod.compute_scaling_axis_diagnostic(model, mean_ce, ce_train=1.0, val_batches=batches)
+    assert rec["ce_val"] == pytest.approx(mean_ce(batches))
+    assert rec["T_D"] == pytest.approx(rec["ce_val"])  # ce_train = 1
+    assert rec["blocks_total"] == 2 and rec["blocks_skipped"] == 1 and rec["channels_kept"] == 8
+    assert rec["move"] in {"data", "depth", "width", "balanced"}
+
+    # Reference 1: the odd block removed outright.
+    ref_depth = copy.deepcopy(model)
+    ref_depth.transformer["h"] = torch.nn.ModuleList([ref_depth.transformer["h"][0]])
+    with torch.no_grad():
+        ce_depth_ref = sum(float(ref_depth(i, t).item()) for i, t in batches) / len(batches)
+    assert rec["ce_half_depth"] == pytest.approx(ce_depth_ref, rel=1e-6)
+    assert abs(rec["ce_half_depth"] - rec["ce_val"]) > 1e-6
+
+    # Reference 2: the fixed half-channel mask applied to every block output,
+    # survivors rescaled by 2, written out against the GPT forward step by step.
+    mask = torch.zeros(16)
+    g = torch.Generator().manual_seed(train_mod.SCALING_AXIS_WIDTH_MASK_SEED)
+    mask[torch.randperm(16, generator=g)[:8]] = 1.0
+
+    def masked_ce(idx, targets):
+        T = idx.size(1)
+        cos_sin = model.cos[:, :T], model.sin[:, :T]
+        x = norm(model.transformer["wte"](idx))
+        for block in model.transformer["h"]:
+            x = block(x, cos_sin, None) * mask * 2.0
+        x = norm(x)
+        logits = (15 * torch.tanh(model.lm_head(x) / 15)).float()
+        return float(F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1).item())
+
+    with torch.no_grad():
+        ce_width_ref = sum(masked_ce(i, t) for i, t in batches) / len(batches)
+    assert rec["ce_half_width"] == pytest.approx(ce_width_ref, rel=1e-6)
+    assert abs(rec["ce_half_width"] - rec["ce_val"]) > 1e-6
+    # The hooks are gone afterwards: the plain forward is unchanged.
+    assert mean_ce(batches) == pytest.approx(rec["ce_val"])
+
+
+def test_scaling_axis_diagnostic_lands_in_summary(monkeypatch, tmp_path):
+    """--scaling-axis-diagnostic records results.scaling_axis (ratios, move,
+    batch counts) and hparams.scaling_axis_diagnostic; without validation the
+    flag is refused before any training happens."""
+
+    def fake_plain_loader(B, T, split, device="cpu", **kwargs):
+        gen = torch.Generator().manual_seed(99 if split == "val" else 1234)
+        while True:
+            tokens = torch.randint(0, VOCAB_FAKE, (B, T + 1), generator=gen, dtype=torch.long)
+            yield tokens[:, :-1].contiguous(), tokens[:, 1:].contiguous()
+
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader", fake_plain_loader)
+    summary = _run_train(
+        monkeypatch,
+        tmp_path,
+        "scaling-axis",
+        n_layer=2,
+        val_interval=3,
+        val_batches=2,
+        scaling_axis_diagnostic=None,  # flag-only
+    )
+    rec = summary["results"]["scaling_axis"]
+    assert rec["val_batches"] == 2 and rec["train_steps_averaged"] == 2
+    assert rec["blocks_total"] == 2 and rec["blocks_skipped"] == 1
+    for key in ("T_D", "T_H", "T_W", "ce_train", "ce_val", "ce_half_depth", "ce_half_width"):
+        assert math.isfinite(rec[key]) and rec[key] > 0, (key, rec[key])
+    assert rec["T_D"] == pytest.approx(rec["ce_val"] / rec["ce_train"])
+    assert rec["T_H"] == pytest.approx(rec["ce_half_depth"] / rec["ce_val"])
+    assert rec["move"] in {"data", "depth", "width", "balanced"}
+    assert rec["epsilon"] == train_mod.SCALING_AXIS_EPSILON
+    assert summary["hparams"]["scaling_axis_diagnostic"] is True
+    with pytest.raises(ValueError, match="val-interval"):
+        _run_train(monkeypatch, tmp_path, "scaling-axis-noval", scaling_axis_diagnostic=None)

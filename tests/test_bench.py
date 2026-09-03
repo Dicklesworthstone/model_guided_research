@@ -1424,6 +1424,74 @@ def test_scorecard_training_arms_train_standard_attention_with_one_knob(tmp_path
     assert all(cmd[cmd.index("--optimizer-type") + 1] == "adamw" for cmd in plain_cmds)
 
 
+def test_scorecard_scaling_axis_threads_the_trainer_flag(tmp_path, monkeypatch):
+    """--scaling-axis puts --scaling-axis-diagnostic on every trainer command
+    (next to the validation flags it needs) and records itself in the manifest;
+    without it no cell carries the flag."""
+    monkeypatch.setattr(cli, "_scorecard_generate_task", _fake_scorecard_generator)
+    monkeypatch.setattr(cli, "_scorecard_flops_per_step", _fake_scorecard_flops)
+    monkeypatch.setattr(
+        cli,
+        "_get_git_info",
+        lambda: {"commit": "abc1234", "commit_full": "a" * 40, "branch": "main", "dirty": False},
+    )
+    launched: list[list[str]] = []
+
+    def launch(cmd: list[str], *, timeout_s: float) -> tuple[int, str, str]:
+        if "nanochat.train" in cmd:
+            launched.append(list(cmd))
+        return _fake_scorecard_success(cmd, timeout_s=timeout_s)
+
+    monkeypatch.setattr(cli, "_scorecard_launch", launch)
+    artifacts = tmp_path / "artifacts"
+    base = [
+        "scorecard",
+        "--mechanism",
+        "standard",
+        "--task",
+        "arith",
+        "--seeds",
+        "1",
+        "--budget",
+        "1e6",
+        "--dataset-size",
+        "6",
+        "--examples",
+        "1",
+        "--val-interval",
+        "2",
+        "--val-batches",
+        "2",
+        "--artifacts-dir",
+        str(artifacts),
+    ]
+    result = runner.invoke(cli.app, [*base, "--scaling-axis", "--run-id", "axis-on"])
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "axis-on" / "manifest.json").read_text())
+    assert manifest["config"]["scaling_axis"] is True
+    assert len(launched) == 2 and all("--scaling-axis-diagnostic" in cmd for cmd in launched)
+    assert all(cmd[cmd.index("--val-interval") + 1] == "2" for cmd in launched)
+    launched.clear()
+    result = runner.invoke(cli.app, [*base, "--run-id", "axis-off"])
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((artifacts / "scorecards" / "axis-off" / "manifest.json").read_text())
+    assert manifest["config"]["scaling_axis"] is False
+    assert len(launched) == 2 and all("--scaling-axis-diagnostic" not in cmd for cmd in launched)
+
+
+def test_scorecard_rejects_scaling_axis_without_validation(tmp_path):
+    """The diagnostic evaluates on validation batches, so the flag is refused
+    up front when validation is off (nothing is written)."""
+    artifacts = tmp_path / "artifacts"
+    result = runner.invoke(
+        cli.app,
+        ["scorecard", "--cell", "standard:arith", "--scaling-axis", "--artifacts-dir", str(artifacts), "--dry-run"],
+    )
+    assert result.exit_code == 2
+    assert "val-interval" in result.output
+    assert not artifacts.exists()
+
+
 def test_scorecard_flops_estimate_covers_training_arms():
     estimates = cli._scorecard_flops_per_step(
         ["standard", "ordinal", "hoss"], batch_size=1, sequence_len=8, n_layer=1, n_head=2, n_kv_head=2, n_embd=16

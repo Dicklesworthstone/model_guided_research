@@ -7664,6 +7664,7 @@ def _scorecard_train_command(
     val_interval: int,
     val_batches: int,
     checkpoint_interval: int,
+    scaling_axis: bool = False,
 ) -> list[str]:
     mechanism_base = str(cell.get("mechanism_base") or cell["mechanism"])
     mechanism_extras: dict[str, str] = dict(cell.get("mechanism_extras") or {})
@@ -7724,6 +7725,8 @@ def _scorecard_train_command(
     ]
     if val_interval > 0:
         cmd.extend(["--val-interval", str(val_interval), "--val-batches", str(val_batches)])
+        if scaling_axis:  # transseries damage ratios on the validation batches (results.scaling_axis)
+            cmd.append("--scaling-axis-diagnostic")
     for flag, value in arm_flags.items():  # training arms: ordinal scheduler, hoss optimizer
         cmd.extend([flag, value])
     cmd.extend(_scorecard_arm_train_flags(mechanism_extras))  # per-arm variant knobs (bead 63ko)
@@ -8531,6 +8534,16 @@ def scorecard(
     log_interval: Annotated[int, typer.Option(help="Training log cadence", min=1)] = 1,
     val_interval: Annotated[int, typer.Option(help="Training validation cadence; 0 disables it", min=0)] = 0,
     val_batches: Annotated[int, typer.Option(help="Validation batches", min=1)] = 10,
+    scaling_axis: Annotated[
+        bool,
+        typer.Option(
+            "--scaling-axis/--no-scaling-axis",
+            help=(
+                "Record the transseries scaling-axis diagnostic (T_D/T_H/T_W damage ratios and the argmax "
+                "move) in every cell's results.scaling_axis; needs --val-interval > 0"
+            ),
+        ),
+    ] = False,
     checkpoint_interval: Annotated[
         int, typer.Option(help="Checkpoint cadence; final checkpoint is always saved", min=1)
     ] = 1000,
@@ -8655,6 +8668,8 @@ def scorecard(
             "hoss is a training arm (--mechanism hoss), not a campaign-global optimizer: the standard "
             "baseline must train with a non-hoss optimizer for the verdict engine to tell the arms apart"
         )
+    if scaling_axis and val_interval <= 0:
+        raise typer.BadParameter("--scaling-axis evaluates on validation batches: set --val-interval > 0")
     git_info = _get_git_info()
     if hypothesis_ids and not dry_run:
         if bool(git_info.get("dirty")) or git_info.get("commit_full") == "unknown":
@@ -8714,6 +8729,7 @@ def scorecard(
         "log_interval": log_interval,
         "val_interval": val_interval,
         "val_batches": val_batches,
+        "scaling_axis": scaling_axis,
         "checkpoint_interval": checkpoint_interval,
         "min_evidence_steps": min_evidence_steps,
         "flops_per_step_est": flops_per_step,
@@ -8860,6 +8876,7 @@ def scorecard(
                     val_interval=val_interval,
                     val_batches=val_batches,
                     checkpoint_interval=checkpoint_interval,
+                    scaling_axis=scaling_axis,
                 )
                 # A retried cell resumes from its last committed checkpoint
                 # instead of retraining from scratch: a per-cell timeout on a

@@ -232,6 +232,31 @@ from the standard baseline by the recorded scheduler and optimizer types, so
 `hyp-ordinal-regime-recovery` and `hyp-hoss-regime-curvature` adjudicate from
 a scorecard suite like any attention hypothesis.
 
+### The scaling-axis diagnostic (transseries damage ratios)
+
+`nanochat.train --scaling-axis-diagnostic` (needs `--val-interval > 0`)
+computes, after the final checkpoint and outside the throughput window, the
+three damage ratios of the surreal/transseries document's decision procedure
+on `--val-batches` validation batches, forward-only:
+
+- `T_D = CE_val / CE_train`, the training error being the mean of the last
+  `val_batches` logged training losses;
+- `T_H = CE(every other block replaced by the identity) / CE_val`, applied by
+  call index so a layer-tied block is skipped on alternate calls (a one-block
+  model skips nothing and reports `T_H = 1`);
+- `T_W = CE(half the residual channels zeroed after every block, survivors
+  rescaled by two) / CE_val`, with one fixed channel mask drawn from seed 1234
+  so equal-width checkpoints are projected identically.
+
+The record lands in `results.scaling_axis` with the doc's move
+(`argmax`, or `balanced` when the two largest ratios are within a factor
+1.02) and the separation ratio, and `hparams.scaling_axis_diagnostic` marks
+the arm. It is the observable of `hyp-surreal-scaling-axis-prediction`; the
+oracle that entry needs (the realized gain per axis from three continuation
+runs) is a separate, preregistered mini-campaign (bead jida.15's note), and
+until it runs the record is a diagnostic, not evidence. `mgr scorecard
+--scaling-axis` threads the flag into every cell.
+
 ## JAX demos (current status)
 
 Exact FLOPs for JAX demos is trickier because XLA fusion and compilation obscure a clean “FLOPs per step” number.

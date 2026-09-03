@@ -693,6 +693,17 @@ hypotheses:
     operationalization_note: >-
       needs the E2 scaling-fit artifact (epic w94): the prediction is over
       scaling-ladder outcomes, which do not exist as a schema yet.
+      2026-09-03: the observable half exists - nanochat.train
+      --scaling-axis-diagnostic (mgr scorecard --scaling-axis) records
+      train:results.scaling_axis {T_D, T_H, T_W, move, separation} per cell,
+      forward-only on the validation batches with the doc's definitions
+      (every other block -> identity; half the residual channels zeroed and
+      rescaled; epsilon 0.02). Still missing is the ORACLE: the realized gain
+      per axis from three preregistered continuation runs of the same
+      checkpoint (2x data, 2x depth, 2x width at equal added FLOPs) and the
+      agreement-rate artifact the 70% claim is scored on; protocol note on
+      bead jida.15. Until that runs, results.scaling_axis is a diagnostic, not
+      evidence, and this entry stays blocked.
     status: blocked
     evidence: []
     verdict_history: []

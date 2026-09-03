@@ -12,6 +12,7 @@ import random
 import shlex
 import sys
 import time
+from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
@@ -691,6 +692,133 @@ def _collect_attn_entropy_stats(model: torch.nn.Module) -> dict[str, Any] | None
     return {
         "layer_head_mean": layer_head,
         "head_mean": [float(x) for x in mean.tolist()],
+    }
+
+
+#: Separation threshold of the surreal doc's decision procedure ("One
+#: predictive formula"): the two largest damage ratios within 1+epsilon of
+#: each other are balanced to leading order, and no axis is named.
+SCALING_AXIS_EPSILON = 0.02
+#: The fixed half-width channel mask is drawn from this seed on every run, so
+#: two checkpoints of the same width are projected identically.
+SCALING_AXIS_WIDTH_MASK_SEED = 1234
+_SCALING_AXIS_MOVES = {"T_D": "data", "T_H": "depth", "T_W": "width"}
+
+
+def scaling_axis_decision(
+    ratios: dict[str, float], epsilon: float = SCALING_AXIS_EPSILON
+) -> tuple[str | None, float | None]:
+    """NextMove = argmax(T_D, T_H, T_W), or "balanced" when the two largest
+    ratios are within a factor 1+epsilon (the doc's order-equivalence case).
+    Returns ``(move, separation)``; both None when fewer than two ratios are
+    finite and positive."""
+    finite = {k: float(v) for k, v in ratios.items() if math.isfinite(v) and v > 0}
+    if len(finite) < 2:
+        return None, None
+    ordered = sorted(finite.items(), key=lambda kv: kv[1], reverse=True)
+    top_axis, m1 = ordered[0]
+    m2 = ordered[1][1]
+    separation = m1 / m2
+    if separation <= 1.0 + epsilon:
+        return "balanced", separation
+    return _SCALING_AXIS_MOVES[top_axis], separation
+
+
+def compute_scaling_axis_diagnostic(
+    gpt: GPT,
+    mean_ce: Callable[[list[tuple[torch.Tensor, torch.Tensor]]], float],
+    *,
+    ce_train: float,
+    val_batches: list[tuple[torch.Tensor, torch.Tensor]],
+    epsilon: float = SCALING_AXIS_EPSILON,
+    width_mask_seed: int = SCALING_AXIS_WIDTH_MASK_SEED,
+) -> dict[str, Any]:
+    """The transseries scaling-axis diagnostic (surreal doc, "One predictive
+    formula"; hyp-surreal-scaling-axis-prediction): three damage ratios from
+    forward-only projections of the trained model, no retraining.
+
+    - ``T_D = CE_val / CE_train`` (generalization gap as a pure ratio;
+      ``ce_train`` is the caller's training error, in the trainer the mean of
+      the last ``val_batches`` logged training losses);
+    - ``T_H = CE(f with every other block replaced by the identity) / CE_val``,
+      implemented as a forward hook that returns each odd-indexed block call's
+      input (call index, so a layer-tied block is skipped on alternate calls);
+    - ``T_W = CE(f with half the residual channels zeroed after every block,
+      survivors rescaled by the inverse keep fraction) / CE_val``, with one
+      fixed channel mask drawn from ``width_mask_seed``.
+
+    ``mean_ce`` runs the model's forward on a list of ``(inputs, targets)``
+    batches under the trainer's eval conventions (no grad, autocast, DDP
+    reduction) and must call ``gpt`` itself so the hooks fire. The largest
+    ratio names the axis whose leading error monomial dominates; the doc's
+    rule is exact order comparison, so ``separation`` (largest over second)
+    and ``epsilon`` are recorded with the move. A one-block model skips
+    nothing (``T_H == 1``); ``blocks_skipped`` records that.
+    """
+    blocks = list(gpt._blocks())
+    unique_blocks = list({id(b): b for b in blocks}.values())
+    n_embd = int(gpt.config.n_embd)
+    keep = max(1, n_embd // 2)
+    gen = torch.Generator().manual_seed(int(width_mask_seed))
+    mask = torch.zeros(n_embd)
+    mask[torch.randperm(n_embd, generator=gen)[:keep]] = 1.0
+    scale = n_embd / keep
+    call_index = {"i": 0, "skipped": 0}
+
+    def _reset(_module: torch.nn.Module, _args: tuple[Any, ...]) -> None:
+        call_index["i"] = 0
+
+    def _skip_alternate(_module: torch.nn.Module, args: tuple[Any, ...], output: Any) -> Any:
+        i = call_index["i"]
+        call_index["i"] = i + 1
+        if i % 2 == 1:
+            call_index["skipped"] += 1
+            return args[0]
+        return output
+
+    def _half_width(_module: torch.nn.Module, _args: tuple[Any, ...], output: torch.Tensor) -> torch.Tensor:
+        return output * mask.to(device=output.device, dtype=output.dtype) * scale
+
+    ce_train = float(ce_train)
+    ce_val = float(mean_ce(val_batches))
+
+    handles = [gpt.register_forward_pre_hook(_reset)] + [
+        b.register_forward_hook(_skip_alternate) for b in unique_blocks
+    ]
+    try:
+        ce_half_depth = float(mean_ce(val_batches))
+    finally:
+        for h in handles:
+            h.remove()
+    blocks_skipped = call_index["skipped"] // max(1, len(val_batches))
+
+    handles = [b.register_forward_hook(_half_width) for b in unique_blocks]
+    try:
+        ce_half_width = float(mean_ce(val_batches))
+    finally:
+        for h in handles:
+            h.remove()
+
+    ratios = {
+        "T_D": ce_val / ce_train if ce_train > 0 else float("nan"),
+        "T_H": ce_half_depth / ce_val if ce_val > 0 else float("nan"),
+        "T_W": ce_half_width / ce_val if ce_val > 0 else float("nan"),
+    }
+    move, separation = scaling_axis_decision(ratios, epsilon)
+    return {
+        "ce_train": ce_train,
+        "ce_val": ce_val,
+        "ce_half_depth": ce_half_depth,
+        "ce_half_width": ce_half_width,
+        **ratios,
+        "move": move,
+        "separation": separation,
+        "epsilon": float(epsilon),
+        "val_batches": len(val_batches),
+        "blocks_total": len(blocks),
+        "blocks_skipped": blocks_skipped,
+        "channels_kept": keep,
+        "width_mask_seed": int(width_mask_seed),
     }
 
 
@@ -1769,6 +1897,11 @@ def train(args) -> None:
     # Validation setup
     val_interval = int(getattr(args, "val_interval", 0))
     val_batches = int(getattr(args, "val_batches", 10))
+    scaling_axis_enabled = bool(getattr(args, "scaling_axis_diagnostic", False))
+    if scaling_axis_enabled and val_interval <= 0:
+        raise ValueError("--scaling-axis-diagnostic evaluates on validation batches: set --val-interval > 0")
+    if scaling_axis_enabled and model_type != "gpt":
+        raise ValueError("--scaling-axis-diagnostic projects GPT blocks; the synaptic model type has none")
     val_loader = None
     if val_interval > 0:
         val_loader = tokenizing_distributed_data_loader(
@@ -2264,6 +2397,51 @@ def train(args) -> None:
     tokens_per_second = (measured_tokens / measured_time_s) if measured_steps > 0 else 0.0
     est_tflops = (flops_per_token * tokens_per_second) / 1e12
 
+    # Transseries scaling-axis diagnostic (surreal doc, "One predictive
+    # formula"): forward-only projections on the RAW module so the block hooks
+    # fire under torch.compile and DDP alike; after the final checkpoint and
+    # outside the throughput window. The training error is the mean of the
+    # last val_batches logged training losses (the standard running train CE).
+    scaling_axis_record: dict[str, Any] | None = None
+    if scaling_axis_enabled and val_loader is not None and isinstance(raw_model, GPT):
+        held_out: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for _ in range(val_batches):
+            try:
+                held_out.append(next(val_loader))
+            except StopIteration:
+                break
+
+        def _mean_ce(batches: list[tuple[torch.Tensor, torch.Tensor]]) -> float:
+            raw_model.eval()
+            try:
+                total = 0.0
+                with torch.no_grad():
+                    for inp, tgt in batches:
+                        with autocast_ctx():
+                            loss = _extract_loss(raw_model(inp, tgt))
+                        if ddp:
+                            dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                            loss = loss / ddp_world_size
+                        total += float(loss.item())
+                return total / len(batches) if batches else float("nan")
+            finally:
+                raw_model.train()
+
+        trailing = [x for x in losses[-val_batches:] if math.isfinite(x)]
+        scaling_axis_record = compute_scaling_axis_diagnostic(
+            raw_model,
+            _mean_ce,
+            ce_train=(sum(trailing) / len(trailing)) if trailing else float("nan"),
+            val_batches=held_out,
+        )
+        scaling_axis_record["train_steps_averaged"] = len(trailing)
+        if ddp_rank == 0:
+            console.print(
+                f"[bold cyan]scaling axis[/bold cyan] T_D={scaling_axis_record['T_D']:.3f} "
+                f"T_H={scaling_axis_record['T_H']:.3f} T_W={scaling_axis_record['T_W']:.3f} "
+                f"-> [bold]{scaling_axis_record['move']}[/bold] (separation {scaling_axis_record['separation']})"
+            )
+
     peak_mem_gb = None
     if device.type == "cuda":
         peak_mem_gb = float(torch.cuda.max_memory_allocated(device) / (1024**3))
@@ -2342,6 +2520,9 @@ def train(args) -> None:
         "train_ce_final": final_train_ce,
         "val_losses": val_losses,
         "val_ce_final": final_val_ce,
+        # transseries damage ratios + the argmax move (null unless
+        # --scaling-axis-diagnostic); the observable of hyp-surreal-scaling-axis-prediction
+        "scaling_axis": scaling_axis_record,
         # bits per byte: comparable across tokenizers (val_ce is not); null
         # when validation is off or the model type has no per-token loss
         "val_bpbs": val_bpbs,
@@ -2427,6 +2608,7 @@ def train(args) -> None:
             "synaptic_config": (asdict(config.syn_cfg) if isinstance(config, GPTSynapticConfig) else None),
             "val_interval": val_interval,
             "val_batches": val_batches if val_interval > 0 else None,
+            "scaling_axis_diagnostic": scaling_axis_enabled,
         },
         "compile": {
             "enabled": compiled_model,
@@ -2500,6 +2682,12 @@ def train(args) -> None:
             report_table.add_row("Final Val CE", f"{final_val_ce:.4f}")
         if final_val_bpb is not None:
             report_table.add_row("Final Val bits/byte", f"{final_val_bpb:.4f}")
+    if scaling_axis_record is not None:
+        report_table.add_row(
+            "Scaling axis (T_D / T_H / T_W)",
+            f"{scaling_axis_record['T_D']:.3f} / {scaling_axis_record['T_H']:.3f} / {scaling_axis_record['T_W']:.3f}"
+            f"  -> [bold]{scaling_axis_record['move']}[/bold]",
+        )
     console.print(report_table)
 
     report_md = f"""# nanochat run (fixed FLOPs)
@@ -2775,6 +2963,17 @@ def build_parser() -> argparse.ArgumentParser:
             "Planted-effect control arm: every block's attention output is zeroed, so the model cannot mix "
             "context (a per-token MLP stack). Recorded in model_config for the verdict engine's variant "
             "selectors; Block-based mechanisms only."
+        ),
+    )
+    parser.add_argument(
+        "--scaling-axis-diagnostic",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "After training, compute the transseries damage ratios T_D (val/train CE), T_H (every other "
+            "block replaced by the identity) and T_W (half the residual channels zeroed) on --val-batches "
+            "batches, forward-only, and record results.scaling_axis with the doc's argmax move "
+            "(hyp-surreal-scaling-axis-prediction). Needs --val-interval > 0."
         ),
     )
     parser.add_argument(

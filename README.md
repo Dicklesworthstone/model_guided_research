@@ -817,6 +817,14 @@ python -m nanochat.train --activation-checkpointing every-k --activation-ckpt-ev
 # refill stalls behind GPU steps; 0 = synchronous loading)
 python -m nanochat.train --dataloader-prefetch 4
 
+# Transseries scaling-axis diagnostic (surreal doc "One predictive formula"):
+# after training, T_D = val/train CE, T_H = CE with every other block replaced
+# by the identity, T_W = CE with half the residual channels zeroed, all
+# forward-only on the validation batches; results.scaling_axis carries the
+# ratios and the argmax move (data / depth / width / balanced). Needs
+# --val-interval > 0. `mgr scorecard --scaling-axis` threads it into cells.
+python -m nanochat.train --val-interval 50 --val-batches 10 --scaling-axis-diagnostic
+
 # Task-scoped tokenizer: train a byte-level BPE (default 512 tokens) on the
 # --data-dir corpus and size the embedding table from it. At d=64 the 50k
 # GPT-2 vocabulary is ~97% of every FLOP, so a fixed-FLOPs comparison on a
