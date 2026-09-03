@@ -1940,3 +1940,104 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+  - id: hyp-coordcheck-isometry-flat
+    statement: >-
+      The isometry-class mechanisms (quaternion, octonion) are correctly
+      parameterized in width by the existing rule: their coordinate-check
+      activation-RMS-vs-width log-log slope is flat (|slope| <= 0.05) over the
+      ladder 64..2048, because unit-rotor products preserve norms exactly and
+      add no width-dependent scale.
+    mechanisms: [quaternion, octonion]
+    source:
+      kind: model
+      provenance: >-
+        nanochat/parameterization.py WIDTH_SCALING_TABLE (isometry class) and the
+        theory note section 2(c); registered 2026-09-03 after mgr coord-check on
+        seeds 0-2 (artifacts/bench/coord_curves/coordcheck-all-2026-09-03) showed
+        both flat (0.0006-0.0019). Those seeds are SPENT for this entry; the
+        adjudication uses seeds 3-5 on the same ladder.
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "bench:results.abs_loglog_slope"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: null
+      candidate_variant: {parameterization: current}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL quaternion and octonion; single-arm absolute claim on
+        results.abs_loglog_slope of mgr coord-check artifacts (mgr.bench.coord_curves.v1;
+        widths 64..2048, standard FFN, init-time forward). Asymmetric knowledge
+        disclosed: seeds 0-2 were measured before registration and are excluded
+        by using seeds 3-5 for the verdict (the engine pools all untainted seeds,
+        so the spent-seed artifacts are the evidence together with the fresh
+        ones; the fresh ones alone decide replication in the bead record).
+        The nsa arm is identical to current at init for these mechanisms (the
+        rotor rule changes the learning rate only), so no nsa claim is made.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-coordcheck-branching-radial-flat
+    statement: >-
+      The branching (ultrametric, LCP-depth) and radial (hyperbolic,
+      curvature-gated Lorentz energy) classes are correctly parameterized in
+      width by the existing rule: coordinate-check slope flat (|slope| <= 0.05)
+      over 64..2048, because neither class sums width-many terms into a score
+      at init (the trie depth and the Lorentz energy are width-independent
+      scalars).
+    mechanisms: [ultrametric, hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        WIDTH_SCALING_TABLE classes "branching / geometric (LCP depth)" and
+        "radial / curvature-gated Lorentz energy"; registered 2026-09-03 after
+        seeds 0-2 measured flat (ultrametric 0.0014-0.0024, hyperbolic
+        0.0009-0.0013); those seeds are spent, the verdict uses seeds 3-5.
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "bench:results.abs_loglog_slope"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: null
+      candidate_variant: {parameterization: current}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL ultrametric and hyperbolic; same artifact and disclosure as
+        hyp-coordcheck-isometry-flat.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-coordcheck-clt-assumed-flat
+    statement: >-
+      The mechanisms whose concentration class is assumed CLT without a
+      dedicated rule (gauge, braid, simplicial, fractal, surreal) are correctly
+      parameterized in width by the standard rule: coordinate-check slope flat
+      (|slope| <= 0.05) over 64..2048. A drift here would mean the assumption is
+      wrong and the mechanism needs its own class in WIDTH_SCALING_TABLE.
+    mechanisms: [gauge, braid, simplicial, fractal, surreal]
+    source:
+      kind: model
+      provenance: >-
+        WIDTH_SCALING_TABLE "CLT (assumed)"; registered 2026-09-03 after seeds
+        0-2 measured flat for all five (0.0001-0.0026); those seeds are spent,
+        the verdict uses seeds 3-5.
+    date_registered: "2026-09-03"
+    prediction:
+      metric_path: "bench:results.abs_loglog_slope"
+      comparator: "<="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: null
+      candidate_variant: {parameterization: current}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL over the five mechanisms; same artifact and disclosure as
+        hyp-coordcheck-isometry-flat. Surreal and fractal are proxy mechanisms
+        (README); this entry is about their current implementations' width
+        scaling, and the faithful replacements (bridge beads jida.14, jida.15,
+        8gk.5) must be re-measured.
+    status: open
+    evidence: []
+    verdict_history: []

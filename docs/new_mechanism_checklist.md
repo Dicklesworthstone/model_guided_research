@@ -126,17 +126,23 @@ Honest snapshot from `mgr certify` (55/55 pass) and the registry.
 
 | mechanism | causality | algebra/invariant laws | **reduction-to-known certify** | coordinate-check (lab.1) | goldens |
 |---|---|---|---|---|---|
-| standard | ✓ | ✓ (rope/rmsnorm/softmax) | — (is the baseline) | ✗ | ✓ |
-| tropical | ✓ | ✓ (Lipschitz, ffn-collapse, margin) | ✓ (maslov_endpoint_within_sandwich) | ✗ | ✓ |
-| ultrametric | ✓ | ✓ (strong-triangle LCP) | ✓ (trie_decode_matches_hard_kernel) | ✗ | ✓ |
-| quaternion | ✓ | ✓ (assoc, norm, rotor) | — (is a reduction *target*) | ✗ | ✓ |
-| octonion | ✓ | ✓ (alternativity, norm, non-assoc) | ✓ (reduces_to_quaternion_on_subalgebra) | ✗ | ✓ |
-| braid | ✓ | ✓ (YBE, charges, r-matrix) | — (no simpler sub-mechanism) | ✗ | ✓ |
-| gauge | ✓ | ✓ (rotation roundtrip/additivity) | — (lacks QK-norm; not a clean → standard) | ✗ | ✓ |
-| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — (no simpler sub-mechanism) | ✗ | ✓ |
-| simplicial | ✓ | ✓ (mass conservation) | — (no simpler sub-mechanism) | ✗ | ✓ |
-| surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✗ | ✓ |
-| fractal | ✓ | ✓ (router simplex) | — (no simpler sub-mechanism) | ✗ | ✓ |
+| standard | ✓ | ✓ (rope/rmsnorm/softmax) | — (is the baseline) | ✓ flat, \|slope\| 0.0015 (hyp-coordcheck-clt-flat SUPPORTED 2026-09-02) | ✓ |
+| tropical | ✓ | ✓ (Lipschitz, ffn-collapse, margin) | ✓ (maslov_endpoint_within_sandwich) | ✗ drifts, \|slope\| ~0.10 under both rules (hyp-tropical-evt-miscoupling REFUTED; bead 1xov) | ✓ |
+| ultrametric | ✓ | ✓ (strong-triangle LCP) | ✓ (trie_decode_matches_hard_kernel) | ✓ flat, 0.0014-0.0024 (2026-09-03) | ✓ |
+| quaternion | ✓ | ✓ (assoc, norm, rotor) | — (is a reduction *target*) | ✓ flat, 0.0008-0.0019; nsa identical at init (rotor rule changes the LR only) | ✓ |
+| octonion | ✓ | ✓ (alternativity, norm, non-assoc) | ✓ (reduces_to_quaternion_on_subalgebra) | ✓ flat, 0.0006-0.0015; nsa identical at init | ✓ |
+| braid | ✓ | ✓ (YBE, charges, r-matrix) | — (no simpler sub-mechanism) | ✓ flat, 0.0006-0.0016 | ✓ |
+| gauge | ✓ | ✓ (rotation roundtrip/additivity) | — (lacks QK-norm; not a clean → standard) | ✓ flat, 0.0001-0.0019 | ✓ |
+| reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — (no simpler sub-mechanism) | ✓ flat, 0.0003-0.0009 (hyp-coordcheck-clt-flat SUPPORTED) | ✓ |
+| hyperbolic | ✓ | ✓ (Lorentz constraint, exp/log roundtrip) | ✓ (energy_gromov_reduces_to_standard) | ✓ flat, 0.0009-0.0013 | ✓ |
+| simplicial | ✓ | ✓ (mass conservation) | — (no simpler sub-mechanism) | ✓ flat, 0.0008-0.0016 | ✓ |
+| surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✓ flat, 0.0001-0.0026 | ✓ |
+| fractal | ✓ | ✓ (router simplex) | — (no simpler sub-mechanism) | ✓ flat, 0.0012-0.0022 | ✓ |
+
+Coordinate-check readings are `mgr coord-check` log-log slopes of activation
+RMS vs width (64..2048, three seeds at init; artifacts under
+`artifacts/bench/coord_curves/`). Seeds 0-2 measured the table; the class-level
+flatness hypotheses registered on 2026-09-03 are adjudicated on seeds 3-5.
 
 **The reduction-to-known column is now filled wherever a clean reduction
 exists** (bead uvjq, 2026-06-14): octonion ⊃ quaternion, tropical → its exact
