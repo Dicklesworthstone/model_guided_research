@@ -232,7 +232,15 @@ class Runner:
 
 
 def _train_argv(
-    work: Path, run_id: str, mech: str, *, max_steps: int, ckpt_interval: int, data_dir: Path, seed: int = 7
+    work: Path,
+    run_id: str,
+    mech: str,
+    *,
+    max_steps: int,
+    ckpt_interval: int,
+    data_dir: Path,
+    seed: int = 7,
+    certify_interval: int = 5,
 ) -> list[str]:
     return (
         TRAIN
@@ -246,6 +254,8 @@ def _train_argv(
             str(max_steps),
             "--checkpoint-interval",
             str(ckpt_interval),
+            "--certify-interval",
+            str(certify_interval),
             "--seed",
             str(seed),
             "--artifacts-dir",
@@ -342,22 +352,41 @@ def _kill_train_mid_run(
 
 
 def _resume_and_verify(
-    r: Runner, name: str, work: Path, run_id: str, mech: str, *, max_steps: int, ckpt_interval: int, data_dir: Path
+    r: Runner,
+    name: str,
+    work: Path,
+    run_id: str,
+    mech: str,
+    *,
+    max_steps: int,
+    ckpt_interval: int,
+    data_dir: Path,
+    certify_interval: int = 5,
 ) -> None:
     run_dir = _run_dir(work, run_id)
-    argv = _train_argv(work, run_id, mech, max_steps=max_steps, ckpt_interval=ckpt_interval, data_dir=data_dir) + [
+    argv = _train_argv(
+        work,
+        run_id,
+        mech,
+        max_steps=max_steps,
+        ckpt_interval=ckpt_interval,
+        data_dir=data_dir,
+        certify_interval=certify_interval,
+    ) + [
         "--resume-from",
         "latest",
         "--checkpoint-dir",
         str(run_dir / "checkpoints"),
     ]
     r.run(name, argv)
-    # Trajectory continuity across the SIGKILL splice. Honest contract:
-    #  - the pre-kill segment survives (the original "header" is still there;
-    #    a SIGKILL may lose up to flush_every buffered step records, so the
-    #    first segment's TAIL can legitimately be missing),
+    # Trajectory continuity across the SIGKILL splice:
+    #  - the pre-kill segment survives and is flushed before meta_<step>.json,
+    #  - any post-checkpoint step records from before the kill are trimmed on
+    #    resume so step numbers have zero duplicates and zero gaps,
     #  - the splice is marked by a "resume_header" record,
-    #  - the resumed segment is contiguous and reaches the planned final step.
+    #  - the resumed segment is contiguous and reaches the planned final step,
+    #  - certs.* telemetry is present at step % certify_interval == 0 across
+    #    both segments without gap or duplication.
     lines = _metric_lines(run_dir)
     headers = [i for i, rec in enumerate(lines) if rec.get("type") == "header"]
     resumes = [i for i, rec in enumerate(lines) if rec.get("type") == "resume_header"]
@@ -374,6 +403,15 @@ def _resume_and_verify(
         f"resumed segment {tail[:3]}..{tail[-3:] if len(tail) > 3 else tail} contiguous={contiguous} "
         f"final={tail[-1] if tail else None} (planned {max_steps - 1})",
     )
+    if certify_interval > 0:
+        step_recs = [rec for rec in lines if rec.get("type") == "step" and isinstance(rec.get("step"), int)]
+        cert_steps = [int(rec["step"]) for rec in step_recs if isinstance(rec.get("certs"), dict)]
+        expected_cert_steps = [s for s in range(max_steps) if s % certify_interval == 0]
+        r.assert_true(
+            f"{name}-certs-continuity",
+            cert_steps == expected_cert_steps,
+            f"certs.* steps across SIGKILL/resume splice: got={cert_steps} expected={expected_cert_steps}",
+        )
 
 
 # ---------------------------------------------------------------------------

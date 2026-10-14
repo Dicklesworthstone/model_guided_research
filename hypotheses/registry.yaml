@@ -2489,3 +2489,43 @@ hypotheses:
     evidence: []
     verdict_history:
       - {date: "2026-10-14", verdict: supported, artifacts: ["artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s2/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s2/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s0/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s1/summary.json", "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s2/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"fractal": {"budget_flops": 4109475840.0, "ci95": [0.9648730653034076, 1.0082992445188823], "effect": 0.9868311856970022, "n_baseline": 3, "n_candidate": 3, "n_for_80pct": 2, "p_value": 9.999000099990002e-05, "power": 0.9933047369752769, "verdict": "supported"}, "hyperbolic": {"budget_flops": 4034641920.0, "ci95": [0.9690126307267264, 1.0154615577710686], "effect": 0.9918011805495838, "n_baseline": 3, "n_candidate": 3, "n_for_80pct": 2, "p_value": 9.999000099990002e-05, "power": 0.9853060898377245, "verdict": "supported"}, "ultrametric": {"budget_flops": 4042260480.0, "ci95": [0.9909847670038152, 1.0178039442289772], "effect": 1.004299016233471, "n_baseline": 3, "n_candidate": 3, "n_for_80pct": 2, "p_value": 9.999000099990002e-05, "power": 0.9999999397048501, "verdict": "supported"}}}
+  - id: hyp-cert-telemetry-leads-divergence
+    statement: >-
+      On induced-instability training trajectories (where internal block matrix
+      learning rate exceeds the stability point), periodic certificate telemetry
+      (--certify-interval 1) detects mathematical-invariant drift (certs.* band
+      breach) with a positive lead time of at least 2.0 steps before loss
+      divergence (defined as NaN/Inf or >= 2x running-best loss), while matched
+      stable control runs at standard learning rate exhibit zero false-alarm
+      lead steps (lead_steps_before_loss_divergence absolute delta >= 2.0 steps
+      at equal FLOPs across >= 5 seeds per arm).
+    mechanisms: [gauge]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-5ki.5 requirement (4): invariant drift
+        (orthogonality residual, Lipschitz ratio, and gauge rotation angle RMS)
+        in pre-norm + final-RMSNorm Transformers responds immediately to unstable
+        internal weight updates before radial normalization and logit softcapping
+        allow cross-entropy loss to exceed 2x running-best loss.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-curvature-gauge-invariance, thm-kick-kick-symplectic]
+    prediction:
+      metric_path: "train:results.certs_telemetry.lead_steps_before_loss_divergence"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 2.0
+      baseline:
+        mechanism: same
+        equal_flops: true
+        variant: {task: hier, certify_interval: 1, matrix_lr: 0.001}
+      candidate_variant: {task: hier, certify_interval: 1, matrix_lr: 0.6}
+      min_seeds: 5
+      scale_caveats: >-
+        5 induced-instability trajectories (matrix_lr=0.6, learning_rate=0.05)
+        vs 5 matched stable control trajectories (matrix_lr=0.001,
+        learning_rate=0.001) on gauge attention at equal FLOPs (12 steps,
+        certify_interval=1) on the hier diagnostics corpus.
+    status: open
+    evidence: []
+    verdict_history: []

@@ -1532,3 +1532,189 @@ def test_scaling_axis_diagnostic_lands_in_summary(monkeypatch, tmp_path):
     assert summary["hparams"]["scaling_axis_diagnostic"] is True
     with pytest.raises(ValueError, match="val-interval"):
         _run_train(monkeypatch, tmp_path, "scaling-axis-noval", scaling_axis_diagnostic=None)
+
+
+def test_certify_interval_plumbing_and_trajectory_non_interference(monkeypatch, tmp_path):
+    """5ki.5 (a): certs.* fields appear iff step % certify_interval == 0, and enabling
+    --certify-interval leaves the training loss trajectory bitwise identical."""
+    summary_off = _run_train(monkeypatch, tmp_path, "cert-off", max_steps=12)
+    summary_on = _run_train(monkeypatch, tmp_path, "cert-on", max_steps=12, certify_interval=3)
+
+    _assert_bitwise_trajectory(summary_on["results"]["losses"], summary_off["results"]["losses"], offset=0)
+
+    run_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "cert-on"
+    records = [
+        json.loads(line)
+        for line in (run_dir / "metrics.jsonl").read_text().splitlines()
+        if json.loads(line).get("type") == "step"
+    ]
+    assert [r["step"] for r in records] == list(range(12))
+    for rec in records:
+        step = rec["step"]
+        if step % 3 == 0:
+            assert isinstance(rec.get("certs"), dict), f"missing certs block at step {step}"
+            for key in ("invariant_drift", "lipschitz_ratio", "orthogonality_residual"):
+                assert key in rec["certs"], f"missing certs.{key} at step {step}"
+                assert f"certs.{key}" in rec, f"missing flat certs.{key} at step {step}"
+                assert math.isfinite(rec[f"certs.{key}"])
+        else:
+            assert "certs" not in rec, f"unexpected certs block at step {step}"
+            assert not any(k.startswith("certs.") for k in rec), f"unexpected certs.* key at step {step}"
+
+    ct = summary_on["results"]["certs_telemetry"]
+    assert ct["interval"] == 3
+    assert ct["certified_steps"] == 4
+    assert ct["warn_count"] == 0
+    assert ct["halted"] is False
+
+
+def test_certify_telemetry_overhead_budget():
+    """5ki.5 (b): amortized certification probe cost at a standard interval (every 50 steps)
+    is < 2% of a training step."""
+    import time
+
+    from nanochat.gpt import GPT, GPTConfig
+
+    cfg = GPTConfig(vocab_size=256, sequence_len=32, n_layer=2, n_head=2, n_kv_head=2, n_embd=32)
+    model = GPT(cfg)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    gen = torch.Generator().manual_seed(42)
+    idx = torch.randint(0, 256, (2, 32), generator=gen)
+    targets = torch.randint(0, 256, (2, 32), generator=gen)
+    probe_T = 8
+    x_probe = torch.randn((2, probe_T, 32), generator=gen)
+    x_probe_delta = 1e-3 * torch.randn((2, probe_T, 32), generator=gen)
+    cos_sin_probe = (model.cos[:, :probe_T], model.sin[:, :probe_T])
+
+    # Warm up both paths once
+    loss = model(idx, targets)
+    loss.backward()
+    opt.step()
+    opt.zero_grad(set_to_none=True)
+    train_mod._collect_certify_telemetry(model, x_probe, x_probe_delta, cos_sin_probe, ["standard"])
+
+    n_iters = 10
+    t0 = time.perf_counter()
+    for _ in range(n_iters):
+        loss = model(idx, targets)
+        loss.backward()
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+    step_dt = (time.perf_counter() - t0) / n_iters
+
+    t1 = time.perf_counter()
+    for _ in range(n_iters):
+        train_mod._collect_certify_telemetry(model, x_probe, x_probe_delta, cos_sin_probe, ["standard"])
+    probe_dt = (time.perf_counter() - t1) / n_iters
+
+    # Amortized over default cadence N=50 steps, overhead must be < 2% of step time
+    amortized_fraction = (probe_dt / 50.0) / max(step_dt, 1e-9)
+    assert amortized_fraction < 0.02, (
+        f"amortized certify probe overhead {amortized_fraction:.4%} exceeds 2% budget "
+        f"(probe_dt={probe_dt * 1e3:.3f}ms, step_dt={step_dt * 1e3:.3f}ms)"
+    )
+
+
+def test_certify_synthetic_noise_injection_warn_and_halt(monkeypatch, tmp_path):
+    """5ki.5 (c): synthetic mid-run parameter scale/rotation noise triggers certs.* drift
+    and exercises both --certify-action warn and --certify-action halt (including emergency checkpoint)."""
+    summary_warn = _run_train(
+        monkeypatch,
+        tmp_path,
+        "cert-warn",
+        max_steps=8,
+        attention_type="gauge",
+        certify_interval=2,
+        certify_action="warn",
+        certify_inject_noise_step=4,
+        certify_inject_noise_scale=12.0,
+    )
+    ct_warn = summary_warn["results"]["certs_telemetry"]
+    assert ct_warn["warn_count"] >= 1
+    assert 4 in ct_warn["warn_steps"]
+    assert ct_warn["halted"] is False
+    assert len(summary_warn["results"]["losses"]) == 8
+
+    summary_halt = _run_train(
+        monkeypatch,
+        tmp_path,
+        "cert-halt",
+        max_steps=8,
+        attention_type="gauge",
+        certify_interval=2,
+        certify_action="halt",
+        checkpoint_interval=6,
+        certify_inject_noise_step=4,
+        certify_inject_noise_scale=12.0,
+    )
+    ct_halt = summary_halt["results"]["certs_telemetry"]
+    assert ct_halt["halted"] is True
+    assert ct_halt["halt_step"] == 4
+    assert "invariant_drift" in ct_halt["halt_metrics"] or "orthogonality_residual" in ct_halt["halt_metrics"]
+    assert len(summary_halt["results"]["losses"]) == 5  # steps 0..4 completed before clean halt
+    ckpt_dir = _ckpt_dir(tmp_path, "cert-halt")
+    assert (ckpt_dir / "meta_000004.json").exists(), "emergency checkpoint at halt step 4 must be saved"
+
+
+def test_certify_probe_determinism_across_runs_and_checkpoint_resume(monkeypatch, tmp_path):
+    """5ki.5 (d): probe-batch certs.* readings are bitwise identical across runs and across
+    a mid-run checkpoint/resume splice, with zero gaps or duplicate steps in metrics.jsonl."""
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "cert-ref",
+        max_steps=10,
+        attention_type="reversible",
+        certify_interval=2,
+    )
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "cert-splice",
+        max_steps=6,
+        attention_type="reversible",
+        certify_interval=2,
+        checkpoint_interval=4,
+    )
+    # Note: parent ran 6 steps (0..5) and saved checkpoint at step 3 (checkpoint_interval=4)
+    # and final step 5. Resume from step 3 into the SAME run_id so MetricsStream trims steps 4..5
+    # and replays steps 4..9 cleanly!
+    ckpt_dir = _ckpt_dir(tmp_path, "cert-splice")
+    meta_3 = json.loads((ckpt_dir / "meta_000003.json").read_text())
+    meta_3["budget"]["max_steps"] = 10
+    (ckpt_dir / "meta_000003.json").write_text(json.dumps(meta_3, indent=2))
+
+    _run_train(
+        monkeypatch,
+        tmp_path,
+        "cert-splice",
+        max_steps=10,
+        attention_type="reversible",
+        certify_interval=2,
+        checkpoint_interval=4,
+        resume_from=str(ckpt_dir),
+        resume_step=3,
+    )
+
+    ref_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "cert-ref"
+    splice_dir = tmp_path / "artifacts" / "baseline" / "nanochat" / "cert-splice"
+
+    ref_steps = [
+        json.loads(line)
+        for line in (ref_dir / "metrics.jsonl").read_text().splitlines()
+        if json.loads(line).get("type") == "step"
+    ]
+    splice_steps = [
+        json.loads(line)
+        for line in (splice_dir / "metrics.jsonl").read_text().splitlines()
+        if json.loads(line).get("type") == "step"
+    ]
+    assert [r["step"] for r in splice_steps] == list(range(10)), "splice metrics.jsonl must have 0..9 with no duplicates"
+
+    for r_ref, r_sp in zip(ref_steps, splice_steps, strict=True):
+        assert r_ref["step"] == r_sp["step"]
+        if r_ref["step"] % 2 == 0:
+            assert r_ref["certs"] == pytest.approx(r_sp["certs"], rel=1e-6, abs=1e-7)
+        else:
+            assert "certs" not in r_sp
+

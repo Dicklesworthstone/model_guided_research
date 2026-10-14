@@ -281,12 +281,15 @@ def test_status_selects_newest_certificate_by_git_commit_not_checkout_mtime(tmp_
     older_dir.mkdir(parents=True)
     newer_summary = newer_dir / "summary.json"
     older_summary = older_dir / "summary.json"
+    import subprocess
+
+    head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     newer_summary.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "kind": "certify",
-                "git": {"dirty": False, "commit_full": "dbd2d509e4ebb6e5b310236afb10e359041b1d22"},
+                "git": {"dirty": False, "commit_full": head_sha},
                 "checks": [{"mechanism": "tropical", "name": "tropical.smoke", "measured": 0.0}],
             }
         )

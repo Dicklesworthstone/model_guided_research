@@ -676,9 +676,11 @@ def _install_activation_rms_hooks(model: torch.nn.Module) -> dict[str, Any] | No
     if not blocks:
         return None
     n_blocks = len(blocks)
-    state: dict[str, Any] = {"rms": [None] * n_blocks, "cursor": 0, "handles": []}
+    state: dict[str, Any] = {"rms": [None] * n_blocks, "cursor": 0, "handles": [], "paused": False}
 
     def hook(_module: torch.nn.Module, _inputs: Any, output: Any) -> None:
+        if state.get("paused"):
+            return
         tensor = output[0] if isinstance(output, tuple) else output
         if isinstance(tensor, torch.Tensor):
             state["rms"][state["cursor"]] = tensor.detach().float().pow(2).mean().sqrt()
@@ -687,6 +689,299 @@ def _install_activation_rms_hooks(model: torch.nn.Module) -> dict[str, Any] | No
     for block in {id(b): b for b in blocks}.values():  # one hook per distinct module
         state["handles"].append(block.register_forward_hook(hook))
     return state
+
+
+_TRANSIENT_MODULE_ATTRS: tuple[str, ...] = (
+    "gamma_last",
+    "gamma_min",
+    "gamma_mean",
+    "gamma_head_mean",
+    "certificate_coverage_last",
+    "route_depth_mean_last",
+    "tie_fraction_last",
+    "last_schedule",
+    "q1_mass_defect_max",
+    "q2_braid_residual_max",
+    "symplectic_shadow_energy_mean",
+    "symplectic_energy_band_layers",
+    "symplectic_x_norm_mean",
+    "symplectic_lambda_mean",
+    "_symplectic_Pre",
+    "last_triangle_entropy",
+    "last_hodge_2simplex_share",
+    "last_moran_dimension",
+    "last_max_contraction",
+    "last_radii_profile",
+    "last_surreal_stats",
+    "attn_entropy_head_mean",
+)
+
+
+def _snapshot_module_telemetry(blocks: list[torch.nn.Module]) -> list[tuple[torch.nn.Module, str, str, Any]]:
+    """Snapshot transient telemetry buffers on blocks and attention sub-modules."""
+    import copy
+
+    saved: list[tuple[torch.nn.Module, str, str, Any]] = []
+    seen_ids: set[int] = set()
+    for block in blocks:
+        for mod in (block, getattr(block, "attn", None)):
+            if mod is None or id(mod) in seen_ids:
+                continue
+            seen_ids.add(id(mod))
+            for attr in _TRANSIENT_MODULE_ATTRS:
+                if hasattr(mod, attr):
+                    val = getattr(mod, attr)
+                    if isinstance(val, torch.Tensor):
+                        saved.append((mod, attr, "tensor", val.detach().clone()))
+                    else:
+                        saved.append((mod, attr, "value", copy.deepcopy(val) if isinstance(val, dict | list) else val))
+    return saved
+
+
+def _restore_module_telemetry(saved: list[tuple[torch.nn.Module, str, str, Any]]) -> None:
+    """Restore transient telemetry buffers captured by _snapshot_module_telemetry."""
+    for mod, attr, kind, val in saved:
+        if kind == "tensor":
+            cur = getattr(mod, attr, None)
+            if isinstance(cur, torch.Tensor) and cur.shape == val.shape and cur.dtype == val.dtype:
+                cur.copy_(val)
+            else:
+                setattr(mod, attr, val)
+        else:
+            setattr(mod, attr, val)
+
+
+def _collect_certify_telemetry(
+    model: torch.nn.Module,
+    x_probe: torch.Tensor,
+    x_probe_delta: torch.Tensor,
+    cos_sin_probe: tuple[torch.Tensor, torch.Tensor],
+    attention_schedule: list[str],
+    activation_hooks: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    """Run lightweight mathematical-invariant probes on a fixed probe batch (bead 5ki.5).
+
+    Pure function of ``(model, x_probe, x_probe_delta, cos_sin_probe, attention_schedule)``:
+    runs under ``torch.no_grad()`` and ``torch.random.fork_rng``, pauses activation RMS
+    hooks, and restores all transient telemetry buffers on exit so training trajectories
+    remain bitwise identical whether ``--certify-interval`` is enabled or disabled.
+    """
+    from nanochat.model_utils import norm
+
+    blocks = _transformer_blocks(model)
+    if not blocks:
+        return {}
+    saved_buffers = _snapshot_module_telemetry(blocks)
+    was_paused = bool(activation_hooks.get("paused", False)) if activation_hooks is not None else False
+    if activation_hooks is not None:
+        activation_hooks["paused"] = True
+    fork_devices = [x_probe.device] if x_probe.device.type == "cuda" else []
+    certs: dict[str, float] = {}
+    try:
+        with torch.no_grad(), torch.random.fork_rng(devices=fork_devices):
+            h = x_probe
+            h_d = x_probe + x_probe_delta
+            for block in blocks:
+                h = block(h, cos_sin_probe, None)
+                h_d = block(h_d, cos_sin_probe, None)
+
+            delta_norm = float(x_probe_delta.float().norm().clamp_min(1e-12).item())
+            out_diff_norm = float((h_d.float() - h.float()).norm().item())
+            certs["lipschitz_ratio"] = out_diff_norm / delta_norm
+            certs["probe_output_rms"] = float(h.float().pow(2).mean().sqrt().item())
+
+            ortho_residuals: list[float] = []
+            for block in blocks:
+                block_any: Any = block
+                attn: Any = getattr(block, "attn", None)
+                w_mat: torch.Tensor | None = None
+                c_q_mod = getattr(block_any, "c_q", None) or (getattr(attn, "c_q", None) if attn is not None else None)
+                c_q_w = getattr(c_q_mod, "weight", None) if c_q_mod is not None else None
+                if isinstance(c_q_w, torch.Tensor):
+                    w_mat = c_q_w
+                else:
+                    for p in block.parameters():
+                        if p.ndim == 2:
+                            w_mat = p
+                            break
+                if w_mat is not None:
+                    wf = w_mat.detach().float()
+                    scale = (wf.norm() / math.sqrt(max(1, wf.size(0)))).clamp_min(1e-12)
+                    wn = wf / scale
+                    gram = wn @ wn.T
+                    eye = torch.eye(gram.size(0), device=gram.device, dtype=gram.dtype)
+                    res = float(((gram - eye).norm() / math.sqrt(max(1, gram.size(0)))).item()) + float(scale.item())
+                    gauge_mod: Any = block_any if hasattr(block_any, "to_angles") else attn
+                    to_ang = getattr(gauge_mod, "to_angles", None) if gauge_mod is not None else None
+                    to_ang_w = getattr(to_ang, "weight", None) if to_ang is not None else None
+                    if isinstance(to_ang_w, torch.Tensor):
+                        res += float(to_ang_w.detach().float().norm().item() / math.sqrt(max(1, wf.size(1))))
+                    ortho_residuals.append(res)
+            certs["orthogonality_residual"] = (
+                sum(ortho_residuals) / len(ortho_residuals) if ortho_residuals else 0.0
+            )
+
+            if "reversible" in attention_schedule:
+                rt_errs: list[float] = []
+                for block in blocks:
+                    rev_mod: Any = block if hasattr(block, "inverse") else getattr(block, "attn", None)
+                    if rev_mod is not None and callable(getattr(rev_mod, "inverse", None)):
+                        y_rev = rev_mod(x_probe, cos_sin_probe, None)
+                        x_rec = rev_mod.inverse(y_rev, cos_sin_probe)
+                        rt_errs.append(float((x_rec.float() - x_probe.float()).abs().max().item()))
+                if rt_errs:
+                    certs["round_trip_error"] = max(rt_errs)
+
+            if "gauge" in attention_schedule:
+                gauge_rt: list[float] = []
+                gauge_ang: list[float] = []
+                for block in blocks:
+                    gauge_mod: Any = block if hasattr(block, "to_angles") else getattr(block, "attn", None)
+                    if (
+                        gauge_mod is not None
+                        and callable(getattr(gauge_mod, "to_angles", None))
+                        and callable(getattr(gauge_mod, "_apply_rotations", None))
+                    ):
+                        angles = torch.cumsum(gauge_mod.to_angles(norm(x_probe)).float(), dim=1)
+                        x_g = gauge_mod._apply_rotations(x_probe.float(), angles)
+                        x_back = gauge_mod._apply_rotations(x_g, angles, inverse=True)
+                        gauge_rt.append(float((x_back - x_probe.float()).abs().max().item()))
+                        gauge_ang.append(float(angles.pow(2).mean().sqrt().item()))
+                if gauge_rt:
+                    certs["round_trip_error"] = max(certs.get("round_trip_error", 0.0), max(gauge_rt))
+                    certs["gauge_angle_rms"] = sum(gauge_ang) / len(gauge_ang)
+
+            if "octonion" in attention_schedule:
+                from nanochat.octonion_attention_torch import _omul_blades, oconj, onormalize
+
+                rotor_devs: list[float] = []
+                for block in blocks:
+                    attn = getattr(block, "attn", None)
+                    if attn is not None and type(attn).__name__ == "OctonionCausalSelfAttention":
+                        xn = norm(x_probe)
+                        q_o = onormalize(attn.c_q(xn).float().view(-1, 8))
+                        k_o = onormalize(attn.c_k(xn).float().view(-1, 8))
+                        v_o = attn.c_v(xn).float().view(-1, 8)
+                        r_o = _omul_blades(q_o, oconj(k_o))
+                        rv = _omul_blades(r_o, v_o)
+                        v_norm = v_o.norm(dim=-1).clamp_min(1e-12)
+                        dev = ((rv.norm(dim=-1) - v_o.norm(dim=-1)).abs() / v_norm).max()
+                        rotor_devs.append(float(dev.item()))
+                if rotor_devs:
+                    certs["rotor_norm_dev"] = max(rotor_devs)
+
+            if "braid" in attention_schedule:
+                braid_st = _collect_braid_charge_stats(model)
+                if braid_st is not None:
+                    q1 = braid_st.get("q1_mass_defect_max")
+                    q2 = braid_st.get("q2_braid_residual_max")
+                    if isinstance(q1, int | float):
+                        certs["braid_q1_defect"] = float(q1)
+                    if isinstance(q2, int | float):
+                        certs["braid_q2_residual"] = float(q2)
+
+            if "tropical" in attention_schedule:
+                trop_st = _collect_tropical_margin_stats(model)
+                if trop_st is not None and isinstance(trop_st.get("gamma_mean"), int | float):
+                    certs["tropical_gamma_mean"] = float(trop_st["gamma_mean"])
+
+            if "ultrametric" in attention_schedule:
+                ultra_st = _collect_ultrametric_route_stats(model)
+                if ultra_st is not None and isinstance(ultra_st.get("tie_fraction"), int | float):
+                    certs["ultrametric_tie_fraction"] = float(ultra_st["tie_fraction"])
+
+            if "hyperbolic" in attention_schedule:
+                hyp_st = _collect_hyperbolic_stats(model)
+                if hyp_st is not None and isinstance(hyp_st.get("curvature"), dict):
+                    c_mean = hyp_st["curvature"].get("mean")
+                    if isinstance(c_mean, int | float):
+                        certs["hyperbolic_curvature_mean"] = float(c_mean)
+
+            if "simplicial" in attention_schedule:
+                simp_st = _collect_simplicial_stats(model)
+                if simp_st is not None and isinstance(simp_st.get("hodge_2simplex_share"), int | float):
+                    certs["simplicial_2simplex_share"] = float(simp_st["hodge_2simplex_share"])
+
+            if "fractal" in attention_schedule:
+                frac_st = _collect_fractal_stats(model)
+                if frac_st is not None:
+                    if isinstance(frac_st.get("max_contraction"), int | float):
+                        certs["fractal_max_contraction"] = float(frac_st["max_contraction"])
+                    if isinstance(frac_st.get("moran_dimension"), int | float):
+                        certs["fractal_moran_dimension"] = float(frac_st["moran_dimension"])
+
+            if "surreal" in attention_schedule:
+                sur_st = _collect_surreal_stats(model)
+                if sur_st is not None and isinstance(sur_st.get("valuation_gap"), int | float):
+                    certs["surreal_valuation_gap"] = float(sur_st["valuation_gap"])
+
+            certs["invariant_drift"] = float(
+                certs["lipschitz_ratio"]
+                + certs["orthogonality_residual"]
+                + certs.get("round_trip_error", 0.0)
+                + certs.get("rotor_norm_dev", 0.0)
+                + certs.get("braid_q2_residual", 0.0)
+                + certs.get("gauge_angle_rms", 0.0)
+            )
+    finally:
+        if activation_hooks is not None:
+            activation_hooks["paused"] = was_paused
+        _restore_module_telemetry(saved_buffers)
+    return certs
+
+
+_CERT_DRIFT_WATCH_KEYS: frozenset[str] = frozenset(
+    {
+        "invariant_drift",
+        "lipschitz_ratio",
+        "orthogonality_residual",
+        "round_trip_error",
+        "rotor_norm_dev",
+        "braid_q1_defect",
+        "braid_q2_residual",
+        "gauge_angle_rms",
+    }
+)
+
+
+def _check_cert_drift(
+    certs: dict[str, float],
+    cert_history: dict[str, list[float]],
+    *,
+    band_k: float = 3.0,
+) -> list[str]:
+    """Return the sorted list of certified invariant keys that breached their band.
+
+    A watched invariant triggers when:
+    1. Its reading is non-finite (NaN/Inf), OR
+    2. It exceeds ``band_k * max(abs(initial_reading), 1e-4)`` (default 3x initial baseline), OR
+    3. Once >= 4 prior readings exist, it departs the trailing window (up to 20 points)
+       by more than ``band_k * std`` AND at least ``15%`` of the trailing mean magnitude.
+    """
+    import statistics as st
+
+    drifted: list[str] = []
+    for key, val in sorted(certs.items()):
+        if not math.isfinite(val):
+            drifted.append(key)
+            continue
+        if key not in _CERT_DRIFT_WATCH_KEYS:
+            continue
+        prior = [p for p in cert_history.get(key, []) if math.isfinite(p)]
+        if not prior:
+            continue
+        base0 = max(abs(prior[0]), 1e-4)
+        if abs(val) > band_k * base0 and abs(val - prior[0]) > 0.25 * base0:
+            drifted.append(key)
+            continue
+        if len(prior) >= 4:
+            window = prior[-20:]
+            mu = st.fmean(window)
+            sd = st.stdev(window)
+            floor = max(1e-4, 0.15 * abs(mu))
+            if sd > 1e-12 and abs(val - mu) > max(band_k * sd, floor):
+                drifted.append(key)
+    return drifted
 
 
 def _dataset_task(data_dir: str | None) -> str | None:
@@ -1070,6 +1365,19 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
         warnings.append("--resume-step has no effect without --resume-from.")
     if model_type == "synaptic" and resume_from is not None:
         errors.append("--resume-from is currently only supported for --model-type gpt.")
+
+    # Periodic mathematical-invariant certification telemetry (bead 5ki.5).
+    certify_interval_arg = int(getattr(args, "certify_interval", 0) or 0)
+    if certify_interval_arg < 0:
+        errors.append("--certify-interval must be >= 0 (0 disables periodic invariant probes)")
+    certify_action_arg = str(getattr(args, "certify_action", "warn") or "warn")
+    if certify_action_arg not in {"warn", "halt"}:
+        errors.append(f"--certify-action must be 'warn' or 'halt', got {certify_action_arg!r}")
+    certify_band_k_arg = float(getattr(args, "certify_band_k", 3.0) or 3.0)
+    if not (math.isfinite(certify_band_k_arg) and certify_band_k_arg > 0.0):
+        errors.append(f"--certify-band-k must be > 0, got {certify_band_k_arg!r}")
+    if model_type == "synaptic" and certify_interval_arg > 0:
+        warnings.append("--certify-interval is only supported for --model-type gpt; ignoring.")
 
     syn_cfg_path = getattr(args, "synaptic_config", None)
     if model_type == "synaptic" and syn_cfg_path is not None:
@@ -1879,7 +2187,12 @@ def train(args) -> None:
         # append on resume: truncating would erase the parent process's step
         # history (rz8.8 e2e finding); the splice is marked by a
         # "resume_header" record with this process's provenance
-        metrics_stream = MetricsStream(run_dir / "metrics.jsonl", provenance=provenance, append=resume_meta is not None)
+        metrics_stream = MetricsStream(
+            run_dir / "metrics.jsonl",
+            provenance=provenance,
+            append=resume_meta is not None,
+            resume_from_step=start_step if resume_meta is not None else None,
+        )
         if bool(getattr(args, "dashboard", False)):
             # Live rich dashboard (bead nyp): renders the SAME records the
             # metrics stream writes - zero overhead when the flag is off.
@@ -1923,6 +2236,43 @@ def train(args) -> None:
                 html_path=html_path,
             )
             dashboard.start()
+
+    # Periodic mathematical-invariant certification telemetry (bead 5ki.5).
+    certify_interval = int(getattr(args, "certify_interval", 0) or 0) if model_type == "gpt" else 0
+    certify_action = str(getattr(args, "certify_action", "warn") or "warn")
+    certify_band_k = float(getattr(args, "certify_band_k", 3.0) or 3.0)
+    certify_inject_noise_step = getattr(args, "certify_inject_noise_step", None)
+    certify_inject_noise_scale = float(getattr(args, "certify_inject_noise_scale", 10.0) or 10.0)
+    cert_history: dict[str, list[float]] = {}
+    cert_warn_steps: list[int] = []
+    cert_steps_logged: list[int] = []
+    cert_halted = False
+    cert_halt_step: int | None = None
+    cert_halt_metrics: list[str] = []
+    cert_x_probe: torch.Tensor | None = None
+    cert_x_probe_delta: torch.Tensor | None = None
+    cert_cos_sin_probe: tuple[torch.Tensor, torch.Tensor] | None = None
+    if certify_interval > 0 and isinstance(raw_model, GPT):
+        probe_T = min(8, int(config.sequence_len))
+        probe_gen = torch.Generator(device="cpu").manual_seed(int(args.seed) + 7919)
+        cert_x_probe = torch.randn(
+            (2, probe_T, int(config.n_embd)), generator=probe_gen, dtype=torch.float32
+        ).to(device=device)
+        cert_x_probe_delta = (
+            1e-3
+            * torch.randn((2, probe_T, int(config.n_embd)), generator=probe_gen, dtype=torch.float32).to(device=device)
+        )
+        cert_cos_sin_probe = (raw_model.cos[:, :probe_T], raw_model.sin[:, :probe_T])
+        if resume_train_state is not None:
+            saved_ch = resume_train_state.get("cert_history")
+            if isinstance(saved_ch, dict):
+                cert_history = {str(k): [float(x) for x in v] for k, v in saved_ch.items() if isinstance(v, list)}
+            saved_ws = resume_train_state.get("cert_warn_steps")
+            if isinstance(saved_ws, list):
+                cert_warn_steps = [int(s) for s in saved_ws]
+            saved_sl = resume_train_state.get("cert_steps_logged")
+            if isinstance(saved_sl, list):
+                cert_steps_logged = [int(s) for s in saved_sl]
 
     def _grad_norm() -> float:
         # Called in the log block AFTER opt.step() and BEFORE the next
@@ -1973,6 +2323,10 @@ def train(args) -> None:
             train_state["semiring_pending_coverage"] = _collect_tropical_route_coverage(raw_model)
         if semiring_ladder is not None:
             train_state["semiring_ladder"] = semiring_ladder.state_dict()
+        if certify_interval > 0:
+            train_state["cert_history"] = {k: list(v) for k, v in cert_history.items()}
+            train_state["cert_warn_steps"] = list(cert_warn_steps)
+            train_state["cert_steps_logged"] = list(cert_steps_logged)
         meta_data: dict[str, Any] = {
             "step": step,
             "model_config": asdict(config),
@@ -1995,6 +2349,10 @@ def train(args) -> None:
             },
             "lineage": {"run_id": resolved_run_id, "parent_run_ids": parent_run_ids},
         }
+        if ddp_rank == 0 and metrics_stream is not None:
+            # Flush buffered step records BEFORE committing meta_<step>.json so a
+            # SIGKILL triggered on checkpoint discovery never misses step <= ckpt.
+            metrics_stream.flush()
         save_checkpoint(checkpoint_dir, step, model_data, train_state, meta_data, rank=ddp_rank)
         checkpoint_saved_steps.append(step)
         if checkpoint_verify:
@@ -2331,16 +2689,47 @@ def train(args) -> None:
             for sched in schedulers:
                 sched.step(loss_item)
 
-            # Periodic full-state checkpoint (bead rz8.1).
-            if checkpoint_interval > 0 and (step + 1) % checkpoint_interval == 0:
-                save_training_checkpoint(step)
+            if certify_inject_noise_step is not None and int(certify_inject_noise_step) == step:
+                blocks_for_inject = _transformer_blocks(raw_model)
+                if blocks_for_inject:
+                    with torch.no_grad():
+                        b0: Any = blocks_for_inject[0]
+                        attn0: Any = getattr(b0, "attn", None)
+                        target_w: torch.Tensor | None = None
+                        c_q_m = getattr(b0, "c_q", None) or (getattr(attn0, "c_q", None) if attn0 is not None else None)
+                        c_q_wt = getattr(c_q_m, "weight", None) if c_q_m is not None else None
+                        if isinstance(c_q_wt, torch.Tensor):
+                            target_w = c_q_wt
+                        else:
+                            for p in b0.parameters():
+                                if p.ndim >= 2:
+                                    target_w = p
+                                    break
+                        if target_w is not None:
+                            target_w.mul_(float(certify_inject_noise_scale))
+                        for mod0 in (b0, attn0):
+                            to_ang_m = getattr(mod0, "to_angles", None) if mod0 is not None else None
+                            to_ang_wt = getattr(to_ang_m, "weight", None) if to_ang_m is not None else None
+                            if isinstance(to_ang_wt, torch.Tensor):
+                                to_ang_wt.mul_(float(certify_inject_noise_scale))
 
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
             step_t1 = time.perf_counter()
             step_times_s.append(step_t1 - step_t0)
 
-            if ddp_rank == 0 and (step % args.log_interval == 0 or step == max_steps - 1):
+            should_certify_step = (
+                certify_interval > 0
+                and step % certify_interval == 0
+                and cert_x_probe is not None
+                and cert_x_probe_delta is not None
+                and cert_cos_sin_probe is not None
+            )
+            should_log_step = (
+                step % args.log_interval == 0 or step == max_steps - 1 or should_certify_step
+            )
+
+            if ddp_rank == 0 and should_log_step:
                 dt = step_t1 - last_log_time
                 steps_since = step - last_log_step
                 tokens_since = steps_since * tokens_per_step
@@ -2538,9 +2927,67 @@ def train(args) -> None:
                             record["surreal_scale_std"] = sur_stats["scale_std"]
                             record["surreal_scale_histogram"] = sur_stats["scale_histogram"]
                             record["surreal_valuation_gap"] = sur_stats["valuation_gap"]
+                    if should_certify_step and cert_x_probe is not None and cert_x_probe_delta is not None and cert_cos_sin_probe is not None:
+                        certs_reading = _collect_certify_telemetry(
+                            raw_model,
+                            cert_x_probe,
+                            cert_x_probe_delta,
+                            cert_cos_sin_probe,
+                            attention_schedule,
+                            activation_hooks=activation_hooks,
+                        )
+                        if certs_reading:
+                            record["certs"] = certs_reading
+                            for ck, cv in certs_reading.items():
+                                record[f"certs.{ck}"] = cv
+                            drifted_keys = _check_cert_drift(
+                                certs_reading,
+                                cert_history,
+                                band_k=certify_band_k,
+                            )
+                            for ck, cv in certs_reading.items():
+                                cert_history.setdefault(ck, []).append(cv)
+                            cert_steps_logged.append(step)
+                            record["certs_drift"] = bool(drifted_keys)
+                            if drifted_keys:
+                                record["certs_drifted_metrics"] = drifted_keys
+                                cert_warn_steps.append(step)
+                                from rich.panel import Panel
+
+                                drift_summary = ", ".join(
+                                    f"{k}={certs_reading[k]:.4g} (init={cert_history[k][0]:.4g})"
+                                    for k in drifted_keys
+                                )
+                                border = "red" if certify_action == "halt" else "yellow"
+                                action_label = "HALT" if certify_action == "halt" else "WARN"
+                                console.print(
+                                    Panel(
+                                        f"[bold {border}]Mathematical invariant drift ({action_label})[/bold {border}] "
+                                        f"at step {step} (k={certify_band_k}): {drift_summary}",
+                                        title=f"certify telemetry · {action_label.lower()}",
+                                        border_style=border,
+                                    )
+                                )
+                                if certify_action == "halt":
+                                    cert_halted = True
+                                    cert_halt_step = step
+                                    cert_halt_metrics = list(drifted_keys)
                     metrics_stream.write(record)
                     if dashboard is not None:
                         dashboard.observe(record)
+
+            if cert_halted:
+                if checkpoint_interval > 0 and step not in checkpoint_saved_steps:
+                    save_training_checkpoint(step)
+                elif ddp_rank == 0 and metrics_stream is not None:
+                    metrics_stream.flush()
+                break
+
+            # Periodic full-state checkpoint (bead rz8.1). Placed AFTER the
+            # step-logging block so metrics.jsonl already contains (and flushes)
+            # `step` before meta_<step>.json is committed.
+            if checkpoint_interval > 0 and (step + 1) % checkpoint_interval == 0:
+                save_training_checkpoint(step)
 
             # Periodic validation evaluation
             if val_loader is not None and val_interval > 0 and (step + 1) % val_interval == 0:
@@ -2840,6 +3287,38 @@ def train(args) -> None:
     depth_telemetry = _summarize_depth_telemetry(grad_norm_log, block_grad_norm_log, activation_rms_log)
     if depth_telemetry is not None:
         results["depth_telemetry"] = depth_telemetry
+    if certify_interval > 0:
+        loss_div_step: int | None = None
+        running_min_loss = float("inf")
+        for idx, lval in enumerate(losses):
+            if not math.isfinite(lval):
+                loss_div_step = start_step + idx
+                break
+            if lval < running_min_loss:
+                running_min_loss = lval
+            elif idx >= 1 and lval > 2.0 * running_min_loss:
+                loss_div_step = start_step + idx
+                break
+        first_warn = cert_warn_steps[0] if cert_warn_steps else None
+        effective_div_step = loss_div_step if loss_div_step is not None else (start_step + len(losses))
+        lead_steps = (effective_div_step - first_warn) if first_warn is not None else 0
+        results["certs_telemetry"] = {
+            "interval": certify_interval,
+            "action": certify_action,
+            "band_k": certify_band_k,
+            "certified_steps": len(cert_steps_logged),
+            "warn_count": len(cert_warn_steps),
+            "warn_steps": list(cert_warn_steps),
+            "first_warn_step": first_warn,
+            "loss_divergence_step": loss_div_step,
+            "lead_steps_before_loss_divergence": int(lead_steps),
+            "halted": cert_halted,
+            "halt_step": cert_halt_step,
+            "halt_metrics": list(cert_halt_metrics),
+            "initial": {k: float(v[0]) for k, v in cert_history.items() if v},
+            "final": {k: float(v[-1]) for k, v in cert_history.items() if v},
+            "max": {k: float(max(v)) for k, v in cert_history.items() if v},
+        }
     summary: dict[str, Any] = {
         "schema_version": "mgr.telemetry.v1",
         "meta": meta,
@@ -2870,6 +3349,12 @@ def train(args) -> None:
             "val_interval": val_interval,
             "val_batches": val_batches if val_interval > 0 else None,
             "scaling_axis_diagnostic": scaling_axis_enabled,
+            "certify_interval": certify_interval,
+            "certify_action": certify_action if certify_interval > 0 else None,
+            "certify_band_k": certify_band_k if certify_interval > 0 else None,
+            "certify_inject_noise_step": (
+                int(certify_inject_noise_step) if certify_inject_noise_step is not None else None
+            ),
         },
         "geometry_init": geometry_init_record,
         "compile": {
@@ -3605,6 +4090,44 @@ def build_parser() -> argparse.ArgumentParser:
             "exact: replay+discard the consumed data prefix (bitwise-resumable; cost linear in the prefix). "
             "approximate: the loader's native row-group skip (cheap; may skip a few documents)."
         ),
+    )
+    # Periodic mathematical-invariant certification telemetry (bead 5ki.5).
+    parser.add_argument(
+        "--certify-interval",
+        type=int,
+        default=0,
+        help=(
+            "Run lightweight mathematical-invariant probes every N steps on a deterministic probe batch "
+            "and emit certs.* telemetry into metrics.jsonl (0 disables; bead 5ki.5)."
+        ),
+    )
+    parser.add_argument(
+        "--certify-action",
+        type=str,
+        default="warn",
+        choices=["warn", "halt"],
+        help=(
+            "Action when a certified invariant breaches its drift band: 'warn' emits a rich alert panel "
+            "and continues; 'halt' emits an alert, saves an emergency checkpoint, and exits cleanly."
+        ),
+    )
+    parser.add_argument(
+        "--certify-band-k",
+        type=float,
+        default=3.0,
+        help="Band multiplier k for certified invariant drift detection (default: 3.0).",
+    )
+    parser.add_argument(
+        "--certify-inject-noise-step",
+        type=int,
+        default=None,
+        help="Fault-injection test hook: step index at which to scale first-block query/angle weights.",
+    )
+    parser.add_argument(
+        "--certify-inject-noise-scale",
+        type=float,
+        default=10.0,
+        help="Fault-injection scale multiplier for --certify-inject-noise-step (default: 10.0).",
     )
     return parser
 

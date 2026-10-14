@@ -156,12 +156,49 @@ class MetricsStream:
     stays attributable to its commit.
     """
 
-    def __init__(self, path: Any, *, provenance: dict[str, Any], flush_every: int = 50, append: bool = False):
+    def __init__(
+        self,
+        path: Any,
+        *,
+        provenance: dict[str, Any],
+        flush_every: int = 50,
+        append: bool = False,
+        resume_from_step: int | None = None,
+    ):
         import json as json_mod
+        import os as os_mod
 
         self._json = json_mod
         self._flush_every = max(1, int(flush_every))
         self._buffer: list[str] = []
+        if append and resume_from_step is not None and os_mod.path.exists(path):
+            # If the prior process flushed records past the last saved checkpoint
+            # before dying (e.g. SIGKILL mid-step), trim any step/val record with
+            # step >= resume_from_step so the resumed trajectory has zero duplicate steps.
+            try:
+                with open(path, encoding="utf-8") as existing_fh:
+                    raw_lines = existing_fh.read().splitlines()
+                kept_lines: list[str] = []
+                trimmed = False
+                for raw_line in raw_lines:
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        rec_obj = json_mod.loads(raw_line)
+                    except json_mod.JSONDecodeError:
+                        trimmed = True
+                        continue
+                    rec_step = rec_obj.get("step") if isinstance(rec_obj, dict) else None
+                    if isinstance(rec_step, int) and not isinstance(rec_step, bool) and rec_step >= int(resume_from_step):
+                        trimmed = True
+                        continue
+                    kept_lines.append(raw_line)
+                if trimmed:
+                    with open(path, "w", encoding="utf-8") as rewrite_fh:
+                        if kept_lines:
+                            rewrite_fh.write("\n".join(kept_lines) + "\n")
+            except OSError:
+                pass
         mode = "a" if append else "w"
         self._fh = open(path, mode, encoding="utf-8")  # noqa: SIM115 - lifetime managed by close()
         header = {"type": "resume_header" if append else "header", **provenance}
@@ -174,6 +211,8 @@ class MetricsStream:
             self.flush()
 
     def flush(self) -> None:
+        if self._fh.closed:
+            return
         if self._buffer:
             self._fh.write("\n".join(self._buffer) + "\n")
             self._buffer.clear()
@@ -289,14 +328,20 @@ def _drift_flag(series: list[float], min_history: int = 8, k: float = 3.0) -> bo
     import math as math_mod
     import statistics as stats_mod
 
+    if len(series) < min_history:
+        return False
+    if not math_mod.isfinite(series[-1]):
+        return True
     finite = [v for v in series if math_mod.isfinite(v)]
     if len(finite) < min_history:
         return False
     prior, last = finite[:-1], finite[-1]
     mu = stats_mod.mean(prior)
     sd = stats_mod.stdev(prior)
-    if sd <= 0 or not math_mod.isfinite(sd):
+    if not math_mod.isfinite(sd):
         return False
+    if sd <= 0:
+        return abs(last - mu) > max(1e-6, 0.1 * abs(mu))
     return abs(last - mu) > k * sd
 
 
@@ -436,6 +481,11 @@ class TrainingDashboard:
                     continue
                 if isinstance(val, (int, float)) and not isinstance(val, bool):
                     self._diags.setdefault(key, _deque(maxlen=self._window)).append(float(val))
+                elif key == "certs" and isinstance(val, dict):
+                    for ck, cv in val.items():
+                        flat_key = f"certs.{ck}"
+                        if flat_key not in record and isinstance(cv, (int, float)) and not isinstance(cv, bool):
+                            self._diags.setdefault(flat_key, _deque(maxlen=self._window)).append(float(cv))
                 elif self.show_head_heatmaps and "head" in key and _is_head_vector(val):
                     # bead 92m: a per-head metric vector (route margins / entropy)
                     self._head_latest[key] = [float(x) for x in val]
