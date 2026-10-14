@@ -409,3 +409,59 @@ def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(
     got = verdicts(refuted, tmp_path / "out-refuted")
     assert got["hyp-coordcheck-clt-flat"]["verdict"] == "refuted", got["hyp-coordcheck-clt-flat"]
     assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "refuted", got["hyp-tropical-evt-miscoupling"]
+
+
+def test_nsa_tropical_finalize_eliminates_post_cproj_gumbel_drift():
+    """1xov: under parameterization='current', TropicalCausalSelfAttention.finalize
+    applies _tropical_center AFTER the Euclidean c_proj across all n_embd channels,
+    injecting a negative Gumbel shift -sigma * E[max_N Z] into the residual stream
+    and causing coordinate_check('tropical') to drift across width. Under
+    parameterization='nsa', gauge-fixing acts only in the per-head tropical space
+    before c_proj, leaving the post-c_proj residual update zero-mean and flattening
+    coordinate_check('tropical') across width."""
+    import warnings
+
+    import torch
+
+    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.tropical_attention_torch import TropicalCausalSelfAttention
+
+    def attn_channel_mean(parameterization: str, n_embd: int = 256) -> float:
+        torch.manual_seed(0)
+        cfg = GPTConfig(
+            n_layer=1,
+            n_head=max(1, n_embd // 16),
+            n_kv_head=max(1, n_embd // 16),
+            n_embd=n_embd,
+            sequence_len=32,
+            vocab_size=256,
+            attention_type="tropical",
+            ffn_type="standard",
+            parameterization=parameterization,
+        )
+        model = GPT(cfg).eval()
+        idx = torch.randint(0, 256, (4, 32))
+        captured: list[torch.Tensor] = []
+        attn_mod = next(m for m in model.modules() if isinstance(m, TropicalCausalSelfAttention))
+        handle = attn_mod.register_forward_hook(lambda _m, _i, out: captured.append(out.detach()))
+        with torch.no_grad():
+            model(idx)
+        handle.remove()
+        return float(captured[0].mean().item())
+
+    mean_cur = attn_channel_mean("current", n_embd=256)
+    mean_nsa = attn_channel_mean("nsa", n_embd=256)
+    assert mean_cur < -0.5, f"expected negative post-c_proj Gumbel offset under current, got {mean_cur:.4f}"
+    assert abs(mean_nsa) < 0.05, f"expected zero-mean Euclidean residual update under nsa, got {mean_nsa:.4f}"
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        cur_curve = P.coordinate_check(
+            "tropical", [64, 128, 256, 512], seed=0, ffn_type="tropical", parameterization="current"
+        )
+        nsa_curve = P.coordinate_check(
+            "tropical", [64, 128, 256, 512], seed=0, ffn_type="tropical", parameterization="nsa"
+        )
+    assert abs(cur_curve["loglog_slope"]) > 0.08, f"current tropical slope should drift: {cur_curve['loglog_slope']}"
+    assert abs(nsa_curve["loglog_slope"]) < 0.05, f"nsa tropical slope should be flat: {nsa_curve['loglog_slope']}"
+    assert abs(nsa_curve["loglog_slope"]) - abs(cur_curve["loglog_slope"]) <= -0.05

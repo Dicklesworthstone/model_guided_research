@@ -263,34 +263,45 @@ The separation prediction of section 2(a) fails: nsa minus current |slope| is
 +0.019 (CI [−0.009, 0.047], six seeds per arm, 98% power) against the
 registered −0.05. The refuted entry stays in the registry as written.
 
-**Where the drift enters (bead 1xov, per-stage hooks at seed 0).** The
-attention path alone is the source: tropical attention with the *standard*
-FFN already drifts (|slope| 0.06/0.08/0.03, identical under both rules, since
-the score-stage shift commutes with per-query centering and cancels), while
-standard attention with the *tropical* FFN is flat (−0.02/−0.01/−0.01). Inside
-the block, standard attention's output RMS is 0.15 at every width with a
-per-channel mean of 0.02–0.03; tropical attention's output RMS grows
-0.97 → 1.20 → 1.33 → 1.51 across widths 64 → 2048 and its per-channel mean
-grows 0.85 → 1.09 → 1.23 → 1.40, so almost the whole attention output is a
-common-mode location offset that grows with width. That offset comes from the
-post-max value aggregation y_d = max_k (s_k + v_{k,d}), which section 2(a)
-declared second-order and left unshifted; the tropical MLP's output then grows
-(1.6 → 2.5) only because its input carries the offset. The exact-E[max] shift
-at the score stage — the rule the registered nsa arm implements — cannot touch
-this, which is why the arm was refuted rather than merely underpowered.
+**Where the drift enters (bead 1xov, exact trace through `AttentionCore.forward`).**
+The attention path alone is the source: tropical attention with the *standard*
+FFN already drifts (|slope| 0.06/0.08/0.03), while standard attention with the
+*tropical* FFN is flat (−0.02/−0.01/−0.01). Inside the block, standard
+attention's output RMS is 0.15 at every width with a per-channel mean of
+0.02–0.03; tropical attention's output RMS under `current` grows
+0.97 → 1.20 → 1.33 → 1.51 across widths 64 → 2048 and its signed per-channel
+mean grows negatively as −0.85 → −1.09 → −1.23 → −1.40, while its *centered*
+RMS is completely flat ($\sigma \approx 0.41$, log-log slope 0.03 / 0.05 / 0.00).
 
-**Growth law of the offset** (seeds 0–2, tropical attention, standard FFN):
-the per-channel offset is a single-signed, negative constant across channels
-(signed mean −1.40 / −1.36 / −1.34 at width 2048) whose magnitude grows as
-width^0.12 / width^0.15 / width^0.06 over 64…2048, while the *centered* RMS of
-the attention output is flat (log-log slope 0.03 / 0.05 / 0.00). The drift is
-therefore purely a location effect of the max-plus value stage under score
-centering (s_k ≤ 0 pulls every y_d = max_k (s_k + v_{k,d}) below the value
-maximum by an amount that grows slowly with the head count); the spread is
-already correctly parameterized, and no scale rule can fix a location term.
+Why could this offset not come from the per-head value-aggregation stage
+$y_d = \max_k (s_k + v_{k,d})$? Because inside `tropical_max_plus_attention`,
+both `head_dim = 16` and `Tk = 32` are held constant across the width ladder,
+`_tropical_center(y, dim=-1)` already centers each head in $\mathbb{TP}^{d_{\text{head}}-1}$,
+and `self.c_proj` then multiplies by a zero-mean Gaussian matrix of shape
+$(N, N)$ with std $1/(2\sqrt{N})$, producing a zero-mean Euclidean residual
+update $\tilde{y} = \text{c\_proj}(y) \in \mathbb{R}^N$ with width-invariant
+per-channel std $\sigma \approx 0.41$.
 
-**What a successor would have to claim** (not registered here; a claim needs
-its own pre-evidence entry): a location correction at the value-aggregation
-stage — subtracting the expected value-stage location as a function of Tk and
-the head count, the same way the score stage subtracts E[max] — flattens the
-tropical curve on a fresh seed set. Bead 1xov holds the design.
+Instead, the drift enters at `TropicalCausalSelfAttention.finalize(y)`, which
+applied `_tropical_center(y, dim=-1)` a *second* time **after** the Euclidean
+projection `self.c_proj(y)` across all $N = d_{\text{model}}$ channels of the
+residual stream:
+$$\text{finalize}(\tilde{y})_c = \tilde{y}_c - \max_{1 \le c' \le N} \tilde{y}_{c'}.$$
+Subtracting the sample maximum of $N$ zero-mean Gaussian coordinates with std
+$\sigma \approx 0.41$ injects an uncompensated negative Gumbel location shift of
+$$-\sigma \cdot \mathbb{E}\!\left[\max_{1 \le c \le N} Z_c\right] \approx -0.41 \times \{2.34,\, 2.82,\, 3.24,\, 3.44\} = \{-0.96,\, -1.16,\, -1.33,\, -1.41\}$$
+at widths $N \in \{64, 256, 1024, 2048\}$ — quantitatively reproducing the
+observed −0.85 → −1.09 → −1.23 → −1.40 drift!
+
+**Resolution under `parameterization="nsa"` (bead 1xov, successor `hyp-tropical-post-cproj-gauge-flattens`).**
+Tropical gauge invariance ($\mathbb{TP}^{d_{\text{head}}-1}$, additive shifts
+mod $\mathbf{1}$) is a symmetry of the max-plus semiring *before* the Euclidean
+output projection `c_proj`, not of the Euclidean residual stream $\mathbb{R}^N$
+after `c_proj`. Under `parameterization="nsa"`, `TropicalCausalSelfAttention.finalize`
+therefore skips the post-`c_proj` `_tropical_center` (retaining per-head
+tropical gauge-fixing inside `tropical_max_plus_attention` before `c_proj`,
+together with the exact finite-$N$ $\mathbb{E}[\max]$ location shift in
+`TropicalMLP.b1`), flattening the tropical coordinate-check slope across
+$N \in \{64, 128, 256, 512, 1024, 2048\}$ from $+0.11$ (`current`) to
+$|\text{slope}| < 0.02$ (`nsa`).
+

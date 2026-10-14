@@ -450,6 +450,12 @@ class TropicalCausalSelfAttention(AttentionCore):
     def finalize(self, y: torch.Tensor) -> torch.Tensor:
         # Output gauge-fix: re-center so the max coordinate sits at 0 (a pure
         # tropical gauge choice; argmax structure is preserved).
-        if self.tropical_gauge_fix:
+        # Under "nsa" (1xov), per-head tropical centering already acted inside
+        # tropical_max_plus_attention (at constant head_dim before c_proj);
+        # applying _tropical_center a second time AFTER the Euclidean c_proj
+        # subtracts max_{1<=c<=n_embd} (c_proj(y))_c from a zero-mean Gaussian
+        # residual update, injecting an uncompensated -sigma * E[max_N Z]
+        # Gumbel drift into the Euclidean residual stream.
+        if self.tropical_gauge_fix and self.parameterization != "nsa":
             y = _tropical_center(y, dim=-1)
         return y
