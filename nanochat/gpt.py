@@ -25,7 +25,7 @@ from torch.utils.checkpoint import checkpoint
 from nanochat.adamw import DistAdamW
 from nanochat.braid_attention_torch import BraidCausalSelfAttention
 from nanochat.clifford_attention_torch import CliffordCausalSelfAttention
-from nanochat.common import get_dist_info
+from nanochat.common import console, get_dist_info
 from nanochat.fractal_attention_torch import FractalCausalSelfAttention
 from nanochat.gauge_block_torch import GaugeBlock
 from nanochat.hoss_opt_torch import HOSS
@@ -39,7 +39,6 @@ from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
 from nanochat.surreal_torch import SurrealCausalSelfAttention
 from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, TropicalMLP
 from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
-from utils import console
 
 create_block_mask: Callable[..., Any] | None
 flex_attention: Callable[..., Any] | None

@@ -1231,6 +1231,58 @@ python -m nanochat.train --learning-rate 1e-4  # Lower LR
 export JAX_ENABLE_X64=0  # Use float32 instead of float64
 ```
 
+## Using the mechanisms in your own model
+
+Every mathematical attention mechanism and block-level transform is exported directly from `nanochat` and can be instantiated standalone via `.from_dims(n_embd, n_head, **mechanism_kwargs)` without constructing a `GPTConfig` or importing any JAX dependencies.
+
+### Standalone Contract
+
+| Aspect | Contract |
+| :--- | :--- |
+| **Construction** | `MechanismClass.from_dims(n_embd, n_head, *, n_kv_head=None, layer_idx=0, sequence_len=1024, **mechanism_kwargs)` |
+| **Input / Output Shapes** | `x: (B, T, n_embd)` $\rightarrow$ `y: (B, T, n_embd)` |
+| **Mask Semantics** | Strictly causal lower-triangular when `kv_cache is None` or `Tq == Tk`; unmasked over cached prefix on single-token decode (`Tq == 1`); full prefix + causal chunk when `Tk > Tq > 1` |
+| **Rotary & KV Cache** | `forward(x, cos_sin=None, kv_cache=None)` — both `cos_sin` and `kv_cache` are optional; when `cos_sin` is omitted, rotary embeddings `(cos, sin)` are computed automatically for `(T, head_dim)` |
+| **Dtype Expectations** | Supports `torch.float32` and `torch.bfloat16` (sensitive algebraic kernels promote to fp32/fp64 islands internally and cast back to `x.dtype`) |
+| **Dimension Constraints** | `n_embd % n_head == 0`; `QuaternionCausalSelfAttention` and `CliffordCausalSelfAttention` require `head_dim % 4 == 0`; `OctonionCausalSelfAttention` requires `head_dim % 8 == 0`; `GaugeBlock` and `ReversibleBlock` require even `n_embd` |
+
+### Runnable Example: Tropical Attention Inside a Vanilla PyTorch Block
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from nanochat import TropicalCausalSelfAttention, norm
+
+
+class CustomTropicalBlock(nn.Module):
+    def __init__(self, n_embd: int = 128, n_head: int = 4) -> None:
+        super().__init__()
+        self.attn = TropicalCausalSelfAttention.from_dims(
+            n_embd=n_embd,
+            n_head=n_head,
+            semiring_beta=2.0,          # Maslov dequantization inverse temperature (None = hard max-plus)
+            tropical_gauge_fix=True,    # Enforce 1-Lipschitz row-max normalization + post-c_proj centering
+        )
+        self.ffn = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd, bias=False),
+            nn.GELU(),
+            nn.Linear(4 * n_embd, n_embd, bias=False),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attn(norm(x))      # cos_sin and kv_cache are optional for standalone use
+        x = x + self.ffn(norm(x))
+        return x
+
+
+block = CustomTropicalBlock(n_embd=128, n_head=4)
+x = torch.randn(2, 32, 128, requires_grad=True)
+y = block(x)
+y.sum().backward()
+assert y.shape == (2, 32, 128)
+```
+
 ## 🌐 Links & Resources
 
 - **Repository**: [GitHub](https://github.com/Dicklesworthstone/model_guided_research)

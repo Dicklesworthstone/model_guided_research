@@ -23,8 +23,8 @@ from typing import Any
 
 import torch.distributed as torch_dist
 
+from nanochat.common import console
 from nanochat.torch_imports import Tensor, nn, torch
-from utils import console
 
 dist = torch_dist
 

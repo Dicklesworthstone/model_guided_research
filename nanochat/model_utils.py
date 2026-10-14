@@ -68,6 +68,33 @@ def apply_rotary_emb(x, cos, sin):
     return out
 
 
+from types import SimpleNamespace
+from typing import Any, Self
+
+
+def build_rotary_embeddings(
+    seq_len: int,
+    head_dim: int,
+    *,
+    pos_offset: int = 0,
+    base: float = 10000.0,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute rotary position embeddings ``(cos, sin)`` of shape ``(1, seq_len, 1, head_dim // 2)``."""
+    if seq_len <= 0:
+        raise ValueError("seq_len must be positive")
+    if head_dim <= 0 or head_dim % 2 != 0:
+        raise ValueError("RoPE head_dim must be a positive even integer")
+    channel_range = torch.arange(0, head_dim, 2, dtype=torch.float32, device=device)
+    inv_freq = 1.0 / (base ** (channel_range / head_dim))
+    t = torch.arange(pos_offset, pos_offset + seq_len, dtype=torch.float32, device=device)
+    freqs = torch.outer(t, inv_freq)
+    cos = freqs.cos().to(dtype=dtype)[None, :, None, :]
+    sin = freqs.sin().to(dtype=dtype)[None, :, None, :]
+    return cos, sin
+
+
 def sdpa_causal_attend(q, k, v, *, kv_cache, enable_gqa: bool) -> torch.Tensor:
     """Fused scaled-dot-product attention across the three causal cases.
 
@@ -86,6 +113,66 @@ def sdpa_causal_attend(q, k, v, *, kv_cache, enable_gqa: bool) -> torch.Tensor:
         return F.scaled_dot_product_attention(q, k, v, is_causal=False, enable_gqa=enable_gqa)
     attn_mask = causal_attn_mask(Tq, Tk, device=q.device)
     return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, enable_gqa=enable_gqa)
+
+
+_MECHANISM_ALLOWED_KWARGS: dict[str, frozenset[str]] = {
+    "CausalSelfAttention": frozenset(
+        {
+            "standard_record_attn_entropy",
+            "use_flex_attention",
+            "compile_flex_attention",
+            "compile_backend",
+            "compile_mode",
+            "compile_fullgraph",
+            "compile_dynamic",
+        }
+    ),
+    "TropicalCausalSelfAttention": frozenset(
+        {
+            "semiring_beta",
+            "tropical_gauge_fix",
+            "tropical_score_center",
+            "tropical_record_margins",
+            "parameterization",
+        }
+    ),
+    "UltrametricCausalSelfAttention": frozenset(
+        {
+            "ultrametric_K",
+            "ultrametric_p",
+            "ultrametric_alpha",
+            "ultrametric_lcp_beta",
+            "ultrametric_digits_k",
+            "ultrametric_mode",
+            "ultrametric_hard_digits",
+            "ultrametric_record_routes",
+            "ultrametric_tie_margin",
+        }
+    ),
+    "SimplicialCausalSelfAttention": frozenset(
+        {
+            "simplicial_triplet",
+            "simplicial_window",
+            "simplicial_random_triangles",
+        }
+    ),
+    "QuaternionCausalSelfAttention": frozenset(),
+    "BraidCausalSelfAttention": frozenset(
+        {
+            "braid_mode",
+            "braid_tau",
+            "braid_crossing_law",
+            "braid_record_schedule",
+            "braid_verify",
+            "braid_rmatrix_probes",
+        }
+    ),
+    "FractalCausalSelfAttention": frozenset({"fractal_ifs"}),
+    "OctonionCausalSelfAttention": frozenset({"octonion_mode"}),
+    "SurrealCausalSelfAttention": frozenset({"surreal_scaling_axis", "surreal_freeze_scale"}),
+    "CliffordCausalSelfAttention": frozenset(),
+    "HyperbolicCausalSelfAttention": frozenset(),
+}
 
 
 class AttentionCore(nn.Module):
@@ -135,7 +222,7 @@ class AttentionCore(nn.Module):
     module as its coupling F-function; gauge replaces the entire block
     including the MLP - so neither uses this scaffold. The scaffold's
     responsibility ends at "a causal self-attention layer with the standard
-    residual-stream interface": forward(x, cos_sin, kv_cache) -> (B, T, n_embd).
+    residual-stream interface": forward(x, cos_sin=None, kv_cache=None) -> (B, T, n_embd).
     """
 
     gqa_via_repeat: bool = True
@@ -156,7 +243,78 @@ class AttentionCore(nn.Module):
         self.c_v = linear_cls(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_proj = linear_cls(self.n_embd, self.n_embd, bias=False)
 
-    def forward(self, x, cos_sin, kv_cache):
+    @classmethod
+    def from_dims(
+        cls,
+        n_embd: int,
+        n_head: int,
+        *,
+        n_kv_head: int | None = None,
+        layer_idx: int = 0,
+        sequence_len: int = 1024,
+        **mechanism_kwargs: Any,
+    ) -> Self:
+        """Construct an attention module directly from dimensions without ``GPTConfig``.
+
+        Parameters
+        ----------
+        n_embd : int
+            Residual-stream embedding dimension ``C`` (must be divisible by ``n_head``;
+            mechanism-specific divisibility rules also apply, e.g. ``head_dim % 4 == 0``
+            for quaternion/clifford and ``head_dim % 8 == 0`` for octonion).
+        n_head : int
+            Number of query attention heads ``H``.
+        n_kv_head : int | None, optional
+            Number of key/value heads for Group-Query Attention (defaults to ``n_head``).
+        layer_idx : int, optional
+            Layer index used when indexing into a KV cache (default ``0``).
+        sequence_len : int, optional
+            Nominal sequence length used by mechanisms that preallocate schedule/trie
+            buffers (default ``1024``).
+        **mechanism_kwargs
+            Mechanism-specific options forwarded to the module constructor:
+            - ``TropicalCausalSelfAttention``: ``semiring_beta``, ``tropical_gauge_fix``,
+              ``tropical_score_center``, ``tropical_record_margins``, ``parameterization``
+            - ``UltrametricCausalSelfAttention``: ``ultrametric_K``, ``ultrametric_p``,
+              ``ultrametric_alpha``, ``ultrametric_lcp_beta``, ``ultrametric_digits_k``,
+              ``ultrametric_mode``, ``ultrametric_hard_digits``, ``ultrametric_record_routes``,
+              ``ultrametric_tie_margin``
+            - ``SimplicialCausalSelfAttention``: ``simplicial_triplet``, ``simplicial_window``,
+              ``simplicial_random_triangles``
+            - ``BraidCausalSelfAttention``: ``braid_mode``, ``braid_tau``, ``braid_crossing_law``,
+              ``braid_record_schedule``, ``braid_verify``, ``braid_rmatrix_probes``
+            - ``FractalCausalSelfAttention``: ``fractal_ifs``
+            - ``SurrealCausalSelfAttention``: ``surreal_scaling_axis``, ``surreal_freeze_scale``
+            - ``OctonionCausalSelfAttention``: ``octonion_mode``
+            - ``CausalSelfAttention``: ``standard_record_attn_entropy``, ``use_flex_attention``,
+              ``compile_flex_attention``, ``compile_backend``, ``compile_mode``,
+              ``compile_fullgraph``, ``compile_dynamic``
+        """
+        allowed = _MECHANISM_ALLOWED_KWARGS.get(cls.__name__)
+        if allowed is not None:
+            unknown = sorted(set(mechanism_kwargs) - allowed)
+            if unknown:
+                valid_list = ", ".join(sorted(allowed)) if allowed else "<none>"
+                raise TypeError(
+                    f"{cls.__name__}.from_dims() got unexpected keyword argument(s) {unknown}; "
+                    f"allowed mechanism_kwargs for {cls.__name__}: {valid_list}"
+                )
+        kv_heads = n_head if n_kv_head is None else n_kv_head
+        cfg = SimpleNamespace(
+            n_embd=int(n_embd),
+            n_head=int(n_head),
+            n_kv_head=int(kv_heads),
+            sequence_len=int(sequence_len),
+            **mechanism_kwargs,
+        )
+        return cls(cfg, int(layer_idx))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: Any = None,
+    ) -> torch.Tensor:
         B, T, C = x.size()
 
         # Project the input to get queries, keys, and values
@@ -165,7 +323,17 @@ class AttentionCore(nn.Module):
         v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
 
         # Rotary embeddings (relative positions), then QK norm
-        cos, sin = cos_sin
+        if cos_sin is None:
+            pos_offset = int(kv_cache.get_pos()) if kv_cache is not None else 0
+            cos, sin = build_rotary_embeddings(
+                T,
+                self.head_dim,
+                pos_offset=pos_offset,
+                device=x.device,
+                dtype=x.dtype,
+            )
+        else:
+            cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
         # make head be the batch dim: (B, T, H, D) -> (B, H, T, D)

@@ -149,10 +149,55 @@ jobs:
           path: artifacts/ci-cert/
           retention-days: 14
 
+  wheel-smoke:
+    name: Wheel Install Smoke Proof (swh.1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Build wheel and install into fresh venv
+        run: |
+          uv build --wheel -o /tmp/mgr-wheel-dist
+          uv venv /tmp/mgr-wheel-venv --python ${{ env.PYTHON_VERSION }}
+          uv pip install --python /tmp/mgr-wheel-venv/bin/python /tmp/mgr-wheel-dist/*.whl
+
+      - name: Standalone import + forward/backward outside repo checkout
+        working-directory: /tmp
+        run: |
+          /tmp/mgr-wheel-venv/bin/python -c "
+          import torch
+          from nanochat import (
+              TropicalCausalSelfAttention,
+              UltrametricCausalSelfAttention,
+              HyperbolicCausalSelfAttention,
+          )
+          for cls, kw in [
+              (TropicalCausalSelfAttention, {'semiring_beta': 2.0}),
+              (UltrametricCausalSelfAttention, {'ultrametric_K': 4}),
+              (HyperbolicCausalSelfAttention, {}),
+          ]:
+              attn = cls.from_dims(n_embd=32, n_head=4, **kw)
+              x = torch.randn(2, 8, 32, requires_grad=True)
+              y = attn(x)
+              assert y.shape == (2, 8, 32)
+              y.sum().backward()
+              assert x.grad is not None and torch.isfinite(x.grad).all()
+          "
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, certificates]
+    needs: [lint, typecheck, test, certificates, wheel-smoke]
     if: always()
     steps:
       - name: Check all jobs passed
@@ -171,6 +216,10 @@ jobs:
           fi
           if [[ "${{ needs.certificates.result }}" != "success" ]]; then
             echo "Certificates job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.wheel-smoke.result }}" != "success" ]]; then
+            echo "Wheel smoke job failed"
             exit 1
           fi
 

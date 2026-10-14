@@ -39,10 +39,26 @@ The output is pulled back to the local frame with the CURRENT token's angles,
 which are available at decode time without any history.
 """
 
+from types import SimpleNamespace
+from typing import Any, Self
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from nanochat.model_utils import apply_rotary_emb, norm, sdpa_causal_attend
+from nanochat.model_utils import apply_rotary_emb, build_rotary_embeddings, norm, sdpa_causal_attend
+
+
+class _DefaultGaugeMLP(nn.Module):
+    """Default 4x ReLU^2 MLP used when constructing ``GaugeBlock.from_dims`` without an explicit MLP."""
+
+    def __init__(self, n_embd: int):
+        super().__init__()
+        self.c_fc = nn.Linear(n_embd, 4 * n_embd, bias=False)
+        self.c_proj = nn.Linear(4 * n_embd, n_embd, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.c_proj(F.relu(self.c_fc(x)).square())
 
 
 class GaugeBlock(nn.Module):
@@ -84,6 +100,27 @@ class GaugeBlock(nn.Module):
         # Standard MLP slot, constructed by Block via _build_ffn (so ffn_type
         # dispatch - standard / tropical / tropical-rational - applies here).
         self.mlp = mlp
+
+    @classmethod
+    def from_dims(
+        cls,
+        n_embd: int,
+        n_head: int,
+        *,
+        n_kv_head: int | None = None,
+        layer_idx: int = 0,
+        mlp: nn.Module | None = None,
+        **mechanism_kwargs: Any,
+    ) -> Self:
+        """Construct a ``GaugeBlock`` directly from dimensions without ``GPTConfig``."""
+        if mechanism_kwargs:
+            raise TypeError(f"{cls.__name__}.from_dims() got unexpected keyword argument(s) {sorted(mechanism_kwargs)}")
+        if n_embd % n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
+        kv_heads = n_head if n_kv_head is None else n_kv_head
+        cfg = SimpleNamespace(n_embd=int(n_embd), n_head=int(n_head), n_kv_head=int(kv_heads))
+        mlp_mod = _DefaultGaugeMLP(int(n_embd)) if mlp is None else mlp
+        return cls(cfg, int(layer_idx), mlp_mod)
 
     @staticmethod
     def _apply_rotations(x: torch.Tensor, thetas: torch.Tensor, inverse: bool = False) -> torch.Tensor:
@@ -174,7 +211,17 @@ class GaugeBlock(nn.Module):
         # Apply RoPE (optional additional gauge field) in the (B, T, H, D) layout
         # expected by apply_rotary_emb (time at dim 1), BEFORE moving heads to the
         # batch dim — matching the canonical order in gpt.CausalSelfAttention.
-        cos, sin = cos_sin
+        if cos_sin is None:
+            pos_offset = int(kv_cache.get_pos()) if kv_cache is not None else 0
+            cos, sin = build_rotary_embeddings(
+                T,
+                self.head_dim,
+                pos_offset=pos_offset,
+                device=x.device,
+                dtype=x.dtype,
+            )
+        else:
+            cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
 
@@ -194,7 +241,12 @@ class GaugeBlock(nn.Module):
 
         return y_local
 
-    def forward(self, x: torch.Tensor, cos_sin, kv_cache) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: Any = None,
+    ) -> torch.Tensor:
         # Canonical pre-norm residual skeleton (see module docstring / 1fr6):
         # zero-initialized c_proj weights make both branches vanish at init,
         # so the block starts as the identity instead of annihilating the

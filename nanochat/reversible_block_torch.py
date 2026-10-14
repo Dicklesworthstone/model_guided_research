@@ -29,11 +29,36 @@ detach-and-recompute trick. The kick inverse is the negative kick, exact to
 machine epsilon.
 """
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Self
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F_torch
+
+from nanochat.model_utils import AttentionCore, sdpa_causal_attend
+
+
+class _DefaultReversibleAttention(AttentionCore):
+    """Default SDPA causal attention on the half-stream for ``ReversibleBlock.from_dims``."""
+
+    gqa_via_repeat = False
+
+    def attend(self, q, k, v, *, kv_cache, pos0):
+        enable_gqa = self.n_head != self.n_kv_head
+        return sdpa_causal_attend(q, k, v, kv_cache=kv_cache, enable_gqa=enable_gqa)
+
+
+class _DefaultReversibleMLP(nn.Module):
+    """Default 4x ReLU^2 MLP on the half-stream for ``ReversibleBlock.from_dims``."""
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.c_fc = nn.Linear(dim, 4 * dim, bias=False)
+        self.c_proj = nn.Linear(4 * dim, dim, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.c_proj(F_torch.relu(self.c_fc(x)).square())
 
 
 class _EnergyHead(nn.Module):
@@ -140,11 +165,57 @@ class ReversibleBlock(nn.Module):
         # shadow-energy band is the conservation observable (note section 2).
         self.energy_trace: list[dict[str, float]] = []
 
+    @classmethod
+    def from_dims(
+        cls,
+        n_embd: int,
+        n_head: int,
+        *,
+        n_kv_head: int | None = None,
+        layer_idx: int = 0,
+        reversible_mode: str = "additive",
+        reversible_lambda_min: float = 0.05,
+        reversible_record_energy: bool = False,
+        f_block: nn.Module | None = None,
+        g_block: nn.Module | None = None,
+        **mechanism_kwargs: Any,
+    ) -> Self:
+        """Construct a ``ReversibleBlock`` directly from dimensions without ``GPTConfig``."""
+        if mechanism_kwargs:
+            raise TypeError(f"{cls.__name__}.from_dims() got unexpected keyword argument(s) {sorted(mechanism_kwargs)}")
+        if n_embd % 2 != 0:
+            raise ValueError("n_embd must be even for ReversibleBlock")
+        if n_head % 2 != 0:
+            raise ValueError("n_head must be even for ReversibleBlock (halved on the split stream)")
+        half_embd = n_embd // 2
+        half_head = n_head // 2
+        kv_heads = half_head if n_kv_head is None else n_kv_head
+        cfg = SimpleNamespace(
+            n_embd=int(n_embd),
+            n_head=int(n_head),
+            n_kv_head=int(kv_heads),
+            reversible_mode=str(reversible_mode),
+            reversible_lambda_min=float(reversible_lambda_min),
+            reversible_record_energy=bool(reversible_record_energy),
+        )
+        f_mod = (
+            _DefaultReversibleAttention.from_dims(half_embd, half_head, n_kv_head=kv_heads, layer_idx=layer_idx)
+            if f_block is None
+            else f_block
+        )
+        g_mod = _DefaultReversibleMLP(half_embd) if g_block is None else g_block
+        return cls(cfg, int(layer_idx), f_mod, g_mod)
+
     def drain_energy_trace(self) -> list[dict[str, float]]:
         trace, self.energy_trace = self.energy_trace, []
         return trace
 
-    def forward(self, x, cos_sin, kv_cache):
+    def forward(
+        self,
+        x: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: Any = None,
+    ) -> torch.Tensor:
         # x: (B, T, C)
         x1, x2 = torch.chunk(x, 2, dim=-1)
 
@@ -188,7 +259,12 @@ class ReversibleBlock(nn.Module):
         y2 = x2 + g_out
         return torch.cat([y1, y2], dim=-1)
 
-    def inverse(self, y, cos_sin, kv_cache):
+    def inverse(
+        self,
+        y: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: Any = None,
+    ) -> torch.Tensor:
         y1, y2 = torch.chunk(y, 2, dim=-1)
 
         if self.mode == "symplectic":

@@ -10,9 +10,11 @@ import urllib.request
 
 import torch.distributed as dist
 from filelock import FileLock
+from rich.console import Console
 
 from nanochat.torch_imports import torch
-from utils import console
+
+console = Console()
 
 
 class ColoredFormatter(logging.Formatter):

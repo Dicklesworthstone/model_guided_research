@@ -41,7 +41,7 @@ from tokenizers import Tokenizer as HFTokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 
-from utils import console
+from nanochat.common import console
 
 
 class HuggingFaceTokenizer:

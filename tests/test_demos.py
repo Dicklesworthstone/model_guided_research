@@ -2077,3 +2077,116 @@ def test_mgr_flags_cli_lists_and_filters_flags(monkeypatch):
     require(res_table.exit_code == 0, f"mgr flags ultrametric failed: {res_table.output}")
     require("ULTRA_PACKED" in res_table.output, "Rich table output missing ULTRA_PACKED")
 
+
+def test_standalone_public_api_from_dims_all_mechanisms():
+    """Bead swh.1: every mechanism exported in `nanochat.__all__` constructs via
+    `.from_dims(n_embd, n_head, **mechanism_kwargs)` without `GPTConfig` and runs
+    standalone `forward(x)` + `backward()` without explicit `cos_sin` or `kv_cache`."""
+    from typing import Any
+
+    import torch
+
+    import nanochat
+    from nanochat import (
+        MECHANISM_CLASSES,
+        BraidCausalSelfAttention,
+        CausalSelfAttention,
+        CliffordCausalSelfAttention,
+        FractalCausalSelfAttention,
+        GaugeBlock,
+        HyperbolicCausalSelfAttention,
+        OctonionCausalSelfAttention,
+        QuaternionCausalSelfAttention,
+        ReversibleBlock,
+        SimplicialCausalSelfAttention,
+        SurrealCausalSelfAttention,
+        TropicalCausalSelfAttention,
+        UltrametricCausalSelfAttention,
+    )
+
+    expected_exports = {
+        "AttentionCore",
+        "Block",
+        "BraidCausalSelfAttention",
+        "CausalSelfAttention",
+        "CliffordCausalSelfAttention",
+        "FractalCausalSelfAttention",
+        "GPT",
+        "GPTConfig",
+        "GaugeBlock",
+        "HyperbolicCausalSelfAttention",
+        "MECHANISM_CLASSES",
+        "OctonionCausalSelfAttention",
+        "QuaternionCausalSelfAttention",
+        "ReversibleBlock",
+        "SimplicialCausalSelfAttention",
+        "SurrealCausalSelfAttention",
+        "TropicalCausalSelfAttention",
+        "TropicalMLP",
+        "UltrametricCausalSelfAttention",
+        "apply_rotary_emb",
+        "build_rotary_embeddings",
+        "causal_attn_mask",
+        "norm",
+    }
+    require(
+        expected_exports.issubset(set(nanochat.__all__)),
+        f"missing exports in nanochat.__all__: {expected_exports - set(nanochat.__all__)}",
+    )
+    require(len(MECHANISM_CLASSES) == 13, f"expected 13 MECHANISM_CLASSES, got {len(MECHANISM_CLASSES)}")
+
+    # head_dim=8 (n_embd=32, n_head=4) satisfies octonion (head_dim%8==0),
+    # quaternion/clifford (head_dim%4==0), and gauge/reversible (even n_embd, even n_head).
+    cases: list[tuple[Any, dict[str, Any]]] = [
+        (CausalSelfAttention, {}),
+        (TropicalCausalSelfAttention, {"semiring_beta": 2.0, "tropical_gauge_fix": True}),
+        (UltrametricCausalSelfAttention, {"ultrametric_K": 4, "ultrametric_p": 2}),
+        (SimplicialCausalSelfAttention, {"simplicial_triplet": True, "simplicial_window": 4}),
+        (QuaternionCausalSelfAttention, {}),
+        (BraidCausalSelfAttention, {"braid_mode": "soft", "braid_crossing_law": "restricted"}),
+        (FractalCausalSelfAttention, {"fractal_ifs": True}),
+        (OctonionCausalSelfAttention, {}),
+        (SurrealCausalSelfAttention, {"surreal_scaling_axis": True}),
+        (CliffordCausalSelfAttention, {}),
+        (HyperbolicCausalSelfAttention, {}),
+        (GaugeBlock, {}),
+        (ReversibleBlock, {"reversible_mode": "additive"}),
+    ]
+    torch.manual_seed(0)
+    for cls, kwargs in cases:
+        mod = cls.from_dims(32, 4, **kwargs)
+        x = torch.randn(2, 6, 32, dtype=torch.float32, requires_grad=True)
+        y = mod(x)
+        require(y.shape == (2, 6, 32), f"{cls.__name__}.from_dims forward shape mismatch: {y.shape}")
+        require(torch.isfinite(y).all().item(), f"{cls.__name__}.from_dims emitted non-finite output")
+        loss = y.pow(2).mean()
+        loss.backward()
+        require(x.grad is not None and torch.isfinite(x.grad).all().item(), f"{cls.__name__} missing finite input grad")
+
+    # Unknown mechanism_kwargs must raise a descriptive TypeError
+    with pytest.raises(TypeError, match="TropicalCausalSelfAttention.from_dims"):
+        TropicalCausalSelfAttention.from_dims(32, 4, unknown_tropical_kwarg=123)
+
+
+def test_nanochat_imports_without_jax():
+    """Bead swh.1: importing `nanochat` and all PyTorch mechanisms in a fresh
+    subprocess with `jax` and `flax` blocked by `sys.meta_path` must succeed."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "class _BlockJax:\n"
+        "    def find_spec(self, fullname, path, target=None):\n"
+        "        if fullname in ('jax', 'flax') or fullname.startswith(('jax.', 'flax.')):\n"
+        "            raise ImportError(f'blocked {fullname}')\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, _BlockJax())\n"
+        "import nanochat\n"
+        "for name in nanochat.__all__:\n"
+        "    getattr(nanochat, name)\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    require(proc.returncode == 0, f"nanochat leaked JAX/Flax import: {proc.stderr}")
+
+
