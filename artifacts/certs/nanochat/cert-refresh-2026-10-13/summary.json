@@ -1,0 +1,114 @@
+{
+  "checks": [
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 17.457,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "causality_no_future_grad",
+      "comparator": "le",
+      "detail": "max |d y[t] / d x[t+k]| over t in {0, T/2, T-2}, k >= 1 (must be exactly 0); inf = vacuity guard tripped (output has no input dependence at all)",
+      "duration_ms": 10.736,
+      "family": "causality",
+      "measured": 0.0,
+      "mechanism": "ultrametric",
+      "status": "pass",
+      "tolerance": 1e-12
+    },
+    {
+      "check": "rope_pairwise_norm_preservation",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 1.475,
+      "family": "classical",
+      "measured": 2.384185791015625e-07,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-05
+    },
+    {
+      "check": "causal_mask_structure",
+      "comparator": "le",
+      "detail": "mismatch count vs spec across train/decode/chunk regimes",
+      "duration_ms": 0.326,
+      "family": "classical",
+      "measured": 0.0,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 0.0
+    },
+    {
+      "check": "rmsnorm_unit_rms",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 0.968,
+      "family": "classical",
+      "measured": 1.7881393432617188e-07,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 0.001
+    },
+    {
+      "check": "softmax_row_stochastic",
+      "comparator": "le",
+      "detail": "",
+      "duration_ms": 1.143,
+      "family": "classical",
+      "measured": 1.1920928955078125e-07,
+      "mechanism": "standard",
+      "status": "pass",
+      "tolerance": 1e-06
+    },
+    {
+      "check": "strong_triangle_inequality_lcp",
+      "comparator": "le",
+      "detail": "lcp(x,z) >= min(lcp(x,y), lcp(y,z)) over all triples (exact, integer)",
+      "duration_ms": 26.977,
+      "family": "classical",
+      "measured": 0.0,
+      "mechanism": "ultrametric",
+      "status": "pass",
+      "tolerance": 0.0
+    },
+    {
+      "check": "trie_decode_matches_hard_kernel",
+      "comparator": "le",
+      "detail": "packed-trie decode reproduces hard-digit alpha^LCP kernel attention exactly",
+      "duration_ms": 62.873,
+      "family": "reduction",
+      "measured": 2.384185791015625e-07,
+      "mechanism": "ultrametric",
+      "status": "pass",
+      "tolerance": 0.001
+    }
+  ],
+  "counts": {
+    "error": 0,
+    "fail": 0,
+    "pass": 8
+  },
+  "device": "cpu",
+  "dtype": "fp32",
+  "duration_s": 2.271,
+  "git": {
+    "branch": "main",
+    "commit": "aeb4c36",
+    "commit_full": "aeb4c36b79d10fcb586de5b0e094f88b9eb58bb0",
+    "dirty": false
+  },
+  "kind": "certify",
+  "mechanisms": [
+    "standard",
+    "ultrametric"
+  ],
+  "run_id": "cert-refresh-2026-10-13",
+  "schema_version": 1,
+  "seed": 42
+}
