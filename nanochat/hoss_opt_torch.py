@@ -8,6 +8,8 @@ Core logic:
 - Requires Hessian-Vector Products (HVP), so `closure` must be passed to `step`.
 """
 
+import math
+
 import torch
 from torch.optim import Optimizer
 
@@ -30,10 +32,12 @@ def _exp_delta_fraction(lam, delta):
     return torch.exp(-delta * lam)
 
 
-def _lyapunov_integral_from_eigh(T, S, delta):
+def _lyapunov_integral_from_eigh(T, S, delta, min_curvature=None):
     # Computes int_0^delta exp(-sT) S exp(-sT) ds
     # via eigendecomposition of T.
     lam, V = torch.linalg.eigh(_symmetrize(T))
+    if min_curvature is not None:
+        lam = torch.clamp(lam, min=min_curvature)
     S_hat = V.T @ S @ V
     lam_i = lam[:, None]
     lam_j = lam[None, :]
@@ -49,6 +53,13 @@ def _lyapunov_integral_from_eigh(T, S, delta):
     C_hat = S_hat * frac
     C = V @ C_hat @ V.T
     return _symmetrize(C)
+
+
+def _psd_matrix_sqrt(M):
+    """Symmetric positive-semidefinite square root via eigendecomposition (zero Cholesky jitter)."""
+    eigvals, eigvecs = torch.linalg.eigh(_symmetrize(M))
+    sqrt_eigvals = torch.sqrt(torch.clamp(eigvals, min=0.0))
+    return (eigvecs * sqrt_eigvals) @ eigvecs.T
 
 
 def lanczos_sym(hvp_fn, vec_g, r, device):
@@ -103,6 +114,7 @@ class HOSS(Optimizer):
         isotropic_noise_var=1e-4,
         min_curvature=1e-6,
         gradient_norm_clip=1.0,
+        normalize_grad_rms=False,
     ):
         defaults = dict(
             lr=lr,
@@ -111,6 +123,7 @@ class HOSS(Optimizer):
             isotropic_noise_var=isotropic_noise_var,
             min_curvature=min_curvature,
             gradient_norm_clip=gradient_norm_clip,
+            normalize_grad_rms=normalize_grad_rms,
         )
         super().__init__(params, defaults)
 
@@ -123,7 +136,9 @@ class HOSS(Optimizer):
         """
         loss = None
         if closure is not None:
-            with torch.enable_grad():
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+
+            with torch.enable_grad(), sdpa_kernel(SDPBackend.MATH):
                 loss = closure()
 
         if closure is None:
@@ -140,12 +155,6 @@ class HOSS(Optimizer):
 
             if not params_list:
                 continue
-
-            if any(not g.requires_grad for g in grads_list):
-                raise RuntimeError(
-                    "HOSS requires gradients with create_graph=True. "
-                    "Call loss.backward(create_graph=True) before HOSS.step()."
-                )
 
             # Flatten params and grads
             params_flat = torch.cat([p.view(-1) for p in params_list])
@@ -166,66 +175,84 @@ class HOSS(Optimizer):
                     grads_flat_f32.mul_(scale)
 
             # Define HVP function
-            # Uses autograd.grad on existing gradients (double backprop)
-            # Requires gradients to have been created with create_graph=True
-
+            # Uses autograd.grad on existing gradients (double backprop).
+            # Parameters that enter linearly have g.requires_grad == False and
+            # zero second derivative.
             def hvp_fn(v):
-                # v is vector of size params
-                # Unflatten v to match params_list
-                v_list = []
+                active_grads = []
+                active_params = []
+                active_v = []
+                active_indices = []
                 offset = 0
-                for p in params_list:
+                for idx, (p, g) in enumerate(zip(params_list, grads_list)):
                     numel = p.numel()
-                    v_list.append(v[offset : offset + numel].view_as(p))
+                    v_p = v[offset : offset + numel].view_as(p)
                     offset += numel
+                    if g.requires_grad:
+                        active_grads.append(g)
+                        active_params.append(p)
+                        active_v.append(v_p)
+                        active_indices.append(idx)
 
-                # Compute HVP: grad( dot(grads, v) )
-                hvp_list = torch.autograd.grad(
-                    outputs=grads_list, inputs=params_list, grad_outputs=v_list, retain_graph=True, allow_unused=True
+                if not active_grads:
+                    return torch.zeros_like(v).float()
+
+                hvp_active = torch.autograd.grad(
+                    outputs=active_grads,
+                    inputs=active_params,
+                    grad_outputs=active_v,
+                    retain_graph=True,
+                    allow_unused=True,
                 )
+                active_map = dict(zip(active_indices, hvp_active))
 
-                # Flatten result
                 hvp_flat = []
-                for g, p in zip(hvp_list, params_list):
-                    if g is None:
+                for idx, p in enumerate(params_list):
+                    g_hvp = active_map.get(idx)
+                    if g_hvp is None:
                         hvp_flat.append(torch.zeros_like(p).view(-1))
                     else:
-                        hvp_flat.append(g.view(-1))
+                        hvp_flat.append(g_hvp.reshape(-1))
 
                 return torch.cat(hvp_flat).float()
 
             # Run Lanczos to get Krylov subspace Q and tridiagonal T
-            lanczos_rank = group["lanczos_rank"]
+            lanczos_rank = int(group["lanczos_rank"])
             Q, T, g_norm = lanczos_sym(hvp_fn, grads_flat_f32, lanczos_rank, device)
 
-            # Eigen decomp of T
-            lam_T, V_T = torch.linalg.eigh(T)
-            lam_T = torch.clamp(lam_T, min=group["min_curvature"])
+            if group.get("normalize_grad_rms", False) and g_norm > 1e-30:
+                rms_scale = math.sqrt(grads_flat_f32.numel()) / g_norm
+                eff_grad = grads_flat_f32 * rms_scale
+            else:
+                eff_grad = grads_flat_f32
+
+            # Eigen decomp of T (symmetrized and clamped to min_curvature)
+            lam_T, V_T = torch.linalg.eigh(_symmetrize(T))
+            min_curv = group["min_curvature"]
+            if min_curv is not None:
+                lam_T = torch.clamp(lam_T, min=min_curv)
 
             delta = group["lr"]
 
-            # Mean update via phi function
+            # Mean update via phi function: -Q Phi_delta(T_clamped) Q^T g - delta (I - Q Q^T) g
             phi_delta_T = (V_T * _phi_delta_fraction(lam_T, delta)) @ V_T.T
-
-            # The mean update is -Phi(H)g.
-            # Project g into Krylov basis: Q.T @ g = [norm, 0, ...]
-            projected_grad = torch.zeros(lanczos_rank, device=device, dtype=torch.float32)
-            projected_grad[0] = g_norm
-
+            projected_grad = Q.T @ eff_grad
+            ortho_grad = eff_grad - (Q @ projected_grad)
             mean_update_projected = -phi_delta_T @ projected_grad
-            mean_update_flat = Q @ mean_update_projected
+            mean_update_flat = (Q @ mean_update_projected) - delta * ortho_grad
 
-            # Noise injection (Lyapunov integral)
-            S_hat = group["isotropic_noise_var"] * torch.eye(lanczos_rank, device=device, dtype=torch.float32)
-            C_delta_T = _lyapunov_integral_from_eigh(T, S_hat, delta)
-
-            # Sample noise in Krylov space
-            noise_projected = torch.distributions.MultivariateNormal(
-                torch.zeros(lanczos_rank, device=device, dtype=torch.float32),
-                covariance_matrix=C_delta_T + 1e-6 * torch.eye(lanczos_rank, device=device),
-            ).sample()
-
-            noise_flat = group["noise_scale"] * (Q @ noise_projected)
+            # Noise injection (Lyapunov integral on the SAME clamped spectrum, zero Cholesky jitter)
+            noise_scale = float(group["noise_scale"])
+            noise_var = float(group["isotropic_noise_var"])
+            if noise_scale != 0.0 and noise_var > 0.0:
+                S_hat = noise_var * torch.eye(lanczos_rank, device=device, dtype=torch.float32)
+                C_delta_T = _lyapunov_integral_from_eigh(T, S_hat, delta, min_curvature=min_curv)
+                sqrt_C = _psd_matrix_sqrt(C_delta_T)
+                z = torch.randn(lanczos_rank, device=device, dtype=torch.float32)
+                noise_projected = sqrt_C @ z
+                noise_flat = noise_scale * (Q @ noise_projected)
+            else:
+                noise_flat = torch.zeros_like(mean_update_flat)
 
             total_update = mean_update_flat + noise_flat
 
@@ -238,3 +265,4 @@ class HOSS(Optimizer):
                 offset += numel
 
         return loss
+

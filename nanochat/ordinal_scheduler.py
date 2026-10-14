@@ -1,18 +1,21 @@
 """
 Ordinal Scheduler (PyTorch)
-Implements transfinite learning rate scheduling based on ordinal ranking.
-Rank rho = omega^2 * A + omega * B + C
-A: Restart budget (highest order)
-B: Anneal levels / curriculum
-C: Patience (steps)
+Implements transfinite learning rate scheduling based on ordinal ranking in omega^4:
+Rank Phi(t) = omega^3 * A_t + omega^2 * B_t + omega^1 * (T_horizon - t_record(t)) + C_t
+A: Restart budget (omega^3 level)
+B: Anneal levels / curriculum (omega^2 level)
+R = max(0, T_horizon - t_record): Remaining record-step horizon (omega^1 level)
+C: Patience steps remaining (omega^0 level)
 
-Transitions (mirroring JAX ordinal logic):
-- Step: Update EMA loss.
-  - If improved: C is kept (patience extends while the EMA keeps improving).
-  - Else: C -> C-1.
-- Limit (C=0):
-  - Anneal (B>0): B->B-1, scale->scale*gamma, C->P.
-  - Restart (B=0, A>0): A->A-1, B->B_init, scale->1, C->P, optimizer state cleared.
+Transitions:
+- Step t: Update EMA loss.
+  - If improved (ema_loss < best_loss - min_delta): t_record <- t (strictly decreasing R = T_horizon - t_record
+    at the omega^1 level), and reset C <- P_init (dominated by the omega^1 decrease, so Phi(t) < Phi(t-1)).
+  - Else: C -> C - 1 (strictly decreasing at the omega^0 level).
+- Limit (C == 0):
+  - Anneal (B > 0): B -> B - 1 (omega^2 decrease), scale -> scale * gamma, C -> P_init.
+  - Restart (B == 0, A > 0): A -> A - 1 (omega^3 decrease), B -> B_init, scale -> 1, C -> P_init,
+    zero optimizer first-moment/momentum buffers while preserving AdamW second-moment preconditioning.
 
 The schedule is a multiplicative SCALE applied to each param group's own
 configured learning rate (``initial_lr`` when the optimizer factory recorded
@@ -28,12 +31,29 @@ import torch
 
 
 class OrdinalLRScheduler:
-    def __init__(self, optimizer, A_init=2, B_init=3, P_init=100, gamma=0.3, min_lr=1e-6):
+    def __init__(
+        self,
+        optimizer,
+        A_init=2,
+        B_init=3,
+        P_init=100,
+        gamma=0.3,
+        min_lr=1e-6,
+        max_steps=1_000_000,
+        min_delta=0.0,
+        reset_mode="momentum",
+    ):
         self.optimizer = optimizer
         if A_init < 0 or B_init < 0 or P_init < 1:
             raise ValueError("A_init and B_init must be >= 0 and P_init must be >= 1")
         if gamma <= 0 or min_lr <= 0:
             raise ValueError("gamma and min_lr must be positive")
+        if max_steps < 1:
+            raise ValueError("max_steps must be >= 1")
+        if min_delta < 0:
+            raise ValueError("min_delta must be >= 0")
+        if reset_mode not in ("momentum", "clear"):
+            raise ValueError(f"reset_mode must be 'momentum' or 'clear', got {reset_mode!r}")
         self.A = A_init
         self.B_init = B_init
         self.B = B_init
@@ -41,7 +61,12 @@ class OrdinalLRScheduler:
         self.C = P_init
         self.gamma = gamma
         self.min_lr = min_lr
+        self.max_steps = int(max_steps)
+        self.min_delta = float(min_delta)
+        self.reset_mode = str(reset_mode)
 
+        self.step_count = 0
+        self.last_record_step = 0
         self.best_loss = float("inf")
         self.ema_loss = None
         self.alpha = 0.1  # EMA smoothing factor
@@ -55,20 +80,42 @@ class OrdinalLRScheduler:
         for group, base in zip(self.optimizer.param_groups, self.base_lrs, strict=True):
             group["lr"] = max(self.min_lr, base * self.scale)
 
+    def _reset_optimizer_momentum(self) -> None:
+        """Reset first-moment/momentum buffers on restart while preserving second-moment variance."""
+        if self.reset_mode == "clear":
+            self.optimizer.state.clear()
+            return
+        for param_state in self.optimizer.state.values():
+            if not isinstance(param_state, dict):
+                continue
+            for key in ("exp_avg", "momentum_buffer"):
+                buf = param_state.get(key)
+                if torch.is_tensor(buf):
+                    buf.zero_()
+
+    def ordinal_rank_tuple(self) -> tuple[int, int, int, int]:
+        """Cantor Normal Form coefficients (A, B, R, C) for rank omega^3*A + omega^2*B + omega*R + C."""
+        rem_horizon = max(0, self.max_steps - self.last_record_step)
+        return (int(self.A), int(self.B), int(rem_horizon), int(self.C))
+
     def step(self, loss):
         if torch.is_tensor(loss):
             loss = float(loss.detach().item())
+        self.step_count += 1
         # Update EMA loss
         if self.ema_loss is None:
             self.ema_loss = loss
         else:
             self.ema_loss = (1 - self.alpha) * self.ema_loss + self.alpha * loss
 
-        # Check for improvement
-        if self.ema_loss < self.best_loss:
+        # Check for improvement (new loss record)
+        if self.ema_loss < self.best_loss - self.min_delta:
             self.best_loss = self.ema_loss
-            # JAX logic: "If improved: keep (A,B,C)" - C is not decremented, so
-            # patience extends indefinitely while the EMA keeps improving.
+            self.last_record_step = self.step_count
+            # Reset patience C to P_init: because last_record_step strictly increased,
+            # R = max_steps - last_record_step strictly decreased at the omega^1 level,
+            # dominating the omega^0 reset of C.
+            self.C = self.P_init
         else:
             # No improvement
             self.C -= 1
@@ -77,29 +124,30 @@ class OrdinalLRScheduler:
         if self.C <= 0:
             # Limit reached
             if self.B > 0:
-                # Anneal (omega-term drop)
+                # Anneal (omega^2-term drop)
                 self.B -= 1
                 self.C = self.P_init  # Reset patience
                 self.scale *= self.gamma
                 self._apply_lr()
-                # Reset best loss to allow new exploration (JAX: "reset best metric")
+                # Reset best loss to allow new exploration
                 self.best_loss = float("inf")
+                self.last_record_step = self.step_count
 
             elif self.A > 0:
-                # Restart (omega^2-term drop)
+                # Restart (omega^3-term drop)
                 self.A -= 1
                 self.B = self.B_init
                 self.C = self.P_init
                 self.scale = 1.0
                 self._apply_lr()
-                # Reset optimizer state
-                self.optimizer.state.clear()
+                self._reset_optimizer_momentum()
 
                 self.best_loss = float("inf")
+                self.last_record_step = self.step_count
 
             else:
-                # Terminate or plateau
-                pass
+                # Terminal plateau
+                self.C = 0
 
     def get_last_lr(self):
         return [group["lr"] for group in self.optimizer.param_groups]
@@ -127,6 +175,11 @@ class OrdinalLRScheduler:
             "alpha": self.alpha,
             "base_lrs": list(self.base_lrs),
             "scale": self.scale,
+            "step_count": self.step_count,
+            "last_record_step": self.last_record_step,
+            "max_steps": self.max_steps,
+            "min_delta": self.min_delta,
+            "reset_mode": self.reset_mode,
         }
 
     def load_state_dict(self, state: dict) -> None:
@@ -154,5 +207,11 @@ class OrdinalLRScheduler:
             )
         for key in keys:
             setattr(self, key, state[key])
+        self.step_count = int(state.get("step_count", 0))
+        self.last_record_step = int(state.get("last_record_step", 0))
+        self.max_steps = int(state.get("max_steps", self.max_steps))
+        self.min_delta = float(state.get("min_delta", self.min_delta))
+        self.reset_mode = str(state.get("reset_mode", self.reset_mode))
         self.base_lrs = [float(b) for b in state["base_lrs"]]
         self._apply_lr()
+

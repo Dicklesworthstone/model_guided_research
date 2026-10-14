@@ -284,6 +284,70 @@ class TestOrdinalSchedules:
 
         print("  ✅ Ordinal monotonicity maintained over scheduler steps")
 
+    def test_torch_ordinal_cnf_rank_strictly_decreases_when_c_resets_on_new_record(self):
+        """jida.35: Under the omega^3 Cantor Normal Form rank
+        Phi(t) = omega^3*A + omega^2*B + omega*(T_horizon - t_record) + C,
+        resetting C <- P_init when a new EMA loss record is achieved strictly
+        decreases Phi(t) because t_record strictly increases."""
+        from nanochat.ordinal_scheduler import OrdinalLRScheduler
+
+        p = torch.nn.Parameter(torch.zeros(4))
+        opt = torch.optim.AdamW([p], lr=0.01)
+        sched = OrdinalLRScheduler(opt, A_init=1, B_init=2, P_init=4, gamma=0.5, max_steps=100)
+
+        # Sequence with stalls (C drops from 4 -> 2), then a sharp new record (C resets to 4),
+        # then a plateau that triggers an anneal (B drops) and a restart (A drops).
+        losses = [10.0, 10.5, 10.6, 2.0, 2.5, 2.6, 0.1, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 6.0, 7.0, 7.0, 7.0, 7.0]
+        prev_rank = sched.ordinal_rank_tuple()
+        saw_patience_reset_on_record = False
+        for step_idx, loss_val in enumerate(losses):
+            prev_c = sched.C
+            prev_a, prev_b = sched.A, sched.B
+            sched.step(loss_val)
+            cur_rank = sched.ordinal_rank_tuple()
+            if sched.A == prev_a and sched.B == prev_b and sched.C > prev_c:
+                saw_patience_reset_on_record = True
+                require(sched.C == sched.P_init, f"step {step_idx}: C should reset to P_init={sched.P_init}, got {sched.C}")
+            require(
+                cur_rank < prev_rank,
+                f"step {step_idx}: CNF rank must strictly decrease lexicographically: {prev_rank} -> {cur_rank}",
+            )
+            prev_rank = cur_rank
+        require(saw_patience_reset_on_record, "test sequence must exercise C <- P_init reset on a new loss record")
+
+    def test_torch_ordinal_restart_preserves_adamw_second_moment(self):
+        """jida.35: On an omega^3 restart (A -> A-1), OrdinalLRScheduler zeroes
+        first-moment momentum (exp_avg) while preserving AdamW's second-moment
+        preconditioner (exp_avg_sq) and step counter."""
+        from nanochat.ordinal_scheduler import OrdinalLRScheduler
+
+        p = torch.nn.Parameter(torch.tensor([1.0, -2.0], dtype=torch.float32))
+        opt = torch.optim.AdamW([p], lr=0.01)
+        sched = OrdinalLRScheduler(opt, A_init=1, B_init=0, P_init=2, gamma=0.5)
+
+        for val in (3.0, 4.0):
+            opt.zero_grad()
+            loss = (p * val).pow(2).sum()
+            loss.backward()
+            opt.step()
+            sched.step(float(loss.detach()))
+
+        state_before = opt.state[p]
+        exp_avg_sq_before = state_before["exp_avg_sq"].clone()
+        require(float(exp_avg_sq_before.norm()) > 0.0, "AdamW exp_avg_sq must be non-zero before restart")
+        require(float(state_before["exp_avg"].norm()) > 0.0, "AdamW exp_avg must be non-zero before restart")
+
+        # Next non-improving step exhausts C (2 -> 1 -> 0) with B=0, A=1 -> triggers A=1->0 restart
+        sched.step(100.0)
+        require(sched.A == 0, f"expected restart A=0, got A={sched.A}")
+        state_after = opt.state[p]
+        require(float(state_after["exp_avg"].abs().max()) == 0.0, "restart must zero AdamW exp_avg")
+        require(
+            torch.allclose(state_after["exp_avg_sq"], exp_avg_sq_before),
+            "restart must preserve AdamW exp_avg_sq preconditioning",
+        )
+
+
 
 class TestMatrixExponentialGauge:
     """Test matrix exponential and gauge transformation properties."""
@@ -2233,6 +2297,121 @@ class TestHossTorchParity:
         ratio = hoss_s / adamw_s
         print(f"\n[overhead doc] HOSS/AdamW per-step wall-clock ratio (tiny quadratic, CPU fp64): {ratio:.1f}x")
         require(ratio < 500.0, f"HOSS overhead exploded: {ratio:.1f}x AdamW")
+
+    def test_hoss_zero_noise_var_injects_zero_jitter(self):
+        """jida.34: isotropic_noise_var=0.0 (even with noise_scale=1.0) must
+        inject zero noise (no 1e-6*I Cholesky jitter), and negative eigenvalues
+        in T must be clamped in _lyapunov_integral_from_eigh."""
+        from nanochat.hoss_opt_torch import HOSS, _lyapunov_integral_from_eigh
+
+        H = torch.diag(torch.tensor([4.0, 9.0], dtype=torch.float64))
+        w0 = torch.tensor([1.0, -2.0], dtype=torch.float64)
+
+        torch.manual_seed(1)
+        p1 = w0.clone().requires_grad_(True)
+        opt1 = HOSS([p1], lr=0.25, lanczos_rank=2, noise_scale=1.0, isotropic_noise_var=0.0, gradient_norm_clip=None)
+        opt1.step(self._quadratic_closure(p1, H))
+
+        torch.manual_seed(999)
+        p2 = w0.clone().requires_grad_(True)
+        opt2 = HOSS([p2], lr=0.25, lanczos_rank=2, noise_scale=1.0, isotropic_noise_var=0.0, gradient_norm_clip=None)
+        opt2.step(self._quadratic_closure(p2, H))
+
+        require(torch.equal(p1.detach(), p2.detach()), "isotropic_noise_var=0.0 must be 100% deterministic (zero jitter)")
+
+        # Non-convex indefinite T with large negative eigenvalue must not explode when min_curvature is set
+        T_indef = torch.diag(torch.tensor([-500.0, 2.0], dtype=torch.float32))
+        S_hat = 1e-4 * torch.eye(2, dtype=torch.float32)
+        C_clamped = _lyapunov_integral_from_eigh(T_indef, S_hat, 0.5, min_curvature=1e-6)
+        require(bool(torch.isfinite(C_clamped).all()), "clamped Lyapunov integral must stay finite on indefinite T")
+        eigvals = torch.linalg.eigvalsh(C_clamped)
+        require(float(eigvals.min()) >= -1e-12, f"clamped Lyapunov covariance must be PSD, min eig={float(eigvals.min())}")
+
+    def test_hoss_exact_reduction_to_sgd_at_zero_curvature(self):
+        """jida.34: On a zero-curvature (linear) objective with min_curvature=0.0
+        and isotropic_noise_var=0.0, HOSS reduces to exact SGD across all d
+        coordinates even when lanczos_rank < d."""
+        from nanochat.hoss_opt_torch import HOSS
+
+        torch.manual_seed(42)
+        d = 16
+        a = torch.randn(d, dtype=torch.float32)
+        w0 = torch.randn(d, dtype=torch.float32)
+        delta = 0.05
+
+        p_hoss = w0.clone().requires_grad_(True)
+        opt_hoss = HOSS(
+            [p_hoss],
+            lr=delta,
+            lanczos_rank=2,
+            noise_scale=1.0,
+            isotropic_noise_var=0.0,
+            min_curvature=0.0,
+            gradient_norm_clip=None,
+        )
+
+        def linear_closure():
+            loss = (a * p_hoss).sum()
+            loss.backward(create_graph=True)
+            return loss
+
+        opt_hoss.step(linear_closure)
+
+        p_sgd = w0.clone().requires_grad_(True)
+        opt_sgd = torch.optim.SGD([p_sgd], lr=delta)
+        loss_sgd = (a * p_sgd).sum()
+        loss_sgd.backward()
+        opt_sgd.step()
+
+        require(
+            torch.allclose(p_hoss.detach(), p_sgd.detach(), atol=1e-6, rtol=0),
+            f"HOSS at zero curvature must match SGD: max diff = {float((p_hoss.detach() - p_sgd.detach()).abs().max()):.2e}",
+        )
+
+    def test_hoss_trains_tiny_nanochat_model(self):
+        """jida.34 / pxyw: HOSS configured via GPT.setup_optimizers must reduce
+        cross-entropy loss by > 20% over 25 steps on a tiny nanochat GPT model."""
+        from nanochat.gpt import GPT, GPTConfig
+
+        torch.manual_seed(7)
+        cfg = GPTConfig(
+            sequence_len=24,
+            vocab_size=128,
+            n_layer=2,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=32,
+            optimizer_type="hoss",
+        )
+        model = GPT(cfg)
+        opts = model.setup_optimizers(matrix_lr=5e-3)
+        require(len(opts) == 1, f"expected 1 HOSS optimizer, got {len(opts)}")
+        opt = opts[0]
+
+        ids = torch.randint(0, 128, (4, 24))
+        targets = torch.randint(0, 128, (4, 24))
+
+        first_loss = last_loss = None
+        for _ in range(25):
+            opt.zero_grad(set_to_none=True)
+
+            def closure():
+                loss_val = model(ids, targets=targets)
+                loss_val.backward(create_graph=True)
+                return loss_val
+
+            step_loss = opt.step(closure)
+            val = float(step_loss.detach())
+            if first_loss is None:
+                first_loss = val
+            last_loss = val
+
+        assert first_loss is not None and last_loss is not None
+        require(
+            last_loss < first_loss * 0.8,
+            f"HOSS failed to train tiny nanochat GPT: first_loss={first_loss:.4f}, last_loss={last_loss:.4f}",
+        )
+
 
 
 class TestHyperbolicLorentz:

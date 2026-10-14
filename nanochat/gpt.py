@@ -1020,7 +1020,13 @@ class GPT(nn.Module):
         optimizer_type = str(self.config.optimizer_type)
         if optimizer_type == "hoss":
             console.print("Using HOSS optimizer", style="bold green")
-            return [HOSS([p for p in self.parameters() if p.requires_grad], lr=matrix_lr)]
+            return [
+                HOSS(
+                    [p for p in self.parameters() if p.requires_grad],
+                    lr=matrix_lr,
+                    normalize_grad_rms=True,
+                )
+            ]
         if optimizer_type not in ("adamw", "muon"):
             raise ValueError(f"optimizer_type must be adamw | muon | hoss, got {optimizer_type!r}")
         # 'adamw' = AdamW for EVERY parameter group. 'muon' = the nanochat split
