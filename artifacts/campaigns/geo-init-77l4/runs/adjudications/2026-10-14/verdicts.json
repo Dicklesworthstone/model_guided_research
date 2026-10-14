@@ -1,0 +1,240 @@
+{
+  "date": "2026-10-14",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 3,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 1,
+    "supported_fdr_survivors": [
+      "hyp-geo-init-mismatched-safety"
+    ]
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "fractal": {
+          "budget_flops": 4109475840.0,
+          "ci95": [
+            0.9552184743092706,
+            0.9726776709692597
+          ],
+          "effect": 0.9647075958937774,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 0.9935490954844544,
+          "verdict": "supported"
+        },
+        "hyperbolic": {
+          "budget_flops": 4034641920.0,
+          "ci95": [
+            0.9851838150003918,
+            1.0254774928203225
+          ],
+          "effect": 1.0011906683124665,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 7,
+          "p_value": 0.039996000399960006,
+          "power": 0.4747125680681622,
+          "verdict": "inconclusive"
+        },
+        "ultrametric": {
+          "budget_flops": 4042260480.0,
+          "ci95": [
+            0.9625393995462469,
+            1.037264945330014
+          ],
+          "effect": 0.9991938153804147,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 22,
+          "p_value": 0.12488751124887511,
+          "power": 0.177689215549988,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s2/summary.json"
+      ],
+      "id": "hyp-geo-init-early-advantage",
+      "p_value": 0.12488751124887511,
+      "policy_version": "ci-v6",
+      "q_value": 0.18733126687331267,
+      "tainted_artifacts_seen": false,
+      "verdict": "inconclusive"
+    },
+    {
+      "arms": {
+        "fractal": {
+          "budget_flops": 4109475840.0,
+          "ci95": [
+            0.8910728235886365,
+            1.3246976325212505
+          ],
+          "effect": 1.07309639219384,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 11340,
+          "p_value": 0.7637236276372362,
+          "power": 0.027784841400243954,
+          "verdict": "inconclusive"
+        },
+        "hyperbolic": {
+          "budget_flops": 4034641920.0,
+          "ci95": [
+            0.43943532969088345,
+            0.84821954595476
+          ],
+          "effect": 0.6494324053069422,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 10203,
+          "p_value": 9.999000099990002e-05,
+          "power": 0.02794304319889547,
+          "underpowered": true,
+          "verdict": "supported"
+        },
+        "ultrametric": {
+          "budget_flops": 4042260480.0,
+          "ci95": [
+            0.9678172719506887,
+            1.0531526614574165
+          ],
+          "effect": 1.0007905098037562,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 466,
+          "p_value": 0.657034296570343,
+          "power": 0.04137173462638035,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s2/summary.json"
+      ],
+      "id": "hyp-geo-init-less-distance-traveled",
+      "p_value": 0.7637236276372362,
+      "policy_version": "ci-v6",
+      "q_value": 0.7637236276372362,
+      "tainted_artifacts_seen": false,
+      "underpowered": true,
+      "verdict": "inconclusive"
+    },
+    {
+      "arms": {
+        "fractal": {
+          "budget_flops": 4109475840.0,
+          "ci95": [
+            0.9648730653034076,
+            1.0082992445188823
+          ],
+          "effect": 0.9868311856970022,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 0.9933047369752769,
+          "verdict": "supported"
+        },
+        "hyperbolic": {
+          "budget_flops": 4034641920.0,
+          "ci95": [
+            0.9690126307267264,
+            1.0154615577710686
+          ],
+          "effect": 0.9918011805495838,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 0.9853060898377245,
+          "verdict": "supported"
+        },
+        "ultrametric": {
+          "budget_flops": 4042260480.0,
+          "ci95": [
+            0.9909847670038152,
+            1.0178039442289772
+          ],
+          "effect": 1.004299016233471,
+          "n_baseline": 3,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 9.999000099990002e-05,
+          "power": 0.9999999397048501,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s2/summary.json"
+      ],
+      "id": "hyp-geo-init-mismatched-safety",
+      "p_value": 9.999000099990002e-05,
+      "policy_version": "ci-v6",
+      "q_value": 0.00029997000299970003,
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    }
+  ]
+}

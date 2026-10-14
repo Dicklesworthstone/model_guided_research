@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "corpus": "task:hier",
+  "mode": "tokens",
+  "seed": 42,
+  "sample": {
+    "docs": 52,
+    "points": 32,
+    "doc_tokens": 48,
+    "quadruples": 2000,
+    "triples": 2000
+  },
+  "distance_diagnostics": {
+    "mean": 0.3307291666666667,
+    "coefficient_of_variation": 0.3156488543752353,
+    "concentrated": false
+  },
+  "estimators": {
+    "delta_hyperbolicity": {
+      "mean": 0.017850176622725925,
+      "ci95": [
+        0.01656534237028405,
+        0.019266327196431416
+      ]
+    },
+    "ultrametricity": {
+      "violation_mean": 0.05199755611540087,
+      "violation_fraction": 0.522,
+      "ci95": [
+        0.049114559920949326,
+        0.05498501115311164
+      ],
+      "cophenetic_correlation": 0.9457558655579253
+    },
+    "dynamic_range": {
+      "numbers_found": 0,
+      "docs_with_spread": 0,
+      "mean_decades": NaN,
+      "max_decades": NaN,
+      "hill_tail_exponent": NaN
+    },
+    "order_sensitivity": {
+      "nll_original": 2.2993197398013514,
+      "nll_transposed": 3.3723888774537176,
+      "relative_delta": 0.4666898296385145
+    },
+    "hierarchy_depth": {
+      "mean_depth": 7.625,
+      "max_depth": 13.0,
+      "normalized_mean_depth": 1.525
+    }
+  },
+  "interpretation_note": "values are representation-relative; registered claims (77l.2) are about ORDERINGS across corpora profiled with identical settings, never absolute thresholds",
+  "warnings": []
+}

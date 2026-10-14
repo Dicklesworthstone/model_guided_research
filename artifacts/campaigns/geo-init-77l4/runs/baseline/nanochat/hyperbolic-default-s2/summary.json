@@ -1,0 +1,319 @@
+{
+  "budget": {
+    "flops_per_step_est": 201732096,
+    "flops_per_token_est": 788016,
+    "max_steps": 20,
+    "planned_total_flops_est": 4034641920,
+    "target_flops": null,
+    "tokens_per_step_global": 256,
+    "warmup_steps": 0
+  },
+  "checkpointing": {
+    "dir": null,
+    "interval": 0,
+    "keep": 0,
+    "saved_steps": [],
+    "verify": false
+  },
+  "compile": {
+    "backend": "inductor",
+    "compile_flex_attention": false,
+    "dynamic": null,
+    "enabled": false,
+    "fullgraph": false,
+    "mode": null
+  },
+  "config": {
+    "activation_ckpt": "none",
+    "activation_ckpt_every_k": 1,
+    "attention_schedule_label": "hyperbolic",
+    "attention_type": "hyperbolic",
+    "braid_crossing_law": "restricted",
+    "braid_mode": "soft",
+    "braid_record_schedule": false,
+    "braid_rmatrix_probes": 0,
+    "braid_tau": 0.0,
+    "braid_verify": false,
+    "ca_init_alpha": 1.0,
+    "ca_init_rule": null,
+    "ca_init_seed": 2,
+    "compile_backend": "inductor",
+    "compile_dynamic": null,
+    "compile_flex_attention": false,
+    "compile_fullgraph": false,
+    "compile_mode": null,
+    "control_zero_attention": false,
+    "disable_block_norms": false,
+    "eval_weight_quant_bits": null,
+    "ffn_beta": null,
+    "ffn_type": "standard",
+    "fractal_ifs": false,
+    "init_from_profile": null,
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "optimizer_type": "adamw",
+    "parameterization": "current",
+    "resolved_attention_schedule": [
+      "hyperbolic",
+      "hyperbolic"
+    ],
+    "reversible_lambda_min": 0.05,
+    "reversible_mode": "additive",
+    "reversible_record_energy": false,
+    "reversible_tied": false,
+    "semiring_beta": null,
+    "sequence_len": 64,
+    "simplicial_random_triangles": false,
+    "simplicial_triplet": false,
+    "simplicial_window": 8,
+    "standard_record_attn_entropy": false,
+    "surreal_freeze_scale": false,
+    "surreal_scaling_axis": false,
+    "tropical_gauge_fix": true,
+    "tropical_record_margins": false,
+    "tropical_score_center": true,
+    "ultrametric_K": 8,
+    "ultrametric_alpha": 2.0,
+    "ultrametric_digits_k": null,
+    "ultrametric_hard_digits": false,
+    "ultrametric_lcp_beta": 32.0,
+    "ultrametric_mode": "kernel",
+    "ultrametric_p": 2,
+    "ultrametric_record_routes": false,
+    "ultrametric_tie_margin": 1.0,
+    "use_flex_attention": false,
+    "vocab_size": 384
+  },
+  "dataset": {
+    "data_dir": "artifacts/campaigns/geo-init-77l4/data/hier",
+    "parquet_files": [
+      "artifacts/campaigns/geo-init-77l4/data/hier/train_000.parquet",
+      "artifacts/campaigns/geo-init-77l4/data/hier/val_000.parquet"
+    ],
+    "parquet_files_count": 2,
+    "task": "hier"
+  },
+  "geometry_init": null,
+  "hparams": {
+    "data_shuffle": "epoch",
+    "embedding_lr": 0.2,
+    "grad_clip_norm": null,
+    "init_from_profile": null,
+    "init_profile_corpus": null,
+    "learning_rate": 0.02,
+    "matrix_lr": 0.02,
+    "model_type": "gpt",
+    "scaling_axis_diagnostic": false,
+    "scheduler_type": "none",
+    "semiring_beta_spec": null,
+    "synaptic_config": null,
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 377
+    },
+    "unembedding_lr": 0.004,
+    "val_batches": null,
+    "val_interval": 0,
+    "weight_decay": 0.0
+  },
+  "meta": {
+    "argv": [
+      "-c"
+    ],
+    "command": "uv run python -m nanochat.train",
+    "command_argv": "-c",
+    "command_module": "python -m nanochat.train",
+    "ddp": {
+      "enabled": false,
+      "local_rank": 0,
+      "rank": 0,
+      "world_size": 1
+    },
+    "device": "cpu",
+    "env": {
+      "TORCHINDUCTOR_CACHE_DIR": "/data/tmp/torchinductor_ubuntu"
+    },
+    "generated_at": "2026-10-14T11:44:44Z",
+    "git": {
+      "branch": "main",
+      "commit": "cd98f85",
+      "commit_full": "cd98f851ceac91ced16c8fa2738f797d6026fb45",
+      "dirty": false,
+      "message": "model_guided_research-77l.4: implement --init-from-profile and preregister 3 hyp"
+    },
+    "gpu": {
+      "available": false
+    },
+    "kind": "baseline",
+    "python": {
+      "executable": "/data/projects/model_guided_research/.venv/bin/python",
+      "version": "3.13.0 (main, Oct 16 2024, 03:23:02) [Clang 18.1.8 ]"
+    },
+    "run_id": "hyperbolic-default-s2",
+    "system": {
+      "cpu_count": 32,
+      "cpu_count_logical": 64,
+      "hostname": "sensedemobox",
+      "memory_gb": 251.60278701782227,
+      "nanochat_base_dir": "/home/ubuntu/.cache/nanochat",
+      "nanochat_base_dir_env": null,
+      "platform": "Linux",
+      "python_version": "3.13.0",
+      "torch_version": "2.13.0+cu130",
+      "user": "ubuntu",
+      "working_dir": "/data/projects/model_guided_research"
+    },
+    "topic": "nanochat"
+  },
+  "numerics": {
+    "check_numerics": false,
+    "detect_anomaly": false
+  },
+  "provenance": {
+    "config_hash": "b6aa618503436189254ccc7a972384dc960c6e66f6a53333ff50e2b3a5b9a928",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "cd98f851ceac91ced16c8fa2738f797d6026fb45",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "depth_telemetry": {
+      "activation_rms_by_block_final": [
+        30.965986251831055,
+        35.84188461303711
+      ],
+      "activation_rms_by_block_mean": [
+        13.869437938928604,
+        16.47093167901039
+      ],
+      "activation_rms_depth_balance": 0.8639608822513619,
+      "activation_rms_depth_ratio": 1.157459811599501,
+      "grad_norm_by_block_final": [
+        0.04489383101463318,
+        0.008534281514585018
+      ],
+      "grad_norm_by_block_mean": [
+        0.2867317467927933,
+        0.15271466434933245
+      ],
+      "grad_norm_depth_balance": 0.19009920342514905,
+      "grad_norm_depth_ratio": 0.19009920342514905,
+      "grad_norm_max": 2.3008739948272705,
+      "grad_norm_median": 0.5602485537528992,
+      "grad_norm_spike_ratio": 4.106880739654857,
+      "logged_steps": 20
+    },
+    "hyperbolic_curvature": {
+      "layer_head": [
+        [
+          1.053019642829895,
+          1.063739538192749,
+          1.0663765668869019,
+          1.0811641216278076
+        ],
+        [
+          1.0810425281524658,
+          1.0724411010742188,
+          1.0633476972579956,
+          1.0742295980453491
+        ]
+      ],
+      "max": 1.0811641216278076,
+      "mean": 1.0694200992584229,
+      "min": 1.053019642829895
+    },
+    "hyperbolic_frac_heads_euclidean": 0.0,
+    "hyperbolic_frac_heads_hier": 0.0,
+    "hyperbolic_radius": {
+      "layer_head": [
+        [
+          2.2099111080169678,
+          2.1951684951782227,
+          2.1851158142089844,
+          2.158416986465454
+        ],
+        [
+          2.267252206802368,
+          2.285876512527466,
+          2.3465607166290283,
+          2.3578577041625977
+        ]
+      ],
+      "max": 2.3578577041625977,
+      "mean": 2.250769853591919,
+      "min": 2.158416986465454
+    },
+    "losses": [
+      5.950643539428711,
+      5.36820125579834,
+      4.177750587463379,
+      3.1444389820098877,
+      2.449178695678711,
+      2.322585344314575,
+      2.1729583740234375,
+      1.8939194679260254,
+      2.018725872039795,
+      1.7670979499816895,
+      1.6976498365402222,
+      1.5785694122314453,
+      1.5499651432037354,
+      1.48649263381958,
+      1.4584239721298218,
+      1.3899022340774536,
+      1.333782434463501,
+      1.2882283926010132,
+      1.3398253917694092,
+      1.2525856494903564
+    ],
+    "measured_steps": 20,
+    "measured_time_s": 0.4269489059224725,
+    "measured_tokens": 5120,
+    "peak_memory_allocated_gb": null,
+    "scaling_axis": null,
+    "semiring_beta_final": null,
+    "start_step": 0,
+    "step_times_s": [
+      0.02019040286540985,
+      0.01853899285197258,
+      0.01812442997470498,
+      0.019460692070424557,
+      0.018017880618572235,
+      0.018284548074007034,
+      0.01768803596496582,
+      0.01737591391429305,
+      0.018331917002797127,
+      0.01877345982939005,
+      0.02291024522855878,
+      0.019440763629972935,
+      0.01816578721627593,
+      0.017997754272073507,
+      0.021957507822662592,
+      0.018427946139127016,
+      0.017252153251320124,
+      0.018805770203471184,
+      0.018390095327049494,
+      0.01764908293262124
+    ],
+    "structural_param_distance_l2": 0.20579482139522606,
+    "structural_param_distances": {
+      "transformer.h.0.attn.curvature": 0.14139286315104307,
+      "transformer.h.1.attn.curvature": 0.14953115649604065
+    },
+    "tflops_per_second_est": 0.009449940880590126,
+    "tokens_per_second": 11992.067268418567,
+    "train_ce_auc": 2.2820462584495544,
+    "train_ce_early": 2.853382396697998,
+    "train_ce_final": 1.2525856494903564,
+    "val_bpb_final": null,
+    "val_bpbs": [],
+    "val_ce_final": null,
+    "val_losses": []
+  },
+  "resume": null,
+  "schema_version": "mgr.telemetry.v1"
+}
