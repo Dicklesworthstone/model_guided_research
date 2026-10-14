@@ -877,12 +877,15 @@ def test_gauge_zero_transport_reduces_to_plain_attention_and_nonzero_does_not():
     import torch.nn.functional as t_func
 
     from cli import _certify_cos_sin
+    from nanochat.gauge_block_torch import GaugeBlock
     from nanochat.gpt import Block, GPTConfig
     from nanochat.model_utils import apply_rotary_emb, norm
 
     torch.manual_seed(0)
     cfg = GPTConfig(sequence_len=16, vocab_size=64, n_layer=1, n_head=4, n_kv_head=2, n_embd=32, attention_type="gauge")
-    gb = Block(cfg, 0).eval().special_block.float()
+    special = Block(cfg, 0).eval().special_block
+    assert isinstance(special, GaugeBlock)
+    gb = special.float()
     T = 8
     head_dim = cfg.n_embd // cfg.n_head
     cos, sin = _certify_cos_sin(T, head_dim, torch.device("cpu"), torch.float32)
@@ -917,12 +920,15 @@ def test_simplicial_zero_triangle_reduces_to_plain_attention_and_two_hop_does_no
     import torch.nn.functional as t_func
 
     from nanochat.gpt import Block, GPTConfig
+    from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
 
     torch.manual_seed(0)
     cfg = GPTConfig(
         sequence_len=16, vocab_size=64, n_layer=1, n_head=2, n_kv_head=2, n_embd=32, attention_type="simplicial"
     )
-    attn = Block(cfg, 0).eval().attn.float()
+    raw_attn = Block(cfg, 0).eval().attn
+    assert isinstance(raw_attn, SimplicialCausalSelfAttention)
+    attn = raw_attn.float()
     q, k, v = (torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head) for _ in range(3))
     ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
     with torch.no_grad():

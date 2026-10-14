@@ -2375,13 +2375,19 @@ class TestUltrametricRouteObservables:
             ultrametric_record_routes=record,
             ultrametric_tie_margin=margin,
         )
+        from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
+
         block = Block(cfg, 0).eval()
         attn = block.attn
+        assert isinstance(attn, UltrametricCausalSelfAttention)
         T = 8
         cos, sin = _certify_cos_sin(T, cfg.n_embd // cfg.n_head, torch.device("cpu"), torch.float32)
         with torch.no_grad():
             block(torch.randn(1, T, cfg.n_embd), (cos, sin), None)
-        return float(attn.ultrametric_route_depth_mean), float(attn.ultrametric_tie_fraction), attn.K
+        depth_t = attn.ultrametric_route_depth_mean
+        ties_t = attn.ultrametric_tie_fraction
+        assert isinstance(depth_t, torch.Tensor) and isinstance(ties_t, torch.Tensor)
+        return float(depth_t.item()), float(ties_t.item()), int(attn.K)
 
     def test_recording_off_leaves_nan(self):
         import math

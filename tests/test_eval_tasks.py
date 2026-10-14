@@ -377,7 +377,7 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     summary = json.loads((run_dir / "summary.json").read_text())
     assert summary["schema_version"] == "mgr.evaltasks.v5"
     assert summary["meta"]["perturbation"] == {
-        "perturb_eps": 0.0,
+        "perturb_eps": [],
         "perturb_seed": 0,
         "spec": "nanochat.diagnostics_data.apply_embedding_perturbation",
     }
@@ -590,3 +590,29 @@ def test_tropical_margins_vs_length_recorded_for_tropical_checkpoints_only(monke
     assert trop["meta"]["checkpoint"]["model_config"]["tropical_record_margins"] is True  # the override is recorded
     std = run("standard", "std-margins")
     assert std["tasks"]["group"]["tropical_margins"] is None
+
+
+def test_adj_collect_artifacts_indexes_current_eval_tasks_schema(tmp_path):
+    """Guard against drift between _EVAL_TASKS_SCHEMA_VERSION and _adj_collect_artifacts."""
+    import cli as mgr_cli
+
+    run_dir = tmp_path / "evals" / "tasks" / "eval-v5"
+    run_dir.mkdir(parents=True)
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "schema_version": mgr_cli._EVAL_TASKS_SCHEMA_VERSION,
+                "kind": "eval-tasks",
+                "provenance": {"tainted": False},
+                "train_provenance": {"tainted": False},
+                "meta": {"checkpoint": {"attention_type": "standard", "budget": {"target_flops": 1e6}}},
+                "tasks": {},
+            }
+        )
+    )
+    indexed = mgr_cli._adj_collect_artifacts([tmp_path])
+    assert len(indexed) == 1
+    assert indexed[0]["schema"] == "evaltasks"
+    assert indexed[0]["tainted"] is False
+

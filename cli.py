@@ -11858,7 +11858,14 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
             if not isinstance(data, dict):
                 continue
             sv = data.get("schema_version")
-            if sv in ("mgr.evaltasks.v1", "mgr.evaltasks.v2", "mgr.evaltasks.v3", "mgr.evaltasks.v4"):
+            if sv in (
+                "mgr.evaltasks.v1",
+                "mgr.evaltasks.v2",
+                "mgr.evaltasks.v3",
+                "mgr.evaltasks.v4",
+                "mgr.evaltasks.v5",
+                _EVAL_TASKS_SCHEMA_VERSION,
+            ):
                 schema = "evaltasks"
             elif sv == "mgr.telemetry.v1":
                 schema = "train"
@@ -12908,19 +12915,34 @@ def status(
     # ---- certificate freshness per mechanism ----
     index = _adj_collect_artifacts([artifacts_dir])
     cert_state: dict[str, dict[str, Any]] = {}
+    commit_ts_cache: dict[str, int | None] = {}
     for art in index:
         if art["schema"] != "certify":
             continue
         mt = Path(art["path"]).stat().st_mtime
         git_meta = art["data"].get("git") if isinstance(art["data"].get("git"), dict) else {}
-        cert_commit = git_meta.get("commit_full") or git_meta.get("commit")
+        raw_commit = git_meta.get("commit_full") or git_meta.get("commit")
+        if isinstance(raw_commit, str) and raw_commit:
+            cert_commit: str | None = raw_commit
+            if cert_commit not in commit_ts_cache:
+                commit_ts_cache[cert_commit] = _status_commit_timestamp(repo_root, cert_commit)
+            commit_ts = commit_ts_cache[cert_commit]
+        else:
+            cert_commit = None
+            commit_ts = None
+        rank = (commit_ts if commit_ts is not None else -1, mt, str(art["path"]))
         for c in art["data"].get("checks") or []:
             mech = c.get("mechanism") if isinstance(c, dict) else None
             if not isinstance(mech, str):
                 continue
             cur = cert_state.get(mech)
-            if cur is None or mt > cur["cert_mtime"]:
-                cert_state[mech] = {"cert_mtime": mt, "cert_path": art["path"], "commit": cert_commit}
+            if cur is None or rank > cur["rank"]:
+                cert_state[mech] = {
+                    "cert_mtime": mt,
+                    "cert_path": art["path"],
+                    "commit": cert_commit,
+                    "rank": rank,
+                }
     certs: list[dict[str, Any]] = []
     for mech in sorted(cert_state):
         st = cert_state[mech]
@@ -13062,6 +13084,32 @@ _STATUS_MECHANISM_SOURCE: dict[str, str] = {
     "reversible": "reversible_block_torch.py",
     "surreal": "surreal_torch.py",
 }
+
+
+def _status_commit_timestamp(repo_root: Path, commit: str | None) -> int | None:
+    """Committer unix timestamp (%ct) for ``commit`` when resolved by git, else None."""
+    if not commit:
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "show", "-s", "--format=%ct", commit],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = proc.stdout.strip().splitlines()
+    if not lines:
+        return None
+    try:
+        return int(lines[0].strip())
+    except ValueError:
+        return None
 
 
 def _status_source_changed_since(repo_root: Path, commit: str | None, source: Path) -> bool | None:

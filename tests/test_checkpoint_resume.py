@@ -1465,7 +1465,9 @@ def test_scaling_axis_projections_match_explicit_references():
 
     # Reference 1: the odd block removed outright.
     ref_depth = copy.deepcopy(model)
-    ref_depth.transformer["h"] = torch.nn.ModuleList([ref_depth.transformer["h"][0]])
+    ref_h = ref_depth.transformer["h"]
+    assert isinstance(ref_h, torch.nn.ModuleList)
+    ref_depth.transformer["h"] = torch.nn.ModuleList([ref_h[0]])
     with torch.no_grad():
         ce_depth_ref = sum(float(ref_depth(i, t).item()) for i, t in batches) / len(batches)
     assert rec["ce_half_depth"] == pytest.approx(ce_depth_ref, rel=1e-6)
@@ -1481,7 +1483,9 @@ def test_scaling_axis_projections_match_explicit_references():
         T = idx.size(1)
         cos_sin = model.cos[:, :T], model.sin[:, :T]
         x = norm(model.transformer["wte"](idx))
-        for block in model.transformer["h"]:
+        h_blocks = model.transformer["h"]
+        assert isinstance(h_blocks, torch.nn.ModuleList)
+        for block in h_blocks:
             x = block(x, cos_sin, None) * mask * 2.0
         x = norm(x)
         logits = (15 * torch.tanh(model.lm_head(x) / 15)).float()

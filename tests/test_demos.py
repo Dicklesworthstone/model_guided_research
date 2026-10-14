@@ -1962,3 +1962,26 @@ def test_control_zero_attention_makes_logits_context_free():
     assert float((ma - mb).abs().max()) > 1e-3, "without the flag the history must change the logits"
     with pytest.raises(ValueError, match="control_zero_attention"):
         GPT(cfg(True, attention_type="gauge"))
+
+
+def test_github_workflows_are_valid_yaml():
+    """Regression for model_guided_research-jida.19: unquoted colons in step
+    names caused GitHub Actions to reject .github/workflows/ci.yml at parse time
+    with 0 jobs."""
+    import yaml
+
+    workflows_dir = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+    workflow_files = sorted(workflows_dir.glob("*.yml"))
+    require(len(workflow_files) >= 2, "expected at least ci.yml and e2e-nightly.yml")
+    for wf in workflow_files:
+        doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        require(isinstance(doc, dict), f"{wf.name} did not parse to a mapping")
+        require(isinstance(doc.get("jobs"), dict) and bool(doc["jobs"]), f"{wf.name} has no jobs mapping")
+        for job_name, job in doc["jobs"].items():
+            steps = job.get("steps") if isinstance(job, dict) else None
+            assert isinstance(steps, list) and bool(steps), f"{wf.name}:{job_name} has no steps list"
+            for step in steps:
+                assert isinstance(step, dict), f"{wf.name}:{job_name} step is not a mapping"
+                if "name" in step:
+                    assert isinstance(step["name"], str) and bool(step["name"].strip()), f"{wf.name}:{job_name} invalid step name"
+

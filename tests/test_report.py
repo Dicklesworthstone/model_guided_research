@@ -221,11 +221,14 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     _eval_summary(arts, "e-ultra-1", mechanism="ultrametric", task="hier", em=0.82, flops=1e14)
     _eval_summary(arts, "e-std-0", mechanism="standard", task="hier", em=0.50, flops=1e14)
     _eval_summary(arts, "e-std-1", mechanism="standard", task="hier", em=0.51, flops=1e14)
+    repo_root = Path(cli.__file__).resolve().parent
+    tropical_mtime = (repo_root / "nanochat" / "tropical_attention_torch.py").stat().st_mtime
+    ultra_mtime = (repo_root / "nanochat" / "ultrametric_attention_torch.py").stat().st_mtime
     stale_cert = _cert_summary(arts, "trop-old", mechanism="tropical")
-    stale_time = time_mod.time() - 10 * 86400
+    stale_time = min(time_mod.time(), tropical_mtime) - 10 * 86400
     os.utime(stale_cert, (stale_time, stale_time))  # cert predates source
     fresh_cert = _cert_summary(arts, "ultra-new", mechanism="ultrametric")
-    fresh_time = time_mod.time() + 3600
+    fresh_time = max(time_mod.time(), ultra_mtime) + 3600
     os.utime(fresh_cert, (fresh_time, fresh_time))  # newer than any source file
 
     registry = tmp_path / "registry.yaml"
@@ -262,6 +265,60 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     assert states["hyp-status-ok"]["state"] == "would_rule"
     assert states["hyp-status-blocked"]["state"] == "blocked"
     assert (arts / "index.md").read_text().startswith("# Artifacts index")
+
+
+def test_status_selects_newest_certificate_by_git_commit_not_checkout_mtime(tmp_path, monkeypatch):
+    """jida.33: alphabetical git checkout writes 'fdxb-...' after 'cert-refresh-...',
+    giving the older commit's certificate a slightly newer st_mtime. mgr status
+    must select the certificate from the newer git commit."""
+    import os
+    import time as time_mod
+
+    arts = tmp_path / "artifacts"
+    newer_dir = arts / "certs" / "cert-refresh-2026-09-02b"
+    older_dir = arts / "certs" / "fdxb-cert-refresh-all"
+    newer_dir.mkdir(parents=True)
+    older_dir.mkdir(parents=True)
+    newer_summary = newer_dir / "summary.json"
+    older_summary = older_dir / "summary.json"
+    newer_summary.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "certify",
+                "git": {"dirty": False, "commit_full": "dbd2d509e4ebb6e5b310236afb10e359041b1d22"},
+                "checks": [{"mechanism": "tropical", "name": "tropical.smoke", "measured": 0.0}],
+            }
+        )
+    )
+    older_summary.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "certify",
+                "git": {"dirty": False, "commit_full": "043db2c49c66edd02bee6fd2586e7737d1378c27"},
+                "checks": [{"mechanism": "tropical", "name": "tropical.smoke", "measured": 0.0}],
+            }
+        )
+    )
+    now = time_mod.time()
+    os.utime(newer_summary, (now - 3600, now - 3600))
+    os.utime(older_summary, (now, now))  # older commit has newer checkout mtime ('f' > 'c')
+
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("schema_version: 1\nhypotheses: []\n")
+    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+
+    result = runner.invoke(
+        cli.app,
+        ["status", "--artifacts-dir", str(arts), "--json", "--write-index"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads((arts / "index.json").read_text())
+    certs = {c["mechanism"]: c for c in payload["certificates"]}
+    assert certs["tropical"]["cert_path"] == str(newer_summary)
+    assert certs["tropical"]["stale"] is False
+
 
 
 def _hyp_status():

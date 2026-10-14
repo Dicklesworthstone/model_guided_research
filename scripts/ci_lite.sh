@@ -56,6 +56,17 @@ py_files() {
 
 step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 
+check_workflows_yaml() {
+  uv run python -c '
+import glob, sys, yaml
+for path in sorted(glob.glob(".github/workflows/*.yml")):
+    with open(path, encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    assert isinstance(doc, dict) and isinstance(doc.get("jobs"), dict) and doc["jobs"], f"invalid workflow: {path}"
+print("workflow YAML syntax OK")
+'
+}
+
 check_ty() {
   uv run --locked --exact \
     --extra dev --extra server --extra viz --extra tokenizer-train \
@@ -63,6 +74,8 @@ check_ty() {
 }
 
 if [[ "$TYPECHECK_ONLY" -eq 1 ]]; then
+  step "workflow YAML check"
+  check_workflows_yaml
   step "ty check (repository)"
   check_ty
   exit 0
@@ -92,6 +105,9 @@ else
     echo "ubs not installed; skipping (see docs/ubs_usage.md)."
   fi
 fi
+
+step "workflow YAML check"
+check_workflows_yaml
 
 step "ty check (repository)"
 check_ty
