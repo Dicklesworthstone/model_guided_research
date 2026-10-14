@@ -1042,6 +1042,18 @@ def _validate_train_args(args, *, ddp_rank: int, device: torch.device) -> None:
     if data_dir_arg is not None and not Path(str(data_dir_arg)).is_dir():
         errors.append(f"--data-dir must be an existing directory, got {data_dir_arg!r}")
 
+    init_from_profile_arg = getattr(args, "init_from_profile", None)
+    if init_from_profile_arg is not None:
+        if model_type != "gpt":
+            errors.append("--init-from-profile is only supported for --model-type gpt")
+        else:
+            from geometry_profile import load_profile_for_init
+
+            try:
+                load_profile_for_init(str(init_from_profile_arg))
+            except ValueError as exc:
+                errors.append(str(exc))
+
     # Checkpoint/resume flags (bead rz8.1).
     if int(getattr(args, "checkpoint_interval", 0)) < 0:
         errors.append("--checkpoint-interval must be >= 0 (0 disables checkpointing)")
@@ -1486,20 +1498,83 @@ def train(args) -> None:
             "Either provide shards there or run with --auto-download-data (FineWeb cache only)."
         )
 
-    # Model
+    # Model + optional geometry-informed initialization (--init-from-profile, bead 77l.4)
+    init_from_profile_arg = getattr(args, "init_from_profile", None)
+    geometry_init_record: dict[str, Any] | None = None
+    geometry_profile_dict: dict[str, Any] | None = None
+    geometry_applied: dict[str, dict[str, Any]] = {}
+    geometry_cli_overrides = {
+        "ultrametric_K": getattr(args, "ultrametric_K", None) is not None,
+        "fractal_ifs": getattr(args, "fractal_ifs", None) is not None,
+        "semiring_beta": getattr(args, "semiring_beta", None) is not None,
+    }
     if model_type == "gpt":
         if not isinstance(config, GPTConfig):
             raise TypeError("GPT training requires GPTConfig")
+        if init_from_profile_arg is not None:
+            config.init_from_profile = str(init_from_profile_arg)
+        if init_from_profile_arg is not None and resume_meta is None:
+            from geometry_profile import apply_geometry_init_to_config, load_profile_for_init
+
+            geometry_profile_dict = load_profile_for_init(str(init_from_profile_arg))
+            geometry_applied = apply_geometry_init_to_config(
+                config,
+                geometry_profile_dict,
+                attention_schedule=attention_schedule,
+                cli_overrides=geometry_cli_overrides,
+            )
         raw_model: GPT | GPTSynaptic = GPT(config)
     else:
         if not isinstance(config, GPTSynapticConfig):
             raise TypeError("synaptic training requires GPTSynapticConfig")
         raw_model = GPTSynaptic(config)
     raw_model.to(device)
-    # Per-block activation RMS hooks (depth telemetry); skipped under
-    # torch.compile, where module forward hooks and dynamo do not mix.
-    activation_hooks = _install_activation_rms_hooks(raw_model) if not compile_requested else None
     raw_model.init_weights()
+    if model_type == "gpt" and geometry_profile_dict is not None and resume_meta is None:
+        from geometry_profile import apply_geometry_init_to_model
+
+        geometry_init_record = apply_geometry_init_to_model(
+            raw_model,
+            config,
+            geometry_profile_dict,
+            attention_schedule=attention_schedule,
+            applied=geometry_applied,
+            seed=int(args.seed),
+            cli_overrides=geometry_cli_overrides,
+        )
+        geometry_init_record["profile_path"] = str(init_from_profile_arg)
+        if ddp_rank == 0:
+            geo_table = Table(
+                title=f"Geometry-Informed Initialization (--init-from-profile {init_from_profile_arg})",
+                box=box.ROUNDED,
+            )
+            geo_table.add_column("Parameter", style="bold cyan")
+            geo_table.add_column("Default", style="dim")
+            geo_table.add_column("Profile Value", style="bold green")
+            geo_table.add_column("Source Metric", style="yellow")
+            geo_table.add_column("Input Source", style="magenta")
+            geo_table.add_column("Formula Ref", style="white")
+            for p_name, p_info in geometry_init_record["applied_parameters"].items():
+                def_str = str(p_info["default_value"])
+                if len(def_str) > 24:
+                    def_str = def_str[:21] + "..."
+                prof_str = str(p_info["profile_value"])
+                if len(prof_str) > 24:
+                    prof_str = prof_str[:21] + "..."
+                geo_table.add_row(
+                    p_name,
+                    def_str,
+                    prof_str,
+                    str(p_info["source_metric"]),
+                    str(p_info["input_source"]),
+                    str(p_info["formula_ref"]),
+                )
+            for na_mech, na_reason in geometry_init_record.get("not_applicable_mechanisms", {}).items():
+                geo_table.add_row(f"{na_mech}.*", "default", "unchanged", "-", "not-applicable", na_reason)
+            console.print(geo_table)
+    # Per-block activation RMS hooks (depth telemetry); installed after any
+    # startup probe and skipped under torch.compile.
+    activation_hooks = _install_activation_rms_hooks(raw_model) if not compile_requested else None
     if resume_meta is not None:
         # The resumed run must be the SAME model: config drift between the
         # checkpoint and the resume command line is an error, not a warning.
@@ -1517,6 +1592,9 @@ def train(args) -> None:
             )
         assert resume_model_data is not None
         raw_model.load_state_dict(resume_model_data, strict=True)
+    from geometry_profile import snapshot_structural_params
+
+    structural_init_snapshot = snapshot_structural_params(raw_model) if model_type == "gpt" else {}
     config_artifact = asdict(config)
     if model_type == "gpt":
         config_artifact["resolved_attention_schedule"] = list(attention_schedule)
@@ -2655,8 +2733,13 @@ def train(args) -> None:
             "data_mode": resume_data_mode,
             "parent_run_ids": parent_run_ids,
         }
-    # Compute final train/val CE statistics
+    # Compute final and early train/val CE statistics (skip steps 0-1 where
+    # zero-initialized lm_head / attn.c_proj make attention outputs inert).
     final_train_ce = losses[-1] if losses else float("nan")
+    early_n = max(1, len(losses) // 4) if losses else 0
+    early_slice = losses[2 : 2 + early_n] if len(losses) > 2 else losses[:early_n]
+    early_train_ce = (sum(early_slice) / len(early_slice)) if early_slice else float("nan")
+    auc_train_ce = (sum(losses) / len(losses)) if losses else float("nan")
     final_val_ce = val_losses[-1][1] if val_losses else None
     final_val_bpb = val_bpbs[-1][1] if val_bpbs else None
 
@@ -2664,6 +2747,8 @@ def train(args) -> None:
         "losses": losses,
         "start_step": start_step,
         "train_ce_final": final_train_ce,
+        "train_ce_early": early_train_ce,
+        "train_ce_auc": auc_train_ce,
         "val_losses": val_losses,
         "val_ce_final": final_val_ce,
         # transseries damage ratios + the argmax move (null unless
@@ -2681,6 +2766,15 @@ def train(args) -> None:
         "tflops_per_second_est": est_tflops,
         "peak_memory_allocated_gb": peak_mem_gb,
     }
+    if model_type == "gpt":
+        from geometry_profile import compute_structural_param_distance
+
+        struct_dist = compute_structural_param_distance(raw_model, structural_init_snapshot)
+        if struct_dist is not None:
+            results["structural_param_distance_l2"] = struct_dist["total_l2"]
+            results["structural_param_distances"] = struct_dist["per_parameter_l2"]
+            if geometry_init_record is not None:
+                geometry_init_record["distance_traveled_l2"] = struct_dist["total_l2"]
     if model_type == "gpt" and "tropical" in attention_schedule:
         tropical = _collect_tropical_margin_stats(raw_model)
         if tropical is not None:
@@ -2768,11 +2862,16 @@ def train(args) -> None:
                 if getattr(args, "semiring_beta", None) is not None and "tropical" in attention_schedule
                 else None
             ),
+            "init_from_profile": (str(init_from_profile_arg) if init_from_profile_arg is not None else None),
+            "init_profile_corpus": (
+                geometry_init_record.get("profile_corpus") if geometry_init_record is not None else None
+            ),
             "synaptic_config": (asdict(config.syn_cfg) if isinstance(config, GPTSynapticConfig) else None),
             "val_interval": val_interval,
             "val_batches": val_batches if val_interval > 0 else None,
             "scaling_axis_diagnostic": scaling_axis_enabled,
         },
+        "geometry_init": geometry_init_record,
         "compile": {
             "enabled": compiled_model,
             "backend": compile_backend,
@@ -3238,6 +3337,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument(
+        "--init-from-profile",
+        type=str,
+        default=None,
+        help="Warm-start structural parameters from a data-geometry profile.json (bead 77l.4).",
+    )
     parser.add_argument(
         "--ca-init-rule",
         type=str,

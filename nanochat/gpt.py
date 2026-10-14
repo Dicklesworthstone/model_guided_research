@@ -350,6 +350,9 @@ class GPTConfig:
     # Surreal-specific options (see nanochat.surreal_torch; jida.15).
     surreal_scaling_axis: bool = False
     surreal_freeze_scale: bool = False
+    # Geometry-informed initialization (bead 77l.4): path to profile.json when warm-started.
+    init_from_profile: str | None = None
+
 
 
 class CausalSelfAttention(AttentionCore):

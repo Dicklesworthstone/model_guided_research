@@ -8274,7 +8274,11 @@ def _scorecard_validate_hypothesis_coverage(
         candidate_variant = (
             dict(prediction["candidate_variant"]) if isinstance(prediction.get("candidate_variant"), dict) else None
         )
-        if baseline_mechanism is not None and not _has_arm(baseline_mechanism, task_name, baseline_variant):
+        if (
+            baseline_mechanism is not None
+            and baseline_mechanism != "same"
+            and not _has_arm(baseline_mechanism, task_name, baseline_variant)
+        ):
             want = f"{baseline_mechanism}:{task_name}" + (
                 f" with variant {baseline_variant}" if baseline_variant else ""
             )
@@ -8288,6 +8292,9 @@ def _scorecard_validate_hypothesis_coverage(
                     f"{hypothesis_id}: no {base}:{task_name} arm carries candidate_variant {candidate_variant} "
                     "(add it as --mechanism MECH@key=value)"
                 )
+            if baseline_mechanism == "same" and not _has_arm(base, task_name, baseline_variant):
+                want = f"{base}:{task_name}" + (f" with variant {baseline_variant}" if baseline_variant else "")
+                errors.append(f"{hypothesis_id}: missing baseline arm {want} (add it as --mechanism MECH@key=value)")
     if errors:
         raise typer.BadParameter("hypothesis/matrix coverage failed: " + "; ".join(errors))
 
@@ -11272,7 +11279,7 @@ def _validate_hypothesis_prediction(pred: Any, where: str, errors: list[str], wa
     elif not isinstance(baseline, dict):
         errors.append(f"{where}: prediction.baseline must be a mapping, or explicitly null for single-arm claims")
     else:
-        if baseline.get("mechanism") not in _HYP_MECHANISMS:
+        if baseline.get("mechanism") not in _HYP_MECHANISMS and baseline.get("mechanism") != "same":
             errors.append(f"{where}: baseline.mechanism {baseline.get('mechanism')!r} unknown")
         if baseline.get("equal_flops") is not True:
             errors.append(
@@ -12658,8 +12665,11 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
     # A multi-mechanism entry is a FOR-ALL claim: every listed mechanism must
     # adjudicate; the overall verdict is the worst case across arms.
     for mech in hyp.get("mechanisms") or []:
+        eff_base_mech = mech if baseline_mech == "same" else baseline_mech
         cand_all = [a for a in pool if _adj_artifact_matches_arm(a, mech, cand_variant)]
-        base_all = [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, baseline_mech, base_variant)]
+        base_all = (
+            [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, eff_base_mech, base_variant)]
+        )
         saw_tainted = saw_tainted or any(a["tainted"] for a in cand_all + base_all)
         cand = _adj_dedupe_evaltasks([a for a in cand_all if not a["tainted"]])
         base = _adj_dedupe_evaltasks([a for a in base_all if not a["tainted"]])

@@ -2380,3 +2380,109 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+  - id: hyp-geo-init-early-advantage
+    statement: >-
+      Geometry-informed warm-starting (--init-from-profile with the matched
+      corpus profile) matches or beats default initialization in early training
+      cross-entropy (train_ce_early <= 1.02x default-init at equal FLOPs) across
+      ultrametric, fractal, and hyperbolic attention on hierarchical retrieval.
+    mechanisms: [ultrametric, fractal, hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-77l.4 prediction (a): warm-starting
+        structural parameters from the 77l.1 corpus geometry profile (8gk.5
+        Moran radii, 8gk.6 hyperbolic curvature, 77l.1 ultrametric depth/alpha/
+        lcp_beta) improves or matches early-training optimization before
+        gradient descent catches up.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-moran-capacity, thm-hyperbolic-score-decomposition, thm-lcp-is-padic-valuation]
+    prediction:
+      metric_path: "train:results.train_ce_early"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 1.02
+      baseline:
+        mechanism: same
+        equal_flops: true
+        variant: {task: hier, init_profile_corpus: null}
+      candidate_variant: {task: hier, init_profile_corpus: "task:hier"}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL over ultrametric, fractal (with fractal_ifs=true), and
+        hyperbolic on the hier corpus at equal FLOPs (>= 3 seeds per arm).
+        train_ce_early averages the first quarter of post-zero-projection
+        training steps.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-geo-init-less-distance-traveled
+    statement: >-
+      Learned structural parameters travel less in parameter space from
+      geometry-informed initialization than from default initialization
+      (structural_param_distance_l2 <= 0.995x default-init at equal FLOPs)
+      across ultrametric, fractal, and hyperbolic attention on hierarchical
+      retrieval, evidencing that the profiled warm start lands closer to the
+      learned structural configuration.
+    mechanisms: [ultrametric, fractal, hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-77l.4 prediction (b): L2 distance traveled by
+        the mapped structural parameters (fractal branch contraction radii,
+        hyperbolic per-head curvature, ultrametric digit projections) from step
+        0 to final step on the hier task.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-moran-capacity, thm-hyperbolic-score-decomposition, thm-lcp-is-padic-valuation]
+    prediction:
+      metric_path: "train:results.structural_param_distance_l2"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.995
+      baseline:
+        mechanism: same
+        equal_flops: true
+        variant: {task: hier, init_profile_corpus: null}
+      candidate_variant: {task: hier, init_profile_corpus: "task:hier"}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL over ultrametric, fractal (with fractal_ifs=true), and
+        hyperbolic on the hier corpus at equal FLOPs (>= 3 seeds per arm).
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-geo-init-mismatched-safety
+    statement: >-
+      On geometry-mismatched initialization (training on hierarchical retrieval
+      with a flat placebo profile), geometry-informed warm-starting does not
+      degrade final training loss beyond noise (train_ce_final <= 1.05x
+      default-init after the full budget) across ultrametric, fractal, and
+      hyperbolic attention: bad geometric priors wash out under training rather
+      than acting as a footgun.
+    mechanisms: [ultrametric, fractal, hyperbolic]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-77l.4 prediction (c) safety gate: deliberate
+        profile mismatch (init_profile_corpus='task:placebo' on task='hier')
+        must not hurt final loss beyond 5% noise at equal FLOPs.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-moran-capacity, thm-hyperbolic-score-decomposition, thm-lcp-is-padic-valuation]
+    prediction:
+      metric_path: "train:results.train_ce_final"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 1.05
+      baseline:
+        mechanism: same
+        equal_flops: true
+        variant: {task: hier, init_profile_corpus: null}
+      candidate_variant: {task: hier, init_profile_corpus: "task:placebo"}
+      min_seeds: 3
+      scale_caveats: >-
+        FOR-ALL over ultrametric, fractal (with fractal_ifs=true), and
+        hyperbolic on the hier corpus at equal FLOPs (>= 3 seeds per arm),
+        contrasting mismatched placebo profile init against default init.
+    status: open
+    evidence: []
+    verdict_history: []

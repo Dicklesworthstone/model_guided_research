@@ -608,3 +608,445 @@ def validate_profile_schema(profile: dict[str, Any]) -> list[str]:
 
 def profile_to_json(profile: dict[str, Any]) -> str:
     return json.dumps(profile, indent=2, allow_nan=True)
+
+
+# ===========================================================================
+# Geometry-informed initialization (--init-from-profile, bead 77l.4)
+# ===========================================================================
+
+GEOMETRY_INIT_MAPPING_TABLE: tuple[dict[str, str], ...] = (
+    {
+        "mechanism": "fractal",
+        "parameter": "ifs_raw_radii",
+        "source_metric": "estimators.ultrametricity.violation_mean + estimators.hierarchy_depth.normalized_mean_depth",
+        "input_source": "profile-only",
+        "formula_ref": "8gk.5 / thm-moran-capacity: s* = clip(0.85 - 0.45*v, 0.35, 0.85), p_m ~ (m+1)^(-zeta), r_m = min(p_m^(1/s*), r_max)",
+    },
+    {
+        "mechanism": "hyperbolic",
+        "parameter": "raw_curvature",
+        "source_metric": "estimators.delta_hyperbolicity.mean",
+        "input_source": "profile-only",
+        "formula_ref": "8gk.6 / thm-hyperbolic-score-decomposition: c_init = clip((0.010 / max(delta, 0.005))^2, 0.10, 2.00)",
+    },
+    {
+        "mechanism": "ultrametric",
+        "parameter": "ultrametric_K",
+        "source_metric": "estimators.hierarchy_depth.mean_depth",
+        "input_source": "profile-only",
+        "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: K_init = clip(round(mean_depth), 2, 8)",
+    },
+    {
+        "mechanism": "ultrametric",
+        "parameter": "ultrametric_alpha",
+        "source_metric": "estimators.ultrametricity.cophenetic_correlation",
+        "input_source": "profile-only",
+        "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: alpha_init = clip(1.5 + 1.5*max(r_coph, 0.0), 1.25, 3.00)",
+    },
+    {
+        "mechanism": "ultrametric",
+        "parameter": "ultrametric_lcp_beta",
+        "source_metric": "estimators.ultrametricity.violation_mean",
+        "input_source": "profile-only",
+        "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: lcp_beta_init = clip(16.0 + 32.0*(1.0 - v), 16.0, 48.0)",
+    },
+    {
+        "mechanism": "tropical",
+        "parameter": "semiring_beta",
+        "source_metric": "startup_probe.tropical_margin_median",
+        "input_source": "startup-probe",
+        "formula_ref": "8gk.1 / thm-tropical-margin-stability: beta_0 = clip((ln(head_dim) + ln(max(T_probe/2, 2))) / max(gamma_med, 0.10), 0.50, 16.0)",
+    },
+)
+
+GEOMETRY_INIT_NOT_APPLICABLE: dict[str, str] = {
+    "standard": "blocked-on-theory: dense dot-product attention has no geometric structural parameter",
+    "reversible": "blocked-on-theory: symplectic leapfrog step size is governed by stability threshold, not corpus metric",
+    "gauge": "blocked-on-theory: Givens transport angles start at identity frame (zero curvature prior)",
+    "quaternion": "blocked-on-theory: Hamilton rotor projections are norm-preserving at any isotropic init",
+    "octonion": "blocked-on-theory: Cayley-Dickson projections are norm-preserving at any isotropic init",
+    "braid": "blocked-on-theory: Yang-Baxter deformation eta and spectral rapidities have no closed-form bigram-NLL mapping yet",
+    "simplicial": "blocked-on-theory: 2-simplex window and wedge projections have no closed-form homology-to-init formula yet",
+    "surreal": "blocked-on-theory: Levi-Civita valuation scale weights start at zero (exact standard reduction)",
+}
+
+
+def validate_profile_for_init(profile: dict[str, Any]) -> list[str]:
+    """Validate both top-level schema and nested estimator metrics required by --init-from-profile."""
+    errors = validate_profile_schema(profile)
+    if errors:
+        return errors
+    est = profile["estimators"]
+
+    delta_block = est.get("delta_hyperbolicity")
+    if not isinstance(delta_block, dict) or "mean" not in delta_block:
+        errors.append("estimators.delta_hyperbolicity missing required metric 'mean'")
+    else:
+        val = delta_block.get("mean")
+        if not isinstance(val, int | float) or not math.isfinite(float(val)) or float(val) < 0.0:
+            errors.append(f"estimators.delta_hyperbolicity.mean must be a finite float >= 0, got {val!r}")
+
+    ultra_block = est.get("ultrametricity")
+    if not isinstance(ultra_block, dict):
+        errors.append("estimators.ultrametricity must be a mapping")
+    else:
+        for req_key in ("violation_mean", "cophenetic_correlation"):
+            if req_key not in ultra_block:
+                errors.append(f"estimators.ultrametricity missing required metric {req_key!r}")
+        v_mean = ultra_block.get("violation_mean")
+        if v_mean is not None and (
+            not isinstance(v_mean, int | float) or not math.isfinite(float(v_mean)) or not (0.0 <= float(v_mean) <= 1.0)
+        ):
+            errors.append(f"estimators.ultrametricity.violation_mean must be in [0, 1], got {v_mean!r}")
+
+    depth_block = est.get("hierarchy_depth")
+    if not isinstance(depth_block, dict):
+        errors.append("estimators.hierarchy_depth must be a mapping")
+    else:
+        for req_key in ("mean_depth", "normalized_mean_depth"):
+            if req_key not in depth_block:
+                errors.append(f"estimators.hierarchy_depth missing required metric {req_key!r}")
+            else:
+                d_val = depth_block.get(req_key)
+                if not isinstance(d_val, int | float) or not math.isfinite(float(d_val)) or float(d_val) <= 0.0:
+                    errors.append(f"estimators.hierarchy_depth.{req_key} must be a finite float > 0, got {d_val!r}")
+
+    return errors
+
+
+def load_profile_for_init(path: str | Path) -> dict[str, Any]:
+    """Load and validate a profile.json file for --init-from-profile; raises ValueError with actionable detail."""
+    p = Path(path)
+    if not p.is_file():
+        raise ValueError(f"--init-from-profile file does not exist: {p}")
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"--init-from-profile could not parse JSON from {p}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError(f"--init-from-profile expected a JSON object in {p}, got {type(raw).__name__}")
+    errs = validate_profile_for_init(raw)
+    if errs:
+        raise ValueError(f"--init-from-profile invalid profile {p}: " + "; ".join(errs))
+    return raw
+
+
+def compute_geometry_init_values(
+    profile: dict[str, Any],
+    *,
+    num_prototypes: int = 4,
+    max_radius: float = 0.85,
+) -> dict[str, dict[str, Any]]:
+    """Pure formula evaluator: map a validated profile dict to target parameter values for all supported mechanisms."""
+    errs = validate_profile_for_init(profile)
+    if errs:
+        raise ValueError("Invalid profile for geometry init: " + "; ".join(errs))
+
+    est = profile["estimators"]
+    delta_mean = float(est["delta_hyperbolicity"]["mean"])
+    v_mean = float(est["ultrametricity"]["violation_mean"])
+    coph_raw = est["ultrametricity"]["cophenetic_correlation"]
+    coph = float(coph_raw) if isinstance(coph_raw, int | float) and math.isfinite(float(coph_raw)) else 0.5
+    mean_depth = float(est["hierarchy_depth"]["mean_depth"])
+    norm_depth = float(est["hierarchy_depth"]["normalized_mean_depth"])
+
+    # 1. Fractal IFS per-branch contraction radii (8gk.5 / thm-moran-capacity)
+    s_star = min(max(0.85 - 0.45 * v_mean, 0.35), 0.85)
+    zeta = min(max((1.0 - 0.5 * v_mean) / max(norm_depth, 0.5), 0.15), 1.50)
+    raw_weights = [float((m + 1) ** (-zeta)) for m in range(num_prototypes)]
+    w_sum = sum(raw_weights)
+    probs = [w / w_sum for w in raw_weights]
+    radii = [min(p ** (1.0 / s_star), max_radius) for p in probs]
+
+    # 2. Hyperbolic curvature c_init (8gk.6 / thm-hyperbolic-horosphere-limit)
+    c_init = min(max((0.010 / max(delta_mean, 0.005)) ** 2, 0.10), 2.00)
+
+    # 3. Ultrametric digit depth K, alpha, and lcp_beta (77l.1 / thm-lcp-is-padic-valuation)
+    k_init = int(min(max(round(mean_depth), 2), 8))
+    alpha_init = min(max(1.5 + 1.5 * max(coph, 0.0), 1.25), 3.00)
+    lcp_beta_init = min(max(16.0 + 32.0 * (1.0 - v_mean), 16.0), 48.0)
+
+    return {
+        "fractal.ifs_radii": {
+            "mechanism": "fractal",
+            "default_value": [round(0.5 * max_radius, 6)] * num_prototypes,
+            "profile_value": [round(r, 6) for r in radii],
+            "target_moran_dim": round(s_star, 6),
+            "branch_skew_zeta": round(zeta, 6),
+            "source_metric": "estimators.ultrametricity.violation_mean + estimators.hierarchy_depth.normalized_mean_depth",
+            "source_value": {"violation_mean": v_mean, "normalized_mean_depth": norm_depth},
+            "input_source": "profile-only",
+            "formula_ref": "8gk.5 / thm-moran-capacity: s* = clip(0.85 - 0.45*v, 0.35, 0.85), p_m ~ (m+1)^(-zeta), r_m = min(p_m^(1/s*), r_max)",
+        },
+        "hyperbolic.curvature": {
+            "mechanism": "hyperbolic",
+            "default_value": 1.0,
+            "profile_value": round(c_init, 6),
+            "source_metric": "estimators.delta_hyperbolicity.mean",
+            "source_value": delta_mean,
+            "input_source": "profile-only",
+            "formula_ref": "8gk.6 / thm-hyperbolic-score-decomposition: c_init = clip((0.010 / max(delta, 0.005))^2, 0.10, 2.00)",
+        },
+        "ultrametric.ultrametric_K": {
+            "mechanism": "ultrametric",
+            "default_value": 8,
+            "profile_value": k_init,
+            "source_metric": "estimators.hierarchy_depth.mean_depth",
+            "source_value": mean_depth,
+            "input_source": "profile-only",
+            "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: K_init = clip(round(mean_depth), 2, 8)",
+        },
+        "ultrametric.ultrametric_alpha": {
+            "mechanism": "ultrametric",
+            "default_value": 2.0,
+            "profile_value": round(alpha_init, 6),
+            "source_metric": "estimators.ultrametricity.cophenetic_correlation",
+            "source_value": coph,
+            "input_source": "profile-only",
+            "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: alpha_init = clip(1.5 + 1.5*max(r_coph, 0.0), 1.25, 3.00)",
+        },
+        "ultrametric.ultrametric_lcp_beta": {
+            "mechanism": "ultrametric",
+            "default_value": 32.0,
+            "profile_value": round(lcp_beta_init, 6),
+            "source_metric": "estimators.ultrametricity.violation_mean",
+            "source_value": v_mean,
+            "input_source": "profile-only",
+            "formula_ref": "77l.1 / thm-lcp-is-padic-valuation: lcp_beta_init = clip(16.0 + 32.0*(1.0 - v), 16.0, 48.0)",
+        },
+    }
+
+
+def apply_geometry_init_to_config(
+    config: Any,
+    profile: dict[str, Any],
+    *,
+    attention_schedule: list[str],
+    cli_overrides: dict[str, bool] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Apply pre-construction config parameters (ultrametric_K/alpha/lcp_beta, fractal_ifs) from profile."""
+    overrides = cli_overrides or {}
+    computed = compute_geometry_init_values(
+        profile,
+        num_prototypes=int(getattr(config, "num_prototypes", 4)),
+        max_radius=float(getattr(config, "ifs_max_radius", 0.85)),
+    )
+    applied: dict[str, dict[str, Any]] = {}
+
+    if "ultrametric" in attention_schedule:
+        if not overrides.get("ultrametric_K", False):
+            entry = dict(computed["ultrametric.ultrametric_K"])
+            entry["default_value"] = int(getattr(config, "ultrametric_K", 8))
+            k_val = int(entry["profile_value"])
+            # Respect balltree int64 sort-key bound if balltree mode is active
+            if str(getattr(config, "ultrametric_mode", "kernel")).lower() == "balltree":
+                p = int(getattr(config, "ultrametric_p", 2))
+                max_t = int(getattr(config, "sequence_len", 2048)) * 10
+                while k_val > 2 and ((p + 1) ** k_val) * 2 * max_t * 2 >= 2**62:
+                    k_val -= 1
+                entry["profile_value"] = k_val
+            config.ultrametric_K = k_val
+            applied["ultrametric.ultrametric_K"] = entry
+        if not overrides.get("ultrametric_alpha", False):
+            entry = dict(computed["ultrametric.ultrametric_alpha"])
+            entry["default_value"] = float(getattr(config, "ultrametric_alpha", 2.0))
+            config.ultrametric_alpha = float(entry["profile_value"])
+            applied["ultrametric.ultrametric_alpha"] = entry
+        if not overrides.get("ultrametric_lcp_beta", False):
+            entry = dict(computed["ultrametric.ultrametric_lcp_beta"])
+            entry["default_value"] = float(getattr(config, "ultrametric_lcp_beta", 32.0))
+            config.ultrametric_lcp_beta = float(entry["profile_value"])
+            applied["ultrametric.ultrametric_lcp_beta"] = entry
+
+    if "fractal" in attention_schedule:
+        if not overrides.get("fractal_ifs", False):
+            config.fractal_ifs = True
+        applied["fractal.ifs_radii"] = dict(computed["fractal.ifs_radii"])
+
+    if "hyperbolic" in attention_schedule:
+        applied["hyperbolic.curvature"] = dict(computed["hyperbolic.curvature"])
+
+    return applied
+
+
+def apply_geometry_init_to_model(
+    model: Any,
+    config: Any,
+    profile: dict[str, Any],
+    *,
+    attention_schedule: list[str],
+    applied: dict[str, dict[str, Any]],
+    seed: int = 42,
+    cli_overrides: dict[str, bool] | None = None,
+) -> dict[str, Any]:
+    """Warm-start module Parameters (fractal ifs_raw_radii, hyperbolic raw_curvature) and run tropical beta_0 startup probe."""
+    import time as _time
+
+    import torch
+
+    from nanochat.fractal_attention_torch import FractalCausalSelfAttention, optimal_ifs_radii
+    from nanochat.hyperbolic_attention_torch import CURVATURE_MIN, HyperbolicCausalSelfAttention
+    from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, set_semiring_beta
+
+    overrides = cli_overrides or {}
+    est = profile["estimators"]
+    v_mean = float(est["ultrametricity"]["violation_mean"])
+    norm_depth = float(est["hierarchy_depth"]["normalized_mean_depth"])
+    delta_mean = float(est["delta_hyperbolicity"]["mean"])
+
+    # 1. Apply FractalCausalSelfAttention per-branch radii via optimal_ifs_radii (8gk.5)
+    if "fractal" in attention_schedule:
+        s_star = min(max(0.85 - 0.45 * v_mean, 0.35), 0.85)
+        zeta = min(max((1.0 - 0.5 * v_mean) / max(norm_depth, 0.5), 0.15), 1.50)
+        for mod in model.modules():
+            if isinstance(mod, FractalCausalSelfAttention):
+                p_ref = next(mod.parameters())
+                mod._ensure_ifs_parameters(p_ref.device, p_ref.dtype)
+                assert mod.ifs_raw_radii is not None
+                m_branches = int(mod.m)
+                r_max = float(mod.r_max)
+                probs = torch.arange(1, m_branches + 1, dtype=torch.float32, device=mod.ifs_raw_radii.device).pow(
+                    -zeta
+                )
+                probs = probs / probs.sum()
+                target_r = optimal_ifs_radii(probs, target_moran_dim=s_star, r_max=r_max)
+                ratio = (target_r / r_max).clamp(1e-4, 1.0 - 1e-4)
+                raw_logits = torch.log(ratio / (1.0 - ratio))
+                with torch.no_grad():
+                    mod.ifs_raw_radii.copy_(raw_logits.view_as(mod.ifs_raw_radii))
+
+    # 2. Apply HyperbolicCausalSelfAttention per-head curvature (8gk.6)
+    if "hyperbolic" in attention_schedule:
+        c_init = min(max((0.010 / max(delta_mean, 0.005)) ** 2, 0.10), 2.00)
+        raw_c = math.log(math.expm1(max(c_init - CURVATURE_MIN, 1e-4)))
+        for mod in model.modules():
+            if isinstance(mod, HyperbolicCausalSelfAttention):
+                with torch.no_grad():
+                    mod.raw_curvature.fill_(raw_c)
+
+    # 3. Startup probe for TropicalCausalSelfAttention beta_0 (8gk.1 + 77l.4 refinement)
+    probe_meta: dict[str, Any] | None = None
+    if "tropical" in attention_schedule and not overrides.get("semiring_beta", False):
+        probe_seed = int(seed) + 7714
+        t0 = _time.perf_counter()
+        dev = next(model.parameters()).device
+        t_probe = min(int(getattr(config, "sequence_len", 64)), 64)
+        vocab = int(getattr(config, "vocab_size", 256))
+        gen = torch.Generator(device="cpu").manual_seed(probe_seed)
+        probe_idx = torch.randint(0, vocab, (2, t_probe), generator=gen, dtype=torch.long).to(dev)
+
+        trop_mods = [m for m in model.modules() if isinstance(m, TropicalCausalSelfAttention)]
+        prev_record = [m.tropical_record_margins for m in trop_mods]
+        for m in trop_mods:
+            m.tropical_record_margins = True
+
+        # Preserve global RNG states so the probe is side-effect-free on training RNG
+        with torch.random.fork_rng(devices=[dev] if dev.type == "cuda" else []):
+            with torch.no_grad():
+                model(probe_idx)
+
+        margins: list[float] = []
+        for m, prev in zip(trop_mods, prev_record, strict=True):
+            gm = m.tropical_gamma_head_mean.detach().float().cpu()
+            finite = gm[torch.isfinite(gm)]
+            if finite.numel() > 0:
+                margins.extend(float(x) for x in finite.tolist())
+            m.tropical_record_margins = prev
+            if not prev:
+                m.tropical_gamma_head_mean.fill_(float("nan"))
+                m.tropical_gamma_head_min.fill_(float("nan"))
+                m.tropical_gamma_min.fill_(float("nan"))
+
+        probe_ms = (_time.perf_counter() - t0) * 1000.0
+        margins_sorted = sorted(margins)
+        gamma_med = margins_sorted[len(margins_sorted) // 2] if margins_sorted else 0.5
+        head_dim = int(getattr(config, "n_embd", 64)) // max(int(getattr(config, "n_head", 4)), 1)
+        m_vis = max(t_probe / 2.0, 2.0)
+        beta_0 = min(max((math.log(max(head_dim, 1)) + math.log(m_vis)) / max(gamma_med, 0.10), 0.50), 16.0)
+        beta_0_round = round(beta_0, 6)
+        default_beta = getattr(config, "semiring_beta", None)
+        config.semiring_beta = beta_0_round
+        set_semiring_beta(model, beta_0_round)
+        applied["tropical.semiring_beta"] = {
+            "mechanism": "tropical",
+            "default_value": default_beta,
+            "profile_value": beta_0_round,
+            "source_metric": "startup_probe.tropical_margin_median",
+            "source_value": round(gamma_med, 6),
+            "input_source": "startup-probe",
+            "formula_ref": "8gk.1 / thm-tropical-margin-stability: beta_0 = clip((ln(head_dim) + ln(max(T_probe/2, 2))) / max(gamma_med, 0.10), 0.50, 16.0)",
+        }
+        probe_meta = {
+            "probe_seed": probe_seed,
+            "probe_batch_shape": [2, t_probe],
+            "probe_margin_median": round(gamma_med, 6),
+            "probe_ms": round(probe_ms, 3),
+        }
+
+    not_applicable = {
+        mech: GEOMETRY_INIT_NOT_APPLICABLE[mech]
+        for mech in sorted(set(attention_schedule))
+        if mech in GEOMETRY_INIT_NOT_APPLICABLE
+    }
+    return {
+        "enabled": True,
+        "profile_corpus": profile.get("corpus", ""),
+        "profile_mode": profile.get("mode", "tokens"),
+        "profile_schema_version": profile.get("schema_version", PROFILE_SCHEMA_VERSION),
+        "startup_probe": probe_meta,
+        "applied_parameters": applied,
+        "not_applicable_mechanisms": not_applicable,
+    }
+
+
+def _extract_structural_tensors(model: Any) -> dict[str, Any]:
+    """Extract effective geometric structural parameter tensors from fractal, hyperbolic, and ultrametric modules."""
+    import torch
+
+    from nanochat.fractal_attention_torch import FractalCausalSelfAttention
+    from nanochat.hyperbolic_attention_torch import HyperbolicCausalSelfAttention
+    from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
+
+    snap: dict[str, torch.Tensor] = {}
+    with torch.no_grad():
+        for name, mod in model.named_modules():
+            prefix = f"{name}." if name else ""
+            if isinstance(mod, FractalCausalSelfAttention) and mod.ifs_raw_radii is not None:
+                snap[f"{prefix}ifs_radii"] = mod.branch_radii().detach().float().cpu().clone()
+            elif isinstance(mod, HyperbolicCausalSelfAttention):
+                snap[f"{prefix}curvature"] = mod._curv().detach().float().cpu().clone()
+            elif isinstance(mod, UltrametricCausalSelfAttention):
+                snap[f"{prefix}to_digits_q.weight"] = mod.to_digits_q.weight.detach().float().cpu().clone()
+                snap[f"{prefix}to_digits_k.weight"] = mod.to_digits_k.weight.detach().float().cpu().clone()
+    return snap
+
+
+def snapshot_structural_params(model: Any) -> dict[str, Any]:
+    """Snapshot initial structural parameters on fractal, hyperbolic, and ultrametric modules for distance-traveled tracking."""
+    return _extract_structural_tensors(model)
+
+
+def compute_structural_param_distance(model: Any, init_snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """Compute L2 distance traveled by structural parameters from step 0 to final step (bead 77l.4 prediction b)."""
+    import torch
+
+    if not init_snapshot:
+        return None
+    current_map = _extract_structural_tensors(model)
+    per_param: dict[str, float] = {}
+    sq_sum = 0.0
+    for name, init_t in init_snapshot.items():
+        current = current_map.get(name)
+        if current is None or current.shape != init_t.shape:
+            continue
+        diff = current - init_t
+        dist_sq = float(torch.sum(diff * diff).item())
+        sq_sum += dist_sq
+        per_param[name] = math.sqrt(dist_sq)
+    if not per_param:
+        return None
+    return {
+        "total_l2": math.sqrt(sq_sum),
+        "per_parameter_l2": per_param,
+    }
+

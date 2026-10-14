@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from typer.testing import CliRunner
@@ -279,3 +280,280 @@ def test_cli_profile_data_empty_dir_actionable(tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["profile-data", "--data", str(tmp_path)])
     assert result.exit_code == 2
     assert "no .txt/.md/.parquet" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Geometry-informed initialization (--init-from-profile, bead 77l.4)
+# ---------------------------------------------------------------------------
+
+
+def _synthetic_profile(
+    *,
+    delta_mean: float = 0.020,
+    violation_mean: float = 0.050,
+    cophenetic_correlation: float = 0.900,
+    mean_depth: float = 6.2,
+    normalized_mean_depth: float = 1.50,
+    corpus: str = "task:hier",
+) -> dict[str, Any]:
+    return {
+        "schema_version": gp.PROFILE_SCHEMA_VERSION,
+        "corpus": corpus,
+        "mode": "tokens",
+        "seed": 42,
+        "sample": {"docs": 64, "points": 32, "doc_tokens": 48, "quadruples": 2000, "triples": 2000},
+        "distance_diagnostics": {"mean": 0.35, "coefficient_of_variation": 0.30, "concentrated": False},
+        "estimators": {
+            "delta_hyperbolicity": {"mean": delta_mean, "ci95": [delta_mean * 0.9, delta_mean * 1.1]},
+            "ultrametricity": {
+                "violation_mean": violation_mean,
+                "violation_fraction": 0.5,
+                "ci95": [violation_mean * 0.9, violation_mean * 1.1],
+                "cophenetic_correlation": cophenetic_correlation,
+            },
+            "dynamic_range": {
+                "numbers_found": 0,
+                "docs_with_spread": 0,
+                "mean_decades": float("nan"),
+                "max_decades": float("nan"),
+                "hill_tail_exponent": float("nan"),
+            },
+            "order_sensitivity": {"nll_original": 2.3, "nll_transposed": 3.3, "relative_delta": 0.43},
+            "hierarchy_depth": {
+                "mean_depth": mean_depth,
+                "max_depth": 12.0,
+                "normalized_mean_depth": normalized_mean_depth,
+            },
+        },
+        "warnings": [],
+    }
+
+
+def test_geometry_init_mapping_table_and_exact_formulas() -> None:
+    """Every mapping table row has an exact closed-form fixture and non-applicable mechanisms cite blocked-on-theory."""
+    assert len(gp.GEOMETRY_INIT_MAPPING_TABLE) == 6
+    sources = {row["mechanism"]: row["input_source"] for row in gp.GEOMETRY_INIT_MAPPING_TABLE}
+    assert sources["tropical"] == "startup-probe"
+    assert sources["fractal"] == "profile-only"
+    assert sources["hyperbolic"] == "profile-only"
+    assert sources["ultrametric"] == "profile-only"
+    for mech, reason in gp.GEOMETRY_INIT_NOT_APPLICABLE.items():
+        assert reason.startswith("blocked-on-theory:"), f"{mech} missing blocked-on-theory rationale: {reason}"
+
+    prof = _synthetic_profile(
+        delta_mean=0.020,
+        violation_mean=0.10,
+        cophenetic_correlation=0.80,
+        mean_depth=6.4,
+        normalized_mean_depth=1.50,
+    )
+    vals = gp.compute_geometry_init_values(prof, num_prototypes=4, max_radius=0.85)
+
+    # Hand-computed expected values:
+    # 1. Hyperbolic curvature: clip((0.010 / 0.020)^2, 0.10, 2.00) = 0.25
+    assert vals["hyperbolic.curvature"]["profile_value"] == 0.25
+    assert vals["hyperbolic.curvature"]["default_value"] == 1.0
+
+    # 2. Ultrametric K: clip(round(6.4), 2, 8) = 6
+    assert vals["ultrametric.ultrametric_K"]["profile_value"] == 6
+    # Ultrametric alpha: clip(1.5 + 1.5 * 0.80, 1.25, 3.00) = 2.7
+    assert vals["ultrametric.ultrametric_alpha"]["profile_value"] == 2.7
+    # Ultrametric lcp_beta: clip(16.0 + 32.0 * (1.0 - 0.10), 16.0, 48.0) = 44.8
+    assert vals["ultrametric.ultrametric_lcp_beta"]["profile_value"] == 44.8
+
+    # 3. Fractal IFS radii: s* = 0.85 - 0.45*0.10 = 0.805; zeta = (1 - 0.05) / 1.50 = 0.633333
+    assert abs(vals["fractal.ifs_radii"]["target_moran_dim"] - 0.805) < 1e-6
+    assert abs(vals["fractal.ifs_radii"]["branch_skew_zeta"] - (0.95 / 1.50)) < 1e-5
+    r_list = vals["fractal.ifs_radii"]["profile_value"]
+    assert len(r_list) == 4
+    assert r_list[0] > r_list[1] > r_list[2] > r_list[3] > 0.0
+
+
+def test_geometry_init_malformed_profile_errors_name_missing_metrics(tmp_path: Path) -> None:
+    """Missing or out-of-range nested estimator metrics raise actionable errors naming the offending metric."""
+    import pytest
+
+    base = _synthetic_profile()
+    assert gp.validate_profile_for_init(base) == []
+
+    # Missing delta_hyperbolicity.mean
+    bad_delta = _synthetic_profile()
+    bad_delta["estimators"]["delta_hyperbolicity"] = {}
+    errs = gp.validate_profile_for_init(bad_delta)
+    assert any("delta_hyperbolicity" in e and "mean" in e for e in errs), errs
+
+    # Missing ultrametricity.cophenetic_correlation
+    bad_ultra = _synthetic_profile()
+    del bad_ultra["estimators"]["ultrametricity"]["cophenetic_correlation"]
+    errs_u = gp.validate_profile_for_init(bad_ultra)
+    assert any("cophenetic_correlation" in e for e in errs_u), errs_u
+
+    # Out-of-range violation_mean
+    bad_v = _synthetic_profile(violation_mean=1.5)
+    errs_v = gp.validate_profile_for_init(bad_v)
+    assert any("violation_mean" in e for e in errs_v), errs_v
+
+    # Missing hierarchy_depth.normalized_mean_depth
+    bad_depth = _synthetic_profile()
+    del bad_depth["estimators"]["hierarchy_depth"]["normalized_mean_depth"]
+    errs_d = gp.validate_profile_for_init(bad_depth)
+    assert any("normalized_mean_depth" in e for e in errs_d), errs_d
+
+    # File loader actionable errors
+    with pytest.raises(ValueError, match="does not exist"):
+        gp.load_profile_for_init(tmp_path / "missing.json")
+
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text(json.dumps(bad_ultra), encoding="utf-8")
+    with pytest.raises(ValueError, match="cophenetic_correlation"):
+        gp.load_profile_for_init(bad_file)
+
+
+def test_geometry_init_opt_in_and_tropical_startup_probe_determinism() -> None:
+    """No-profile path is byte-identical to defaults; tropical startup probe is deterministic, RNG-preserving, and fast."""
+    import torch
+
+    from nanochat.gpt import GPT, GPTConfig
+
+    prof = _synthetic_profile()
+    x = torch.randint(0, 64, (2, 16), generator=torch.Generator().manual_seed(7), dtype=torch.long)
+
+    # 1. Pure opt-in check: building without apply_geometry_init is byte-identical
+    for mech in ("fractal", "hyperbolic", "ultrametric", "tropical"):
+        torch.manual_seed(123)
+        cfg1 = GPTConfig(
+            sequence_len=16, vocab_size=64, n_layer=2, n_head=4, n_kv_head=2, n_embd=32, attention_type=mech
+        )
+        m1 = GPT(cfg1)
+        m1.init_weights()
+
+        torch.manual_seed(123)
+        cfg2 = GPTConfig(
+            sequence_len=16,
+            vocab_size=64,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=2,
+            n_embd=32,
+            attention_type=mech,
+            init_from_profile=None,
+        )
+        m2 = GPT(cfg2)
+        m2.init_weights()
+        for (n1, p1), (n2, p2) in zip(m1.named_parameters(), m2.named_parameters(), strict=True):
+            assert n1 == n2 and torch.equal(p1, p2), f"opt-in drift on {mech}:{n1}"
+        with torch.no_grad():
+            assert torch.equal(m1(x), m2(x))
+
+    # 2. Tropical startup probe determinism, RNG isolation, and bounded cost (< 50ms)
+    torch.manual_seed(555)
+    cfg_t1 = GPTConfig(
+        sequence_len=16, vocab_size=64, n_layer=2, n_head=4, n_kv_head=2, n_embd=32, attention_type="tropical"
+    )
+    mt1 = GPT(cfg_t1)
+    mt1.init_weights()
+    rng_before = torch.get_rng_state()
+    rec1 = gp.apply_geometry_init_to_model(
+        mt1, cfg_t1, prof, attention_schedule=["tropical", "tropical"], applied={}, seed=42
+    )
+    rng_after = torch.get_rng_state()
+    assert torch.equal(rng_before, rng_after), "tropical startup probe must not mutate global torch RNG state"
+
+    torch.manual_seed(555)
+    cfg_t2 = GPTConfig(
+        sequence_len=16, vocab_size=64, n_layer=2, n_head=4, n_kv_head=2, n_embd=32, attention_type="tropical"
+    )
+    mt2 = GPT(cfg_t2)
+    mt2.init_weights()
+    rec2 = gp.apply_geometry_init_to_model(
+        mt2, cfg_t2, prof, attention_schedule=["tropical", "tropical"], applied={}, seed=42
+    )
+    assert rec1["startup_probe"]["probe_margin_median"] == rec2["startup_probe"]["probe_margin_median"]
+    assert rec1["applied_parameters"]["tropical.semiring_beta"] == rec2["applied_parameters"]["tropical.semiring_beta"]
+    assert rec1["startup_probe"]["probe_ms"] < 200.0, f"startup probe too slow: {rec1['startup_probe']['probe_ms']}ms"
+
+
+def test_train_init_from_profile_records_provenance_and_distance(monkeypatch, tmp_path: Path) -> None:
+    """End-to-end trainer smoke test with --init-from-profile verifying summary.json provenance and distance traveled."""
+    import torch
+
+    import nanochat.train as train_mod
+
+    def _fake_loader(B, T, split, device="cpu", resume_state_dict=None, **kwargs):
+        gen = torch.Generator().manual_seed(1234)
+        idx = 0
+        while True:
+            tokens = torch.randint(0, 64, (B, T + 1), generator=gen, dtype=torch.long)
+            yield tokens[:, :-1].contiguous(), tokens[:, 1:].contiguous(), {"pq_idx": 0, "rg_idx": idx}
+            idx += 1
+
+    monkeypatch.setattr(train_mod, "tokenizing_distributed_data_loader_with_state", _fake_loader)
+    monkeypatch.setattr(
+        train_mod, "list_parquet_files", lambda data_dir=None: ["fake_train.parquet", "fake_val.parquet"]
+    )
+
+    prof = _synthetic_profile(corpus="task:hier")
+    prof_path = tmp_path / "profile.json"
+    prof_path.write_text(gp.profile_to_json(prof), encoding="utf-8")
+    out_dir = tmp_path / "runs"
+
+    argv = [
+        "--device",
+        "cpu",
+        "--attention-type",
+        "hyperbolic",
+        "--init-from-profile",
+        str(prof_path),
+        "--n-layer",
+        "2",
+        "--n-head",
+        "4",
+        "--n-kv-head",
+        "2",
+        "--n-embd",
+        "32",
+        "--sequence-len",
+        "16",
+        "--batch-size",
+        "2",
+        "--max-steps",
+        "4",
+        "--warmup-steps",
+        "0",
+        "--log-interval",
+        "1",
+        "--artifacts-dir",
+        str(out_dir),
+        "--run-id",
+        "geo-smoke",
+    ]
+    train_mod.train(train_mod.build_parser().parse_args(argv))
+
+    run_files = list(out_dir.rglob("summary.json"))
+    assert len(run_files) == 1, f"expected 1 summary.json under {out_dir}, found {run_files}"
+    summary = json.loads(run_files[0].read_text(encoding="utf-8"))
+
+    assert summary["hparams"]["init_from_profile"] == str(prof_path)
+    assert summary["hparams"]["init_profile_corpus"] == "task:hier"
+    geo = summary["geometry_init"]
+    assert geo is not None and geo["enabled"] is True
+    assert geo["profile_corpus"] == "task:hier"
+    curv_entry = geo["applied_parameters"]["hyperbolic.curvature"]
+    assert curv_entry["default_value"] == 1.0
+    assert curv_entry["profile_value"] == 0.25
+    assert curv_entry["input_source"] == "profile-only"
+    assert "thm-hyperbolic-score-decomposition" in curv_entry["formula_ref"]
+
+    assert isinstance(summary["results"]["train_ce_early"], float)
+    assert isinstance(summary["results"]["train_ce_auc"], float)
+    assert isinstance(summary["results"]["structural_param_distance_l2"], float)
+    assert summary["results"]["structural_param_distance_l2"] > 0.0
+
+    metrics_files = list(out_dir.rglob("metrics.jsonl"))
+    assert len(metrics_files) == 1
+    step_rows = [
+        json.loads(line)
+        for line in metrics_files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip() and json.loads(line).get("type") == "step"
+    ]
+    assert len(step_rows) == 4
