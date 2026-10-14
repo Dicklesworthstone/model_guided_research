@@ -412,7 +412,8 @@ def run_small_mlp_demo():
         return hvp_fn_p(unravel(w), v)
 
     def sgd_grad(w, batch, key):
-        idx = random.choice(key, X.shape[0], shape=(64,), replace=False)
+        jax_rng = jax.random
+        idx = jax_rng.choice(key, X.shape[0], shape=(64,), replace=False)
         xb, yb = X[idx], Y[idx]
 
         def loss_func(u):
@@ -469,21 +470,39 @@ if __name__ == "__main__":
 
 # --- Minimal adapter expected by tests ---
 class HOSS:
-    """Hyperreal One-Step Solver (toy): gradient step with fixed delta.
+    """Hyperreal One-Step Solver: Krylov-Lanczos shadow_step wrapper for callable loss_fn."""
 
-    This minimal class mirrors the test API: step(x, loss_fn, delta) returns the updated x.
-    """
+    def step(self, x, loss_fn, delta: float = 0.01, r: int | None = None):
+        x_arr = np.asarray(x, dtype=float)
+        d = x_arr.size
+        rank = min(d, r if r is not None else d)
+        eps = 1e-5
 
-    def step(self, x, loss_fn, delta: float = 0.01):
-        # Simple finite-difference descent along negative gradient direction
-        x = np.asarray(x, dtype=float)
-        eps = 1e-6
-        g = np.zeros_like(x)
-        for i in range(x.size):
-            e = np.zeros_like(x)
-            e[i] = eps
-            g[i] = (loss_fn(x + e) - loss_fn(x - e)) / (2 * eps)
-        return x - float(delta) * g
+        def fd_grad(w_np: np.ndarray) -> np.ndarray:
+            g = np.zeros_like(w_np)
+            for i in range(d):
+                e = np.zeros_like(w_np)
+                e[i] = eps
+                g[i] = ( float(loss_fn(w_np + e)) - float(loss_fn(w_np - e)) ) / (2.0 * eps)
+            return g
+
+        g0 = fd_grad(x_arr)
+
+        def grad_fn(w):
+            return jnp.asarray(g0, dtype=jnp.float32)
+
+        def hvp_fn(w, v):
+            v_np = np.asarray(v, dtype=float)
+            v_norm = float(np.linalg.norm(v_np))
+            if v_norm < 1e-30:
+                return jnp.zeros_like(v)
+            step_eps = eps / v_norm
+            hv = (fd_grad(x_arr + step_eps * v_np) - fd_grad(x_arr - step_eps * v_np)) / (2.0 * step_eps)
+            return jnp.asarray(hv, dtype=jnp.float32)
+
+        w_next = shadow_step(grad_fn, hvp_fn, jnp.asarray(x_arr, dtype=jnp.float32), float(delta), rank)
+        return np.asarray(w_next, dtype=float)
+
 
 
 # --- Minimal hyperreal API for tests ---

@@ -13,9 +13,13 @@ import MGRProofs
 #print axioms MGRProofs.flat_error_sum
 #print axioms MGRProofs.flat_error_prod
 
--- Tranche 2 (vnl.3)
+-- Tranche 2 (vnl.3 / mxo3)
 #print axioms MGRProofs.no_infinite_descent
 #print axioms MGRProofs.ordinal_termination
+#print axioms MGRProofs.cnfRank_dec_C
+#print axioms MGRProofs.cnfRank_dec_B
+#print axioms MGRProofs.cnfRank_dec_A
 #print axioms MGRProofs.kick_jacobian_symplectic
 #print axioms MGRProofs.symplectic_composition
 #print axioms MGRProofs.gromov_root_eq_lcp
+

@@ -628,10 +628,11 @@ class TestUltrametricWorlds:
         model = padic.LCPTreeAttention(p=p, K=K, H=H, m=m, r=3)
 
         # Create test points
-        key = random.PRNGKey(54)
-        digits1 = random.randint(key, (K,), 0, p)
-        random.randint(key, (K,), 0, p)
-        random.randint(key, (K,), 0, p)
+        jax_rng = random
+        key = jax_rng.PRNGKey(54)
+        digits1 = jax_rng.randint(key, (K,), 0, p)
+        jax_rng.randint(key, (K,), 0, p)
+        jax_rng.randint(key, (K,), 0, p)
 
         # Test lookup consistency
         y1 = model.lookup([digits1])
@@ -646,10 +647,11 @@ class TestUltrametricWorlds:
         """Check the strong triangle inequality for LCP-based distances."""
         print("\n🔬 Testing Ultrametric Strong Triangle Inequality...")
 
-        key = random.PRNGKey(60)
+        jax_rng = random
+        key = jax_rng.PRNGKey(60)
         p, K = 5, 6
         samples = 32
-        digits = random.randint(key, (samples, K), 0, p)
+        digits = jax_rng.randint(key, (samples, K), 0, p)
 
         def lcp_depth(a, b):
             depth = 0
@@ -1657,10 +1659,11 @@ class TestSurrealNumbers:
             params = surreal.init_params(rng, in_dim, d_model, 2.0, H, 5)
 
             # Create test data
-            Xtr = random.normal(key, (32, in_dim))
-            Ytr = random.randint(key, (32,), 0, 5)
-            Xva = random.normal(key, (16, in_dim))
-            Yva = random.randint(key, (16,), 0, 5)
+            jax_rng = random
+            Xtr = jax_rng.normal(key, (32, in_dim))
+            Ytr = jax_rng.randint(key, (32,), 0, 5)
+            Xva = jax_rng.normal(key, (16, in_dim))
+            Yva = jax_rng.randint(key, (16,), 0, 5)
 
             # Create masks
             width_mask_ones = jnp.ones(d_model)
@@ -2582,3 +2585,324 @@ class TestUltrametricRouteObservables:
         _, ties_all, _ = self._forward(True, 1e9)  # every runner-up is within an enormous margin
         assert ties_none == 0.0
         assert ties_all == 1.0
+
+
+class TestTheoremRegistryNumericalChecks:
+    """Bead model_guided_research-ofig: falsifiable numerical checks (with planted
+    kill witnesses) for every proved-on-paper theorem in hypotheses/theorems.yaml
+    that previously lacked a numerical check."""
+
+    def test_thm_hensel_residue_preservation(self):
+        """thm-hensel-residue-preservation: Hensel lifting refines x_j mod p^j to
+        x_{j+1} mod p^{j+1} for f(x) = x^2 - 2 in Z_7 while preserving x_{j+1} = x_j mod p^j."""
+        p = 7
+        x = 3  # 3^2 - 2 = 7 == 0 mod 7
+        for j in range(1, 7):
+            mod_cur = p**j
+            mod_next = p ** (j + 1)
+            require((x * x - 2) % mod_cur == 0, f"step {j}: root condition failed mod {mod_cur}")
+            deriv_inv = pow(2 * x, -1, mod_next)
+            x_next = (x - (x * x - 2) * deriv_inv) % mod_next
+            require((x_next * x_next - 2) % mod_next == 0, f"step {j}: lifted root failed mod {mod_next}")
+            require(x_next % mod_cur == x % mod_cur, f"step {j}: coarse residue destroyed")
+            # Kill witness: perturbing the derivative inverse corrupts the coarse residue mod p^j
+            x_bad = (x - (x * x - 2) * deriv_inv + p ** (j - 1)) % mod_next
+            require(x_bad % mod_cur != x % mod_cur, "kill witness must alter coarse residue")
+            x = x_next
+
+    def test_thm_ifs_cylinder_ultrametric(self):
+        """thm-ifs-cylinder-ultrametric: weighted cylinder distance d(a,b) = prod_{t < lcp(a,b)} r_{a_t}
+        satisfies the strong triangle inequality for contractive radii r_i in (0, 1)."""
+        radii = np.array([0.2, 0.5, 0.7, 0.3], dtype=np.float64)
+        rng = np.random.default_rng(101)
+        addrs = rng.integers(0, len(radii), size=(32, 6))
+
+        def cyl_dist(a: np.ndarray, b: np.ndarray, r: np.ndarray) -> float:
+            if np.array_equal(a, b):
+                return 0.0
+            prod = 1.0
+            for idx in range(len(a)):
+                if a[idx] != b[idx]:
+                    break
+                prod *= float(r[a[idx]])
+            return prod
+
+        for i in range(16):
+            for j in range(i + 1, 16):
+                for k in range(j + 1, 16):
+                    dab = cyl_dist(addrs[i], addrs[j], radii)
+                    dbc = cyl_dist(addrs[j], addrs[k], radii)
+                    dac = cyl_dist(addrs[i], addrs[k], radii)
+                    require(dac <= max(dab, dbc) + 1e-12, f"strong triangle violated: {dac} > max({dab}, {dbc})")
+                    if abs(dab - dbc) > 1e-12:
+                        require(abs(dac - max(dab, dbc)) < 1e-12, "ultrametric isosceles equality failed")
+
+        # Kill witness: non-contractive radii r_i > 1 violate strong triangle when LCP deepens
+        bad_radii = np.array([2.0, 2.0, 2.0, 2.0], dtype=np.float64)
+        a0 = np.array([0, 0, 0])
+        a1 = np.array([0, 0, 1])
+        a2 = np.array([0, 1, 0])
+        require(
+            cyl_dist(a0, a1, bad_radii) > max(cyl_dist(a0, a2, bad_radii), cyl_dist(a1, a2, bad_radii)),
+            "kill witness: r_i > 1 must violate ultrametric triangle inequality",
+        )
+
+    def test_thm_moran_capacity(self):
+        """thm-moran-capacity: for IFS radii r = (1/2, 1/4), sum_i r_i^s = 1 has exact
+        similarity dimension s = log2((1 + sqrt(5))/2), and minimal eps-cylinder counts scale as eps^{-s}."""
+        radii = (0.5, 0.25)
+        phi = (1.0 + math.sqrt(5.0)) / 2.0
+        s_moran = math.log2(phi)
+        moran_sum = sum(r**s_moran for r in radii)
+        require(abs(moran_sum - 1.0) < 1e-12, f"Moran equation residual: {abs(moran_sum - 1.0)}")
+
+        def count_eps_cylinders(eps: float) -> int:
+            # Count minimal cylinders whose cumulative radius product <= eps
+            stack = [1.0]
+            count = 0
+            while stack:
+                rad = stack.pop()
+                for r in radii:
+                    child = rad * r
+                    if child <= eps:
+                        count += 1
+                    else:
+                        stack.append(child)
+            return count
+
+        eps_list = [2.0 ** (-k) for k in (6, 8, 10, 12)]
+        counts = [count_eps_cylinders(e) for e in eps_list]
+        slope = float(np.polyfit(np.log([1.0 / e for e in eps_list]), np.log(counts), 1)[0])
+        require(abs(slope - s_moran) < 0.01, f"empirical capacity exponent {slope:.4f} != Moran s={s_moran:.4f}")
+        # Kill witness: naive geometric-mean-radius exponent log(2)/log(1/sqrt(r1*r2)) = 2/3 != log2(phi)
+        s_geom_naive = math.log(len(radii)) / math.log(1.0 / math.sqrt(radii[0] * radii[1]))
+        require(abs(slope - s_geom_naive) > 0.02, "kill witness: Moran exponent must separate from geometric-mean radius exponent")
+
+    def test_thm_cylinder_zero_interference(self):
+        """thm-cylinder-zero-interference: writes restricted to disjoint address cylinders
+        have exact zero inner product and zero cross-readout perturbation."""
+        k_ary, depth = 4, 3
+        n_leaves = k_ary**depth
+        memory = np.zeros((n_leaves, 8), dtype=np.float64)
+
+        def cylinder_leaf_indices(prefix: tuple[int, ...]) -> np.ndarray:
+            start = 0
+            for digit in prefix:
+                start = start * k_ary + digit
+            span = k_ary ** (depth - len(prefix))
+            return np.arange(start * span, (start + 1) * span)
+
+        idx_a = cylinder_leaf_indices((0, 2))
+        idx_b = cylinder_leaf_indices((2, 1))
+        idx_overlap = cylinder_leaf_indices((0,))  # ancestor of (0, 2)
+
+        vec_a = np.arange(1.0, 9.0)
+        vec_b = np.linspace(-3.0, 4.0, 8)
+        memory[idx_a] += vec_a
+        read_a_before = memory[idx_a].mean(axis=0).copy()
+
+        # Write to disjoint cylinder B
+        memory[idx_b] += vec_b
+        read_a_after = memory[idx_a].mean(axis=0)
+        require(
+            float(np.max(np.abs(read_a_after - read_a_before))) == 0.0,
+            "disjoint cylinder write caused nonzero interference",
+        )
+        # Kill witness: writing to overlapping ancestor cylinder (0,) perturbs readout on (0, 2)
+        memory[idx_overlap] += vec_b
+        read_a_corrupted = memory[idx_a].mean(axis=0)
+        require(
+            float(np.max(np.abs(read_a_corrupted - read_a_before))) > 1.0,
+            "kill witness: overlapping cylinder write must interfere",
+        )
+
+    def test_thm_gromov_product_equals_lcp(self):
+        """thm-gromov-product-equals-lcp: on a k-ary rooted metric tree (k=3, depth=3),
+        Gromov product (d(r,x)+d(r,y)-d(x,y))/2 equals LCP(x,y) and exp(-(x|y)) is an ultrametric."""
+        import itertools
+
+        k_ary, depth = 3, 3
+        leaves = list(itertools.product(range(k_ary), repeat=depth))
+
+        def lcp_len(x: tuple[int, ...], y: tuple[int, ...]) -> int:
+            for idx, (dx, dy) in enumerate(zip(x, y, strict=True)):
+                if dx != dy:
+                    return idx
+            return len(x)
+
+        # Independent tree shortest-path distance: sum of depths minus twice LCA depth
+        # verified via explicit path sets from root to leaf
+        def path_edges(x: tuple[int, ...]) -> set[tuple[int, ...]]:
+            return {x[:d] for d in range(1, len(x) + 1)}
+
+        def tree_dist(x: tuple[int, ...], y: tuple[int, ...]) -> int:
+            return len(path_edges(x) ^ path_edges(y))
+
+        for x in leaves[:12]:
+            for y in leaves[:12]:
+                gromov = 0.5 * (len(x) + len(y) - tree_dist(x, y))
+                require(gromov == float(lcp_len(x, y)), f"Gromov={gromov} != LCP={lcp_len(x, y)}")
+
+        # Boundary metric exp(-(x|y)) (0 on diagonal) satisfies strong triangle inequality
+        def bdist(x: tuple[int, ...], y: tuple[int, ...]) -> float:
+            return 0.0 if x == y else math.exp(-float(lcp_len(x, y)))
+
+        for x, y, z in itertools.combinations(leaves[:12], 3):
+            require(bdist(x, z) <= max(bdist(x, y), bdist(y, z)) + 1e-12, "boundary metric violated strong triangle")
+
+        # Kill witness: adding a horizontal shortcut edge between leaves (0,0,0) and (2,2,2) breaks Gromov=LCP
+        shortcut_dist = 1
+        gromov_shortcut = 0.5 * (depth + depth - shortcut_dist)
+        require(gromov_shortcut != float(lcp_len(leaves[0], leaves[-1])), "kill witness: non-tree shortcut must break LCP")
+
+    def test_thm_hyperbolic_score_decomposition(self):
+        """thm-hyperbolic-score-decomposition: -d_H(q, k) = 2(q|k)_o - d_H(q, o) - d_H(k, o)
+        separates Gromov hierarchy overlap from radial depth in Lorentz hyperbolic space."""
+        import jax
+        import jax.numpy as jnp
+
+        import hyperbolic_geometry_and_negative_curvature_attention as hyp
+
+        key = jax.random.PRNGKey(17)
+        k1, k2 = jax.random.split(key)
+        c = 1.2
+        v_q = jax.random.normal(k1, (16, 7)) * 0.6
+        v_k = jax.random.normal(k2, (16, 7)) * 0.6
+        q = jax.vmap(lambda v: hyp.exp_map_o(v, c))(v_q)
+        k = jax.vmap(lambda v: hyp.exp_map_o(v, c))(v_k)
+        origin = jnp.broadcast_to(hyp.lorentz_origin(8, c)[None, :], q.shape)
+
+        d_qk = hyp.hyp_distance(q, k, c)
+        d_qo = hyp.hyp_distance(q, origin, c)
+        d_ko = hyp.hyp_distance(k, origin, c)
+        gromov_qk = 0.5 * (d_qo + d_ko - d_qk)
+
+        lhs = -d_qk
+        rhs = 2.0 * gromov_qk - d_qo - d_ko
+        err = float(jnp.max(jnp.abs(lhs - rhs)))
+        require(err < 1e-5, f"hyperbolic score decomposition identity failed: max err {err:.2e}")
+        # Kill witness: omitting the radial specificity terms -d(q,o)-d(k,o) changes the score by > 1.0
+        err_kill = float(jnp.max(jnp.abs(lhs - 2.0 * gromov_qk)))
+        require(err_kill > 1.0, f"kill witness: radial terms must be non-negligible, got {err_kill:.2e}")
+
+
+
+    def test_thm_newton_polytope_region_bound(self):
+        """thm-newton-polytope-region-bound: linear regions of p(x) = max_i (a_i . x + c_i)
+        correspond to upper-hull vertices of the lifted Newton polytope; a point strictly below
+        the upper concave hull of c_i never attains the unique argmax anywhere on R^d."""
+        slopes = np.array([[-1.0], [0.0], [1.0]], dtype=np.float64)
+        xs = np.linspace(-5.0, 5.0, 401)[:, None]
+
+        # Concave lifting c = [0, 1, 0]: middle slope 0 is strictly above the segment (-1,0)-(1,0), so all 3 regions appear
+        c_upper = np.array([0.0, 1.0, 0.0])
+        winners_upper = set(int(i) for i in np.argmax(xs @ slopes.T + c_upper[None, :], axis=1))
+        require(len(winners_upper) == 3, f"expected all 3 upper-hull vertices active, got {winners_upper}")
+
+        # Lower-interior lifting c = [0, -1, 0]: middle term is strictly below the hull of (-1,0) and (1,0) -> inactive everywhere
+        c_sub = np.array([0.0, -1.0, 0.0])
+        winners_sub = set(int(i) for i in np.argmax(xs @ slopes.T + c_sub[None, :], axis=1))
+        require(winners_sub == {0, 2}, f"sub-hull monomial must never win argmax, got {winners_sub}")
+
+    def test_thm_magnus_convergence(self):
+        """thm-magnus-convergence: for X' = A(t) X with int_0^1 ||A(t)|| dt < pi,
+        2nd-order Magnus exp(Omega_1 + Omega_2) improves over 1st-order exp(Omega_1) by O(||A||^3)."""
+        from scipy.linalg import expm
+
+        rng = np.random.default_rng(23)
+        M0 = rng.standard_normal((4, 4))
+        M1 = rng.standard_normal((4, 4))
+        A0 = 0.25 * (M0 - M0.T)
+        A1 = 0.25 * (M1 - M1.T)
+
+        # A(t) = A0 + t * A1; int_0^1 ||A(t)||_2 dt < pi
+        norm_bound = float(np.linalg.norm(A0, 2) + 0.5 * np.linalg.norm(A1, 2))
+        require(norm_bound < math.pi, f"Magnus convergence hypothesis violated: {norm_bound} >= pi")
+
+        # High-resolution midpoint product reference
+        n_steps = 2000
+        dt = 1.0 / n_steps
+        X_ref = np.eye(4)
+        for s in range(n_steps):
+            t_mid = (s + 0.5) * dt
+            X_ref = expm((A0 + t_mid * A1) * dt) @ X_ref
+
+        # Exact integrals for A(t) = A0 + t A1:
+        # Omega_1 = A0 + 0.5 A1
+        # Omega_2 = 0.5 \int_0^1 dt1 \int_0^{t1} dt2 [A0 + t1 A1, A0 + t2 A1] = (1/12) [A1, A0]
+        omega1 = A0 + 0.5 * A1
+        comm_10 = A1 @ A0 - A0 @ A1
+        omega2 = (1.0 / 12.0) * comm_10
+
+        err1 = float(np.linalg.norm(expm(omega1) - X_ref, "fro"))
+        err2 = float(np.linalg.norm(expm(omega1 + omega2) - X_ref, "fro"))
+        err_wrong_sign = float(np.linalg.norm(expm(omega1 - omega2) - X_ref, "fro"))
+
+        require(err2 < err1 * 0.1, f"2nd-order Magnus {err2:.2e} must beat 1st-order {err1:.2e} by >10x")
+        require(err_wrong_sign > err2 * 10.0, "kill witness: wrong-sign Omega_2 must degrade error")
+
+    def test_thm_noether_conserved_charges(self):
+        """thm-noether-conserved-charges: a symplectic kick-kick block whose potentials
+        depend only on differences (shift symmetry along 1) conserves the linear Noether
+        momentum sum_i p_i across arbitrary depth when x1 = q, x2 = p and grad_q phi_G . 1 = 0."""
+        rng = np.random.default_rng(31)
+        q = rng.standard_normal(16)
+        p = rng.standard_normal(16)
+        initial_momentum = float(np.sum(p))
+
+        # Shift-invariant potential phi(z) = 0.5 * sum_i (z_i - mean(z))^2 -> grad(z) = z - mean(z), sum(grad) == 0
+        def grad_shift_invariant(z: np.ndarray) -> np.ndarray:
+            centered = z - np.mean(z)
+            # Nonlinear shift-invariant force: tanh(z_i - z_{i+1}) - tanh(z_{i-1} - z_i)
+            diff_fwd = np.tanh(centered - np.roll(centered, -1))
+            return diff_fwd - np.roll(diff_fwd, 1)
+
+        q_cur, p_cur = q.copy(), p.copy()
+        for _ in range(32):
+            q_cur = q_cur + 0.15 * grad_shift_invariant(p_cur)
+            p_cur = p_cur + 0.15 * grad_shift_invariant(q_cur)
+
+        final_momentum = float(np.sum(p_cur))
+        require(
+            abs(final_momentum - initial_momentum) < 1e-12,
+            f"Noether charge drifted under shift-invariant symplectic flow: {abs(final_momentum - initial_momentum):.2e}",
+        )
+        # Kill witness: symmetry-breaking external potential 0.1 * sum(q^2) breaks total momentum conservation
+        p_broken = p.copy() + 0.15 * (grad_shift_invariant(q) + 0.2 * q)
+        require(
+            abs(float(np.sum(p_broken)) - initial_momentum) > 1e-2,
+            "kill witness: symmetry-breaking force must alter Noether charge",
+        )
+
+    def test_thm_ordinal_program_composition(self):
+        """thm-ordinal-program-composition: sequential composition adds ordinal budgets
+        and nested composition multiplies ordinal budgets, with non-commutativity witness."""
+        # RepresentCNF ordinals sum_k omega^{e_k} * c_k in descending exponent order (e_k, c_k)
+        def cnf_add(a: list[tuple[int, int]], b: list[tuple[int, int]]) -> list[tuple[int, int]]:
+            if not b:
+                return list(a)
+            b_lead_exp, b_lead_coeff = b[0]
+            kept = [(e, c) for (e, c) in a if e > b_lead_exp]
+            same = sum(c for (e, c) in a if e == b_lead_exp)
+            return kept + [(b_lead_exp, same + b_lead_coeff)] + b[1:]
+
+        def cnf_mul_omega_pow(a: list[tuple[int, int]], k: int) -> list[tuple[int, int]]:
+            # (omega^{e_0} c_0 + ...) * omega^k = omega^{e_0 + k}
+            if not a:
+                return []
+            return [(a[0][0] + k, 1)]
+
+        omega = [(1, 1)]
+        one = [(0, 1)]
+        # Sequencing: (1 ; omega) has rank 1 + omega = omega, whereas (omega ; 1) has rank omega + 1 > omega
+        seq_1_omega = cnf_add(one, omega)
+        seq_omega_1 = cnf_add(omega, one)
+        require(seq_1_omega == [(1, 1)], f"1 + omega must absorb to omega, got {seq_1_omega}")
+        require(seq_omega_1 == [(1, 1), (0, 1)], f"omega + 1 must be distinct from omega, got {seq_omega_1}")
+        require(seq_omega_1 != seq_1_omega, "kill witness: ordinal sequential composition is non-commutative")
+
+        # Nesting: an outer loop of rank omega^1 around an inner program of rank omega^2 + 3 has rank (omega^2 + 3) * omega = omega^3
+        inner = [(2, 1), (0, 3)]
+        nested = cnf_mul_omega_pow(inner, 1)
+        require(nested == [(3, 1)], f"nested ordinal rank must be omega^3, got {nested}")
+

@@ -1,19 +1,17 @@
 /-
 Copyright (c) 2026 model_guided_research. All rights reserved.
-Formalization tranche 2a (ABSTRACT CORE) of bead model_guided_research-vnl.3.
+Formalization tranche 2a of bead model_guided_research-vnl.3 + bead model_guided_research-mxo3.
 
 DELIVERED HERE (machine-checked, zero sorry):
 - no_infinite_descent / ordinal_termination: the ABSTRACT core of
   thm-ordinal-termination (lab.3's guarantee) - any rank-decreasing step
   dynamics admits no infinite orbit. This is the orchestrator SPEC form.
+- cnfRank / cnfRank_dec_C / cnfRank_dec_B / cnfRank_dec_A: the Cantor-normal-form
+  rank `ρ = ω^2 * A + ω * B + C` and its three strict-decrease lemmas across
+  patience ticks (`C + 1 → C`), anneal steps (`B + 1 → B` with arbitrary `C`
+  reset), and macro restarts (`A + 1 → A` with arbitrary `B, C` resets).
 - Event alphabet docstring below: reference contract for lab.3's Python
   implementation, sync-checked by tests/test_lean_spec_sync.py.
-
-DEFERRED (tracked on the bead): the Cantor-normal-form DECREASE lemmas
-(cnfRank_dec_A/B/C over rho = omega^2*A + omega*B + C). Blocking mathlib-API
-gap: ordinals provide AddLeftStrictMono but not AddRightStrictMono, and
-Nat-cast sums do not split under mul_add without a manual cast lemma -
-both documented on the bead with candidate proof skeletons.
 
 EVENT ALPHABET (reference; sync-checked):
 - evt: PHASE_ADVANCE
@@ -60,4 +58,57 @@ theorem ordinal_termination {S : Type} (step : S → S) (rho : S → Ordinal)
   rw [hf n]
   exact hdec _
 
+/-! ### Cantor Normal Form Rank Decrease Lemmas (mxo3 / vnl.3) -/
+
+/-- Cantor Normal Form rank `ρ(A, B, C) = ω^2 * A + ω * B + C` for a 3-counter
+anneal/restart schedule (`A` macro restarts, `B` anneal reductions, `C` patience steps). -/
+noncomputable def cnfRank (A B C : ℕ) : Ordinal :=
+  ω ^ (2 : ℕ) * (A : Ordinal) + ω * (B : Ordinal) + (C : Ordinal)
+
+/-- Helper: casting `n + 1 : ℕ` to `Ordinal` splits as `(n : Ordinal) + 1`. -/
+theorem natCast_succ_eq_add_one (n : ℕ) : ((n + 1 : ℕ) : Ordinal) = (n : Ordinal) + 1 :=
+  Nat.cast_succ n
+
+/-- **Patience-step decrease** (`WITHIN_PHASE_RETRY` / patience tick):
+decrementing `C + 1 → C` while holding `A, B` fixed strictly decreases `cnfRank`. -/
+theorem cnfRank_dec_C (A B C : ℕ) :
+    cnfRank A B C < cnfRank A B (C + 1) := by
+  unfold cnfRank
+  have hC : (C : Ordinal) < ((C + 1 : ℕ) : Ordinal) :=
+    Nat.cast_lt.mpr (Nat.lt_succ_self C)
+  exact add_lt_add_right hC (ω ^ (2 : ℕ) * (A : Ordinal) + ω * (B : Ordinal))
+
+/-- **Anneal-step decrease** (`PHASE_ADVANCE` / LR reduction):
+decrementing `B + 1 → B` while holding `A` fixed strictly decreases `cnfRank`
+for ANY reset patience counter `C : ℕ`, because `(C : Ordinal) < ω`. -/
+theorem cnfRank_dec_B (A B C C' : ℕ) :
+    cnfRank A B C < cnfRank A (B + 1) C' := by
+  unfold cnfRank
+  rw [add_assoc, add_assoc]
+  refine add_lt_add_right ?_ (ω ^ (2 : ℕ) * (A : Ordinal))
+  rw [Nat.cast_succ, mul_add, mul_one, add_assoc]
+  refine add_lt_add_right ?_ (ω * (B : Ordinal))
+  exact lt_of_lt_of_le (natCast_lt_omega0 C) le_self_add
+
+/-- **Restart-step decrease** (`PHASE_ESCALATE` / macro restart):
+decrementing `A + 1 → A` strictly decreases `cnfRank` for ANY reset counters
+`B, C : ℕ`, because `ω * B + C < ω^2`. -/
+theorem cnfRank_dec_A (A B B' C C' : ℕ) :
+    cnfRank A B C < cnfRank (A + 1) B' C' := by
+  unfold cnfRank
+  rw [add_assoc, add_assoc]
+  rw [Nat.cast_succ, mul_add, mul_one, add_assoc]
+  refine add_lt_add_right ?_ (ω ^ (2 : ℕ) * (A : Ordinal))
+  refine lt_of_lt_of_le ?_ le_self_add
+  have h1 : ω * (B : Ordinal) + (C : Ordinal) < ω * ((B + 1 : ℕ) : Ordinal) := by
+    rw [Nat.cast_succ, mul_add, mul_one]
+    exact add_lt_add_right (natCast_lt_omega0 C) (ω * (B : Ordinal))
+  have h2 : ω * ((B + 1 : ℕ) : Ordinal) < ω ^ (2 : ℕ) := by
+    rw [sq ω]
+    exact mul_lt_mul_of_pos_left (natCast_lt_omega0 (B + 1)) omega0_pos
+  exact lt_trans h1 h2
+
 end MGRProofs
+
+
+

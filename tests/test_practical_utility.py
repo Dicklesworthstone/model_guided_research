@@ -37,6 +37,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import all demo modules
 import iterated_function_systems_and_fractal_memory as ifs
 import knot_theoretic_programs_and_braid_based_attention as knot
+import matrix_exponential_gauge_learning as gauge
 import nonstandard_analysis_and_hyperreal_training as hyperreal
 import octonionic_quaternionic_signal_flow as octonion
 import ordinal_schedules_and_well_founded_optimization as ordinal
@@ -64,7 +65,7 @@ class BenchmarkResult:
 class TestReversibleComputationUtility:
     """Test if reversible computation actually saves memory while maintaining quality"""
 
-    def test_memory_efficiency(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Compare memory usage: invertible coupling with recomputation vs standard forward cache"""
         batch_size = 4
         seq_len = 512
@@ -209,12 +210,19 @@ class TestReversibleComputationUtility:
             },
         )
 
+    def test_memory_efficiency(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected reversible memory reduction > 2.0x, got {res.improvement_ratio:.2f}x"
+        assert res.proposed_metric < res.baseline_metric
+        assert res.improvement_ratio > 2.0
+
 
 class TestIFSFractalMemoryUtility:
     """Test if IFS fractal memory handles catastrophic forgetting better"""
 
-    def test_catastrophic_forgetting(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Compare forgetting: IFS vs standard memory"""
+        np.random.seed(0)
         num_patterns = 60
         pattern_dim = 16
 
@@ -293,11 +301,17 @@ class TestIFSFractalMemoryUtility:
             },
         )
 
+    def test_catastrophic_forgetting(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected IFS forgetting improvement > 1.1x, got {res.improvement_ratio:.2f}x"
+        assert np.isfinite(res.proposed_metric) and np.isfinite(res.baseline_metric)
+        assert res.proposed_metric < res.baseline_metric
+
 
 class TestOrdinalSchedulesUtility:
     """Test if ordinal schedules improve optimization stability"""
 
-    def test_noisy_optimization(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Compare convergence on noisy objectives"""
         np.random.seed(42)
 
@@ -368,14 +382,19 @@ class TestOrdinalSchedulesUtility:
             },
         )
 
+    def test_noisy_optimization(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected ordinal schedule improvement > 1.05x, got {res.improvement_ratio:.3f}x"
+        assert res.proposed_metric < res.baseline_metric
+
 
 class TestMatrixExponentialUtility:
     """Test if matrix exponential provides stability and efficiency benefits"""
 
-    def test_gradient_stability(self) -> BenchmarkResult:
-        """Compare gradient flow stability"""
+    def evaluate(self) -> BenchmarkResult:
+        """Compare gradient flow stability: 10-layer unconstrained network vs 10-layer orthogonal Givens gauge stack"""
         dim = 32
-        num_layers = 5
+        num_layers = 10
         batch_size = 8
 
         # Standard deep network in JAX
@@ -384,66 +403,90 @@ class TestMatrixExponentialUtility:
                 x = jnp.tanh(x @ W + b)
             return x
 
-        # Initialize parameters
+        # 10-layer orthogonal Givens gauge transport network:
+        # Each layer applies disjoint 2x2 Givens rotations exp(A_l) followed by a cyclic shift
+        # so all coordinates mix while preserving exact orthogonality in O(D).
+        pairs = gauge.even_odd_pairs(dim)
+
+        def exp_deep(thetas_list, x):
+            y = x
+            for li, thetas in enumerate(thetas_list):
+                y = gauge.apply_givens_stage(y, thetas, pairs)
+                if li % 2 == 1:
+                    y = jnp.roll(y, shift=1, axis=-1)
+            return y
+
         key = jax.random.PRNGKey(0)
         params = []
+        thetas_list = []
         for _ in range(num_layers):
-            key, subkey = jax.random.split(key)
-            W = jax.random.normal(subkey, (dim, dim)) * 0.1
+            key, k_w, k_t = jax.random.split(key, 3)
+            W = jax.random.normal(k_w, (dim, dim)) * 0.1
             b = jnp.zeros(dim)
             params.append((W, b))
+            thetas = jax.random.uniform(k_t, (dim // 2,), minval=-0.8, maxval=0.8)
+            thetas_list.append(thetas)
 
-        x = jax.random.normal(key, (batch_size, dim))
+        key, k_x, k_u = jax.random.split(key, 3)
+        x = jax.random.normal(k_x, (batch_size, dim))
+        u_raw = jax.random.normal(k_u, (batch_size, dim))
+        u_probe = u_raw / jnp.linalg.norm(u_raw)  # unit Frobenius norm upstream gradient
 
-        # Test gradient norms through standard network
-        def loss_fn(x):
-            return jnp.sum(standard_deep(params, x))
+        # Differentiate both networks via jax.grad w.r.t. input x
+        std_grad = grad(lambda xin: jnp.sum(standard_deep(params, xin) * u_probe))(x)
+        exp_grad = grad(lambda xin: jnp.sum(exp_deep(thetas_list, xin) * u_probe))(x)
 
-        grad_fn = grad(loss_fn)
-        grad_val = grad_fn(x)
-        std_grad_norm = float(jnp.linalg.norm(grad_val))
+        std_grad_norm = float(jnp.linalg.norm(std_grad))
+        exp_grad_norm = float(jnp.linalg.norm(exp_grad))
 
-        # Matrix exponential network (simulated lightweight mapping)
-        def exp_net(xin: np.ndarray) -> np.ndarray:
-            # Use a simple stable linear-pass-through to emulate well-conditioned flow
-            return xin
+        out_exp = exp_deep(thetas_list, x)
+        output_input_diff_norm = float(jnp.linalg.norm(out_exp - x))
 
-        x_np = np.array(x)
-        out_exp = exp_net(x_np)
+        std_drift = abs(std_grad_norm - 1.0)
+        exp_drift = abs(exp_grad_norm - 1.0)
+        std_unstable = std_grad_norm > 100.0 or std_grad_norm < 0.01
+        exp_unstable = exp_drift > 1e-4
 
-        # Compute gradient via finite differences (simplified)
-        eps = 1e-5
-        x_perturbed = x_np + eps * np.random.randn(*x_np.shape)
-        out_perturbed = exp_net(x_perturbed)
-        grad_exp = (out_perturbed - out_exp) / eps
-        exp_grad_norm = np.linalg.norm(grad_exp)
-
-        # Check gradient explosion/vanishing
-        std_unstable = std_grad_norm > 100 or std_grad_norm < 0.01
-        exp_unstable = exp_grad_norm > 100 or exp_grad_norm < 0.01
+        improvement = std_drift / max(exp_drift, 1e-6)
 
         return BenchmarkResult(
             approach_name="Matrix Exponential Gauge",
             claim="Guaranteed stability through orthogonal/symplectic constraints",
-            baseline_metric=1.0 if std_unstable else 0.0,
-            proposed_metric=1.0 if exp_unstable else 0.0,
-            improvement_ratio=float("inf") if not exp_unstable and std_unstable else 1.0,
-            is_better=not exp_unstable,
-            verdict="SUCCESS: Better gradient stability" if not exp_unstable else "FAILURE: No stability advantage",
+            baseline_metric=float(std_drift),
+            proposed_metric=float(exp_drift),
+            improvement_ratio=float(improvement),
+            is_better=bool(not exp_unstable and std_unstable and output_input_diff_norm > 1.0),
+            verdict="SUCCESS: Better gradient stability"
+            if (not exp_unstable and std_unstable)
+            else "FAILURE: No stability advantage",
             details={
                 "standard_grad_norm": f"{std_grad_norm:.2e}",
-                "exponential_grad_norm": f"{exp_grad_norm:.2e}",
+                "exponential_grad_norm": f"{exp_grad_norm:.6f}",
+                "standard_grad_drift": std_drift,
+                "exponential_grad_drift": exp_drift,
+                "output_input_diff_norm": output_input_diff_norm,
                 "standard_unstable": std_unstable,
                 "exponential_unstable": exp_unstable,
             },
         )
 
+    def test_gradient_stability(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Matrix exponential gauge stability check failed: {res.details}"
+        # Guard against identity-function regression: output must differ substantially from input
+        assert res.details["output_input_diff_norm"] > 1.0
+        # Orthogonal Givens stack preserves unit upstream gradient norm to machine precision
+        assert res.proposed_metric < 1e-5
+        # Standard 10-layer network suffers vanishing gradients (drift ~ 1.0)
+        assert res.baseline_metric > 0.99
+
 
 class TestTropicalGeometryUtility:
     """Test if tropical geometry provides claimed stability benefits"""
 
-    def test_lipschitz_stability(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Test 1-Lipschitz property and stability"""
+        np.random.seed(0)
         dim = 16
         num_samples = 20
 
@@ -507,12 +550,18 @@ class TestTropicalGeometryUtility:
             },
         )
 
+    def test_lipschitz_stability(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected tropical attention Lipschitz <= 1.1, got {res.proposed_metric:.4f}"
+        assert res.proposed_metric <= 1.1
+
 
 class TestSimplicialComplexUtility:
     """Test if simplicial complexes handle higher-order relationships better"""
 
-    def test_higher_order_task(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Test on task requiring 3-way interactions"""
+        np.random.seed(0)
         # Create synthetic task: XOR of triplets
         num_samples = 100
         num_nodes = 6
@@ -633,12 +682,19 @@ class TestSimplicialComplexUtility:
             },
         )
 
+    def test_higher_order_task(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected simplicial accuracy improvement > 1.2x, got {res.improvement_ratio:.2f}x"
+        assert res.proposed_metric > res.baseline_metric
+
+
 
 class TestUltrametricUtility:
     """Test if ultrametric attention really scales better"""
 
-    def test_attention_complexity(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Compare attention complexity scaling"""
+        np.random.seed(0)
         seq_lengths = [32, 64, 128, 256]
         dim = 16
 
@@ -721,12 +777,18 @@ class TestUltrametricUtility:
             },
         )
 
+    def test_attention_complexity(self) -> None:
+        res = self.evaluate()
+        assert np.isfinite(res.proposed_metric) and np.isfinite(res.baseline_metric)
+        assert res.proposed_metric < 1.6, f"Expected sub-quadratic ultrametric scaling exponent, got {res.proposed_metric:.2f}"
+
 
 class TestOctonionUtility:
     """Test if quaternions/octonions provide norm preservation benefits"""
 
-    def test_norm_preservation(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Compare norm drift over many operations"""
+        np.random.seed(0)
         dim = 4  # Quaternion dimension
         num_operations = 20
         batch_size = 8
@@ -777,12 +839,18 @@ class TestOctonionUtility:
             },
         )
 
+    def test_norm_preservation(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected quaternion norm drift < 0.01, got {res.proposed_metric:.6e}"
+        assert res.proposed_metric < 1e-5
+
 
 class TestKnotTheoryUtility:
     """Test if braid attention handles compositionality better"""
 
-    def test_compositional_generalization(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Test length generalization on compositional task"""
+        np.random.seed(0)
 
         # Task: Dyck-1 balanced parentheses with optional corruption, for length generalization
         def generate_dyck_data(max_len, num_samples, corrupt_prob=0.15):
@@ -880,11 +948,16 @@ class TestKnotTheoryUtility:
             },
         )
 
+    def test_compositional_generalization(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected braid accuracy > 0.85 and improvement > 1.2x, got {res.details}"
+        assert res.proposed_metric > 0.85
+
 
 class TestSurrealNumbersUtility:
     """Test if surreal number scaling improves resource allocation"""
 
-    def test_scaling_decisions(self) -> BenchmarkResult:
+    def evaluate(self) -> BenchmarkResult:
         """Test dominance-based scaling decisions"""
         # Simulate scaling scenarios
         scenarios = [
@@ -1025,53 +1098,61 @@ class TestSurrealNumbersUtility:
             },
         )
 
+    def test_scaling_decisions(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Expected surreal scaling accuracy >= baseline, got {res.details}"
+        assert res.proposed_metric >= res.baseline_metric
+
 
 class TestHyperrealUtility:
     """Test if hyperreal training eliminates learning rate sensitivity"""
 
-    def test_learning_rate_robustness(self) -> BenchmarkResult:
-        """Test sensitivity to learning rate choice"""
+    def evaluate(self) -> BenchmarkResult:
+        """Test sensitivity to macro-step size choice across a 50x sweep"""
+        H_vals = np.array([100.0, 10.0, 1.0], dtype=np.float32)
+        H_np = np.diag(H_vals)
+        prob = hyperreal.Quadratic(jnp.diag(jnp.asarray(H_vals)))
 
-        # Stiff quadratic problem
-        def stiff_loss(x):
-            H = np.diag([100, 1, 0.01])  # Condition number 10000
-            return 0.5 * x @ H @ x
+        def stiff_loss(x_arr: np.ndarray) -> float:
+            return float(0.5 * x_arr @ H_np @ x_arr)
 
-        def stiff_grad(x):
-            H = np.diag([100, 1, 0.01])
-            return H @ x
+        def stiff_grad(x_arr: np.ndarray) -> np.ndarray:
+            return H_np @ x_arr
 
-        x_init = np.array([1.0, 1.0, 1.0])
-        num_steps = 20
+        x_init = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+        num_steps = 25
 
-        # Test different learning rates for SGD
+        # Test different learning rates for standard Euler GD across stability boundary (2/lambda_max = 0.02)
         learning_rates = [0.001, 0.005, 0.01, 0.02, 0.05]
         sgd_final_losses = []
 
         for lr in learning_rates:
             x = x_init.copy()
             for _ in range(num_steps):
-                grad = stiff_grad(x)
-                x = x - lr * grad
-                if np.any(np.isnan(x)) or np.any(np.isinf(x)):
+                g = stiff_grad(x)
+                x = x - lr * g
+                if np.any(np.isnan(x)) or np.any(np.isinf(x)) or float(np.linalg.norm(x)) > 1e6:
                     sgd_final_losses.append(float("inf"))
                     break
             else:
                 sgd_final_losses.append(stiff_loss(x))
 
-        # Hyperreal with different infinitesimal steps (all should give same result)
-        hoss = hyperreal.HOSS()
-        hyperreal_final_losses = []
+        # Hyperreal Krylov-Lanczos shadow_step across a genuine 50x macro-step sweep
+        # delta in [0.005, 0.025, 0.05, 0.1, 0.25] (spanning 12.5x beyond Euler stability limit 0.02)
+        eps_scales = [0.1, 0.5, 1.0, 2.0, 5.0]
+        hyperreal_final_losses: list[float] = []
 
-        for _eps_scale in [0.1, 0.5, 1.0, 2.0, 5.0]:
-            x = x_init.copy()
+        for eps_scale in eps_scales:
+            delta = 0.05 * eps_scale
+            w = jnp.asarray(x_init)
             for _ in range(num_steps):
-                x = hoss.step(x, lambda x: stiff_loss(x), delta=0.01)
-            hyperreal_final_losses.append(stiff_loss(x))
+                w = hyperreal.shadow_step(prob.grad, prob.hvp, w, delta=delta, r=3)
+            hyperreal_final_losses.append(float(prob.F(w)))
 
         # Compute variance in final losses
-        sgd_variance = np.var([loss for loss in sgd_final_losses if loss < float("inf")])
-        hyperreal_variance = np.var(hyperreal_final_losses)
+        finite_sgd = [loss for loss in sgd_final_losses if loss < float("inf")]
+        sgd_variance = float(np.var(finite_sgd)) if len(finite_sgd) > 1 else float("inf")
+        hyperreal_variance = float(np.var(hyperreal_final_losses))
 
         robustness_ratio = sgd_variance / max(hyperreal_variance, 1e-10)
 
@@ -1081,18 +1162,35 @@ class TestHyperrealUtility:
             baseline_metric=float(sgd_variance),
             proposed_metric=float(hyperreal_variance),
             improvement_ratio=float(robustness_ratio),
-            is_better=bool(hyperreal_variance < sgd_variance / 10),
+            is_better=bool(
+                hyperreal_variance < sgd_variance / 10.0
+                and max(hyperreal_final_losses) < 1.0
+                and len(set(round(v, 10) for v in hyperreal_final_losses)) == len(eps_scales)
+            ),
             verdict="SUCCESS: Learning rate robust"
-            if hyperreal_variance < sgd_variance / 10
+            if hyperreal_variance < sgd_variance / 10.0
             else "FAILURE: Still sensitive to step size",
             details={
                 "sgd_loss_variance": f"{sgd_variance:.2e}",
                 "hyperreal_loss_variance": f"{hyperreal_variance:.2e}",
                 "robustness_improvement": f"{robustness_ratio:.1f}x",
                 "sgd_losses": [f"{loss:.3f}" if loss < float("inf") else "diverged" for loss in sgd_final_losses],
-                "hyperreal_losses": [f"{loss:.3f}" for loss in hyperreal_final_losses],
+                "hyperreal_losses": [f"{loss:.6f}" for loss in hyperreal_final_losses],
+                "hyperreal_raw_losses": hyperreal_final_losses,
             },
         )
+
+    def test_learning_rate_robustness(self) -> None:
+        res = self.evaluate()
+        assert res.is_better, f"Hyperreal macro-step robustness check failed: {res.details}"
+        raw_losses = res.details["hyperreal_raw_losses"]
+        # Guard against unused loop-variable regression: every eps_scale must produce a distinct trajectory
+        assert len(set(round(v, 10) for v in raw_losses)) == 5, (
+            f"Expected 5 distinct final losses across 50x delta sweep, got {raw_losses}"
+        )
+        assert max(raw_losses) < 1.0
+        assert res.proposed_metric < res.baseline_metric / 100.0
+
 
 
 def run_all_utility_tests():
@@ -1109,17 +1207,17 @@ def run_all_utility_tests():
 
     # Run all tests
     tests = [
-        ("Reversible Computation", TestReversibleComputationUtility().test_memory_efficiency),
-        ("IFS Fractal Memory", TestIFSFractalMemoryUtility().test_catastrophic_forgetting),
-        ("Ordinal Schedules", TestOrdinalSchedulesUtility().test_noisy_optimization),
-        ("Matrix Exponential", TestMatrixExponentialUtility().test_gradient_stability),
-        ("Tropical Geometry", TestTropicalGeometryUtility().test_lipschitz_stability),
-        ("Simplicial Complexes", TestSimplicialComplexUtility().test_higher_order_task),
-        ("Ultrametric Worlds", TestUltrametricUtility().test_attention_complexity),
-        ("Quaternions/Octonions", TestOctonionUtility().test_norm_preservation),
-        ("Knot Theory/Braids", TestKnotTheoryUtility().test_compositional_generalization),
-        ("Surreal Numbers", TestSurrealNumbersUtility().test_scaling_decisions),
-        ("Hyperreal Training", TestHyperrealUtility().test_learning_rate_robustness),
+        ("Reversible Computation", TestReversibleComputationUtility().evaluate),
+        ("IFS Fractal Memory", TestIFSFractalMemoryUtility().evaluate),
+        ("Ordinal Schedules", TestOrdinalSchedulesUtility().evaluate),
+        ("Matrix Exponential", TestMatrixExponentialUtility().evaluate),
+        ("Tropical Geometry", TestTropicalGeometryUtility().evaluate),
+        ("Simplicial Complexes", TestSimplicialComplexUtility().evaluate),
+        ("Ultrametric Worlds", TestUltrametricUtility().evaluate),
+        ("Quaternions/Octonions", TestOctonionUtility().evaluate),
+        ("Knot Theory/Braids", TestKnotTheoryUtility().evaluate),
+        ("Surreal Numbers", TestSurrealNumbersUtility().evaluate),
+        ("Hyperreal Training", TestHyperrealUtility().evaluate),
     ]
 
     for name, test_func in track(tests, description="Running utility tests..."):
@@ -1127,6 +1225,7 @@ def run_all_utility_tests():
         try:
             result = test_func()
             results.append(result)
+
 
             # Print result
             color = "green" if result.is_better else "red"

@@ -311,7 +311,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical (Hensel's lemma); curriculum translation in bead 8gk.4"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_hensel_residue_preservation
     used_by: [model_guided_research-8gk.4]
     depends_on: []
 
@@ -328,7 +330,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "Proposition 1 of bead 8gk.5"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_ifs_cylinder_ultrametric
     used_by: [model_guided_research-8gk.5, model_guided_research-77l.4]
     depends_on: []
 
@@ -344,7 +348,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical (Moran equation / Hutchinson); capacity reading in bead 8gk.5"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_moran_capacity
     used_by: [model_guided_research-8gk.5, model_guided_research-77l.4]
     depends_on: [thm-ifs-cylinder-ultrametric]
 
@@ -359,7 +365,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "Proposition 3 of bead 8gk.5; immediate from cylinder disjointness"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_cylinder_zero_interference
     used_by: [model_guided_research-8gk.5]
     depends_on: [thm-ifs-cylinder-ultrametric]
 
@@ -381,7 +389,9 @@ theorems:
       theorems: [MGRProofs.gromov_root_eq_lcp]
       scope: partial
       unformalized: "k-ary rooted trees (Lean: binary, addresses as List Bool) and the second clause (tree boundaries carry the ultrametric exp(-(x|y)), so ultrametric attention is boundary-of-a-tree attention)"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_gromov_product_equals_lcp
     used_by:
       [model_guided_research-8gk.6, model_guided_research-mnn.4, model_guided_research-vnl.3]
     depends_on: []
@@ -398,7 +408,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "identity; derived in bead 8gk.6 Proposition 2"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_hyperbolic_score_decomposition
     used_by: [model_guided_research-8gk.6, model_guided_research-mnn.4]
     depends_on: []
 
@@ -434,7 +446,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical tropical geometry; attention-map application in bead 8gk.3"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_newton_polytope_region_bound
     used_by: [model_guided_research-8gk.3]
     depends_on: []
 
@@ -527,9 +541,12 @@ theorems:
       path: pending
       anchor: null
     proof_location: "classical (Magnus; convergence by Moan-Niesen), cited in bead u55.1"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_magnus_convergence
     used_by: [model_guided_research-u55.1]
     depends_on: []
+
 
   - id: thm-curvature-gauge-invariance
     statement: >-
@@ -729,7 +746,9 @@ theorems:
       path: pending
       anchor: null
     proof_location: "Noether correspondence worked for this architecture in bead u55.5"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_noether_conserved_charges
     used_by: [model_guided_research-u55.5]
     depends_on: [thm-kick-kick-symplectic]
 
@@ -778,22 +797,29 @@ theorems:
       values in the ordinals terminates; with the Cantor-normal-form rank
       rho = omega^2 A + omega B + C, multi-phase training programs with
       restarts provably terminate regardless of which failure branches fire.
-    status: proved-on-paper
+    status: lean-checked
     mechanisms: [ordinal]
     source_note:
       path: markdown_documentation/ordinal_schedules_and_well_founded_optimization.md
       anchor: "Progress guarantee"
-    proof_location: "well-foundedness of ordinals; program-level calculus in bead lab.3; formalization target of vnl.3. Lean (partial, 2026-09-02): proofs/MGRProofs/OrdinalTermination.lean proves the abstract core (no_infinite_descent, ordinal_termination: a step that strictly decreases an ordinal rank has no infinite orbit); the Cantor-normal-form rank clause needs the CNF decrease lemmas (bead mxo3)."
+    proof_location: "Lean: proofs/MGRProofs/OrdinalTermination.lean (no_infinite_descent, ordinal_termination, cnfRank_dec_C, cnfRank_dec_B, cnfRank_dec_A). Mathlib pin v4.34.0-rc2 @ 85e3a25e. Full formalization of both the abstract termination guarantee and the Cantor-normal-form rank decrease across patience, anneal, and restart events (beads vnl.3 + mxo3)."
     formalization:
       file: proofs/MGRProofs/OrdinalTermination.lean
-      theorems: [MGRProofs.no_infinite_descent, MGRProofs.ordinal_termination]
-      scope: partial
-      unformalized: "the Cantor-normal-form rank rho = omega^2 A + omega B + C decrease lemmas for the anneal/restart events, hence the 'regardless of which failure branches fire' clause (bead mxo3, in progress)"
+      theorems:
+        [
+          MGRProofs.no_infinite_descent,
+          MGRProofs.ordinal_termination,
+          MGRProofs.cnfRank_dec_C,
+          MGRProofs.cnfRank_dec_B,
+          MGRProofs.cnfRank_dec_A,
+        ]
+      scope: full
     numerical_checks:
       - kind: pytest
         ref: tests/test_mathematical_properties.py::TestOrdinalSchedules
-    used_by: [model_guided_research-lab.3, model_guided_research-vnl.3]
+    used_by: [model_guided_research-lab.3, model_guided_research-vnl.3, model_guided_research-mxo3]
     depends_on: []
+
 
   - id: thm-ordinal-program-composition
     statement: >-
@@ -806,9 +832,12 @@ theorems:
       path: pending
       anchor: null
     proof_location: "elementary ordinal arithmetic; made precise in bead lab.3 item 1"
-    numerical_checks: []
+    numerical_checks:
+      - kind: pytest
+        ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_ordinal_program_composition
     used_by: [model_guided_research-lab.3]
     depends_on: [thm-ordinal-termination]
+
 
   # ---------------------------------------------------------------------------
   # ALGEBRAIC KERNELS (cross-pillar; the implementations under B1/B2 test)

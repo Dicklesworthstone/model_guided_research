@@ -61,11 +61,11 @@ The 2026-09-02/03 sprint built impressive scientific apparatus (epoch shuffling,
 - Full `pytest` (both `-m "not slow"` and slow E2E checkpoint tests) passes with 0 failures.
 
 **Success criteria:**
-- [ ] `python3 -c 'import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob(".github/workflows/*.yml")]'` exits 0 and is enforced inside `scripts/ci_lite.sh` and `tests/test_demos.py`.
-- [ ] `uv run ty check` exits 0 (0 diagnostics).
-- [ ] `JAX_PLATFORMS=cpu uv run pytest tests/ -q --ignore=tests/test_runner.py --ignore=tests/test_runner_enhanced.py` exits 0 (including `test_report.py` and `test_eval_tasks.py`).
-- [ ] `uv run python scripts/e2e_pipeline.py --scenario all` exits 0 with all 7 scenarios `PASS`.
-- [ ] `gh run list --workflow CI --limit 1 --json conclusion` and `gh run list --workflow "E2E Pipeline (nightly)" --limit 1 --json conclusion` report `success`.
+- [x] `python3 -c 'import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob(".github/workflows/*.yml")]'` exits 0 and is enforced inside `scripts/ci_lite.sh` and `tests/test_demos.py`.
+- [x] `uv run ty check` exits 0 (0 diagnostics).
+- [x] `JAX_PLATFORMS=cpu uv run pytest tests/ -q --ignore=tests/test_runner.py --ignore=tests/test_runner_enhanced.py` exits 0 (including `test_report.py` and `test_eval_tasks.py`).
+- [x] `uv run python scripts/e2e_pipeline.py --scenario all` exits 0 with all 7 scenarios `PASS`.
+- [x] `gh run list --workflow CI --limit 1 --json conclusion` and `gh run list --workflow "E2E Pipeline (nightly)" --limit 1 --json conclusion` report `success`.
 
 **Dependencies:** None (this is the #1 immediate blocker in the repo).
 **Would existing beads close it?** Only after correcting `model_guided_research-jida.19` (which misdiagnosed the YAML bug) and adding the typecheck/test/e2e fixes.
@@ -86,8 +86,8 @@ The 2026-09-02/03 sprint built impressive scientific apparatus (epoch shuffling,
 2. `mgr certify --all` is recaptured from a clean tree at `HEAD` and committed so all 13 mechanisms report `stale: false` deterministically across checkouts.
 
 **Success criteria:**
-- [ ] `uv run mgr status --json | jq '[.certificates[] | select(.stale != false)] | length'` prints `0`.
-- [ ] Unit test in `tests/test_report.py` verifies that even if an older-commit certificate file has a newer filesystem `st_mtime` (simulating `git checkout` alphabetical ordering), `mgr status` selects the certificate from the newer git commit.
+- [x] `uv run mgr status --json | jq '[.certificates[] | select(.stale != false)] | length'` prints `0`.
+- [x] Unit test in `tests/test_report.py` verifies that even if an older-commit certificate file has a newer filesystem `st_mtime` (simulating `git checkout` alphabetical ordering), `mgr status` selects the certificate from the newer git commit.
 
 **Dependencies:** Gap 5.
 **Estimated complexity:** S.
@@ -121,9 +121,9 @@ Both `HOSS` and `OrdinalLRScheduler` fail in real `nanochat` training runs (`pxy
   2. **Non-Destructive Basin Restart on $\omega^2$ Transitions ($A \to A - 1$)**: Instead of wiping AdamW's second-moment preconditioning via `optimizer.state.clear()`, zero first-moment momentum buffers (`exp_avg.zero_()`) and attenuate second-moment buffers (`exp_avg_sq.mul_(restart_beta2_decay)`) while injecting an orthogonal deterministic perturbation or warm LR spike, preserving coordinate scaling across regime shifts.
 
 **Success criteria:**
-- [ ] `HOSS` decreases loss by $\ge 1.5$ nats in 200 steps on `arith` (`d64/L2`, task tokenizer) in `tests/test_mathematical_properties.py`, and reduces exactly to SGD when $\tilde{T} \to 0$ and $\sigma^2 = 0$.
-- [ ] `OrdinalLRScheduler` maintains $A=A_{\text{init}}, B=B_{\text{init}}$ during steady noisy descent (`loss(t) = 3.0 * exp(-t/200) + 0.05 * noise`), triggers $B \to B-1$ only on a genuine $\ge P_{\text{init}}$-step plateau, and strictly decreases $\Phi(t) \in \varepsilon_0$ on every step.
-- [ ] All 11 `test_*` methods in `tests/test_practical_utility.py` assert non-vacuous benchmark properties and return `None` (`wzpx` closed).
+- [x] `HOSS` decreases loss by $\ge 1.5$ nats in 200 steps on `arith` (`d64/L2`, task tokenizer) in `tests/test_mathematical_properties.py`, and reduces exactly to SGD when $\tilde{T} \to 0$ and $\sigma^2 = 0$.
+- [x] `OrdinalLRScheduler` maintains $A=A_{\text{init}}, B=B_{\text{init}}$ during steady noisy descent (`loss(t) = 3.0 * exp(-t/200) + 0.05 * noise`), triggers $B \to B-1$ only on a genuine $\ge P_{\text{init}}$-step plateau, and strictly decreases $\Phi(t) \in \varepsilon_0$ on every step.
+- [x] All 11 `test_*` methods in `tests/test_practical_utility.py` assert non-vacuous benchmark properties and return `None` (`wzpx` closed).
 
 **Dependencies:** Gap 5.
 **Estimated complexity:** M.
@@ -221,7 +221,7 @@ Unchanged from 2026-09-02: this host is a 64-vCPU AMD EPYC 7282 with no GPU (`nv
   1. `jida.25`: Hensel $p$-adic digit curriculum flag (`--hensel-curriculum`) in `nanochat/train.py` to operationalize `hyp-hensel-curriculum-parity`.
   2. `jida.27`: Non-solvable group barrier campaign ($S_5/A_5$ vs $Z_{60}/S_3$) to operationalize and adjudicate `hyp-group-nonsolvable-barrier`.
   3. `jida.29`: Tropical tie-locus density campaign under live Maslov semiring annealing (`--tropical-record-margins --semiring-beta`) to feed `hyp-tie-locus-density-decreases-tropical`.
-  4. `wzpx`: Turn `tests/test_practical_utility.py` into a real assertion-backed test suite and fix the two vacuous demo benchmarks.
+  4. `wzpx` (**CLOSED**): Converted `tests/test_practical_utility.py` into a real assertion-backed test suite and replaced the two vacuous demo benchmarks with genuine Givens gauge transport and Krylov-Lanczos HOSS macro-step tests.
 
 ### Gap 8: Interpretability Observables Campaign Validation
 - **Current state (2026-10-13):** Code for all mechanism observables is now in `nanochat` and `cli.py` (`jida.23`, `jida.28` closed). Remaining work is running the depth-8 telemetry campaign (`jida.11`) and annealing campaign (`jida.29`) to adjudicate their registered leading-indicator hypotheses.
@@ -229,8 +229,8 @@ Unchanged from 2026-09-02: this host is a 64-vCPU AMD EPYC 7282 with no GPU (`nv
 ### Gap 9: Compute-Bound Studies (`7b0.3`, `7b0.4`, `w94`, `vdc.5`, `rz8.4`)
 - **Current state (2026-10-13):** Gated behind Gap 1 (off-floor rungs) and Gap 7b (`HOSS`/`Ordinal` fixes).
 
-### Gap 10: Theory Epics & Theorem Falsification Checks (`ofig`, `mxo3`, `vnl.3`)
-- **Current state (2026-10-13):** `hypotheses/theorems.yaml` has 40 theorems (3 `lean-checked`, 34 `proved-on-paper`, 3 `conjecture`). 9 `proved-on-paper` entries still lack a falsifiable numeric check (`ofig`), and the CNF-rank termination proof in Lean (`mxo3`) is in progress. Note: on this host, `elan` Lean `v4.34.0-rc2` is installed, and `lake exe cache get && lake build` in `proofs/` is required before running `lake env lean AxiomCheck.lean` locally.
+### Gap 10: Theory Epics & Theorem Falsification Checks (`ofig`, `mxo3`, `vnl.3`, `vnl` — CLOSED)
+- **Current state (2026-10-14):** **CLOSED.** `hypotheses/theorems.yaml` has 40 theorems (4 `lean-checked` including `thm-ordinal-termination` via `cnfRank_dec_{A,B,C}` with zero `sorryAx`, 33 `proved-on-paper`, 3 `conjecture`). All 37 `proved-on-paper` + `lean-checked` entries now have executable falsifiable numerical checks with planted kill witnesses (`uv run mgr theorems validate --deep` exits with 0 errors and 0 warnings).
 
 ### Gap 11: Dormant `nanochat/` Modules (`43dd`) and Env-Var Registry (`rz8.6`)
 - **Current state (2026-10-13):** `nanochat/loss_eval.py` was wired into `train.py` on 2026-09-02 (`val_bpb_final`). Eight modules remain without callers (`nanochat/adamw.py`, `nanochat/muon.py`, `nanochat/common.py`, `nanochat/core_eval.py`, `nanochat/dataloader.py`, `nanochat/engine.py`, `nanochat/flash_attention.py`, `nanochat/report.py`) and wait on the owner's per-file wire-or-retire decision (`43dd`; Rule 1 forbids any file deletion without explicit owner permission).
