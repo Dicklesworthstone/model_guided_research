@@ -41,3 +41,6 @@ beads.right.meta.json
 .sync.lock
 .write.lock
 .br-db-openers-*.lock
+.br-wal-index-*/
+.br_recovery/
+
