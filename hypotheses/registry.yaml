@@ -2526,6 +2526,7 @@ hypotheses:
         vs 5 matched stable control trajectories (matrix_lr=0.001,
         learning_rate=0.001) on gauge attention at equal FLOPs (12 steps,
         certify_interval=1) on the hier diagnostics corpus.
-    status: open
+    status: inconclusive
     evidence: []
-    verdict_history: []
+    verdict_history:
+      - {date: "2026-10-14", verdict: inconclusive, artifacts: ["artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s101/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s102/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s103/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s104/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s105/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s101/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s102/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s103/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s104/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s105/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"gauge": {"budget_flops": 193462272.0, "ci95": [1.7199126193417442, 3.080087380658256], "effect": 2.4, "n_baseline": 5, "n_candidate": 5, "n_for_80pct": 2, "p_value": 0.08890390417811068, "power": 0.9999999997265187, "verdict": "inconclusive"}}}

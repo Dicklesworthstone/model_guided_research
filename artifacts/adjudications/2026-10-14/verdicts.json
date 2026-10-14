@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-14",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 1,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v6",
+  "verdicts": [
+    {
+      "arms": {
+        "gauge": {
+          "budget_flops": 193462272.0,
+          "ci95": [
+            1.7199126193417442,
+            3.080087380658256
+          ],
+          "effect": 2.4,
+          "n_baseline": 5,
+          "n_candidate": 5,
+          "n_for_80pct": 2,
+          "p_value": 0.08890390417811068,
+          "power": 0.9999999997265187,
+          "verdict": "inconclusive"
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s101/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s102/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s103/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s104/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s105/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s101/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s102/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s103/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s104/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s105/summary.json"
+      ],
+      "id": "hyp-cert-telemetry-leads-divergence",
+      "p_value": 0.08890390417811068,
+      "policy_version": "ci-v6",
+      "q_value": 0.08890390417811068,
+      "tainted_artifacts_seen": false,
+      "verdict": "inconclusive"
+    }
+  ]
+}
