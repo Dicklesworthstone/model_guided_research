@@ -1,0 +1,50 @@
+{
+  "bead": "model_guided_research-bp08",
+  "kind": "coord-curve",
+  "mechanism": "tropical",
+  "meta": {
+    "device": "cpu",
+    "generated_at": "2026-10-14T11:11:10Z",
+    "git": {
+      "branch": "main",
+      "commit": "658c704",
+      "commit_full": "658c70421b75e3a46d0ce668405d64ea01e39bab",
+      "dirty": false
+    },
+    "run_id": "coordcheck-tropical-post-cproj-2026-10-14",
+    "seed": 7
+  },
+  "provenance": {
+    "config_hash": "a4c5847a6f34c73f1a958fe77b3806809246563f36df34fea42049cef8cc2095",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "658c70421b75e3a46d0ce668405d64ea01e39bab",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "results": {
+    "abs_loglog_slope": 0.11870792100287784,
+    "activation_rms": {
+      "64": 2.610050678253174,
+      "128": 2.9854233264923096,
+      "256": 3.3453195095062256,
+      "512": 3.420715570449829,
+      "1024": 3.9055426120758057,
+      "2048": 3.9341444969177246
+    },
+    "concentration_class": "EVT (Gumbel max)",
+    "ffn_type": "tropical",
+    "loglog_slope": 0.11870792100287784,
+    "parameterization": "current",
+    "r_squared": 0.9461414737447104,
+    "widths": [
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048
+    ]
+  },
+  "schema_version": "mgr.bench.coord_curves.v1"
+}

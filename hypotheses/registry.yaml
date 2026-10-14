@@ -1617,9 +1617,10 @@ hypotheses:
         skipping the post-c_proj Euclidean-residual `_tropical_center` under
         `parameterization: nsa` while keeping per-head tropical centering inside
         `tropical_max_plus_attention` and exact finite-N E[max] in `TropicalMLP`.
-    status: open
+    status: supported
     evidence: []
-    verdict_history: []
+    verdict_history:
+      - {date: "2026-10-14", verdict: supported, artifacts: ["artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s10/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s11/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s6/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s7/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s8/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s9/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s10/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s11/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s6/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s7/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s8/summary.json", "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s9/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"tropical": {"budget_flops": null, "ci95": [-0.11396765885676167, -0.07495708133439073], "effect": -0.0944623700955762, "n_baseline": 6, "n_candidate": 6, "n_for_80pct": 2, "p_value": 0.0009425408364985843, "power": 0.9999973107606313, "verdict": "supported"}}}
 
 
   - id: hyp-tropical-length-evt-signature
