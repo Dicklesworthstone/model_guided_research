@@ -33,7 +33,6 @@ length‑generalization dataset (“pivot amid crowd”) where max–plus attent
 
 # Docs: markdown_documentation/tropical_geometry_and_idempotent_algebra.md
 
-import os
 from dataclasses import dataclass
 from functools import partial
 
@@ -327,6 +326,9 @@ def pivot_crowd_dataset(k, n, L, cfg: Config):
 
 
 def run():
+    from config import get_flag, validate_demo_flags
+
+    validate_demo_flags("tropical")
     global last_diagnostics
     sparse_train_diagnostics: dict[str, object] | None = None
     key = jax.random.PRNGKey(0)
@@ -360,9 +362,9 @@ def run():
 
     # Optional: sparse mixtures of tropical polynomials (param-efficient)
     mix_rows = []
-    if int(os.environ.get("TROP_SPARSE_MIX", "0")):
-        ks = [int(x) for x in os.environ.get("TROP_SPARSE_KS", "2,4,8").split(",")]
-        lams = [float(x) for x in os.environ.get("TROP_SPARSE_LAMBDAS", "0.25,0.5,1.0").split(",")]
+    if bool(get_flag("TROP_SPARSE_MIX")):
+        ks = [int(x) for x in str(get_flag("TROP_SPARSE_KS")).split(",")]
+        lams = [float(x) for x in str(get_flag("TROP_SPARSE_LAMBDAS")).split(",")]
         from rich.console import Console as _Console
         from rich.table import Table as _Table
 
@@ -435,14 +437,14 @@ def run():
     except Exception as err:
         _Console().print(f"[yellow]Skipping per-node gap table: {err}[/yellow]")
     # Tiny sparse-support training for classifier (opt-in): L steps of top-k projection
-    if int(os.environ.get("TROP_SPARSE_TRAIN", "0")):
-        steps = int(os.environ.get("TROP_SPARSE_STEPS", "5"))
-        lr = float(os.environ.get("TROP_SPARSE_LR", "0.05"))
-        ks_env = os.environ.get("TROP_SPARSE_TRAIN_KS", "")
+    if bool(get_flag("TROP_SPARSE_TRAIN")):
+        steps = int(get_flag("TROP_SPARSE_STEPS"))
+        lr = float(get_flag("TROP_SPARSE_LR"))
+        ks_env = str(get_flag("TROP_SPARSE_TRAIN_KS"))
         if ks_env:
             k_list = [int(x) for x in ks_env.split(",") if x.strip()]
         else:
-            k_list = [int(os.environ.get("TROP_SPARSE_TRAIN_K", "8"))]
+            k_list = [int(get_flag("TROP_SPARSE_TRAIN_K"))]
         # Evaluate pre accuracy
         # Evaluate pre accuracy on a held-out set
         acc_pre = float(

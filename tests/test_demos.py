@@ -1985,3 +1985,95 @@ def test_github_workflows_are_valid_yaml():
                 if "name" in step:
                     assert isinstance(step["name"], str) and bool(step["name"].strip()), f"{wf.name}:{job_name} invalid step name"
 
+
+def test_demo_flag_registry_has_all_29_flags_and_defaults(monkeypatch):
+    """Bead rz8.6: all 29 demo env-var flags are registered in DEMO_FLAG_REGISTRY
+    with types, defaults, and descriptions."""
+    from config import DEMO_FLAG_REGISTRY, get_flag
+
+    require(len(DEMO_FLAG_REGISTRY) == 29, f"expected 29 registered demo flags, got {len(DEMO_FLAG_REGISTRY)}")
+    counts_by_demo: dict[str, int] = {}
+    for name, spec in DEMO_FLAG_REGISTRY.items():
+        monkeypatch.delenv(name, raising=False)
+        require(spec.name == name, f"key/name mismatch for {name}")
+        require(bool(spec.description.strip()), f"empty description for {name}")
+        require(spec.type in {"bool", "int", "float", "str", "enum"}, f"unexpected type {spec.type} for {name}")
+        counts_by_demo[spec.demo] = counts_by_demo.get(spec.demo, 0) + 1
+        require(get_flag(name) == spec.default, f"get_flag({name!r}) did not return default {spec.default!r}")
+
+    require(
+        counts_by_demo
+        == {
+            "matrix-gauge": 9,
+            "tropical": 8,
+            "reversible": 6,
+            "ultrametric": 5,
+            "knot-braid": 1,
+        },
+        f"unexpected per-demo flag counts: {counts_by_demo}",
+    )
+
+
+def test_demo_flag_typo_warning_and_malformed_type_error(monkeypatch):
+    """Bead rz8.6: unknown prefix-matching env vars emit a loud warning with a
+    closest-match suggestion, and malformed values raise ValueError instead of
+    silently falling back."""
+    from config import DEMO_FLAG_REGISTRY, get_flag, validate_demo_flags
+
+    for name in DEMO_FLAG_REGISTRY:
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("GAUGE_STRUCTRED", "1")
+    with pytest.warns(UserWarning, match="GAUGE_STRUCTRED") as record:
+        warns = validate_demo_flags("matrix-gauge")
+    require(len(warns) == 1, f"expected 1 warning, got {warns}")
+    require("GAUGE_STRUCTURED" in warns[0], f"expected typo suggestion in warning: {warns[0]}")
+    require(any("GAUGE_STRUCTURED" in str(w.message) for w in record), "UserWarning did not suggest GAUGE_STRUCTURED")
+    monkeypatch.delenv("GAUGE_STRUCTRED")
+
+    monkeypatch.setenv("ULTRA_PACKED", "banana")
+    with pytest.raises(ValueError, match="ULTRA_PACKED"):
+        get_flag("ULTRA_PACKED")
+    with pytest.raises(ValueError, match="ULTRA_PACKED"):
+        validate_demo_flags("ultrametric")
+    monkeypatch.delenv("ULTRA_PACKED")
+
+    monkeypatch.setenv("GAUGE_UNIF_CAP_K", "banana")
+    with pytest.raises(ValueError, match="GAUGE_UNIF_CAP_K"):
+        get_flag("GAUGE_UNIF_CAP_K")
+    monkeypatch.delenv("GAUGE_UNIF_CAP_K")
+
+    monkeypatch.setenv("BRAID_CROSSING_LAW", "not_a_law")
+    with pytest.raises(ValueError, match="BRAID_CROSSING_LAW"):
+        validate_demo_flags("knot-braid")
+    monkeypatch.delenv("BRAID_CROSSING_LAW")
+
+
+def test_mgr_flags_cli_lists_and_filters_flags(monkeypatch):
+    """Bead rz8.6: `mgr flags [demo]` renders the registry and reflects active env vars."""
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+    from config import DEMO_FLAG_REGISTRY
+
+    for name in DEMO_FLAG_REGISTRY:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GAUGE_STRUCTURED", "1")
+
+    runner = CliRunner()
+    res_all = runner.invoke(mgr_cli.app, ["flags", "--json"])
+    require(res_all.exit_code == 0, f"mgr flags --json failed: {res_all.output}")
+    rows_all = json.loads(res_all.output)
+    require(len(rows_all) == 29, f"expected 29 rows from mgr flags --json, got {len(rows_all)}")
+
+    res_gauge = runner.invoke(mgr_cli.app, ["flags", "matrix-gauge", "--json"])
+    require(res_gauge.exit_code == 0, f"mgr flags matrix-gauge --json failed: {res_gauge.output}")
+    rows_gauge = json.loads(res_gauge.output)
+    require(len(rows_gauge) == 9, f"expected 9 matrix-gauge flags, got {len(rows_gauge)}")
+    structured_row = next(r for r in rows_gauge if r["name"] == "GAUGE_STRUCTURED")
+    require(structured_row["is_set"] is True and structured_row["current"] is True, f"unexpected row: {structured_row}")
+
+    res_table = runner.invoke(mgr_cli.app, ["flags", "ultrametric"])
+    require(res_table.exit_code == 0, f"mgr flags ultrametric failed: {res_table.output}")
+    require("ULTRA_PACKED" in res_table.output, "Rich table output missing ULTRA_PACKED")
+

@@ -465,8 +465,10 @@ class UltrametricAttention:
         BuckPackedArrays = list[list[list[list[int]]]]
         BuckUnpacked = list[dict[tuple[int, ...], list[int]]]
         self._buckets: BuckPackedArrays | BuckPacked | BuckUnpacked
+        from config import get_flag
+
         self._packed_arrays = False
-        if self._packed and bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
+        if self._packed and bool(get_flag("ULTRA_PACKED_ARRAYS")):
             # Array-of-lists per level, indexable by code with O(1) access
             packed_arr: BuckPackedArrays = []
             for _ in range(self._heads):
@@ -537,13 +539,15 @@ class UltrametricAttention:
     def attend(self, q, V):
         import numpy as _np
 
+        from config import get_flag
+
         if not self._key_vec:
             return _np.zeros_like(V[0])
         Q = _np.asarray(q, dtype=_np.float64)
         picks = []
         sims = []
         qn = _np.linalg.norm(Q) + 1e-12
-        ULTRA_FUSE = bool(int(os.environ.get("ULTRA_FUSE", "0")))
+        ULTRA_FUSE = bool(get_flag("ULTRA_FUSE"))
         for h in range(self._heads):
             sig = self._signature(self._planes[h], Q)
             # Find deepest non-empty bucket
@@ -883,11 +887,14 @@ def smoke_demo_small():
 
 def demo():
     """Run all ultrametric demonstrations."""
+    from config import get_flag, validate_demo_flags
+
+    validate_demo_flags("ultrametric")
     global last_diagnostics
 
     random.seed(0)
     np.random.seed(0)
-    use_packed = bool(int(os.environ.get("ULTRA_PACKED", "0")))
+    use_packed = bool(get_flag("ULTRA_PACKED"))
     best_p: int | None = None
     best_acc = -1.0
     smoke_demo_small()
@@ -929,7 +936,7 @@ def demo():
         Ns = [64, 256, 1024, 4096]
         insert_ms, query_ms, head_vars = [], [], []
         # Optional compare packed vs dict mode
-        compare = bool(int(os.environ.get("ULTRA_SCALE_COMPARE", "0")))
+        compare = bool(get_flag("ULTRA_SCALE_COMPARE"))
         for N in Ns:
             dim = 32
             U = UltrametricAttention(dim=dim, p=5, max_depth=16, packed=True, heads=2)
@@ -995,7 +1002,7 @@ def demo():
             except Exception as err:
                 print(f"[ultrametric] Skipping scaling table: {err}")
         # Occupancy summary per level when array-packed
-        if bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))):
+        if bool(get_flag("ULTRA_PACKED_ARRAYS")):
             p, K, H = 5, 12, 2
             os.environ.setdefault("ULTRA_PACKED_ARRAYS", "1")
             U2 = UltrametricAttention(dim=32, p=p, max_depth=K, packed=True, heads=H)
@@ -1037,7 +1044,7 @@ def demo():
             except Exception as err:
                 print(f"[ultrametric] Skipping rank/test table: {err}")
         # p-tuner (optional): try p∈{3,5,7} on a tiny Task A split and choose best by eval acc
-        if bool(int(os.environ.get("ULTRA_TUNE_P", "0"))):
+        if bool(get_flag("ULTRA_TUNE_P")):
             for p_try in [3, 5, 7]:
                 qs, ys, qst, yst = taskA_dataset(2000, 400, p_try, 8, 8, seed=13)
                 modelT = LCPTreeAttention(p=p_try, K=8, H=2, m=8, r=4, superdiag=True, seeds=[1, 2])
@@ -1088,7 +1095,7 @@ def demo():
         # Export diagnostics
         last_diagnostics = {
             "last_head_variance": float(var_heads) if "var_heads" in locals() else None,
-            "packed_arrays": bool(int(os.environ.get("ULTRA_PACKED_ARRAYS", "0"))),
+            "packed_arrays": bool(get_flag("ULTRA_PACKED_ARRAYS")),
             "scaling": {
                 "N": Ns,
                 "insert_ms": [float(x) for x in insert_ms],

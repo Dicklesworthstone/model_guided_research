@@ -47,7 +47,6 @@ Implementation:
 # braid_attention_jax.py
 import argparse
 import math
-import os
 import time
 from dataclasses import dataclass
 
@@ -511,10 +510,11 @@ def plot_braid(sample, perm, k):
 
 # ---------- CLI ----------
 def main(seed: int = 0, steps: int = 250, crossing_law: str | None = None):
-    from config import get_config
+    from config import get_config, get_flag, validate_demo_flags
 
+    validate_demo_flags("knot-braid")
     config = get_config()
-    resolved_crossing_law = crossing_law or os.environ.get("BRAID_CROSSING_LAW", "restricted")
+    resolved_crossing_law = crossing_law or get_flag("BRAID_CROSSING_LAW")
     res = run_experiment(seed=seed, steps=steps, crossing_law=resolved_crossing_law)
     p = res["params"]
     tags_te, vals_te, aidx_te, mask_te, perm_te, chosen_te, k_te, pred_te, gt_te = res["artifacts"]["test"]

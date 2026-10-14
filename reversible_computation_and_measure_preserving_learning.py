@@ -36,7 +36,6 @@ Core ideas
 # Docs: markdown_documentation/reversible_computation_and_measure_preserving_learning.md
 
 import math
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -50,6 +49,8 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from jax import custom_jvp, custom_vjp
+
+from config import get_flag, validate_demo_flags
 
 key = jax.random.PRNGKey
 last_diagnostics: dict[str, object]
@@ -483,7 +484,7 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
             a = cast(Array, p.gen_a)[:n]
             b = cast(Array, p.gen_b)[:n]
             c = cast(Array, p.gen_c)[:n]
-        elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+        elif bool(get_flag("REV_GEN_PARAMS")):
             base = jnp.tanh(p.mix[:n])
             a = 0.05 * base
             b = 0.05 * base
@@ -492,7 +493,7 @@ def rev_coupling_forward(x: Array, p: CouplingParams) -> Array:
             a = jnp.float32(0.05)
             b = jnp.float32(0.05)
             c = jnp.float32(0.02)
-        if os.environ.get("REV_GEN_VJP", "0") == "1":
+        if bool(get_flag("REV_GEN_VJP")):
             qp = jnp.concatenate([u1, u2], axis=-1)
             qp_new = _gen_symp_step(qp, a, b, c)
             u1, u2 = jnp.split(qp_new, 2, axis=-1)
@@ -555,7 +556,7 @@ def rev_coupling_inverse(y: Array, p: CouplingParams) -> Array:
             a = cast(Array, p.gen_a)[:n]
             b = cast(Array, p.gen_b)[:n]
             c = cast(Array, p.gen_c)[:n]
-        elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+        elif bool(get_flag("REV_GEN_PARAMS")):
             base = jnp.tanh(p.mix[:n])
             a = 0.05 * base
             b = 0.05 * base
@@ -1071,6 +1072,7 @@ def demo():
 
     config = get_config()
     config.setup_jax()
+    validate_demo_flags("reversible")
 
     def report_warning(message: str) -> None:
         if config.use_rich_output:
@@ -1108,13 +1110,13 @@ def demo():
         report_failure(f"Failed to enable Cayley mix: {err}")
     _os.environ.setdefault("REV_LAYER_CERT", "1")
     # Optional strict Givens-only mixing (exact inverse, det=1)
-    if _os.environ.get("REV_GIVENS", "0") == "1":
+    if bool(get_flag("REV_GIVENS")):
         try:
             set_reversible_givens_mix(True)
         except Exception as err:
             report_failure(f"Failed to enable Givens mix: {err}")
     # Optional generating-function step
-    if _os.environ.get("REV_GENERATING", "0") == "1":
+    if bool(get_flag("REV_GENERATING")):
         try:
             set_reversible_generating_symplectic(True)
         except Exception as err:
@@ -1129,7 +1131,7 @@ def demo():
     mode_rows = [
         ("Strict Givens", "ON" if USE_GIVENS_MIX else "OFF"),
         ("Generating step", "ON" if USE_GENERATING_SYMPLECTIC else "OFF"),
-        ("Generating-step VJP", "ON" if (os.environ.get("REV_GEN_VJP", "0") == "1") else "OFF"),
+        ("Generating-step VJP", "ON" if bool(get_flag("REV_GEN_VJP")) else "OFF"),
     ]
     if config.use_rich_output:
         from rich.table import Table as _Table
@@ -1141,7 +1143,7 @@ def demo():
             mode.add_row(option, value)
         console.print(mode)
     else:
-        print("reversible_modes", {option: value for option, value in mode_rows})
+        print("reversible_modes", dict(mode_rows))
 
     conditional_print("[bold magenta]Reversible Computation & Measure-Preserving Learning Demo[/bold magenta]", level=1)
     diagnostics_print()
@@ -1177,9 +1179,7 @@ def demo():
     final_ok, final_error = round_trip_metrics(x, x_rec)
 
     # Optional per-layer Cayley orthogonality checks
-    import os as _os
-
-    if _os.environ.get("REV_LAYER_CERT", "0") == "1" and USE_CAYLEY_HYBRID:
+    if bool(get_flag("REV_LAYER_CERT")) and USE_CAYLEY_HYBRID:
         cayley_rows: list[tuple[str, str]] = []
         # Probe with a small random batch
         probe = jax.random.normal(k, (2, 4, d_a), dtype=jnp.float32)
@@ -1399,7 +1399,7 @@ def demo():
                 b_n = float(jnp.linalg.norm(blk.coup.gen_b))
                 c_n = float(jnp.linalg.norm(blk.coup.gen_c))
                 gen_norms.append({"a": a_n, "b": b_n, "c": c_n})
-            elif os.environ.get("REV_GEN_PARAMS", "0") == "1":
+            elif bool(get_flag("REV_GEN_PARAMS")):
                 base = jnp.tanh(blk.coup.mix[:d])
                 gen_norms.append(
                     {
@@ -1417,7 +1417,7 @@ def demo():
         diag_merge["property_summary"] = {"ok_count": ok_count_export, "total": len(prop_rows)}
         diag_merge["gen_mode"] = {
             "generating": bool(USE_GENERATING_SYMPLECTIC),
-            "gen_vjp": bool(os.environ.get("REV_GEN_VJP", "0") == "1"),
+            "gen_vjp": bool(get_flag("REV_GEN_VJP")),
         }
         # Compact pass/fail sparkline for quick visual diff
         try:
@@ -1437,7 +1437,7 @@ def demo():
         report_failure(f"Failed to merge diagnostics: {err}")
 
     # Optional Pareto sweep over exact Cayley compositions and depth (compute vs memory)
-    if _os.environ.get("REV_PARETO", "0") == "1":
+    if bool(get_flag("REV_PARETO")):
         import time
         import tracemalloc
 

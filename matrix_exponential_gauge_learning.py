@@ -49,7 +49,7 @@ from rich import box
 from rich.table import Table
 from rich.text import Text
 
-from config import get_config
+from config import get_config, get_flag, validate_demo_flags
 from utils import console
 
 last_diagnostics: dict[str, Any]
@@ -313,13 +313,10 @@ def uniformization_expmv_banded(
     K_f = jnp.ceil(m + sigma * jnp.sqrt(m + 1e-6))
     K = jnp.maximum(K_f.astype(jnp.int32), 1)  # (BH,)
     # Optional cap via environment for ablation
-    try:
-        cap_str = os.environ.get("GAUGE_UNIF_CAP_K", "")
-        if cap_str:
-            Kcap = jnp.array(int(cap_str), dtype=jnp.int32)
-            K = jnp.minimum(K, Kcap)
-    except Exception:
-        pass
+    cap_val = get_flag("GAUGE_UNIF_CAP_K")
+    if cap_val is not None:
+        Kcap = jnp.array(int(cap_val), dtype=jnp.int32)
+        K = jnp.minimum(K, Kcap)
     Kmax = jnp.max(K)
     coeff0 = jnp.exp(-m)  # (BH,)
     coeff = coeff0[:, None, None]  # (BH,1,1)
@@ -336,7 +333,7 @@ def uniformization_expmv_banded(
         return Y
 
     # Optional stochastic Poisson uniformization (single Monte Carlo sample)
-    if os.environ.get("GAUGE_UNIF_SAMPLE", "0") == "1":
+    if bool(get_flag("GAUGE_UNIF_SAMPLE")):
         # Sample K ~ Poisson(m) and apply K transitions: with prob neg_diag/lam move, else stay
         # For determinism in demo, seed from BH index
         rng_keys = jax.random.split(jax.random.PRNGKey(0), BH)
@@ -560,7 +557,7 @@ class GaugeAttentionBlock(nn.Module):
         self, bands: jnp.ndarray, neg_diag: jnp.ndarray, U: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         # Allow toggling uniformization via env for ablation
-        if os.environ.get("GAUGE_UNIF_OFF", "0") == "1":
+        if bool(get_flag("GAUGE_UNIF_OFF")):
             B, N, H, dh = U.shape
             return U, jnp.zeros((B, H), dtype=jnp.int32)
         # bands: (B,N,H,O), neg_diag: (B,N,H), U: (B,N,H,dh) → Z: (B,N,H,dh)
@@ -836,6 +833,7 @@ def eval_step(state: TrainState, batch_x: jnp.ndarray, batch_y: jnp.ndarray | No
 
 def demo():
     """Run the matrix exponential gauge learning demonstration."""
+    validate_demo_flags("matrix-gauge")
     key = jax.random.PRNGKey(0)
     # Keep the public CPU demo bounded while retaining multiple heads, blocks,
     # and logarithmically spaced transport offsets. Larger research workloads
@@ -852,7 +850,7 @@ def demo():
     offsets = tuple(neg_offs[::-1] + [o for o in pos_offs])
 
     # Optional toggle via env for structured channel blocks
-    use_structured = os.environ.get("GAUGE_STRUCTURED", "0") == "1"
+    use_structured = bool(get_flag("GAUGE_STRUCTURED"))
     cfg = GaugeTransformerConfig(
         d_model=D,
         n_heads=H,
@@ -912,8 +910,8 @@ def demo():
         )
 
     # If sampling mode is enabled, estimate smoothness via repeated samples
-    reps = int(os.environ.get("GAUGE_UNIF_REPS", "1"))
-    if os.environ.get("GAUGE_UNIF_SAMPLE", "0") == "1" and reps > 1:
+    reps = int(get_flag("GAUGE_UNIF_REPS"))
+    if bool(get_flag("GAUGE_UNIF_SAMPLE")) and reps > 1:
         outs = []
         for r in range(reps):
             os.environ["GAUGE_UNIF_REP_SEED"] = str(r)
@@ -929,12 +927,12 @@ def demo():
         )
 
     # Optional sampling schedule comparison: compare deterministic vs sampled outputs
-    if os.environ.get("GAUGE_SAMPLE_SCHEDULE", "0") == "1":
+    if bool(get_flag("GAUGE_SAMPLE_SCHEDULE")):
         y_det = cast(Array, model.apply(variables, x, train=False, return_debug=False))
         os.environ.setdefault("GAUGE_UNIF_SAMPLE", "1")
         os.environ.setdefault("GAUGE_UNIF_REPS", "3")
         outs = []
-        for r in range(int(os.environ.get("GAUGE_UNIF_REPS", "3"))):
+        for r in range(int(get_flag("GAUGE_UNIF_REPS", 3))):
             os.environ["GAUGE_UNIF_REP_SEED"] = str(r + 77)
             ys = cast(Array, model.apply(variables, x, train=False, return_debug=False))
             outs.append(ys)
@@ -951,7 +949,7 @@ def demo():
         )
 
     # Optional lightweight train/eval schedule comparison
-    if os.environ.get("GAUGE_SAMPLE_TRAIN", "0") == "1":
+    if bool(get_flag("GAUGE_SAMPLE_TRAIN")):
         # Build small train/eval batches
         Btr, Ntr = 2, N
         Xtr = jax.random.normal(key, (Btr, Ntr, D))
@@ -1093,7 +1091,7 @@ def demo():
 
     # --- BCH/Magnus fusion mini-experiment ---
     bch_rows = None
-    if os.environ.get("GAUGE_BCH_FUSION", "1") != "0":
+    if bool(get_flag("GAUGE_BCH_FUSION")):
         key, subkey = jax.random.split(key)
         dim_fuse = 6
         n_steps = 4
@@ -1220,7 +1218,7 @@ def demo():
     )
 
     # Alternate structured/unstructured: zero out generators on odd blocks (env GAUGE_ALT_STRUCT=1)
-    if os.environ.get("GAUGE_ALT_STRUCT", "0") == "1":
+    if bool(get_flag("GAUGE_ALT_STRUCT")):
         from flax.core import freeze as _freeze
         from flax.core import unfreeze as _unfreeze
 
@@ -1297,8 +1295,8 @@ def demo():
         )
 
     # If GAUGE_UNIF_CAP_K is set, compare vs uncapped K means
-    cap_val = os.environ.get("GAUGE_UNIF_CAP_K", "")
-    if cap_val:
+    cap_val = get_flag("GAUGE_UNIF_CAP_K")
+    if cap_val is not None:
         # Uncapped run
         val = os.environ.pop("GAUGE_UNIF_CAP_K")
         _, dbg_uncap = cast(

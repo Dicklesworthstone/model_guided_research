@@ -519,6 +519,96 @@ def list_demos():
     console.print("[dim]Get info about a demo:[/dim] [bold green]mgr info <demo-name>[/bold green]")
 
 
+@app.command("flags")
+def flags(
+    demo_name: Annotated[
+        str | None,
+        typer.Argument(
+            help="Optional demo name to filter flags (e.g. matrix-gauge, tropical, reversible, ultrametric, knot-braid)",
+        ),
+    ] = None,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON")] = False,
+) -> None:
+    """List registered demo environment-variable feature flags, their types, defaults, and active values."""
+    from config import DEMO_FLAG_REGISTRY, get_flag, normalize_demo_name
+
+    canon_demo = normalize_demo_name(demo_name)
+    specs = list(DEMO_FLAG_REGISTRY.values())
+    if canon_demo is not None:
+        known_demos = set(DEMOS.keys()) | {s.demo for s in specs}
+        if canon_demo not in known_demos:
+            console.print(
+                f"[bold red]Error:[/bold red] Unknown demo '{demo_name}'. "
+                f"Valid demos with flags: {', '.join(sorted({s.demo for s in specs}))}"
+            )
+            raise typer.Exit(1)
+        specs = [s for s in specs if s.demo == canon_demo]
+
+    rows_data: list[dict[str, Any]] = []
+    for spec in specs:
+        is_set = spec.name in os.environ
+        try:
+            current_val = get_flag(spec.name)
+            status = "active" if is_set else "default"
+        except ValueError as err:
+            current_val = f"<invalid: {os.environ.get(spec.name)!r}>"
+            status = f"error: {err}"
+        rows_data.append(
+            {
+                "name": spec.name,
+                "demo": spec.demo,
+                "type": spec.type,
+                "default": spec.default,
+                "current": current_val,
+                "is_set": is_set,
+                "status": status,
+                "choices": list(spec.choices) if spec.choices else None,
+                "description": spec.description,
+            }
+        )
+
+    if json_out:
+        print(json.dumps(rows_data, indent=2, sort_keys=True))
+        return
+
+    title = (
+        f"[bold cyan]Demo Feature Flags ({canon_demo})[/bold cyan]"
+        if canon_demo
+        else "[bold cyan]Registered Demo Feature Flags (All Demos)[/bold cyan]"
+    )
+    table = Table(
+        title=title,
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta",
+    )
+    table.add_column("Flag", style="cyan", no_wrap=True)
+    table.add_column("Demo", style="green", no_wrap=True)
+    table.add_column("Type", style="yellow", no_wrap=True)
+    table.add_column("Default", justify="right", no_wrap=True)
+    table.add_column("Current", justify="right", no_wrap=True)
+    table.add_column("Description", style="white")
+
+    for row in rows_data:
+        type_str = row["type"]
+        if row["choices"]:
+            type_str = f"enum({','.join(row['choices'])})"
+        default_str = "None" if row["default"] is None else repr(row["default"])
+        curr_raw = "None" if row["current"] is None else repr(row["current"])
+        curr_str = f"[bold green]{curr_raw}[/bold green]" if row["is_set"] else f"[dim]{curr_raw}[/dim]"
+        table.add_row(
+            row["name"],
+            row["demo"],
+            type_str,
+            default_str,
+            curr_str,
+            row["description"],
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(rows_data)} registered flag(s). Set via environment: e.g. ULTRA_PACKED=1 mgr run ultrametric[/dim]")
+
+
 @app.command()
 def run(
     demo_name: Annotated[
@@ -676,6 +766,10 @@ def run(
         for name in DEMOS:
             console.print(f"  • {name}")
         raise typer.Exit(1)
+
+    from config import validate_demo_flags
+
+    validate_demo_flags(demo_name)
 
     demo_info = DEMOS[demo_name]
 
