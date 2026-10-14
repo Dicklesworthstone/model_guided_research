@@ -466,3 +466,72 @@ The math relies on Banach fixed‑point and linear contractions—well within a 
 * Head‑to‑head wins on large‑scale retrieval or KV‑cache workloads (impact, acceptance).
 * Router training that keeps collision rate sub‑linear with load, or address‑ECC to tolerate router errors (usefulness, impact).
 * Demonstrations of stable lifelong learning (no rehearsal) with explicit ablations (difficulty/ease of validation, acceptance).
+
+---
+
+## 8) Weighted Ultrametric Equivalence, Moran Capacity, and Optimal Radius Allocation (Bead 8gk.5)
+
+### Proposition 1 (IFS Cylinder Metric = Weighted Ultrametric; Equivalence with Valuation Tries)
+
+Let $\Sigma = \{0, 1, \dots, m-1\}^L$ be the depth-$L$ address space of an Iterated Function System (IFS) with branch contraction ratios $r = (r_0, \dots, r_{m-1}) \in (0, 1)^m$. For two addresses $a, b \in \Sigma$ with longest common prefix length $\ell = \operatorname{LCP}(a, b) \in \{0, \dots, L\}$, define the cylinder metric
+
+$$
+d_r(a, b) = \begin{cases} 0 & \text{if } a = b \ (\ell = L), \\ \prod_{j=1}^{\ell} r_{a_j} & \text{if } a \neq b \ (\ell < L), \end{cases}
+$$
+
+with the empty product ($\ell = 0$) equal to $1$.
+
+**Proof of Strong Triangle Inequality ($d_r(a, c) \le \max(d_r(a, b), d_r(b, c))$):**
+1. For any three strings $a, b, c \in \Sigma$, prefix agreement satisfies $\operatorname{LCP}(a, c) \ge \min(\operatorname{LCP}(a, b), \operatorname{LCP}(b, c)) =: \ell_{\min}$.
+2. Because every branch ratio satisfies $0 < r_i < 1$, extending a prefix product by additional factors in $(0, 1)$ strictly decreases its value: $\prod_{j=1}^{\operatorname{LCP}(a, c)} r_{a_j} \le \prod_{j=1}^{\ell_{\min}} r_{a_j}$.
+3. Since $a, b, c$ share the exact same prefix of length $\ell_{\min}$, the right-hand product equals $\max(d_r(a, b), d_r(b, c))$, establishing $d_r(a, c) \le \max(d_r(a, b), d_r(b, c))$. $\square$
+
+**Valuation-Tree Unification:**
+- Setting uniform contraction ratios $r_i \equiv p^{-1}$ recovers the canonical $p$-adic ultrametric $d(a, b) = p^{-\operatorname{LCP}(a, b)}$ implemented in `nanochat/ultrametric_attention_torch.py`.
+- Learning heterogeneous contraction ratios $r_i \in (0, r_{\max})$ via `FractalCausalSelfAttention(..., fractal_ifs=True)` in `nanochat/fractal_attention_torch.py` strictly generalizes both uniform $p$-adic tries and the depth-prototype router proxy (`fractal_ifs=False`).
+
+### Proposition 2 (Moran Similarity Dimension and Memory Capacity)
+
+Let $\{w_i(z) = r_i R_i z + (1 - r_i)\tau_i\}_{i=0}^{m-1}$ be a family of similitudes on $\mathbb{R}^{d_h}$ with $R_i \in \operatorname{SO}(d_h)$ and $r_i \in (0, 1)$. The unique **Moran similarity exponent** $s = D_{\text{Moran}} > 0$ solves the Hutchinson–Moran equation
+
+$$
+\sum_{i=0}^{m-1} r_i^s = 1.
+$$
+
+Under a readout-noise floor $\varepsilon > 0$, a cylinder address $a = (a_1, \dots, a_k)$ is resolvable down to depth $k(a)$ where $\prod_{j=1}^{k(a)} r_{a_j} \asymp \varepsilon$. Raising both sides to the power $s$ and summing over the minimal $\varepsilon$-stopping cut $\mathcal{C}_\varepsilon$ of the address tree yields
+
+$$
+1 = \sum_{a \in \mathcal{C}_\varepsilon} \prod_{j=1}^{k(a)} r_{a_j}^s \asymp |\mathcal{C}_\varepsilon| \, \varepsilon^s \implies N_{\text{cap}}(\varepsilon) = |\mathcal{C}_\varepsilon| \asymp \varepsilon^{-s}.
+$$
+
+**Rigor Caveat (Open Set Condition):**
+The equality between the geometric Hausdorff/box-counting dimension of the attractor and the Moran solution $s = D_{\text{Moran}}$ (and the resulting $\varepsilon^{-s}$ non-colliding capacity scaling) holds when the contraction images satisfy Hutchinson's **Open Set Condition (OSC)**: there exists a non-empty bounded open set $U$ such that $\bigsqcup_{i=0}^{m-1} w_i(U) \subset U$ with pairwise disjoint images. For general learned affine maps where sibling cylinders overlap, $D_{\text{Moran}}$ is a rigorous **upper bound** on the Hausdorff dimension ($\dim_H(\mathcal{A}) \le D_{\text{Moran}}$). By contrast, hard-digit prefix tries satisfy OSC unconditionally because distinct digit prefixes define disjoint combinatorial cylinders.
+
+### Proposition 3 (Zero-Interference Law on Disjoint Cylinders)
+
+Whenever two writes target addresses $a \neq b$ belonging to disjoint cylinders (unconditional for discrete prefix tries; conditional on OSC margin $\gamma > 0$ for contractive IFS embeddings), the indicator kernels of their cylinders are orthogonal in the ultrametric geometry, so writing to $a$ induces **exact zero interference** on any read from $b$.
+
+### Optimal Radius Allocation and Coding-Theory Dictionary (Interface for Bead 77l.4)
+
+Suppose queries visit branch $i \in \{0, \dots, m-1\}$ with empirical probability mass $p_i > 0$ ($\sum_{i=0}^{m-1} p_i = 1$). Minimizing expected log-resolution distortion $-\sum_{i=0}^{m-1} p_i \ln r_i$ subject to a fixed Moran similarity dimension constraint $\sum_{i=0}^{m-1} r_i^s = 1$ via the Lagrangian $\mathcal{L}(r, \lambda) = -\sum_i p_i \ln r_i + \lambda (\sum_i r_i^s - 1)$ gives
+
+$$
+\frac{\partial \mathcal{L}}{\partial r_i} = -\frac{p_i}{r_i} + \lambda s r_i^{s - 1} = 0 \implies r_i^s = \frac{p_i}{\lambda s}.
+$$
+
+Summing over $i$ forces $\lambda s = \sum_i p_i = 1$, yielding the closed-form **Optimal Radius Allocation Law**:
+
+$$
+r_i^* = p_i^{1/s}, \qquad i \in \{0, \dots, m-1\}.
+$$
+
+| Prefix Coding Theory (Shannon / Kraft) | Geometric IFS Memory (Hutchinson / Moran) |
+|---|---|
+| Codeword length $\ell_i$ | Log-contraction depth $-\ln r_i$ |
+| Kraft inequality $\sum_i 2^{-\ell_i} = 1$ | Moran equation $\sum_i r_i^s = 1$ |
+| Optimal codelength $\ell_i^* = -\log_2 p_i$ | Optimal contraction radius $r_i^* = p_i^{1/s}$ |
+| Shannon entropy $H(p)$ | Expected log-contraction $\frac{1}{s} H(p)$ |
+
+**Explicit Python Interface (consumed by `77l.4` geometry-informed initialization):**
+`nanochat.fractal_attention_torch.optimal_ifs_radii(branch_masses, target_moran_dim=s)` takes a 1D tensor `branch_masses` of empirical branch probabilities $p \in \Delta^{m-1}$ and target Moran dimension $s > 0$, normalizes $p$, and returns $r^* = p^{1/s}$ clamped to `[r_min, r_max]`.
+

@@ -135,26 +135,20 @@ Honest snapshot from `mgr certify` (55/55 pass) and the registry.
 | gauge | ✓ | ✓ (rotation roundtrip/additivity) | ✓ (zero_transport_reduces_to_standard_attention: zero connection = plain SDPA on the same projections, no QK-norm; kill witness in tests) | ✓ flat, 0.0001-0.0019 | ✓ |
 | reversible | ✓ | ✓ (inverse roundtrip, autograd parity) | — analyzed 2026-09-03: the RevNet coupling y1 = x1 + F(x2), y2 = x2 + G(y1) has no plain-block limit; forward_inverse_roundtrip and symplectic_jacobian are the known-answer checks | ✓ flat, 0.0003-0.0009 (hyp-coordcheck-clt-flat SUPPORTED) | ✓ |
 | hyperbolic | ✓ | ✓ (Lorentz constraint, exp/log roundtrip) | ✓ (energy_gromov_reduces_to_standard) | ✓ flat, 0.0009-0.0013 | ✓ |
-| simplicial | ✓ | ✓ (mass conservation) | ✓ (zero_triangle_reduces_to_standard_attention: two-hop weight zero = causal SDPA; proxy tier, the faithful 2-simplex build must keep it) | ✓ flat, 0.0008-0.0016 | ✓ |
-| surreal | ✓ | ✓ (row-norm, linearity, equivariance) | — (no simpler sub-mechanism) | ✓ flat, 0.0001-0.0026 | ✓ |
-| fractal | ✓ | ✓ (router simplex) | — (no simpler sub-mechanism) | ✓ flat, 0.0012-0.0022 | ✓ |
+| simplicial | ✓ | ✓ (mass conservation, triplet boundary conservation, wedge antisymmetry) | ✓ (`zero_triangle_reduces_to_standard_attention`: both 2-hop proxy and faithful 2-simplex `--simplicial-triplet` reduce to causal SDPA at `mix_2 = 0`) | ✓ flat, 0.0008-0.0016 | ✓ |
+| surreal | ✓ | ✓ (row-norm, linearity, equivariance, valuation dominance) | ✓ (`zero_omega_reduces_to_standard_attention`: faithful two-scale valuation attention `--surreal-scaling-axis` reduces to causal SDPA at `beta_omega = 0`) | ✓ flat, 0.0001-0.0026 | ✓ |
+| fractal | ✓ | ✓ (router simplex, IFS Moran contractivity) | ✓ (`zero_ifs_reduces_to_prototype_attention`: faithful IFS tree path `--fractal-ifs` reduces to prototype fractal attention at `ifs_gate = 0, ifs_prefix_weight = 0`) | ✓ flat, 0.0012-0.0022 | ✓ |
 
 Coordinate-check readings are `mgr coord-check` log-log slopes of activation
 RMS vs width (64..2048, three seeds at init; artifacts under
 `artifacts/bench/coord_curves/`). Seeds 0-2 measured the table; the class-level
 flatness hypotheses registered on 2026-09-03 are adjudicated on seeds 3-5.
 
-**The reduction-to-known column is now filled wherever a clean reduction
-exists** (bead uvjq, 2026-06-14): octonion ⊃ quaternion, tropical → its exact
-β→∞ endpoint, ultrametric kernel == trie. `gauge → standard` was analyzed and
-deliberately left out — the GaugeBlock omits the QK-norm that standard
-attention applies, so it reduces only to QK-norm-stripped dot-product
-attention, not the standard *mechanism* (its transport machinery is already
-certified by the `rotation_*` checks). braid/fractal/simplicial/surreal are
-not generalizations of a simpler attention mechanism, so have no
-reduction-to-known to certify. The coordinate-check column is the remaining
-gap, empty because `lab.1` (the muP parameterization harness) is open — that is
-where a new mechanism's init/LR scaling gets verified before any matched-FLOPs
-width comparison. New mechanisms enter the gate green by construction; the
-reduction retrofits for existing mechanisms are complete (bead uvjq closed
-2026-06-14).
+**The reduction-to-known column is now filled for every mechanism with a
+known-mechanism limit** (bead uvjq, `jida.14`, `jida.15`, `8gk.5`, `jida.17`):
+octonion ⊃ quaternion, Clifford ⊃ quaternion, hyperbolic → standard ($c \to 0$),
+tropical → its exact $\beta \to \infty$ endpoint, ultrametric kernel == trie,
+gauge → standard at zero connection, simplicial → standard at zero triangle weight,
+surreal → standard at $\beta_\omega = 0$, and fractal IFS → prototype fractal at
+zero IFS gate. New mechanisms enter the gate green by construction.
+

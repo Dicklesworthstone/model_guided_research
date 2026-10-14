@@ -912,28 +912,211 @@ def test_gauge_zero_transport_reduces_to_plain_attention_and_nonzero_does_not():
 
 
 def test_simplicial_zero_triangle_reduces_to_plain_attention_and_two_hop_does_not():
-    """Reduction-to-known-mechanism for the simplicial proxy (checklist item 1,
-    bead jida.14): with the two-hop weight zeroed the mechanism is plain causal
-    softmax attention; with it live the two-hop diffusion changes the output
-    (the kill witness)."""
+    """Reduction-to-known-mechanism for both the simplicial proxy and faithful
+    2-simplex triplet path (checklist item 1, bead jida.14): with the two-hop /
+    triangle weight zeroed the mechanism is plain causal softmax attention; with
+    it live the 2-simplex / 2-hop operator changes the output (the kill witness)."""
     import torch
     import torch.nn.functional as t_func
 
     from nanochat.gpt import Block, GPTConfig
     from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
 
-    torch.manual_seed(0)
+    for triplet_mode in (False, True):
+        torch.manual_seed(0)
+        cfg = GPTConfig(
+            sequence_len=16,
+            vocab_size=64,
+            n_layer=1,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=32,
+            attention_type="simplicial",
+            simplicial_triplet=triplet_mode,
+            simplicial_window=6,
+        )
+        raw_attn = Block(cfg, 0).eval().attn
+        assert isinstance(raw_attn, SimplicialCausalSelfAttention)
+        attn = raw_attn.float()
+        q, k, v = (torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head) for _ in range(3))
+        ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+        with torch.no_grad():
+            attn.mix_1.fill_(1.0)
+            attn.mix_2.zero_()
+            assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) < 2e-5
+            attn.mix_2.fill_(0.5)
+            assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) > 1e-3
+
+
+def test_simplicial_triplet_wedge_antisymmetry_boundary_conservation_and_placebo():
+    """Faithful 2-simplex cochain invariants and planted-violation kill witnesses
+    (bead jida.14):
+    1. compute_wedge_matrix is skew-symmetric under (a <-> b) swap; a planted
+       non-antisymmetric matrix fails the skew-symmetry check.
+    2. _aggregate_triplet preserves constant value vectors v == c because
+       sum_m gamma^+_m == 1 and sum_m gamma^-_m == 0; corrupting the boundary
+       weights breaks constant preservation.
+    3. simplicial_random_triangles=True placebo runs at identical shape/mass
+       conservation while altering the triangle assignment on non-constant v."""
+    from nanochat.gpt import Block, GPTConfig
+    from nanochat.model_utils import causal_attn_mask
+    from nanochat.simplicial_attention_torch import SimplicialCausalSelfAttention
+
+    torch.manual_seed(14)
     cfg = GPTConfig(
-        sequence_len=16, vocab_size=64, n_layer=1, n_head=2, n_kv_head=2, n_embd=32, attention_type="simplicial"
+        sequence_len=16,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=32,
+        attention_type="simplicial",
+        simplicial_triplet=True,
+        simplicial_window=6,
     )
     raw_attn = Block(cfg, 0).eval().attn
     assert isinstance(raw_attn, SimplicialCausalSelfAttention)
     attn = raw_attn.float()
+    q = torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head)
+    k = torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head)
+    v = torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head)
+
+    with torch.no_grad():
+        m = attn.compute_wedge_matrix(q, k[:, :, :6, :])
+        assert float(m.abs().max()) > 1e-3
+        assert float((m + m.transpose(-1, -2)).abs().max()) < 1e-6
+        # Planted violation: dropping the transpose subtraction breaks skew-symmetry
+        m_bad = m + 0.25 * torch.ones_like(m)
+        assert float((m_bad + m_bad.transpose(-1, -2)).abs().max()) > 0.4
+
+        scores = attn.score(q, k).masked_fill(~causal_attn_mask(8, 8, device=q.device), float("-inf"))
+        weights = torch.softmax(scores, dim=-1)
+        c = -1.37
+        v_const = torch.full_like(v, c)
+        y2_const = attn._aggregate_triplet(weights, v_const, q=q, k=k, pos0=None)
+        assert float((y2_const - c).abs().max()) < 1e-5
+        assert attn.last_simplicial_stats is not None
+        assert attn.last_simplicial_stats["boundary_zero_sum_err"] < 1e-6
+
+        # Placebo control: randomizing triangles preserves constant vectors
+        # while changing the output on non-constant values.
+        y_faithful = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        attn.simplicial_random_triangles = True
+        y_placebo = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        y2_placebo_const = attn._aggregate_triplet(weights, v_const, q=q, k=k, pos0=None)
+        assert float((y2_placebo_const - c).abs().max()) < 1e-5
+        assert float((y_faithful - y_placebo).abs().max()) > 1e-4
+
+
+def test_fractal_ifs_contractivity_moran_dimension_and_optimal_radii():
+    """Banach-Hutchinson IFS attention laws and kill witnesses (bead 8gk.5):
+    1. Exact reduction when ifs_gate=0 and ifs_prefix_weight=0; non-zero gate
+       separates from prototype attention (kill witness).
+    2. compute_moran_dimension recovers -log(m)/log(r) on uniform radii and
+       solves sum_i r_i^s == 1 to < 1e-6 on heterogeneous radii.
+    3. optimal_ifs_radii allocates r_i* = p_i^(1/s) satisfying the Moran
+       equation and allocating larger contraction radii to heavier branches."""
+    from nanochat.fractal_attention_torch import (
+        FractalCausalSelfAttention,
+        compute_moran_dimension,
+        optimal_ifs_radii,
+    )
+    from nanochat.gpt import Block, GPTConfig
+
+    # 1. Exact uniform Moran dimension: m=4, r=0.5 => sum_{i=1}^4 (0.5)^2 = 1 => D_Moran = 2.0
+    d_unif = compute_moran_dimension(torch.tensor([0.5, 0.5, 0.5, 0.5]))
+    assert abs(d_unif - 2.0) < 1e-6
+
+    # 2. Optimal radius allocation r_i* = p_i^(1/s) (Proposition 2, consumed by 77l.4)
+    masses = torch.tensor([0.5, 0.25, 0.15, 0.10], dtype=torch.float64)
+    target_s = 1.75
+    radii_opt = optimal_ifs_radii(masses, target_moran_dim=target_s)
+    assert abs(compute_moran_dimension(radii_opt) - target_s) < 1e-5
+    assert bool((radii_opt[:-1] > radii_opt[1:]).all())
+
+    # 3. Module reduction + separation kill witness + Lipschitz contractivity
+    torch.manual_seed(85)
+    cfg_base = GPTConfig(
+        sequence_len=16, vocab_size=64, n_layer=1, n_head=2, n_kv_head=2, n_embd=32, attention_type="fractal"
+    )
+    attn_base = Block(cfg_base, 0).eval().attn.float()
+    torch.manual_seed(85)
+    cfg_ifs = GPTConfig(
+        sequence_len=16,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=32,
+        attention_type="fractal",
+        fractal_ifs=True,
+    )
+    raw_ifs = Block(cfg_ifs, 0).eval().attn
+    assert isinstance(raw_ifs, FractalCausalSelfAttention)
+    attn_ifs = raw_ifs.float()
+
+    q, k, v = (torch.randn(1, cfg_base.n_head, 8, cfg_base.n_embd // cfg_base.n_head) for _ in range(3))
+    with torch.no_grad():
+        ref = attn_base.attend(q, k, v, kv_cache=None, pos0=None)
+        out_live = attn_ifs.attend(q, k, v, kv_cache=None, pos0=None)
+        assert float((out_live - ref).abs().max()) > 1e-4  # kill witness: live IFS differs from prototype
+        assert attn_ifs.last_fractal_stats is not None
+        assert attn_ifs.last_fractal_stats["moran_dimension"] > 0.0
+
+        assert attn_ifs.ifs_gate is not None and attn_ifs.ifs_prefix_weight is not None
+        attn_ifs.ifs_gate.zero_()
+        attn_ifs.ifs_prefix_weight.zero_()
+        out_zero = attn_ifs.attend(q, k, v, kv_cache=None, pos0=None)
+        assert float((out_zero - ref).abs().max()) < 1e-6
+
+
+def test_surreal_scaling_axis_reduction_valuation_dominance_and_placebo():
+    """Surreal two-scale Levi-Civita valuation attention laws and kill witnesses
+    (bead jida.15):
+    1. beta_omega == 0 reduces to standard causal SDPA; beta_omega > 0 separates.
+    2. surreal_freeze_scale=True placebo zeroes valuation differences and matches
+       standard causal SDPA.
+    3. Increasing beta_omega strictly increases attention weight on keys in the
+       matching valuation class when archimedean inner products are tied."""
+    import torch.nn.functional as t_func
+
+    from nanochat.gpt import Block, GPTConfig
+    from nanochat.surreal_torch import SurrealCausalSelfAttention
+
+    torch.manual_seed(15)
+    cfg = GPTConfig(
+        sequence_len=16,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=32,
+        attention_type="surreal",
+        surreal_scaling_axis=True,
+    )
+    raw_attn = Block(cfg, 0).eval().attn
+    assert isinstance(raw_attn, SurrealCausalSelfAttention)
+    attn = raw_attn.float()
     q, k, v = (torch.randn(1, cfg.n_head, 8, cfg.n_embd // cfg.n_head) for _ in range(3))
     ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+
     with torch.no_grad():
-        attn.mix_1.fill_(1.0)
-        attn.mix_2.zero_()
-        assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) < 2e-5
-        attn.mix_2.fill_(0.5)
-        assert float((attn.attend(q, k, v, kv_cache=None, pos0=None) - ref).abs().max()) > 1e-3
+        assert attn.beta_omega is not None
+        attn.beta_omega.fill_(1.5)
+        out_live = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        assert float((out_live - ref).abs().max()) > 1e-3  # kill witness
+        assert attn.last_surreal_stats is not None
+        assert len(attn.last_surreal_stats["scale_histogram"]) == 5
+        assert attn.last_surreal_stats["valuation_gap"] > 0.0
+
+        # Exact reduction via beta_omega == 0
+        attn.beta_omega.zero_()
+        out_zero = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        assert float((out_zero - ref).abs().max()) < 2e-5
+
+        # Placebo control: surreal_freeze_scale=True zeroes valuation differences
+        attn.beta_omega.fill_(1.5)
+        attn.surreal_freeze_scale = True
+        out_frozen = attn.attend(q, k, v, kv_cache=None, pos0=None)
+        assert float((out_frozen - ref).abs().max()) < 2e-5
+

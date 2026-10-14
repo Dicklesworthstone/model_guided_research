@@ -327,12 +327,14 @@ theorems:
     status: proved-on-paper
     mechanisms: [fractal, ultrametric]
     source_note:
-      path: pending
-      anchor: null
-    proof_location: "Proposition 1 of bead 8gk.5"
+      path: markdown_documentation/iterated_function_systems_and_fractal_memory.md
+      anchor: "Proposition 1"
+    proof_location: "iterated_function_systems_and_fractal_memory.md Section 8, Proposition 1 (bead 8gk.5)"
     numerical_checks:
       - kind: pytest
         ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_ifs_cylinder_ultrametric
+      - kind: certify
+        ref: fractal.zero_ifs_reduces_to_prototype_attention
     used_by: [model_guided_research-8gk.5, model_guided_research-77l.4]
     depends_on: []
 
@@ -345,12 +347,16 @@ theorems:
     status: proved-on-paper
     mechanisms: [fractal]
     source_note:
-      path: pending
-      anchor: null
-    proof_location: "classical (Moran equation / Hutchinson); capacity reading in bead 8gk.5"
+      path: markdown_documentation/iterated_function_systems_and_fractal_memory.md
+      anchor: "Proposition 2"
+    proof_location: "iterated_function_systems_and_fractal_memory.md Section 8, Proposition 2 (bead 8gk.5)"
     numerical_checks:
+      - kind: certify
+        ref: fractal.ifs_moran_contractivity
       - kind: pytest
         ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_moran_capacity
+      - kind: pytest
+        ref: tests/test_algebraic_properties.py::test_fractal_ifs_contractivity_moran_dimension_and_optimal_radii
     used_by: [model_guided_research-8gk.5, model_guided_research-77l.4]
     depends_on: [thm-ifs-cylinder-ultrametric]
 
@@ -362,9 +368,9 @@ theorems:
     status: proved-on-paper
     mechanisms: [fractal, ultrametric]
     source_note:
-      path: pending
-      anchor: null
-    proof_location: "Proposition 3 of bead 8gk.5; immediate from cylinder disjointness"
+      path: markdown_documentation/iterated_function_systems_and_fractal_memory.md
+      anchor: "Proposition 3"
+    proof_location: "iterated_function_systems_and_fractal_memory.md Section 8, Proposition 3 (bead 8gk.5)"
     numerical_checks:
       - kind: pytest
         ref: tests/test_mathematical_properties.py::TestTheoremRegistryNumericalChecks::test_thm_cylinder_zero_interference

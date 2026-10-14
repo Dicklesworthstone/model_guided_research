@@ -270,13 +270,13 @@ Each framework is implemented twice:
 1. **JAX Demo**: Interactive exploration with visualizations
 2. **PyTorch Attention**: Production-ready mechanism in nanochat
 
-Fidelity note: three of the PyTorch mechanisms (simplicial, fractal, surreal)
-are deliberately simplified proxies of their JAX demos, and their sections
-below say exactly what is implemented. Treat their registry verdicts as
-verdicts about the proxy: since 2026-09-03 each such entry carries a PROXY
-TIER note and has a faithful-tier successor (ids ending in `-faithful`,
-selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
-`surreal_scaling_axis`) that only the faithful implementations can satisfy.
+Fidelity note: three of the PyTorch mechanisms (`simplicial`, `fractal`, `surreal`)
+support both a lightweight default proxy tier (for backward golden/ledger parity)
+and a faithful mathematical tier enabled via `--simplicial-triplet`
+(`simplicial_triplet=True`), `--fractal-ifs` (`fractal_ifs=True`), and
+`--surreal-scaling-axis` (`surreal_scaling_axis=True`). In the hypothesis
+registry, proxy-tier entries carry a PROXY TIER note while faithful-tier
+entries (ids ending in `-faithful`) select the corresponding config flag.
 
 ### 1. Matrix Exponential Gauge Learning
 **Key Idea**: Lie group/algebra machinery for stable neural architectures
@@ -350,7 +350,7 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 ### 4. Simplicial Complexes & Higher-Order Attention
 **Key Idea**: Multi-body interactions beyond pairwise attention
 **JAX Demo**: `simplicial` | [Documentation](markdown_documentation/simplicial_complexes_and_higher_order_attention.md) | [Code](simplicial_complexes_and_higher_order_attention.py)
-**PyTorch**: `nanochat/simplicial_attention_torch.py` | Use: `--attention-type simplicial`
+**PyTorch**: `nanochat/simplicial_attention_torch.py` | Use: `--attention-type simplicial [--simplicial-triplet]`
 
 **Mathematical Foundation**:
 - Simplicial complexes: vertices (0), edges (1), triangles (2), ...
@@ -364,13 +364,9 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 - Group dynamics beyond individual relationships
 - Combinatorial structure for discrete reasoning
 
-**What the PyTorch mechanism implements (a proxy)**:
-- Standard scaled-dot-product scores; the output is `m1 · (A v) + m2 · (A (A v))`
-  with two learned scalars, i.e. a two-hop diffusion on the attention graph
-- KV-cache decode keeps the 1-hop history so the 2-hop term stays consistent
-- No boundary operators, Laplacians, or Hodge decomposition in nanochat; those
-  live in the JAX demo (`--simplicial-hodge`). Registry claims about this
-  mechanism are claims about two-hop diffusion, not about simplicial structure.
+**Implementation Highlights (Proxy & Faithful 2-Simplex Tiers)**:
+- **Proxy tier (`--simplicial-triplet` off, default)**: 2-hop diffusion `m1 · (A v) + m2 · (A (A v))` on the 1-skeleton with KV-cache 1-hop history
+- **Faithful 2-simplex tier (`--simplicial-triplet`)**: Antisymmetric coboundary wedge 2-cochain `M_i[a,b] = <q_i, k_a * (U_wedge k_b) - k_b * (U_wedge k_a)> / sqrt(d_h)` over causal triangles `j_1 < j_2 <= i` within `--simplicial-window`, aggregated via the oriented boundary operator `∂_2 α^{(2)}` (exact zero-sum boundary conservation)
 
 ### 5. Quaternion & Octonion Attention (Hypercomplex Algebra)
 **Key Idea**: 4D/8D hypercomplex numbers for rotation-aware features
@@ -449,7 +445,7 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 ### 8. Iterated Function Systems & Fractal Memory
 **Key Idea**: Self-similar memory structures with hierarchical addressing
 **JAX Demo**: `ifs-fractal` | [Documentation](markdown_documentation/iterated_function_systems_and_fractal_memory.md) | [Code](iterated_function_systems_and_fractal_memory.py)
-**PyTorch**: `nanochat/fractal_attention_torch.py` | Use: `--attention-type fractal`
+**PyTorch**: `nanochat/fractal_attention_torch.py` | Use: `--attention-type fractal [--fractal-ifs]`
 
 **Mathematical Foundation**:
 - Iterated Function Systems (IFS): Fixed points of contraction maps
@@ -463,13 +459,9 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 - Infinite capacity in principle
 - Natural for recursive/hierarchical data
 
-**What the PyTorch mechanism implements (a proxy)**:
-- One linear router turns each query/key into 4 depth-wise softmaxes over 4
-  branches (m=4, depth=4, fixed)
-- The score is the dot product of the flattened branch probabilities scaled by
-  1/sqrt(depth): a proxy for path overlap, not the per-depth product of matches
-- The IFS fixed-point read `x*_w` of the JAX demo is not implemented in
-  nanochat; the weighted-ultrametric formulation is tracked in bead 8gk.5
+**Implementation Highlights (Proxy & Faithful IFS Tiers)**:
+- **Proxy tier (`--fractal-ifs` off, default)**: Depth-wise router softmaxes over `m=4` branches at `depth=4` with dot-product overlap scoring
+- **Faithful IFS tier (`--fractal-ifs`)**: Weighted ultrametric cylinder kernel with learned per-branch contraction ratios `r_i ∈ (0, r_max)`, Cayley orthogonal rotors `R_i ∈ SO(d_h)`, Banach-Hutchinson contractive value maps `w_i(v) = r_i R_i v + (1 - r_i) τ_i`, and live Moran similarity dimension `∑_i r_i^s = 1` telemetry (`compute_moran_dimension`, `optimal_ifs_radii`)
 
 ### 9. Knot-Theoretic Programs & Braid-Based Attention
 **Key Idea**: Topological invariants for robust representations
@@ -497,7 +489,7 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 ### 10. Surreal Numbers, Transseries & Scaling
 **Key Idea**: Infinitely large and small scales simultaneously
 **JAX Demo**: `surreal` | [Documentation](markdown_documentation/surreal_numbers_transseries_and_scaling.md) | [Code](surreal_numbers_transseries_and_scaling.py)
-**PyTorch**: `nanochat/surreal_torch.py` | Use: `--attention-type surreal`
+**PyTorch**: `nanochat/surreal_torch.py` | Use: `--attention-type surreal [--surreal-scaling-axis]`
 
 **Mathematical Foundation**:
 - Conway's surreal numbers: {L|R} construction
@@ -511,12 +503,9 @@ selected by the config knobs `fractal_ifs`, `simplicial_triplet`,
 - Natural handling of wide dynamic ranges
 - Separation of magnitude and direction
 
-**What the PyTorch mechanism implements (a parameterization, not new attention math)**:
-- Standard scaled-dot-product attention whose four projections use the
-  scale-direction decomposition `w = exp(s) * normalize(v)`
-- `--attention-type surreal` therefore changes the optimization geometry of an
-  otherwise standard layer; its registry claims are about optimization
-  (the surreal-optimization-rate placebo result), not about routing
+**Implementation Highlights (Proxy & Faithful Two-Scale Valuation Tiers)**:
+- **Proxy tier (`--surreal-scaling-axis` off, default)**: `SurrealLayer` scale-direction decomposition `w = exp(s) · normalize(v)` across all four projections with standard causal SDPA
+- **Faithful scaling-axis tier (`--surreal-scaling-axis`)**: Two-scale Levi-Civita / Hahn valuation attention `S_{ij} = <q_i, k_j> / sqrt(d_h) - β_ω |ν(q_i) - ν(k_j)|` with learned per-head valuation axis `ν(x)`, frozen-scale placebo `--surreal-freeze-scale`, and live `scale_std` / `scale_histogram` / `valuation_gap` telemetry
 
 ### 11. Nonstandard Analysis & Hyperreal Training (HOSS)
 **Key Idea**: Infinitesimal perturbations for second-order optimization

@@ -24,6 +24,7 @@
     "eval_weight_quant_bits": null,
     "ffn_beta": null,
     "ffn_type": "standard",
+    "fractal_ifs": false,
     "n_embd": 64,
     "n_head": 4,
     "n_kv_head": 2,
@@ -36,7 +37,12 @@
     "reversible_tied": false,
     "semiring_beta": null,
     "sequence_len": 64,
+    "simplicial_random_triangles": false,
+    "simplicial_triplet": false,
+    "simplicial_window": 8,
     "standard_record_attn_entropy": false,
+    "surreal_freeze_scale": false,
+    "surreal_scaling_axis": false,
     "tropical_gauge_fix": true,
     "tropical_record_margins": false,
     "tropical_score_center": true,
@@ -53,7 +59,7 @@
     "vocab_size": 128
   },
   "host": {
-    "hostname": "hetzner2",
+    "hostname": "sensedemobox",
     "machine": "x86_64",
     "torch_version": "2.13.0+cu130"
   },
@@ -83,7 +89,7 @@
     4.853835105895996,
     4.8610358238220215,
     4.849668979644775,
-    4.855632781982422,
+    4.8556318283081055,
     4.856049537658691,
     4.849781036376953,
     4.854459762573242,

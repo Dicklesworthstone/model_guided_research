@@ -544,6 +544,103 @@ def _collect_tropical_margin_stats(model: torch.nn.Module) -> dict[str, Any] | N
     return stats
 
 
+def _collect_simplicial_stats(model: torch.nn.Module) -> dict[str, Any] | None:
+    """Collect latest 2-simplex cochain observables from simplicial attention layers (bead jida.14)."""
+    blocks = _transformer_blocks(model)
+    if not blocks:
+        return None
+    entropies: list[float] = []
+    shares: list[float] = []
+    for block in blocks:
+        attn = getattr(block, "attn", None)
+        st = getattr(attn, "last_simplicial_stats", None) if attn is not None else None
+        if not isinstance(st, dict):
+            continue
+        ent = st.get("triangle_entropy")
+        if isinstance(ent, int | float) and math.isfinite(float(ent)):
+            entropies.append(float(ent))
+        sh = st.get("hodge_2simplex_share")
+        if isinstance(sh, int | float) and math.isfinite(float(sh)):
+            shares.append(float(sh))
+    if not entropies and not shares:
+        return None
+    return {
+        "triangle_entropy": sum(entropies) / len(entropies) if entropies else 0.0,
+        "hodge_2simplex_share": sum(shares) / len(shares) if shares else 0.0,
+    }
+
+
+def _collect_fractal_stats(model: torch.nn.Module) -> dict[str, Any] | None:
+    """Collect latest Moran similarity dimension and IFS contraction ratios (bead 8gk.5)."""
+    blocks = _transformer_blocks(model)
+    if not blocks:
+        return None
+    dims: list[float] = []
+    max_rs: list[float] = []
+    profiles: list[list[float]] = []
+    for block in blocks:
+        attn = getattr(block, "attn", None)
+        st = getattr(attn, "last_fractal_stats", None) if attn is not None else None
+        if not isinstance(st, dict):
+            continue
+        d = st.get("moran_dimension")
+        if isinstance(d, int | float) and math.isfinite(float(d)):
+            dims.append(float(d))
+        mr = st.get("max_contraction")
+        if isinstance(mr, int | float) and math.isfinite(float(mr)):
+            max_rs.append(float(mr))
+        prof = st.get("radii_profile")
+        if isinstance(prof, list) and prof:
+            profiles.append([float(x) for x in prof])
+    if not dims:
+        return None
+    return {
+        "moran_dimension": sum(dims) / len(dims),
+        "max_contraction": max(max_rs) if max_rs else 0.0,
+        "radii_profile": profiles[-1] if profiles else [],
+    }
+
+
+def _collect_surreal_stats(model: torch.nn.Module) -> dict[str, Any] | None:
+    """Collect latest SurrealLayer scale histogram and Levi-Civita valuation gap (bead jida.15)."""
+    blocks = _transformer_blocks(model)
+    if not blocks:
+        return None
+    stds: list[float] = []
+    gaps: list[float] = []
+    hists: list[list[float]] = []
+    for block in blocks:
+        attn = getattr(block, "attn", None)
+        if attn is None:
+            continue
+        st = getattr(attn, "last_surreal_stats", None)
+        if not isinstance(st, dict) and hasattr(attn, "collect_scale_summary"):
+            st = attn.collect_scale_summary()
+        if not isinstance(st, dict):
+            continue
+        s_std = st.get("scale_std")
+        if isinstance(s_std, int | float) and math.isfinite(float(s_std)):
+            stds.append(float(s_std))
+        v_gap = st.get("valuation_gap")
+        if isinstance(v_gap, int | float) and math.isfinite(float(v_gap)):
+            gaps.append(float(v_gap))
+        hist = st.get("scale_histogram")
+        if isinstance(hist, list) and len(hist) == 5:
+            hists.append([float(x) for x in hist])
+    if not stds and not hists:
+        return None
+    mean_hist = (
+        [sum(col) / len(col) for col in zip(*hists, strict=True)]
+        if hists
+        else [0.0, 0.0, 0.0, 0.0, 0.0]
+    )
+    return {
+        "scale_std": sum(stds) / len(stds) if stds else 0.0,
+        "scale_histogram": mean_hist,
+        "valuation_gap": sum(gaps) / len(gaps) if gaps else 0.0,
+    }
+
+
 def _transformer_blocks(model: torch.nn.Module) -> list[torch.nn.Module] | None:
     """The residual blocks of a GPT-style model (``model.transformer.h``), else None."""
     transformer = getattr(model, "transformer", None)
@@ -1172,6 +1269,9 @@ def train(args) -> None:
         has_ultrametric = "ultrametric" in attention_schedule
         has_reversible = "reversible" in attention_schedule
         has_braid = "braid" in attention_schedule
+        has_simplicial = "simplicial" in attention_schedule
+        has_fractal = "fractal" in attention_schedule
+        has_surreal = "surreal" in attention_schedule
 
         if has_ultrametric:
             config.ultrametric_mode = str(getattr(args, "ultrametric_mode", config.ultrametric_mode))
@@ -1216,6 +1316,27 @@ def train(args) -> None:
             if braid_verify is not None:
                 config.braid_verify = bool(braid_verify)
             config.braid_rmatrix_probes = int(getattr(args, "braid_rmatrix_probes", config.braid_rmatrix_probes))
+        if has_simplicial:
+            simp_trip = getattr(args, "simplicial_triplet", None)
+            if simp_trip is not None:
+                config.simplicial_triplet = bool(simp_trip)
+            simp_win = getattr(args, "simplicial_window", None)
+            if simp_win is not None:
+                config.simplicial_window = int(simp_win)
+            simp_rand = getattr(args, "simplicial_random_triangles", None)
+            if simp_rand is not None:
+                config.simplicial_random_triangles = bool(simp_rand)
+        if has_fractal:
+            frac_ifs = getattr(args, "fractal_ifs", None)
+            if frac_ifs is not None:
+                config.fractal_ifs = bool(frac_ifs)
+        if has_surreal:
+            sur_axis = getattr(args, "surreal_scaling_axis", None)
+            if sur_axis is not None:
+                config.surreal_scaling_axis = bool(sur_axis)
+            sur_freeze = getattr(args, "surreal_freeze_scale", None)
+            if sur_freeze is not None:
+                config.surreal_freeze_scale = bool(sur_freeze)
         if config.use_flex_attention and not has_standard:
             if ddp_rank == 0:
                 print0("[flex] --use-flex-attention only applies to standard attention layers; disabling.")
@@ -2314,6 +2435,31 @@ def train(args) -> None:
                                 symplectic_energy_first = sym_stats["shadow_energy_mean"]
                             symplectic_energy_last = sym_stats["shadow_energy_mean"]
                             symplectic_x_norm_last = sym_stats["x_norm_mean"]
+                    if (
+                        model_type == "gpt"
+                        and "simplicial" in attention_schedule
+                        and getattr(config, "simplicial_triplet", False)
+                    ):
+                        simp_stats = _collect_simplicial_stats(raw_model)
+                        if simp_stats is not None:
+                            record["simplicial_triangle_entropy"] = simp_stats["triangle_entropy"]
+                            record["simplicial_hodge_2simplex_share"] = simp_stats["hodge_2simplex_share"]
+                    if (
+                        model_type == "gpt"
+                        and "fractal" in attention_schedule
+                        and getattr(config, "fractal_ifs", False)
+                    ):
+                        frac_stats = _collect_fractal_stats(raw_model)
+                        if frac_stats is not None:
+                            record["fractal_moran_dimension"] = frac_stats["moran_dimension"]
+                            record["fractal_max_contraction"] = frac_stats["max_contraction"]
+                            record["fractal_radii_profile"] = frac_stats["radii_profile"]
+                    if model_type == "gpt" and "surreal" in attention_schedule:
+                        sur_stats = _collect_surreal_stats(raw_model)
+                        if sur_stats is not None:
+                            record["surreal_scale_std"] = sur_stats["scale_std"]
+                            record["surreal_scale_histogram"] = sur_stats["scale_histogram"]
+                            record["surreal_valuation_gap"] = sur_stats["valuation_gap"]
                     metrics_stream.write(record)
                     if dashboard is not None:
                         dashboard.observe(record)
@@ -2567,6 +2713,23 @@ def train(args) -> None:
             results["hyperbolic_radius"] = hyperbolic.get("radius")
             results["hyperbolic_frac_heads_hier"] = hyperbolic["frac_heads_hier"]
             results["hyperbolic_frac_heads_euclidean"] = hyperbolic["frac_heads_euclidean"]
+    if model_type == "gpt" and "simplicial" in attention_schedule and getattr(config, "simplicial_triplet", False):
+        simp_final = _collect_simplicial_stats(raw_model)
+        if simp_final is not None:
+            results["simplicial_triangle_entropy"] = simp_final["triangle_entropy"]
+            results["simplicial_hodge_2simplex_share"] = simp_final["hodge_2simplex_share"]
+    if model_type == "gpt" and "fractal" in attention_schedule and getattr(config, "fractal_ifs", False):
+        frac_final = _collect_fractal_stats(raw_model)
+        if frac_final is not None:
+            results["fractal_moran_dimension"] = frac_final["moran_dimension"]
+            results["fractal_max_contraction"] = frac_final["max_contraction"]
+            results["fractal_radii_profile"] = frac_final["radii_profile"]
+    if model_type == "gpt" and "surreal" in attention_schedule:
+        sur_final = _collect_surreal_stats(raw_model)
+        if sur_final is not None:
+            results["surreal_scale_std"] = sur_final["scale_std"]
+            results["surreal_scale_histogram"] = sur_final["scale_histogram"]
+            results["surreal_valuation_gap"] = sur_final["valuation_gap"]
     # the beta the model ended training at (y2h9): null = exact tropical
     # endpoint or a non-semiring model; mirrors checkpoint semiring_beta_live
     results["semiring_beta_final"] = last_semiring_beta
@@ -2945,6 +3108,54 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Reversible+symplectic only: stream shadow-energy/activation-norm telemetry into metrics.jsonl.",
+    )
+    parser.add_argument(
+        "--simplicial-triplet",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Simplicial attention only: enable the faithful 2-simplex (triplet) cochain attention path "
+            "(bead jida.14; selector simplicial_triplet=true)."
+        ),
+    )
+    parser.add_argument(
+        "--simplicial-window",
+        type=int,
+        default=None,
+        help="Simplicial attention only: local causal window width w for 2-simplex triples (default 8).",
+    )
+    parser.add_argument(
+        "--simplicial-random-triangles",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Simplicial attention only: placebo control permuting triangle incidence within each query window "
+            "at identical parameter count and FLOPs (bead jida.14)."
+        ),
+    )
+    parser.add_argument(
+        "--fractal-ifs",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Fractal attention only: enable the faithful contractive Banach-Hutchinson IFS + weighted ultrametric "
+            "path with exact Moran dimension telemetry (bead 8gk.5; selector fractal_ifs=true)."
+        ),
+    )
+    parser.add_argument(
+        "--surreal-scaling-axis",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Surreal attention only: enable the faithful two-scale Levi-Civita / Hahn valuation attention path "
+            "(bead jida.15; selector surreal_scaling_axis=true)."
+        ),
+    )
+    parser.add_argument(
+        "--surreal-freeze-scale",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Surreal attention only: placebo control freezing the per-token valuation scale axis to zero.",
     )
     parser.add_argument(
         "--disable-block-norms",

@@ -5675,7 +5675,7 @@ def _run_certify_checks(
             detail="separation witness: additive heuristic accumulation has NO mass partition (Q1 defect >> 0)",
         )
 
-    # ----- simplicial: mass conservation through 1-hop and 2-hop paths -----
+    # ----- simplicial: mass conservation through 1-hop, 2-hop, and 2-simplex paths -----
     if "simplicial" in mechanisms:
 
         def simplicial_mass_measure() -> float:
@@ -5699,27 +5699,30 @@ def _run_certify_checks(
         )
 
         def simplicial_standard_reduction_measure() -> float:
-            # Reduction-to-known-mechanism (checklist item 1, bead jida.14): the
-            # proxy is y = mix_1 * (A v) + mix_2 * (A (A v)); with the two-hop
-            # weight zeroed and the one-hop weight at one it must equal plain
-            # causal softmax attention on the same q/k/v exactly. The faithful
-            # 2-simplex build must keep this reduction (triangle term zero).
+            # Reduction-to-known-mechanism (checklist item 1, bead jida.14): both
+            # the 2-hop proxy (simplicial_triplet=False) and the faithful 2-simplex
+            # path (simplicial_triplet=True) must reduce to plain causal softmax
+            # attention on the same q/k/v when mix_1 = 1 and mix_2 = 0.
             import torch.nn.functional as t_func
 
-            block, _cfg = make_block("simplicial")
-            attn = block.attn.float()
-            torch.manual_seed(seed + 23)
-            q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
-            k = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
-            v = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
-            with torch.no_grad():
-                attn.mix_1.fill_(1.0)
-                attn.mix_2.zero_()
-                out = attn.attend(q, k, v, kv_cache=None, pos0=None)
-                ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
-            if float(ref.abs().max()) == 0.0:
-                return float("inf")  # vacuity guard
-            return float((out - ref).abs().max())
+            worst = 0.0
+            for triplet_mode in (False, True):
+                torch.manual_seed(seed)
+                cfg = replace(_certify_tiny_config("simplicial"), simplicial_triplet=triplet_mode, simplicial_window=6)
+                attn: Any = Block(cfg, 0).to(device=device).eval().attn.float()
+                torch.manual_seed(seed + 23)
+                q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+                k = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+                v = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+                with torch.no_grad():
+                    attn.mix_1.fill_(1.0)
+                    attn.mix_2.zero_()
+                    out = attn.attend(q, k, v, kv_cache=None, pos0=None)
+                    ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+                if float(ref.abs().max()) == 0.0:
+                    return float("inf")  # vacuity guard
+                worst = max(worst, float((out - ref).abs().max()))
+            return worst
 
         add_check(
             "simplicial",
@@ -5727,10 +5730,60 @@ def _run_certify_checks(
             "reduction",
             simplicial_standard_reduction_measure,
             tolerance=2e-5,
-            detail="max attention-output error against causal SDPA with the two-hop weight zeroed",
+            detail="max attention-output error against causal SDPA with the two-hop/triangle weight zeroed",
         )
 
-    # ----- fractal: router branch distributions are simplex-valued -----
+        def simplicial_triplet_mass_measure() -> float:
+            # Boundary-of-2-simplex conservation (bead jida.14): in _aggregate_triplet,
+            # the midpoint marginals \gamma^+_m sum to 1 and the oriented boundary
+            # weights \gamma^-_m = (\partial_2 \alpha^{(2)})_m sum to 0 identically,
+            # so constant value vectors v_m \equiv c are preserved exactly (y2 == c).
+            torch.manual_seed(seed + 24)
+            cfg = replace(_certify_tiny_config("simplicial"), simplicial_triplet=True, simplicial_window=6)
+            attn: Any = Block(cfg, 0).to(device=device).eval().attn.float()
+            c = 0.731
+            q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            k = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            v = torch.full((1, attn.n_head, 8, attn.head_dim), c, device=device)
+            with torch.no_grad():
+                scores = attn.score(q, k).masked_fill(~causal_attn_mask(8, 8, device=device), float("-inf"))
+                weights = torch.softmax(scores, dim=-1)
+                y2 = attn._aggregate_triplet(weights, v, q=q, k=k, pos0=None)
+            return float((y2 - c).abs().max())
+
+        add_check(
+            "simplicial",
+            "triplet_mass_conservation",
+            "classical",
+            simplicial_triplet_mass_measure,
+            tolerance=1e-5,
+            detail="oriented 2-simplex boundary operator preserves constant value vectors for any mix_2",
+        )
+
+        def simplicial_triplet_antisymmetry_measure() -> float:
+            # Wedge 2-cochain skew-symmetry (bead jida.14): M_i[a, b] = -M_i[b, a]
+            # under orientation reversal (a <-> b) of the 1-face (a, b).
+            torch.manual_seed(seed + 25)
+            cfg = replace(_certify_tiny_config("simplicial"), simplicial_triplet=True, simplicial_window=6)
+            attn: Any = Block(cfg, 0).to(device=device).eval().attn.float()
+            q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            k = torch.randn(1, attn.n_head, 6, attn.head_dim, device=device)
+            with torch.no_grad():
+                m = attn.compute_wedge_matrix(q, k)
+            if float(m.abs().max()) == 0.0:
+                return float("inf")
+            return float((m + m.transpose(-1, -2)).abs().max())
+
+        add_check(
+            "simplicial",
+            "triplet_wedge_antisymmetry",
+            "classical",
+            simplicial_triplet_antisymmetry_measure,
+            tolerance=1e-5,
+            detail="2-simplex coboundary wedge M_i[a,b] is skew-symmetric under (a <-> b) swap",
+        )
+
+    # ----- fractal: router branch distributions and Banach-Hutchinson IFS laws -----
     if "fractal" in mechanisms:
 
         def fractal_router_measure() -> float:
@@ -5755,7 +5808,77 @@ def _run_certify_checks(
             detail="per-depth branch distributions must lie on the m-simplex",
         )
 
-    # ----- surreal: scale/direction decomposition laws -----
+        def fractal_zero_ifs_reduction_measure() -> float:
+            # Reduction-to-known-mechanism (checklist item 1, bead 8gk.5): with
+            # ifs_gate = 0 and ifs_prefix_weight = 0, the faithful IFS tree path
+            # reduces exactly to the depth-prototype attention path on the same
+            # router and prototype parameters.
+            torch.manual_seed(seed)
+            cfg_base = _certify_tiny_config("fractal")
+            attn_base: Any = Block(cfg_base, 0).to(device=device).eval().attn.float()
+            torch.manual_seed(seed)
+            cfg_ifs = replace(cfg_base, fractal_ifs=True)
+            attn_ifs: Any = Block(cfg_ifs, 0).to(device=device).eval().attn.float()
+            torch.manual_seed(seed + 26)
+            q = torch.randn(1, attn_base.n_head, 8, attn_base.head_dim, device=device)
+            k = torch.randn(1, attn_base.n_head, 8, attn_base.head_dim, device=device)
+            v = torch.randn(1, attn_base.n_head, 8, attn_base.head_dim, device=device)
+            with torch.no_grad():
+                attn_ifs.ifs_gate.zero_()
+                attn_ifs.ifs_prefix_weight.zero_()
+                out_ifs = attn_ifs.attend(q, k, v, kv_cache=None, pos0=None)
+                ref = attn_base.attend(q, k, v, kv_cache=None, pos0=None)
+            if float(ref.abs().max()) == 0.0:
+                return float("inf")
+            return float((out_ifs - ref).abs().max())
+
+        add_check(
+            "fractal",
+            "zero_ifs_reduces_to_prototype_attention",
+            "reduction",
+            fractal_zero_ifs_reduction_measure,
+            tolerance=1e-5,
+            detail="with ifs_gate=0 and ifs_prefix_weight=0, fractal_ifs=True matches prototype fractal attention",
+        )
+
+        def fractal_ifs_contractivity_measure() -> float:
+            # Banach-Hutchinson IFS contractivity & Moran dimension law (bead 8gk.5):
+            # every branch map w_i(z) = r_i R_i z + b_i is r_i-contractive with
+            # r_i in (0, 1) and the computed Moran dimension D_Moran solves
+            # \sum_{i=0}^{m-1} r_i^{D_Moran} = 1.
+            from nanochat.fractal_attention_torch import compute_moran_dimension
+
+            torch.manual_seed(seed + 27)
+            cfg_ifs = replace(_certify_tiny_config("fractal"), fractal_ifs=True)
+            attn: Any = Block(cfg_ifs, 0).to(device=device).eval().attn.float()
+            x = torch.randn(16, attn.head_dim, device=device)
+            y = torch.randn(16, attn.head_dim, device=device)
+            with torch.no_grad():
+                radii = attn.branch_radii()
+                d_moran = float(compute_moran_dimension(radii).item())
+                moran_res = float(abs(sum(float(r) ** d_moran for r in radii) - 1.0))
+                dx = (x - y).norm(dim=-1)
+                lip_excess = 0.0
+                for b in range(int(attn.m)):
+                    wx = attn.apply_branch_map(x, b)
+                    wy = attn.apply_branch_map(y, b)
+                    dw = (wx - wy).norm(dim=-1)
+                    r_b = float(radii[b])
+                    if not (0.0 < r_b < 1.0):
+                        return float("inf")
+                    lip_excess = max(lip_excess, float((dw - r_b * dx).clamp_min(0.0).max()))
+            return float(max(moran_res, lip_excess))
+
+        add_check(
+            "fractal",
+            "ifs_moran_contractivity",
+            "classical",
+            fractal_ifs_contractivity_measure,
+            tolerance=1e-5,
+            detail="IFS branch maps satisfy ||w_i(x)-w_i(y)|| <= r_i ||x-y|| and Moran equation sum r_i^D = 1",
+        )
+
+    # ----- surreal: scale/direction decomposition and valuation dominance laws -----
     if "surreal" in mechanisms:
         from nanochat.surreal_torch import SurrealLayer
 
@@ -5807,6 +5930,79 @@ def _run_certify_checks(
             surreal_s_shift_measure,
             tolerance=1e-4,
             detail="s -> s + d must scale outputs by exp(d) exactly",
+        )
+
+        def surreal_zero_omega_reduction_measure() -> float:
+            # Reduction-to-known-mechanism (checklist item 1, bead jida.15): when
+            # the Hahn valuation penalty weight beta_omega == 0, surreal_scaling_axis
+            # attention reduces to plain causal SDPA on (q, k, v).
+            import torch.nn.functional as t_func
+
+            torch.manual_seed(seed + 28)
+            cfg_sur = replace(_certify_tiny_config("surreal"), surreal_scaling_axis=True)
+            attn: Any = Block(cfg_sur, 0).to(device=device).eval().attn.float()
+            q = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            k = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            v = torch.randn(1, attn.n_head, 8, attn.head_dim, device=device)
+            with torch.no_grad():
+                assert attn.beta_omega is not None
+                attn.beta_omega.zero_()
+                out = attn.attend(q, k, v, kv_cache=None, pos0=None)
+                ref = t_func.scaled_dot_product_attention(q, k, v, is_causal=True)
+            if float(ref.abs().max()) == 0.0:
+                return float("inf")
+            return float((out - ref).abs().max())
+
+        add_check(
+            "surreal",
+            "zero_omega_reduces_to_standard_attention",
+            "reduction",
+            surreal_zero_omega_reduction_measure,
+            tolerance=2e-5,
+            detail="as beta_omega -> 0, surreal two-scale attention reduces to standard causal SDPA",
+        )
+
+        def surreal_valuation_dominance_measure() -> float:
+            # Valuation dominance law (bead jida.15): for two keys with identical
+            # archimedean dot product <q_i, k_j> == 2.0 but distinct log-scale
+            # valuations (\nu(k_0) = \nu(q_1) = 1.0 vs \nu(k_1) = -1.0), increasing
+            # beta_omega strictly concentrates attention mass onto key 0.
+            torch.manual_seed(seed + 29)
+            cfg_sur = replace(_certify_tiny_config("surreal"), surreal_scaling_axis=True)
+            attn: Any = Block(cfg_sur, 0).to(device=device).eval().attn.float()
+            q = torch.zeros(1, attn.n_head, 2, attn.head_dim, device=device)
+            k = torch.zeros(1, attn.n_head, 2, attn.head_dim, device=device)
+            v = torch.zeros(1, attn.n_head, 2, attn.head_dim, device=device)
+            # q_1 = (1, 1, 0, ...), k_0 = (1, 1, 0, ...), k_1 = (3, -1, 0, ...)
+            # so <q_1, k_0> = 2.0 == <q_1, k_1>, while along axis e_1:
+            # \nu(q_1) = 1.0, \nu(k_0) = 1.0 (match!), \nu(k_1) = -1.0 (gap = 2.0).
+            q[:, :, 1, 0] = 1.0
+            q[:, :, 1, 1] = 1.0
+            k[:, :, 0, 0] = 1.0
+            k[:, :, 0, 1] = 1.0
+            k[:, :, 1, 0] = 3.0
+            k[:, :, 1, 1] = -1.0
+            v[:, :, 0, 0] = 1.0
+            v[:, :, 1, 0] = -1.0
+            with torch.no_grad():
+                assert attn.beta_omega is not None and attn.scale_axis_vec is not None
+                attn.scale_axis_vec.zero_()
+                attn.scale_axis_vec[:, 1] = attn.head_dim**0.5
+                attn.beta_omega.zero_()
+                y_zero = float(attn.attend(q, k, v, kv_cache=None, pos0=None)[0, 0, 1, 0])
+                attn.beta_omega.fill_(2.0)
+                y_pos = float(attn.attend(q, k, v, kv_cache=None, pos0=None)[0, 0, 1, 0])
+            # At beta_omega=0, keys 0 and 1 have equal score so y_zero == 0.0;
+            # at beta_omega=2.0, key 0 (matching valuation) dominates so y_pos > 0.9.
+            return max(0.0, 0.9 - (y_pos - y_zero))
+
+        add_check(
+            "surreal",
+            "valuation_dominance_monotone",
+            "classical",
+            surreal_valuation_dominance_measure,
+            tolerance=1e-5,
+            detail="increasing beta_omega strictly concentrates attention on the valuation-matched key",
         )
 
     return checks
@@ -10356,7 +10552,9 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "clifford.quaternion_subalgebra_reduction",
         "clifford.reversion_antihomomorphism",
         "clifford.rotor_norm_preservation",
+        "fractal.ifs_moran_contractivity",
         "fractal.router_branch_simplex",
+        "fractal.zero_ifs_reduces_to_prototype_attention",
         "gauge.kv_decode_matches_full_forward",
         "gauge.rotation_additivity_cumsum_law",
         "gauge.rotation_inverse_roundtrip",
@@ -10379,6 +10577,8 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "reversible.forward_inverse_roundtrip",
         "reversible.symplectic_jacobian",
         "simplicial.mass_conservation_two_hop",
+        "simplicial.triplet_mass_conservation",
+        "simplicial.triplet_wedge_antisymmetry",
         "simplicial.zero_triangle_reduces_to_standard_attention",
         "standard.causal_mask_structure",
         "standard.rmsnorm_unit_rms",
@@ -10387,6 +10587,8 @@ _CERTIFY_NAMED_CHECKS: frozenset[str] = frozenset(
         "surreal.layer_linearity",
         "surreal.row_norm_equals_exp_scale",
         "surreal.scale_shift_equivariance",
+        "surreal.valuation_dominance_monotone",
+        "surreal.zero_omega_reduces_to_standard_attention",
         "tropical.ffn_collapse_single_layer",
         "tropical.ffn_lipschitz_1_sup_norm",
         "tropical.lipschitz_1_sup_norm_q",

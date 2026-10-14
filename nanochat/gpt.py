@@ -341,6 +341,15 @@ class GPTConfig:
     braid_record_schedule: bool = False
     braid_verify: bool = False
     braid_rmatrix_probes: int = 0  # rmatrix only: spectral multi-view probe sweeps (0i1v; 0 = off)
+    # Simplicial-specific options (see nanochat.simplicial_attention_torch; jida.14).
+    simplicial_triplet: bool = False
+    simplicial_window: int = 8
+    simplicial_random_triangles: bool = False
+    # Fractal-specific options (see nanochat.fractal_attention_torch; 8gk.5).
+    fractal_ifs: bool = False
+    # Surreal-specific options (see nanochat.surreal_torch; jida.15).
+    surreal_scaling_axis: bool = False
+    surreal_freeze_scale: bool = False
 
 
 class CausalSelfAttention(AttentionCore):
@@ -1054,10 +1063,18 @@ class GPT(nn.Module):
         named_block = [(n, p) for n, p in blocks.named_parameters() if p.requires_grad]
 
         def _muon_exempt(name: str) -> bool:
-            # Every rmatrix_* parameter is a positional scalar field (rapidity
-            # increments, probe offsets, probe gates), never a matmul weight -
-            # Newton-Schulz orthogonalization has no meaning for any of them.
-            return ".rmatrix_" in name or name.startswith("rmatrix_")
+            # Every rmatrix_*, ifs_*, scale_axis_vec, and weight_s parameter is a
+            # non-matmul geometric field (rapidity increments, IFS rotors/translations,
+            # transseries scale exponents) - Newton-Schulz orthogonalization has no
+            # meaning for any of them.
+            return (
+                ".rmatrix_" in name
+                or name.startswith("rmatrix_")
+                or ".ifs_" in name
+                or name.startswith("ifs_")
+                or "scale_axis_vec" in name
+                or name.endswith(".weight_s")
+            )
 
         matrix_params = [p for n, p in named_block if p.ndim >= 2 and not _muon_exempt(n)]
         lowdim_block_params = [p for n, p in named_block if p.ndim < 2 or _muon_exempt(n)]
