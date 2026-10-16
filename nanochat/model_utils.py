@@ -133,6 +133,7 @@ _MECHANISM_ALLOWED_KWARGS: dict[str, frozenset[str]] = {
             "tropical_gauge_fix",
             "tropical_score_center",
             "tropical_record_margins",
+            "tropical_structured_support",
             "parameterization",
         }
     ),
@@ -308,6 +309,40 @@ class AttentionCore(nn.Module):
             **mechanism_kwargs,
         )
         return cls(cfg, int(layer_idx))
+
+    def project_qkv(
+        self,
+        x: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: Any = None,
+        *,
+        apply_qk_norm: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Project ``x`` to ``(q, k, v)`` of shape ``(B, H, T, D)`` (with optional RoPE + QK-norm)."""
+        B, T, _C = x.size()
+        q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
+        k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
+        v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
+        if apply_qk_norm:
+            if cos_sin is None:
+                pos_offset = int(kv_cache.get_pos()) if kv_cache is not None else 0
+                cos, sin = build_rotary_embeddings(
+                    T,
+                    self.head_dim,
+                    pos_offset=pos_offset,
+                    device=x.device,
+                    dtype=x.dtype,
+                )
+            else:
+                cos, sin = cos_sin
+            q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+            q, k = norm(q), norm(k)
+        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        if kv_cache is not None:
+            k, v = kv_cache.insert_kv(self.layer_idx, k, v)
+        if self.gqa_via_repeat and self.n_kv_head != self.n_head:
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
+        return q, k, v
 
     def forward(
         self,

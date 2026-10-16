@@ -616,3 +616,218 @@ def test_adj_collect_artifacts_indexes_current_eval_tasks_schema(tmp_path):
     assert indexed[0]["schema"] == "evaltasks"
     assert indexed[0]["tainted"] is False
 
+
+def test_adjusted_rand_index_hand_computed_fixtures() -> None:
+    """Verify compute_adjusted_rand_index on hand-computed fixtures."""
+    import cli as mgr_cli
+
+    # Perfect match -> 1.0
+    assert abs(mgr_cli.compute_adjusted_rand_index([0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2]) - 1.0) < 1e-9
+    # Label permutation invariance -> 1.0
+    assert abs(mgr_cli.compute_adjusted_rand_index([0, 0, 1, 1, 2, 2], [9, 9, 3, 3, 7, 7]) - 1.0) < 1e-9
+    # Orthogonal balanced 2x2 split on 4 items:
+    # A = [0, 0, 1, 1], B = [0, 1, 0, 1] -> n_ij all 1 -> sum C(n_ij,2)=0, a_i=2, b_j=2 -> ARI = -0.5
+    ari_orth = mgr_cli.compute_adjusted_rand_index([0, 0, 1, 1], [0, 1, 0, 1])
+    assert abs(ari_orth - (-0.5)) < 1e-6
+    # Single cluster vs single cluster -> 1.0
+    assert mgr_cli.compute_adjusted_rand_index([5, 5, 5], [1, 1, 1]) == 1.0
+
+
+def test_extract_route_trace_determinism_and_backend_conformance() -> None:
+    """Verify extract_route_trace determinism, brute-force cross-check, and per-backend conformance."""
+    import cli as mgr_cli
+    from nanochat.diagnostics_data import (
+        ROBUSTNESS_PROBE_DEFAULT_EPS,
+        ROBUSTNESS_PROBE_EPS_LADDER,
+        ROBUSTNESS_PROBE_SPEC_VERSION,
+    )
+    from nanochat.gpt import GPT, GPTConfig
+
+    assert ROBUSTNESS_PROBE_SPEC_VERSION == "vdc.1-linf-embedding-v1"
+    assert ROBUSTNESS_PROBE_DEFAULT_EPS in ROBUSTNESS_PROBE_EPS_LADDER
+
+    torch.manual_seed(123)
+    tokens = torch.randint(0, 16, (1, 12), dtype=torch.long)
+
+    # 1. Traceable mechanisms: tropical, ultrametric, braid, fractal
+    for mech in ("tropical", "ultrametric", "braid", "fractal"):
+        cfg = GPTConfig(
+            sequence_len=16,
+            vocab_size=32,
+            n_layer=1,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=16,
+            attention_type=mech,
+        )
+        model = GPT(cfg).eval()
+        gen_a = torch.Generator(device="cpu").manual_seed(42)
+        trace_a = mgr_cli.extract_route_trace(
+            model,
+            tokens,
+            mechanism=mech,
+            perturb=(ROBUSTNESS_PROBE_DEFAULT_EPS, gen_a),
+        )
+        gen_b = torch.Generator(device="cpu").manual_seed(42)
+        trace_b = mgr_cli.extract_route_trace(
+            model,
+            tokens,
+            mechanism=mech,
+            perturb=(ROBUSTNESS_PROBE_DEFAULT_EPS, gen_b),
+        )
+        assert trace_a["traceable_layers"] == 1
+        assert trace_a["layers"][0]["status"] == "ok", f"Expected status='ok' for {mech}, got {trace_a}"
+        # Bitwise-identical determinism check
+        assert json.dumps(trace_a, sort_keys=True) == json.dumps(trace_b, sort_keys=True)
+        assert len(trace_a["decisions"]) == 2 * 12
+        if mech == "tropical":
+            assert trace_a["bruteforce_verified"] is True
+
+    # 2. Non-traceable mechanisms emit status="skipped" with explicit reason (never silently pass)
+    std_cfg = GPTConfig(
+        sequence_len=16,
+        vocab_size=32,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=16,
+        attention_type="standard",
+    )
+    std_model = GPT(std_cfg).eval()
+    std_trace = mgr_cli.extract_route_trace(std_model, tokens, mechanism="standard")
+    assert std_trace["skipped_layers"] == 1
+    assert std_trace["layers"][0]["status"] == "skipped"
+    assert "discrete argmax route" in std_trace["layers"][0]["reason"].lower()
+
+
+def test_routes_cli_and_from_store_regeneration(monkeypatch, tmp_path: Path) -> None:
+    """Verify mgr routes writes traces.parquet/json + summary.json + report.md and regenerates via --from-store."""
+    _tokenizer_or_skip()
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+
+    ckpt_dir = _train_tiny_checkpoint(tmp_path, "tropical", monkeypatch)
+
+    out_dir = tmp_path / "routes_out"
+    runner = CliRunner()
+    res = runner.invoke(
+        mgr_cli.app,
+        [
+            "routes",
+            "--checkpoint",
+            str(ckpt_dir),
+            "--task",
+            "dyck",
+            "--sample",
+            "8",
+            "--seed",
+            "42",
+            "--out",
+            str(out_dir),
+            "--no-region-count",
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    summary_path = out_dir / "summary.json"
+    report_path = out_dir / "report.md"
+    store_json_path = out_dir / "traces.json"
+    assert summary_path.exists()
+    assert report_path.exists()
+    assert store_json_path.exists()
+
+    summary_orig = json.loads(summary_path.read_text())
+    assert summary_orig["schema_version"] == "mgr.bench.routes.v1"
+    assert summary_orig["results"]["bruteforce_verified"] is True
+    assert "ari_trace" in summary_orig["results"]["clustering"]
+    assert "spearman_margin_vs_stability" in summary_orig["results"]["stability"]
+
+    # Regenerate summary.json and report.md from traces.json alone in a fresh directory
+    regen_dir = tmp_path / "routes_regen"
+    res_regen = runner.invoke(
+        mgr_cli.app,
+        [
+            "routes",
+            "--from-store",
+            str(store_json_path),
+            "--out",
+            str(regen_dir),
+        ],
+    )
+    assert res_regen.exit_code == 0, res_regen.output
+    summary_regen = json.loads((regen_dir / "summary.json").read_text())
+    assert summary_regen["results"] == summary_orig["results"]
+    assert (regen_dir / "report.md").exists()
+
+
+def test_tropical_region_count_propositions_and_structured_support() -> None:
+    """Verify Propositions 0, 1, 2, ReLU flat baseline, and tropical_structured_support parameter parity."""
+    import cli as mgr_cli
+    from nanochat.gpt import GPTConfig
+    from nanochat.tropical_attention_torch import (
+        TropicalCausalSelfAttention,
+        count_tropical_realized_regions,
+        cyclic_polytope_support_lift,
+    )
+
+    # 1. Verify Propositions 0, 1, 2 and positive T-slope via run_tropical_region_count_protocol
+    proto = mgr_cli.run_tropical_region_count_protocol(
+        checkpoint=None,
+        seq_lengths=(4, 8, 16, 32),
+        n_samples=64,
+        seed=42,
+        device_str="cpu",
+    )
+    assert proto["schema_version"] == "mgr.bench.tropical_regions.v1"
+    assert proto["results"]["total_bound_violations"] == 0
+    assert proto["results"]["tropical_regions_per_param_slope"] > 0.0
+    assert proto["results"]["relu_mlp_regions_per_param_slope"] == 0.0
+    assert proto["results"]["efficiency_slope_gap"] > 0.0
+    assert proto["results"]["structured_vs_dense_multi_head_gain"] > 0
+
+    # 2. Verify cyclic_polytope_support_lift & tropical_structured_support parameter parity and exact bounds
+    lift, scale = cyclic_polytope_support_lift(2, 8, device=torch.device("cpu"), dtype=torch.float32)
+    assert lift.shape == (1, 2, 1, 8)
+    assert scale.shape == (1, 2, 1, 8)
+
+    cfg_dense = GPTConfig(
+        sequence_len=32,
+        vocab_size=32,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=16,
+        attention_type="tropical",
+        tropical_structured_support=False,
+    )
+    cfg_struct = GPTConfig(
+        sequence_len=32,
+        vocab_size=32,
+        n_layer=1,
+        n_head=2,
+        n_kv_head=2,
+        n_embd=16,
+        attention_type="tropical",
+        tropical_structured_support=True,
+    )
+    torch.manual_seed(99)
+    attn_dense = TropicalCausalSelfAttention(cfg_dense, layer_idx=0).eval()
+    attn_struct = TropicalCausalSelfAttention(cfg_struct, layer_idx=0).eval()
+    attn_struct.load_state_dict(attn_dense.state_dict())
+
+    # Parameter counts must be identical
+    dense_params = sum(p.numel() for p in attn_dense.parameters())
+    struct_params = sum(p.numel() for p in attn_struct.parameters())
+    assert dense_params == struct_params
+
+    # Both must satisfy Propositions 0, 1, and 2 with zero bound violations
+    x_samples = torch.randn(48, 12, 16)
+    res_dense = count_tropical_realized_regions(attn_dense, x_samples)
+    res_struct = count_tropical_realized_regions(attn_struct, x_samples)
+    assert res_dense["bound_violations"] == 0
+    assert res_struct["bound_violations"] == 0
+    assert res_struct["realized_q_space_fixed_kv"] <= res_struct["prop0_bound"]
+    assert res_struct["realized_single_head"] <= res_struct["prop1_bound"]
+    assert res_struct["realized_multi_head"] <= res_struct["prop2_bound"]
+
+

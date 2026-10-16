@@ -2530,3 +2530,163 @@ hypotheses:
     evidence: []
     verdict_history:
       - {date: "2026-10-14", verdict: inconclusive, artifacts: ["artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s101/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s102/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s103/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s104/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s105/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s101/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s102/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s103/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s104/summary.json", "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s105/summary.json"], adjudicator: "engine:ci-v6", policy_version: "ci-v6", arms: {"gauge": {"budget_flops": 193462272.0, "ci95": [1.7199126193417442, 3.080087380658256], "effect": 2.4, "n_baseline": 5, "n_candidate": 5, "n_for_80pct": 2, "p_value": 0.08890390417811068, "power": 0.9999999997265187, "verdict": "inconclusive"}}}
+  - id: hyp-routes-reuse-increases-with-training
+    statement: >-
+      In tropical attention, discrete computation routes consolidate over
+      training checkpoints: the head-program reuse ratio increases by at least
+      0.10 between initialization (step 0) and the trained checkpoint on the
+      hierarchical retrieval task across >= 5 seeds.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-8gk.9 empirical hypothesis (1): as residual
+        projections (c_proj) and tropical score margins grow during training,
+        heads consolidate from scattered random coordinate argmaxes onto
+        reusable structural route programs.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-route-stability, thm-tropical-1-lipschitz]
+    prediction:
+      metric_path: "bench:results.reuse.reuse_delta"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.1
+      baseline: null
+      candidate_variant: {task: hier}
+      min_seeds: 5
+      scale_caveats: >-
+        Evaluated via mgr routes on trained tropical checkpoints on task=hier
+        across >= 5 independent seeds.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-routes-margin-rank-correlates-stability
+    statement: >-
+      Per-example minimum route margin gamma_min (aggregated via min across
+      decisions along the computation trace, governed by the tightest bottleneck
+      decision) positively rank-correlates with empirical route stability under
+      the vdc.1 l_inf embedding perturbation probe (Spearman rho >= 0.35 across
+      >= 5 seeds).
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-8gk.9 empirical hypothesis (2): Theorem
+        thm-route-stability guarantees argmax invariance up to
+        perturbation radius gamma_min / 2, predicting a strong monotonic rank
+        correlation between bottleneck margin gamma_min and empirical route
+        survival.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-route-stability]
+    prediction:
+      metric_path: "bench:results.stability.spearman_margin_vs_stability"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.35
+      baseline: null
+      candidate_variant: {task: hier}
+      min_seeds: 5
+      scale_caveats: >-
+        Evaluated via mgr routes under ROBUSTNESS_PROBE_SPEC_VERSION
+        (vdc.1-linf-embedding-v1) on task=hier across >= 5 independent seeds.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-routes-clusters-beat-entropy-ari
+    statement: >-
+      Unsupervised clustering of extracted discrete computation traces recovers
+      latent subtask structure (path depth on hierarchical retrieval) with an
+      Adjusted Rand Index (ARI) at least 0.15 higher than clustering continuous
+      attention-entropy vectors on the same checkpoints across >= 5 seeds.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-8gk.9 empirical hypothesis (3): discrete
+        route traces preserve combinatorial path-transition offsets that scalar
+        attention-entropy summaries collapse.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-route-stability, thm-newton-polytope-region-bound]
+    prediction:
+      metric_path: "bench:results.clustering.ari_gain"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.15
+      baseline: null
+      candidate_variant: {task: hier}
+      min_seeds: 5
+      scale_caveats: >-
+        Evaluated via mgr routes on task=hier across >= 5 independent seeds,
+        comparing k-medoids ARI on discrete trace features against k-medoids ARI
+        on per-head attention-entropy vectors.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-tropical-region-count-grows-with-t
+    statement: >-
+      In input space x = (x_1, ..., x_T) where Q, K, and V vary jointly with x,
+      tropical attention's realized piecewise-linear regions per parameter grow
+      with sequence length T while a parameter-matched token-wise ReLU MLP has
+      zero T-slope, yielding a positive per-parameter region slope gap
+      (efficiency_slope_gap >= 0.0005 regions/param per token over T in
+      {2, 4, 8, 16, 32}) with zero violations of Propositions 0, 1, and 2 across
+      >= 5 seeds.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-oeno (8gk.3 empirical follow-up): Proposition 1
+        gives an input-space upper bound of T * d_head per output coordinate
+        because each key position j in {1..T} contributes distinct affine forms
+        <w^Q_e, x_i> + <w^K_e, x_j> + <w^V_d, x_j>, whereas a token-wise ReLU MLP's
+        hyperplane arrangement on x_T is independent of context length T.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-newton-polytope-region-bound]
+    prediction:
+      metric_path: "bench:results.efficiency_slope_gap"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.0005
+      baseline: null
+      candidate_variant: {tropical_structured_support: false}
+      min_seeds: 5
+      scale_caveats: >-
+        Evaluated via run_tropical_region_count_protocol (mgr.bench.tropical_regions.v1)
+        over T in {2, 4, 8, 16, 32} across >= 5 seeds.
+    status: open
+    evidence: []
+    verdict_history: []
+  - id: hyp-tropical-structured-support-beats-dense
+    statement: >-
+      At identical parameter count, cyclic-polytope structured support
+      (--tropical-structured-support, combining spherical weight-row norm
+      equalization with head-staggered cyclic coordinate pairing) increases the
+      number of realized multi-head piecewise-linear regions by at least 4.0
+      over dense tropical attention on multi-scale correlated-head projections
+      while maintaining zero violations of Propositions 0, 1, and 2 across >= 5
+      seeds.
+    mechanisms: [tropical]
+    source:
+      kind: model
+      provenance: >-
+        Bead model_guided_research-oeno (§4 structured-support A/B): spherical
+        row-norm equalization places all D weight rows on the sphere so no
+        vertex lies in the interior of the convex hull, and cyclic head-staggered
+        coordinate pairing puts the H head arrangements into transversal general
+        position.
+    date_registered: "2026-10-14"
+    theorem_refs: [thm-newton-polytope-region-bound]
+    prediction:
+      metric_path: "bench:results.structured_vs_dense_multi_head_gain"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 4.0
+      baseline: null
+      candidate_variant: {tropical_structured_support: false}
+      min_seeds: 5
+      scale_caveats: >-
+        Evaluated via run_tropical_region_count_protocol (mgr.bench.tropical_regions.v1)
+        at identical parameter count across >= 5 seeds.
+    status: open
+    evidence: []
+    verdict_history: []

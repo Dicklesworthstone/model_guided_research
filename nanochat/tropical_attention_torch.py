@@ -6,6 +6,7 @@ Implements attention using Max-Plus algebra for similarity.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -352,6 +353,174 @@ def set_semiring_beta(model: nn.Module, beta: float | None) -> int:
     return n
 
 
+def cyclic_polytope_support_lift(
+    n_head: int,
+    head_dim: int,
+    *,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Deterministic cyclic-polytope support weights and concave upper-hull lift (bead oeno / 8gk.3 §4).
+
+    Returns ``(scale, lift)`` each of shape ``(1, n_head, 1, head_dim)``:
+      * ``scale`` is unit radial equalization ``1.0`` across all ``head_dim``
+        coordinates so that after weight-row norm equalization every vertex lies
+        on the exact sphere of radius ``mean_norm`` and is strictly exposed on
+        the upper hull of the Newton polytope.
+      * ``lift`` is a zero-mean concave moment-curve upper-hull tie-breaker
+        ``-c * (t_{h,e}^2 - mean(t_{h,e}^2))`` staggered across heads ``h``.
+    """
+    h_idx = torch.arange(max(n_head, 1), device=device, dtype=torch.float32).unsqueeze(1)
+    e_idx = torch.arange(max(head_dim, 1), device=device, dtype=torch.float32).unsqueeze(0)
+    d_f = float(max(head_dim, 1))
+    h_f = float(max(n_head, 1))
+    scale = torch.ones((1, n_head, 1, head_dim), device=device, dtype=dtype)
+
+    # Moment-curve nodes in [-0.5, 0.5] with cyclic head offset
+    u = ((e_idx + h_idx / h_f) % d_f + 0.5) / d_f - 0.5
+    quad = -(u.pow(2) - u.pow(2).mean(dim=-1, keepdim=True))
+    lift = (1e-4 * quad).view(1, n_head, 1, head_dim).to(dtype=dtype)
+    return scale, lift
+
+
+def _cyclic_moment_orthogonal_basis(
+    n_head: int,
+    head_dim: int,
+    *,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    """Construct head-staggered orthogonal matrices ``C_h in O(head_dim)`` from
+    the cyclic moment-curve Vandermonde/Chebyshev basis (shape ``(n_head, head_dim, head_dim)``)."""
+    D = max(head_dim, 1)
+    H = max(n_head, 1)
+    mats: list[torch.Tensor] = []
+    e_idx = torch.arange(D, device=device, dtype=torch.float32)
+    deg = torch.arange(D, device=device, dtype=torch.float32)
+    for h in range(H):
+        # Moment curve nodes in (-1, 1) staggered by head index h
+        theta = math.pi * ((e_idx + 0.5 + (h / float(H))) % float(D)) / float(D)
+        # Chebyshev-Vandermonde matrix V_{d, k} = cos(k * theta_d)
+        v_mat = torch.cos(theta.unsqueeze(1) * deg.unsqueeze(0))
+        q_orth, r_mat = torch.linalg.qr(v_mat)
+        diag_sign = torch.sgn(torch.diagonal(r_mat))
+        diag_sign = torch.where(diag_sign == 0, torch.ones_like(diag_sign), diag_sign)
+        q_orth = q_orth * diag_sign.unsqueeze(0)
+        mats.append(q_orth)
+    return torch.stack(mats, dim=0).to(dtype=dtype)
+
+
+@torch.no_grad()
+def extract_tropical_routes(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    gauge_fix: bool = True,
+    score_center: bool = True,
+    evt_shift: float | None = None,
+    verify_bruteforce: bool = True,
+) -> dict[str, Any]:
+    """Extract exact discrete argmax routes for tropical max-plus attention (beads 8gk.9 & oeno).
+
+    For query position ``t`` and output coordinate ``d'``,
+        ``y_{t,d'} = max_{j <= t} ( max_e (q_{t,e} + k_{j,e}) + v_{j,d'} )
+                   = max_{j <= t, 0 <= e < D} (q_{t,e} + k_{j,e} + v_{j,d'})``.
+
+    Returns a dictionary containing:
+      * ``score_key_route``: ``(B, H, Tq)`` argmax key index ``j*`` of the score stage ``max_e (q_{t,e} + k_{j,e})``
+      * ``score_dim_route``: ``(B, H, Tq)`` argmax feature index ``e*`` at the winning score key ``j*``
+      * ``score_margin``: ``(B, H, Tq)`` runner-up margin of the score stage over visible keys
+      * ``key_route``: ``(B, H, Tq, D)`` per-output-coordinate winning key ``j*(t, d')``
+      * ``dim_route``: ``(B, H, Tq, D)`` per-output-coordinate winning feature ``e*(t, d')``
+      * ``compound_route``: ``(B, H, Tq, D)`` flattened route index ``j*(t, d') * D + e*(t, d')``
+      * ``gamma``: ``(B, H, Tq)`` per-query certificate margin (min over output coordinates of top1 - top2)
+      * ``bruteforce_verified``: ``bool`` confirming two-stage argmax equals single-stage flattened brute-force argmax
+    """
+    if q.ndim != 4 or k.ndim != 4 or v.ndim != 4:
+        raise ValueError("extract_tropical_routes expects q/k/v of shape (B, H, T, D)")
+    B, H, Tq, D = q.shape
+    Tk = k.size(2)
+
+    q_work = _tropical_center(q, dim=-1) if gauge_fix else q
+    k_work = _tropical_center(k, dim=-1) if gauge_fix else k
+    v_work = _tropical_center(v, dim=-1) if gauge_fix else v
+
+    mask = causal_attn_mask(Tq, Tk, device=q.device)
+
+    # Inner stage: pairwise (q_{t,e} + k_{j,e}) of shape (B, H, Tq, Tk, D)
+    pairwise_qk = q_work.unsqueeze(-2) + k_work.unsqueeze(-3)
+    attn_scores, inner_dim_idx = torch.max(pairwise_qk, dim=-1)  # (B, H, Tq, Tk)
+    attn_scores = attn_scores.masked_fill(~mask, float("-inf"))
+    if evt_shift is not None:
+        attn_scores = attn_scores - evt_shift
+    score_shift: torch.Tensor | None = None
+    if score_center:
+        score_shift = attn_scores.amax(dim=-1, keepdim=True)
+        attn_scores = attn_scores - score_shift
+
+    # Score-stage route and score-stage margin over keys
+    score_key_route = torch.argmax(attn_scores, dim=-1)  # (B, H, Tq)
+    score_dim_route = torch.gather(inner_dim_idx, dim=-1, index=score_key_route.unsqueeze(-1)).squeeze(-1)
+    if Tk >= 2:
+        score_top2 = torch.topk(attn_scores, k=2, dim=-1).values
+        score_margin = score_top2[..., 0] - score_top2[..., 1]
+        score_margin = torch.where(torch.isfinite(score_margin), score_margin, torch.zeros_like(score_margin))
+    else:
+        score_margin = torch.full((B, H, Tq), float("inf"), device=q.device, dtype=q.dtype)
+
+    # Outer stage: logits (B, H, Tq, Tk, D)
+    logits = attn_scores.unsqueeze(-1) + v_work.unsqueeze(2)
+    y_two_stage, key_route = torch.max(logits, dim=3)  # (B, H, Tq, D)
+    # Gather the winning inner feature e* for each output coordinate's winning key j*
+    dim_route = torch.gather(inner_dim_idx, dim=3, index=key_route)  # (B, H, Tq, D)
+    compound_route = key_route * D + dim_route  # (B, H, Tq, D) in [0, Tk * D)
+
+    if Tk >= 2:
+        top2 = torch.topk(logits, k=2, dim=3).values
+        margin_d = top2[..., 0, :] - top2[..., 1, :]
+        margin_d = torch.where(torch.isfinite(margin_d), margin_d, torch.zeros_like(margin_d))
+        gamma = margin_d.amin(dim=-1)
+    else:
+        gamma = torch.full((B, H, Tq), float("inf"), device=q.device, dtype=q.dtype)
+
+    bruteforce_ok = True
+    if verify_bruteforce:
+        # Single-stage flattened brute-force max over all (j, e) in {0..Tk-1} x {0..D-1}
+        # Tensor of shape (B, H, Tq, Tk, D_e, D_out)
+        bf_scores = pairwise_qk.masked_fill(~mask.unsqueeze(-1), float("-inf"))
+        if evt_shift is not None:
+            bf_scores = bf_scores - evt_shift
+        if score_shift is not None:
+            bf_scores = bf_scores - score_shift.unsqueeze(-1)
+        bf_total = bf_scores.unsqueeze(-1) + v_work.unsqueeze(2).unsqueeze(-2)  # (B, H, Tq, Tk, D, D)
+        bf_flat = bf_total.reshape(B, H, Tq, Tk * D, D)
+        bf_max_vals, bf_compound = torch.max(bf_flat, dim=3)  # (B, H, Tq, D)
+        val_match = bool(torch.allclose(y_two_stage, bf_max_vals, atol=1e-5, rtol=1e-5))
+        # Where the winning route has a strict positive margin (no exact float tie),
+        # the compound route index must match bitwise; even on ties, the achieved max value must match.
+        gathered_bf_val = torch.gather(bf_flat, dim=3, index=compound_route.unsqueeze(3)).squeeze(3)
+        route_val_match = bool(torch.allclose(gathered_bf_val, bf_max_vals, atol=1e-5, rtol=1e-5))
+        if Tk * D >= 2:
+            bf_top2 = torch.topk(bf_flat, k=2, dim=3).values
+            strict_mask = (bf_top2[..., 0, :] - bf_top2[..., 1, :]) > 1e-5
+            idx_match = bool(torch.equal(compound_route[strict_mask], bf_compound[strict_mask]))
+        else:
+            idx_match = True
+        bruteforce_ok = val_match and route_val_match and idx_match
+
+    return {
+        "score_key_route": score_key_route,
+        "score_dim_route": score_dim_route,
+        "score_margin": score_margin,
+        "key_route": key_route,
+        "dim_route": dim_route,
+        "compound_route": compound_route,
+        "gamma": gamma,
+        "bruteforce_verified": bruteforce_ok,
+    }
+
+
 class TropicalCausalSelfAttention(AttentionCore):
     tropical_gamma_head_mean: torch.Tensor
     tropical_gamma_head_min: torch.Tensor
@@ -363,6 +532,7 @@ class TropicalCausalSelfAttention(AttentionCore):
         self.tropical_gauge_fix = bool(getattr(config, "tropical_gauge_fix", True))
         self.tropical_score_center = bool(getattr(config, "tropical_score_center", True))
         self.tropical_record_margins = bool(getattr(config, "tropical_record_margins", False))
+        self.tropical_structured_support = bool(getattr(config, "tropical_structured_support", False))
         # Maslov smoothing level (8gk.1): None = exact tropical endpoint;
         # finite values are set per-step by the dequantization-annealing
         # schedule via set_semiring_beta (a plain attribute, never state)
@@ -400,10 +570,65 @@ class TropicalCausalSelfAttention(AttentionCore):
             persistent=False,
         )
 
+    def _apply_structured_support(
+        self, q: torch.Tensor, k: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply weight-row spherical equalization + cyclic-polytope monomial support (bead oeno).
+
+        Because row-norm equalization, head-staggered cyclic coordinate pairing
+        ``e -> (e + h) mod D``, and the concave moment-curve lift depend only on
+        the projection weights ``(c_q.weight, c_k.weight)`` and indices ``(h, e)``
+        — never nonlinearly on the input ``x`` — each route ``(j, e)`` remains an
+        exact affine function of ``x``. Equalizing row norms places all ``D``
+        facets of each head onto the sphere (eliminating shadowed vertices), while
+        cyclic head-staggered pairing puts the ``H`` head arrangements into
+        transversal general position.
+        """
+        cq_w = self.c_q.weight
+        ck_w = self.c_k.weight
+        assert isinstance(cq_w, torch.Tensor) and isinstance(ck_w, torch.Tensor)
+
+        q_w = cq_w.view(self.n_head, self.head_dim, -1)
+        q_norms = q_w.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        q_eq = (q_norms.mean(dim=1, keepdim=True) / q_norms).view(
+            1, self.n_head, 1, self.head_dim
+        ).to(dtype=q.dtype)
+        q_unit = q * q_eq
+
+        k_w = ck_w.view(self.n_kv_head, self.head_dim, -1)
+        k_norms = k_w.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        k_eq = (k_norms.mean(dim=1, keepdim=True) / k_norms).view(
+            1, self.n_kv_head, 1, self.head_dim
+        ).to(dtype=k.dtype)
+        if k.size(1) != self.n_kv_head:
+            rep = k.size(1) // self.n_kv_head
+            k_eq = k_eq.repeat_interleave(rep, dim=1)
+        k_unit = k * k_eq
+
+        # Head-staggered cyclic coordinate pairing on k: head h pairs q[..., e] with k[..., (e + h) % D]
+        H_k = int(k_unit.size(1))
+        D = int(self.head_dim)
+        h_idx = torch.arange(H_k, device=k.device).unsqueeze(1)
+        e_idx = torch.arange(D, device=k.device).unsqueeze(0)
+        perm_idx = ((e_idx + h_idx) % D).view(1, H_k, 1, D).expand_as(k_unit)
+        k_paired = torch.gather(k_unit, dim=-1, index=perm_idx)
+
+        scale_q, lift_q = cyclic_polytope_support_lift(
+            q.size(1), self.head_dim, device=q.device, dtype=q.dtype
+        )
+        scale_k, lift_k = cyclic_polytope_support_lift(
+            k.size(1), self.head_dim, device=k.device, dtype=k.dtype
+        )
+        q_out = q_unit * scale_q + 0.5 * lift_q
+        k_out = k_paired * scale_k + 0.5 * lift_k
+        return q_out, k_out
+
     def attend(self, q, k, v, *, kv_cache, pos0):
         # Causal masking lives inside tropical_max_plus_attention (-inf is
         # the additive identity of the max-plus semiring), so the default
         # mask/softmax pipeline does not apply here.
+        if self.tropical_structured_support:
+            q, k = self._apply_structured_support(q, k)
         # nsa arm (lab.1/bp08): the exact E[max] over the head_dim unit-scale
         # score terms - the theoretical first-stage location shift.
         evt_shift = exact_expected_max(q.size(-1)) if self.parameterization == "nsa" else None
@@ -459,3 +684,135 @@ class TropicalCausalSelfAttention(AttentionCore):
         if self.tropical_gauge_fix and self.parameterization != "nsa":
             y = _tropical_center(y, dim=-1)
         return y
+
+
+@torch.no_grad()
+def count_tropical_realized_regions(
+    attn: TropicalCausalSelfAttention,
+    x_samples: torch.Tensor,
+    cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+    *,
+    output_coord: int = 0,
+    head_idx: int = 0,
+    relu_mlp: nn.Module | None = None,
+) -> dict[str, Any]:
+    """Count realized Newton-polytope linear regions of ``attn`` over ``x_samples`` (bead oeno / 8gk.3).
+
+    Evaluates the last query position ``i = T - 1`` and output coordinate ``output_coord``:
+      * Proposition 1 (per-output single-head bound): ``realized_single_head <= T * d_head``
+      * Proposition 2 (multi-head mixed-volume bound): ``realized_multi_head <= (T * d_head) ** H``
+      * Proposition 0 (fixed-K,V query-space control): ``realized_q_space_fixed_kv <= d_head``
+      * Optional ReLU MLP comparison: counts distinct hidden-layer sign patterns on the last token
+        and reports ``regions_per_param`` for both modules.
+    """
+    if x_samples.ndim != 3:
+        raise ValueError(f"x_samples must have shape (N, T, n_embd), got {x_samples.shape}")
+    N, T, _ = x_samples.shape
+    H = int(attn.n_head)
+    D = int(attn.head_dim)
+    prop1_bound = int(T * D)
+    prop2_bound = int((T * D) ** H)
+
+    q, k, v = attn.project_qkv(
+        x_samples, cos_sin=cos_sin, kv_cache=None, apply_qk_norm=(cos_sin is not None)
+    )
+    if attn.tropical_structured_support:
+        q, k = attn._apply_structured_support(q, k)
+    evt_shift = exact_expected_max(D) if attn.parameterization == "nsa" else None
+    routes = extract_tropical_routes(
+        q,
+        k,
+        v,
+        gauge_fix=attn.tropical_gauge_fix,
+        score_center=attn.tropical_score_center,
+        evt_shift=evt_shift,
+        verify_bruteforce=True,
+    )
+    # Compound routes at the final query position T - 1 and output_coord: shape (N, H)
+    last_compound = routes["compound_route"][:, :, T - 1, output_coord]  # (N, H)
+    single_head_routes = last_compound[:, head_idx].detach().cpu().tolist()
+    realized_single = len(set(int(r) for r in single_head_routes))
+
+    per_head_realized = [
+        len(set(int(r) for r in last_compound[:, h].detach().cpu().tolist())) for h in range(H)
+    ]
+    joint_tuples = [tuple(int(x) for x in row) for row in last_compound.detach().cpu().tolist()]
+    realized_multi = len(set(joint_tuples))
+
+    # Cumulative multi-head curve H = 1..n_head
+    multi_head_curve: dict[str, int] = {}
+    for h_sub in range(1, H + 1):
+        sub_tuples = [t[:h_sub] for t in joint_tuples]
+        multi_head_curve[str(h_sub)] = len(set(sub_tuples))
+
+    # Proposition 0 control: hold K, V fixed at sample 0 and vary Q across all N samples
+    k_fixed = k[:1].expand_as(k)
+    v_fixed = v[:1].expand_as(v)
+    routes_q_only = extract_tropical_routes(
+        q,
+        k_fixed,
+        v_fixed,
+        gauge_fix=attn.tropical_gauge_fix,
+        score_center=attn.tropical_score_center,
+        evt_shift=evt_shift,
+        verify_bruteforce=False,
+    )
+    q_only_routes = routes_q_only["compound_route"][:, head_idx, T - 1, output_coord].detach().cpu().tolist()
+    realized_q_space = len(set(int(r) for r in q_only_routes))
+
+    bound_violations = int(
+        (realized_single > prop1_bound)
+        or any(r > prop1_bound for r in per_head_realized)
+        or (realized_multi > prop2_bound)
+        or (realized_q_space > D)
+    )
+
+    # Single-head q,k,v parameter count (3 * d_model * d_head)
+    d_model = int(x_samples.size(-1))
+    single_head_params = max(1, 3 * d_model * D)
+    qkv_weights = [
+        attn.c_q.weight,
+        attn.c_k.weight,
+        attn.c_v.weight,
+    ]
+    total_qkv_params = max(
+        1, sum(int(p.numel()) for p in qkv_weights if isinstance(p, torch.Tensor))
+    )
+
+    out: dict[str, Any] = {
+        "n_samples": N,
+        "seq_len": T,
+        "n_head": H,
+        "head_dim": D,
+        "realized_single_head": realized_single,
+        "realized_single_head_mean": float(sum(per_head_realized) / max(len(per_head_realized), 1)),
+        "per_head_realized": per_head_realized,
+        "prop1_bound": prop1_bound,
+        "prop1_saturation": float(realized_single / max(prop1_bound, 1)),
+        "realized_multi_head": realized_multi,
+        "multi_head_curve": multi_head_curve,
+        "prop2_bound": prop2_bound,
+        "prop2_additive_line": int(H * prop1_bound),
+        "realized_q_space_fixed_kv": realized_q_space,
+        "prop0_bound": D,
+        "bound_violations": bound_violations,
+        "bruteforce_verified": bool(routes["bruteforce_verified"]),
+        "single_head_params": single_head_params,
+        "total_qkv_params": total_qkv_params,
+        "regions_per_param_single_head": float(realized_single / single_head_params),
+        "regions_per_param_multi_head": float(realized_multi / total_qkv_params),
+    }
+
+    if relu_mlp is not None:
+        # Feedforward ReLU MLP acts token-wise on x_{T-1}; its sign pattern is independent of context x_{0..T-2}.
+        x_last = x_samples[:, T - 1, :]
+        hidden = relu_mlp(x_last)
+        signs = (hidden > 0).to(torch.int8).detach().cpu().tolist()
+        realized_mlp = len(set(tuple(row) for row in signs))
+        mlp_params = max(1, sum(p.numel() for p in relu_mlp.parameters()))
+        out["relu_mlp_realized_regions"] = realized_mlp
+        out["relu_mlp_params"] = mlp_params
+        out["regions_per_param_relu_mlp"] = float(realized_mlp / mlp_params)
+
+    return out
+

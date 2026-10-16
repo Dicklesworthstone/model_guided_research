@@ -1252,6 +1252,10 @@ def generate_texts(task: str, *, size: int, seed: int, dial_overrides: dict[str,
 # ---------------------------------------------------------------------------
 # robustness probe (the spec; see module docstring)
 
+ROBUSTNESS_PROBE_SPEC_VERSION: str = "vdc.1-linf-embedding-v1"
+ROBUSTNESS_PROBE_DEFAULT_EPS: float = 0.05
+ROBUSTNESS_PROBE_EPS_LADDER: tuple[float, ...] = (0.01, 0.05, 0.1, 0.25)
+
 
 def apply_embedding_perturbation(x, eps: float, generator) -> Any:
     """Sup-norm bounded perturbation at the token-embedding output.
@@ -1271,3 +1275,4 @@ def apply_embedding_perturbation(x, eps: float, generator) -> Any:
         return x
     delta = (torch.rand(x.shape, generator=generator, dtype=torch.float32, device=x.device) * 2.0 - 1.0) * eps
     return x + delta.to(x.dtype)
+

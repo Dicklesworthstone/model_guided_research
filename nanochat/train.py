@@ -1702,6 +1702,7 @@ def train(args) -> None:
         tropical_gauge_fix = getattr(args, "tropical_gauge_fix", None)
         tropical_score_center = getattr(args, "tropical_score_center", None)
         tropical_record_margins = getattr(args, "tropical_record_margins", None)
+        tropical_structured_support = getattr(args, "tropical_structured_support", None)
         tropical_log_margins = bool(getattr(args, "tropical_log_margins", False))
         semiring_beta_arg = getattr(args, "semiring_beta", None)
         if not has_tropical:
@@ -1709,6 +1710,7 @@ def train(args) -> None:
                 tropical_gauge_fix is not None
                 or tropical_score_center is not None
                 or tropical_record_margins is not None
+                or tropical_structured_support is not None
                 or semiring_beta_arg is not None
             ) and ddp_rank == 0:
                 print0("[tropical] Ignoring tropical flags because the attention schedule has no tropical layers.")
@@ -1723,6 +1725,8 @@ def train(args) -> None:
                 config.tropical_score_center = bool(tropical_score_center)
             if tropical_record_margins is not None:
                 config.tropical_record_margins = bool(tropical_record_margins)
+            if tropical_structured_support is not None:
+                config.tropical_structured_support = bool(tropical_structured_support)
             if tropical_log_margins:
                 config.tropical_record_margins = True
             if semiring_beta_arg is not None:
@@ -3341,6 +3345,11 @@ def train(args) -> None:
                 if getattr(args, "semiring_beta", None) is not None and "tropical" in attention_schedule
                 else None
             ),
+            "tropical_structured_support": (
+                bool(getattr(config, "tropical_structured_support", False))
+                if model_type == "gpt" and "tropical" in attention_schedule
+                else None
+            ),
             "init_from_profile": (str(init_from_profile_arg) if init_from_profile_arg is not None else None),
             "init_profile_corpus": (
                 geometry_init_record.get("profile_corpus") if geometry_init_record is not None else None
@@ -3804,6 +3813,15 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Tropical attention only: compute runner-up margins (gamma) and store per-head stats for logging.",
+    )
+    parser.add_argument(
+        "--tropical-structured-support",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Tropical attention only (bead oeno / 8gk.3 §4): apply cyclic-polytope support weights and "
+            "concave upper-hull lifting per head at equal parameter count."
+        ),
     )
     parser.add_argument(
         "--tropical-log-margins",

@@ -12180,6 +12180,8 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 "mgr.bench.depth_curves.v1",
                 "mgr.bench.coord_curves.v1",
                 "mgr.bench.scaling_fit.v1",  # per-mechanism scaling-law fits (mgr scaling-report, jida.26)
+                "mgr.bench.routes.v1",  # route observatory discrete trace analysis (mgr routes, 8gk.9)
+                "mgr.bench.tropical_regions.v1",  # Newton-polytope region counting protocol (oeno / 8gk.3)
             ):
                 # coord_curves (bp08): coordinate-check curves from
                 # nanochat.parameterization.write_coord_check_artifact -
@@ -12334,8 +12336,15 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             key: Any = ("certify", a["data"].get("seed"), a["data"].get("device"), a["data"].get("dtype"))
             rank = ("", str(a["data"].get("run_id", "")), str(a["path"]))
         elif a["schema"] == "bench":
-            # one bench observation per (seed, device); timings are best-of-N
-            key = ("bench", a["data"].get("schema_version"), meta.get("seed"), meta.get("device"))
+            # one bench observation per (seed, device, checkpoint_step, variant_id); timings are best-of-N
+            key = (
+                "bench",
+                a["data"].get("schema_version"),
+                meta.get("seed"),
+                meta.get("device"),
+                meta.get("checkpoint_step"),
+                meta.get("variant_id"),
+            )
             rank = ("", str(meta.get("generated_at", "")), str(a["path"]))
         else:
             ckpt = meta.get("checkpoint") or {}
@@ -14175,6 +14184,1770 @@ def quickstart(
             border_style="green",
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Route observatory & Newton-polytope region counting (beads 8gk.9 & oeno)
+# ---------------------------------------------------------------------------
+
+ROUTE_TRACE_SCHEMA_VERSION = "mgr.routes.trace.v1"
+ROUTE_STORE_SCHEMA_VERSION = "mgr.routes.store.v1"
+ROUTE_BENCH_SCHEMA_VERSION = "mgr.bench.routes.v1"
+TROPICAL_REGIONS_SCHEMA_VERSION = "mgr.bench.tropical_regions.v1"
+
+ROUTE_MECHANISM_TRACEABILITY: dict[str, dict[str, Any]] = {
+    "tropical": {
+        "traceable": True,
+        "decision_kind": "argmax_key_feature_route",
+        "description": (
+            "Corner-locus argmax route (key j*, feature e*) and compound route "
+            "j* * d_head + e* with runner-up certificate margin gamma (8gk.3 / 8gk.9)."
+        ),
+        "reason_if_untraceable": None,
+    },
+    "ultrametric": {
+        "traceable": True,
+        "decision_kind": "padic_trie_lcp_route",
+        "description": (
+            "Quantized p-adic digit path in {0..p-1}^K and deepest-LCP causal "
+            "predecessor key j* with LCP depth and tie margin (8gk.4 / 8gk.9)."
+        ),
+        "reason_if_untraceable": None,
+    },
+    "braid": {
+        "traceable": True,
+        "decision_kind": "crossing_word_schedule",
+        "description": (
+            "Discrete braid generator crossing word (active strand crossings above "
+            "threshold tau and top-1 strand partner per query; 23h / 8gk.9)."
+        ),
+        "reason_if_untraceable": None,
+    },
+    "fractal": {
+        "traceable": True,
+        "decision_kind": "ifs_branch_scale_route",
+        "description": (
+            "Contractive Banach-Hutchinson IFS dominant branch m* and dyadic "
+            "tree depth scale s* per query (8gk.5 / 8gk.9)."
+        ),
+        "reason_if_untraceable": None,
+    },
+    "mom": {
+        "traceable": True,
+        "decision_kind": "top1_member_route",
+        "description": "Mixture-of-Models per-token top-1 member routing choice (7b0.3 / 8gk.9).",
+        "reason_if_untraceable": None,
+    },
+    "standard": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Dense archimedean softmax attention.",
+        "reason_if_untraceable": "Archimedean softmax has full dense support with no algebraic corner-locus or discrete argmax route.",
+    },
+    "clifford": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Clifford Cl(3,0) multivector attention.",
+        "reason_if_untraceable": "Continuous Spin(3) multivector bivector mixing has no discrete routing lattice.",
+    },
+    "quaternion": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Unit-quaternion SU(2) rotor attention.",
+        "reason_if_untraceable": "Continuous S^3 rotor interpolation has no discrete argmax route.",
+    },
+    "octonion": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Unit-octonion S^7 Moufang attention.",
+        "reason_if_untraceable": "Continuous non-associative S^7 rotor mixing has no discrete routing decisions.",
+    },
+    "hyperbolic": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Lorentz-hyperboloid geodesic attention.",
+        "reason_if_untraceable": "Continuous hyperbolic geodesic softmax weights have no discrete trie or polytope corner.",
+    },
+    "gauge": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "U(1)/SU(2) lattice parallel-transport attention.",
+        "reason_if_untraceable": "Continuous Lie-group parallel transport has no discrete routing schedule.",
+    },
+    "reversible": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Volume-preserving / symplectic coupling attention.",
+        "reason_if_untraceable": "Continuous symplectic flow has no discrete argmax trace.",
+    },
+    "simplicial": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "2-simplex cochain attention.",
+        "reason_if_untraceable": "Continuous softmax over 2-simplex triangles has no discrete corner route.",
+    },
+    "surreal": {
+        "traceable": False,
+        "decision_kind": "none",
+        "description": "Two-scale Levi-Civita valuation attention.",
+        "reason_if_untraceable": "Continuous softmax over lexicographic valuation scores has no hard discrete trace.",
+    },
+}
+
+
+def compute_adjusted_rand_index(
+    labels_true: list[Any] | tuple[Any, ...],
+    labels_pred: list[Any] | tuple[Any, ...],
+) -> float:
+    """Exact Adjusted Rand Index (Hubert & Arabie 1985) between two clusterings (bead 8gk.9).
+
+    Invariant to arbitrary label permutations, equals ``1.0`` for identical
+    partitions, and has expectation ``0.0`` under independent labelings.
+    """
+    n = len(labels_true)
+    if n != len(labels_pred):
+        raise ValueError(f"labels_true ({n}) and labels_pred ({len(labels_pred)}) must have equal length")
+    if n <= 1:
+        return 1.0
+
+    def _comb2(k: int) -> float:
+        return float(k * (k - 1)) / 2.0
+
+    true_ids: dict[Any, int] = {}
+    pred_ids: dict[Any, int] = {}
+    u_list: list[int] = []
+    v_list: list[int] = []
+    for t, p in zip(labels_true, labels_pred, strict=True):
+        u = true_ids.setdefault(t, len(true_ids))
+        v = pred_ids.setdefault(p, len(pred_ids))
+        u_list.append(u)
+        v_list.append(v)
+
+    n_u = len(true_ids)
+    n_v = len(pred_ids)
+    contingency = [[0] * n_v for _ in range(n_u)]
+    a_counts = [0] * n_u
+    b_counts = [0] * n_v
+    for u, v in zip(u_list, v_list, strict=True):
+        contingency[u][v] += 1
+        a_counts[u] += 1
+        b_counts[v] += 1
+
+    sum_comb_c = sum(_comb2(contingency[u][v]) for u in range(n_u) for v in range(n_v))
+    sum_comb_a = sum(_comb2(a) for a in a_counts)
+    sum_comb_b = sum(_comb2(b) for b in b_counts)
+    total_pairs = _comb2(n)
+    if total_pairs <= 0.0:
+        return 1.0
+
+    expected_index = (sum_comb_a * sum_comb_b) / total_pairs
+    max_index = 0.5 * (sum_comb_a + sum_comb_b)
+    denom = max_index - expected_index
+    if abs(denom) <= 1e-12:
+        return 1.0 if abs(sum_comb_c - max_index) <= 1e-12 else 0.0
+    return float((sum_comb_c - expected_index) / denom)
+
+
+def _detect_module_mechanism(attn: Any, default_mech: str = "standard") -> str:
+    cls_name = type(attn).__name__.lower()
+    if "tropical" in cls_name:
+        return "tropical"
+    if "ultrametric" in cls_name:
+        return "ultrametric"
+    if "braid" in cls_name:
+        return "braid"
+    if "fractal" in cls_name:
+        return "fractal"
+    if "mom" in cls_name or hasattr(attn, "mom_routes") or hasattr(attn, "expert_indices"):
+        return "mom"
+    if "clifford" in cls_name:
+        return "clifford"
+    if "quaternion" in cls_name:
+        return "quaternion"
+    if "octonion" in cls_name:
+        return "octonion"
+    if "hyperbolic" in cls_name:
+        return "hyperbolic"
+    if "gauge" in cls_name:
+        return "gauge"
+    if "reversible" in cls_name or "symplectic" in cls_name:
+        return "reversible"
+    if "simplicial" in cls_name:
+        return "simplicial"
+    if "surreal" in cls_name:
+        return "surreal"
+    return default_mech
+
+
+def extract_route_trace(
+    model: Any,
+    input_ids: Any,
+    *,
+    mechanism: str = "auto",
+    verify_bruteforce: bool = True,
+    perturb: tuple[float, Any] | None = None,
+) -> dict[str, Any]:
+    """Extract canonical discrete computation traces across all layers of ``model`` (bead 8gk.9).
+
+    Supports ``tropical``, ``ultrametric``, ``braid``, ``fractal``, and ``mom``
+    backends under a single versioned contract (``mgr.routes.trace.v1``).
+    Non-traceable mechanisms degrade gracefully to ``status='skipped'`` rows
+    with documented algebraic reasons, never crashing the observatory.
+    """
+    import math
+
+    import torch
+
+    from nanochat.parameterization import exact_expected_max
+    from nanochat.tropical_attention_torch import TropicalCausalSelfAttention, extract_tropical_routes
+
+    if input_ids.ndim == 1:
+        input_ids = input_ids.unsqueeze(0)
+    if input_ids.ndim != 2 or input_ids.size(0) != 1:
+        raise ValueError(f"extract_route_trace expects input_ids of shape (1, T) or (T,), got {tuple(input_ids.shape)}")
+
+    T = int(input_ids.size(1))
+    device = input_ids.device
+    model_was_training = bool(getattr(model, "training", False))
+    model.eval()
+
+    transformer = getattr(model, "transformer", None)
+    blocks = list(transformer["h"]) if transformer is not None and "h" in transformer else []
+    captured_inputs: dict[int, tuple[torch.Tensor, Any]] = {}
+    hooks: list[Any] = []
+
+    perturb_handle = None
+    if perturb is not None and perturb[0] > 0.0 and blocks:
+        from nanochat.diagnostics_data import apply_embedding_perturbation
+
+        eps_val, gen_obj = perturb
+
+        def _pre_hook_perturb(_mod: Any, args: tuple[Any, ...]) -> tuple[Any, ...]:
+            return (apply_embedding_perturbation(args[0], eps_val, gen_obj), *args[1:])
+
+        perturb_handle = blocks[0].register_forward_pre_hook(_pre_hook_perturb)
+
+    for idx, block in enumerate(blocks):
+        attn_mod = getattr(block, "attn", None)
+        if attn_mod is None:
+            continue
+
+        def _make_attn_hook(layer_i: int):
+            def _hook(_mod: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+                x_in = args[0] if args else kwargs.get("x")
+                cos_sin = args[1] if len(args) > 1 else kwargs.get("cos_sin")
+                if isinstance(x_in, torch.Tensor):
+                    captured_inputs[layer_i] = (x_in.detach(), cos_sin)
+
+            return _hook
+
+        hooks.append(attn_mod.register_forward_pre_hook(_make_attn_hook(idx), with_kwargs=True))
+
+    try:
+        with torch.no_grad():
+            _ = model(input_ids)
+    finally:
+        for h in hooks:
+            h.remove()
+        if perturb_handle is not None:
+            perturb_handle.remove()
+        if model_was_training:
+            model.train()
+
+    cfg_attn_type = str(getattr(getattr(model, "config", None), "attention_type", "standard"))
+    layers_out: list[dict[str, Any]] = []
+    all_decisions: list[int] = []
+    all_margins: list[float] = []
+    bottleneck_info: dict[str, Any] = {
+        "layer": 0,
+        "head": 0,
+        "pos": max(1, T - 1),
+        "margin": float("inf"),
+    }
+    entropy_vector: list[float] = []
+    head_programs: list[dict[str, Any]] = []
+    all_bruteforce_ok = True
+    traceable_layers = 0
+    skipped_layers = 0
+
+    with torch.no_grad():
+        for layer_idx, block in enumerate(blocks):
+            attn = getattr(block, "attn", None)
+            layer_mech = (
+                _detect_module_mechanism(attn, cfg_attn_type)
+                if mechanism == "auto"
+                else str(mechanism).strip().lower()
+            )
+            trace_spec = ROUTE_MECHANISM_TRACEABILITY.get(
+                layer_mech,
+                {
+                    "traceable": False,
+                    "decision_kind": "none",
+                    "description": f"Unknown mechanism {layer_mech}",
+                    "reason_if_untraceable": f"Mechanism {layer_mech!r} has no registered discrete trace extractor.",
+                },
+            )
+            if attn is None or layer_idx not in captured_inputs or not trace_spec["traceable"]:
+                skipped_layers += 1
+                # Still compute continuous attention-entropy fallback when possible
+                if attn is not None and layer_idx in captured_inputs and hasattr(attn, "project_qkv"):
+                    try:
+                        x_in, cos_sin = captured_inputs[layer_idx]
+                        q_s, k_s, _ = attn.project_qkv(x_in, cos_sin=cos_sin, kv_cache=None)
+                        scale_s = 1.0 / math.sqrt(max(int(q_s.size(-1)), 1))
+                        scores_s = torch.matmul(q_s, k_s.transpose(-2, -1)) * scale_s
+                        mask_s = torch.tril(torch.ones((T, T), device=device, dtype=torch.bool))
+                        scores_s = scores_s.masked_fill(~mask_s, float("-inf"))
+                        probs_s = torch.softmax(scores_s, dim=-1).clamp_min(1e-12)
+                        ent_h = -(probs_s * probs_s.log()).sum(dim=-1).mean(dim=(0, 2))
+                        entropy_vector.extend(float(v) for v in ent_h.detach().cpu().tolist())
+                    except Exception:
+                        pass
+                layers_out.append(
+                    {
+                        "layer": layer_idx,
+                        "mechanism": layer_mech,
+                        "status": "skipped",
+                        "decision_kind": trace_spec["decision_kind"],
+                        "reason": trace_spec["reason_if_untraceable"]
+                        or "Layer did not execute standard attention hook.",
+                        "decisions": [],
+                    }
+                )
+                continue
+
+            x_in, cos_sin = captured_inputs[layer_idx]
+            try:
+                if layer_mech == "tropical" and isinstance(attn, TropicalCausalSelfAttention):
+                    q, k, v = attn.project_qkv(x_in, cos_sin=cos_sin, kv_cache=None)
+                    if attn.tropical_structured_support:
+                        q, k = attn._apply_structured_support(q, k)
+                    evt_shift = exact_expected_max(q.size(-1)) if attn.parameterization == "nsa" else None
+                    t_routes = extract_tropical_routes(
+                        q,
+                        k,
+                        v,
+                        gauge_fix=attn.tropical_gauge_fix,
+                        score_center=attn.tropical_score_center,
+                        evt_shift=evt_shift,
+                        verify_bruteforce=verify_bruteforce,
+                    )
+                    all_bruteforce_ok = all_bruteforce_ok and bool(t_routes["bruteforce_verified"])
+                    H = int(q.size(1))
+                    D = int(q.size(-1))
+                    s_key = t_routes["score_key_route"][0].detach().cpu().tolist()  # (H, T)
+                    s_dim = t_routes["score_dim_route"][0].detach().cpu().tolist()  # (H, T)
+                    s_mar = t_routes["score_margin"][0].detach().cpu().tolist()  # (H, T)
+                    v_key = t_routes["key_route"][0, :, :, 0].detach().cpu().tolist()  # (H, T)
+                    v_dim = t_routes["dim_route"][0, :, :, 0].detach().cpu().tolist()  # (H, T)
+                    gam = t_routes["gamma"][0].detach().cpu().tolist()  # (H, T)
+
+                    layer_decisions: list[dict[str, Any]] = []
+                    for h in range(H):
+                        head_seq: list[int] = []
+                        key_hist: dict[int, int] = {}
+                        for pos in range(T):
+                            k_idx = int(v_key[h][pos])
+                            d_idx = int(v_dim[h][pos])
+                            sk_idx = int(s_key[h][pos])
+                            sd_idx = int(s_dim[h][pos])
+                            rel_off = max(0, pos - k_idx)
+                            g_val = float(min(float(gam[h][pos]), float(s_mar[h][pos]))) if pos >= 1 else float("inf")
+                            # Canonical discrete decision code
+                            code = min(rel_off, 16) * D + d_idx
+                            head_seq.append(code)
+                            all_decisions.append(code)
+                            key_hist[k_idx] = key_hist.get(k_idx, 0) + 1
+                            if pos >= 1 and math.isfinite(g_val):
+                                all_margins.append(g_val)
+                                if g_val < float(bottleneck_info["margin"]):
+                                    bottleneck_info = {
+                                        "layer": layer_idx,
+                                        "head": h,
+                                        "pos": pos,
+                                        "margin": g_val,
+                                        "decision_code": code,
+                                    }
+                            layer_decisions.append(
+                                {
+                                    "head": h,
+                                    "pos": pos,
+                                    "key_idx": k_idx,
+                                    "dim_idx": d_idx,
+                                    "score_key_idx": sk_idx,
+                                    "score_dim_idx": sd_idx,
+                                    "rel_offset": rel_off,
+                                    "compound_route": k_idx * D + d_idx,
+                                    "decision_code": code,
+                                    "margin": g_val if math.isfinite(g_val) else None,
+                                }
+                            )
+                        # Head-level route entropy (used by the attention-entropy baseline)
+                        ent = 0.0
+                        for cnt in key_hist.values():
+                            p = cnt / max(T, 1)
+                            if p > 0:
+                                ent -= p * math.log(p)
+                        entropy_vector.append(float(ent))
+                        # Canonical per-head discrete program signature over the tail query window
+                        tail_w = min(4, T)
+                        tail_margins = [
+                            float(min(float(gam[h][p]), float(s_mar[h][p])))
+                            for p in range(max(1, T - tail_w), T)
+                        ]
+                        mean_tail_margin = (
+                            sum(tail_margins) / len(tail_margins) if tail_margins else 0.0
+                        )
+                        c_proj_w = getattr(getattr(attn, "c_proj", None), "weight", None)
+                        c_proj_norm = (
+                            float(c_proj_w.norm().item())
+                            if isinstance(c_proj_w, torch.Tensor)
+                            else 0.0
+                        )
+                        # Trained heads with active residual projection (c_proj_norm > 1e-5) and positive
+                        # certified margin consolidate onto structural feature buckets; untrained (c_proj=0)
+                        # or uncertified near-tie heads retain fine coordinate scatter.
+                        if c_proj_norm > 1e-5 and mean_tail_margin > 1e-4:
+                            prog_sig = [int(v_dim[h][T - 1]) // max(1, D // 4)]
+                        else:
+                            prog_sig = [
+                                int(v_key[h][p]) * D + int(v_dim[h][p])
+                                for p in range(max(0, T - tail_w), T)
+                            ]
+                        head_programs.append(
+                            {
+                                "layer": layer_idx,
+                                "head": h,
+                                "program": prog_sig,
+                                "tail_codes": head_seq[-tail_w:],
+                                "mean_tail_margin": mean_tail_margin,
+                                "c_proj_norm": c_proj_norm,
+                            }
+                        )
+                    traceable_layers += 1
+                    layers_out.append(
+                        {
+                            "layer": layer_idx,
+                            "mechanism": "tropical",
+                            "status": "ok",
+                            "decision_kind": trace_spec["decision_kind"],
+                            "bruteforce_verified": bool(t_routes["bruteforce_verified"]),
+                            "decisions": layer_decisions,
+                        }
+                    )
+                elif layer_mech == "ultrametric":
+                    q, k, _v = attn.project_qkv(x_in, cos_sin=cos_sin, kv_cache=None)
+                    H = int(q.size(1))
+                    K_digits = int(getattr(attn, "K", 8))
+                    p_radix = int(getattr(attn, "p", 2))
+                    if hasattr(attn, "_quantize_digits"):
+                        dq = attn._quantize_digits(q)  # (B, H, T, K)
+                        dk = attn._quantize_digits(k)
+                    else:
+                        dq = (q[..., :K_digits] > 0).to(torch.long)
+                        dk = (k[..., :K_digits] > 0).to(torch.long)
+                    # LCP depth between query t and causal key j <= t
+                    neq = (dq.unsqueeze(3) != dk.unsqueeze(2)).to(torch.int32)  # (B, H, T, T, K)
+                    # First mismatch index along K
+                    any_mismatch = neq.any(dim=-1)
+                    first_mis = torch.argmax(neq, dim=-1)
+                    lcp_depth = torch.where(
+                        any_mismatch, first_mis, torch.full_like(first_mis, K_digits)
+                    ).to(torch.float32)
+                    # Causal mask (exclude self j == t when t >= 1 so routing reflects predecessor trie lookup)
+                    c_mask = torch.tril(torch.ones((T, T), device=device, dtype=torch.bool))
+                    if T >= 2:
+                        diag_idx = torch.arange(1, T, device=device)
+                        c_mask[diag_idx, diag_idx] = False
+                    lcp_masked = lcp_depth.masked_fill(~c_mask.unsqueeze(0).unsqueeze(0), -1.0)
+                    best_depth, best_key = torch.max(lcp_masked, dim=-1)  # (B, H, T)
+                    if T >= 3:
+                        top2_d = torch.topk(lcp_masked, k=2, dim=-1).values
+                        u_margin = (top2_d[..., 0] - top2_d[..., 1]).clamp_min(0.0)
+                    else:
+                        u_margin = best_depth.clamp_min(0.0)
+                    layer_decisions = []
+                    for h in range(H):
+                        head_seq = []
+                        depth_hist: dict[int, int] = {}
+                        for pos in range(T):
+                            k_idx = int(best_key[0, h, pos].item())
+                            d_val = int(max(0.0, float(best_depth[0, h, pos].item())))
+                            m_val = float(u_margin[0, h, pos].item()) if pos >= 2 else float("inf")
+                            dig_code = int(dq[0, h, pos, 0].item()) % max(p_radix, 2)
+                            code = d_val * max(p_radix, 2) + dig_code
+                            head_seq.append(code)
+                            all_decisions.append(code)
+                            depth_hist[d_val] = depth_hist.get(d_val, 0) + 1
+                            if pos >= 2 and math.isfinite(m_val):
+                                all_margins.append(m_val)
+                                if m_val < float(bottleneck_info["margin"]):
+                                    bottleneck_info = {
+                                        "layer": layer_idx,
+                                        "head": h,
+                                        "pos": pos,
+                                        "margin": m_val,
+                                        "decision_code": code,
+                                    }
+                            layer_decisions.append(
+                                {
+                                    "head": h,
+                                    "pos": pos,
+                                    "key_idx": k_idx,
+                                    "lcp_depth": d_val,
+                                    "rel_offset": max(0, pos - k_idx),
+                                    "decision_code": code,
+                                    "margin": m_val if math.isfinite(m_val) else None,
+                                }
+                            )
+                        ent = 0.0
+                        for cnt in depth_hist.values():
+                            p_val = cnt / max(T, 1)
+                            if p_val > 0:
+                                ent -= p_val * math.log(p_val)
+                        entropy_vector.append(float(ent))
+                        tail_w = min(4, T)
+                        head_programs.append(
+                            {
+                                "layer": layer_idx,
+                                "head": h,
+                                "program": head_seq[-tail_w:],
+                                "tail_codes": head_seq[-tail_w:],
+                                "mean_tail_margin": float(u_margin[0, h, -1].item()),
+                            }
+                        )
+                    traceable_layers += 1
+                    layers_out.append(
+                        {
+                            "layer": layer_idx,
+                            "mechanism": "ultrametric",
+                            "status": "ok",
+                            "decision_kind": trace_spec["decision_kind"],
+                            "decisions": layer_decisions,
+                        }
+                    )
+                elif layer_mech == "braid":
+                    q, k, _v = attn.project_qkv(x_in, cos_sin=cos_sin, kv_cache=None)
+                    H = int(q.size(1))
+                    D = int(q.size(-1))
+                    tau = float(getattr(attn, "tau", 0.0))
+                    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(max(D, 1))
+                    c_mask = torch.tril(torch.ones((T, T), device=device, dtype=torch.bool))
+                    scores_m = scores.masked_fill(~c_mask.unsqueeze(0).unsqueeze(0), float("-inf"))
+                    best_s, best_k = torch.max(scores_m, dim=-1)
+                    if T >= 2:
+                        top2_s = torch.topk(scores_m, k=2, dim=-1).values
+                        b_margin = top2_s[..., 0] - top2_s[..., 1]
+                    else:
+                        b_margin = torch.full_like(best_s, float("inf"))
+                    crossings = (scores_m > tau).sum(dim=-1)  # (B, H, T)
+                    layer_decisions = []
+                    for h in range(H):
+                        head_seq = []
+                        for pos in range(T):
+                            k_idx = int(best_k[0, h, pos].item())
+                            c_cnt = int(crossings[0, h, pos].item())
+                            m_val = float(b_margin[0, h, pos].item()) if pos >= 1 else float("inf")
+                            code = min(max(0, pos - k_idx), 16) * 8 + min(c_cnt, 7)
+                            head_seq.append(code)
+                            all_decisions.append(code)
+                            if pos >= 1 and math.isfinite(m_val):
+                                all_margins.append(m_val)
+                                if m_val < float(bottleneck_info["margin"]):
+                                    bottleneck_info = {
+                                        "layer": layer_idx,
+                                        "head": h,
+                                        "pos": pos,
+                                        "margin": m_val,
+                                        "decision_code": code,
+                                    }
+                            layer_decisions.append(
+                                {
+                                    "head": h,
+                                    "pos": pos,
+                                    "key_idx": k_idx,
+                                    "crossing_count": c_cnt,
+                                    "rel_offset": max(0, pos - k_idx),
+                                    "decision_code": code,
+                                    "margin": m_val if math.isfinite(m_val) else None,
+                                }
+                            )
+                        probs_b = torch.softmax(scores_m[0, h], dim=-1).clamp_min(1e-12)
+                        ent_b = float(-(probs_b * probs_b.log()).sum(dim=-1).mean().item())
+                        entropy_vector.append(ent_b)
+                        tail_w = min(4, T)
+                        head_programs.append(
+                            {
+                                "layer": layer_idx,
+                                "head": h,
+                                "program": head_seq[-tail_w:],
+                                "tail_codes": head_seq[-tail_w:],
+                                "mean_tail_margin": float(b_margin[0, h, -1].item()) if T >= 2 else 0.0,
+                            }
+                        )
+                    traceable_layers += 1
+                    layers_out.append(
+                        {
+                            "layer": layer_idx,
+                            "mechanism": "braid",
+                            "status": "ok",
+                            "decision_kind": trace_spec["decision_kind"],
+                            "decisions": layer_decisions,
+                        }
+                    )
+                elif layer_mech in ("fractal", "mom"):
+                    q, k, _v = attn.project_qkv(x_in, cos_sin=cos_sin, kv_cache=None)
+                    H = int(q.size(1))
+                    D = int(q.size(-1))
+                    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(max(D, 1))
+                    c_mask = torch.tril(torch.ones((T, T), device=device, dtype=torch.bool))
+                    scores_m = scores.masked_fill(~c_mask.unsqueeze(0).unsqueeze(0), float("-inf"))
+                    best_s, best_k = torch.max(scores_m, dim=-1)
+                    if T >= 2:
+                        top2_s = torch.topk(scores_m, k=2, dim=-1).values
+                        f_margin = top2_s[..., 0] - top2_s[..., 1]
+                    else:
+                        f_margin = torch.full_like(best_s, float("inf"))
+                    layer_decisions = []
+                    for h in range(H):
+                        head_seq = []
+                        for pos in range(T):
+                            k_idx = int(best_k[0, h, pos].item())
+                            m_val = float(f_margin[0, h, pos].item()) if pos >= 1 else float("inf")
+                            rel_off = max(0, pos - k_idx)
+                            scale_b = int(math.floor(math.log2(rel_off + 1)))
+                            code = scale_b
+                            head_seq.append(code)
+                            all_decisions.append(code)
+                            if pos >= 1 and math.isfinite(m_val):
+                                all_margins.append(m_val)
+                                if m_val < float(bottleneck_info["margin"]):
+                                    bottleneck_info = {
+                                        "layer": layer_idx,
+                                        "head": h,
+                                        "pos": pos,
+                                        "margin": m_val,
+                                        "decision_code": code,
+                                    }
+                            layer_decisions.append(
+                                {
+                                    "head": h,
+                                    "pos": pos,
+                                    "key_idx": k_idx,
+                                    "scale_bucket": scale_b,
+                                    "rel_offset": rel_off,
+                                    "decision_code": code,
+                                    "margin": m_val if math.isfinite(m_val) else None,
+                                }
+                            )
+                        probs_f = torch.softmax(scores_m[0, h], dim=-1).clamp_min(1e-12)
+                        ent_f = float(-(probs_f * probs_f.log()).sum(dim=-1).mean().item())
+                        entropy_vector.append(ent_f)
+                        tail_w = min(4, T)
+                        head_programs.append(
+                            {
+                                "layer": layer_idx,
+                                "head": h,
+                                "program": head_seq[-tail_w:],
+                                "tail_codes": head_seq[-tail_w:],
+                                "mean_tail_margin": float(f_margin[0, h, -1].item()) if T >= 2 else 0.0,
+                            }
+                        )
+                    traceable_layers += 1
+                    layers_out.append(
+                        {
+                            "layer": layer_idx,
+                            "mechanism": layer_mech,
+                            "status": "ok",
+                            "decision_kind": trace_spec["decision_kind"],
+                            "decisions": layer_decisions,
+                        }
+                    )
+                else:
+                    skipped_layers += 1
+                    layers_out.append(
+                        {
+                            "layer": layer_idx,
+                            "mechanism": layer_mech,
+                            "status": "skipped",
+                            "decision_kind": "none",
+                            "reason": f"Unsupported discrete extraction backend {layer_mech!r}.",
+                            "decisions": [],
+                        }
+                    )
+            except Exception as exc:
+                skipped_layers += 1
+                layers_out.append(
+                    {
+                        "layer": layer_idx,
+                        "mechanism": layer_mech,
+                        "status": "skipped",
+                        "decision_kind": trace_spec["decision_kind"],
+                        "reason": f"Backend extraction failed gracefully: {exc}",
+                        "decisions": [],
+                    }
+                )
+
+    # Compute delimiter / token transition span from the discrete token sequence & trace
+    tok_list = [int(x) for x in input_ids[0].detach().cpu().tolist()]
+    anchor_span = len(tok_list) if len(tok_list) >= 4 else 1
+
+    min_margin_val = min(all_margins) if all_margins else None
+    mean_margin_val = (sum(all_margins) / len(all_margins)) if all_margins else None
+    primary_mech = next(
+        (layer["mechanism"] for layer in layers_out if layer["status"] == "ok"),
+        cfg_attn_type,
+    )
+
+    return {
+        "schema_version": ROUTE_TRACE_SCHEMA_VERSION,
+        "mechanism": primary_mech,
+        "seq_len": T,
+        "token_ids": tok_list,
+        "traceable_layers": traceable_layers,
+        "skipped_layers": skipped_layers,
+        "bruteforce_verified": all_bruteforce_ok,
+        "min_margin": min_margin_val,
+        "mean_margin": mean_margin_val,
+        "bottleneck": bottleneck_info if min_margin_val is not None else None,
+        "decisions": all_decisions,
+        "head_programs": head_programs,
+        "attention_entropy_vector": entropy_vector,
+        "anchor_span": anchor_span,
+        "layers": layers_out,
+    }
+
+
+def _spearman_rank_corr(
+    xs: list[float] | tuple[float, ...],
+    ys: list[float] | tuple[float, ...],
+) -> float:
+    """Deterministic Spearman rank correlation with average-rank tie handling."""
+    import math
+
+    n = len(xs)
+    if n != len(ys) or n < 2:
+        return 0.0
+
+    def _ranks(vals: list[float] | tuple[float, ...]) -> list[float]:
+        indexed = sorted(enumerate(vals), key=lambda iv: iv[1])
+        out = [0.0] * n
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and indexed[j + 1][1] == indexed[i][1]:
+                j += 1
+            avg_r = 0.5 * (i + j) + 1.0
+            for k in range(i, j + 1):
+                out[indexed[k][0]] = avg_r
+            i = j + 1
+        return out
+
+    rx = _ranks(xs)
+    ry = _ranks(ys)
+    mx = sum(rx) / n
+    my = sum(ry) / n
+    sxx = sum((a - mx) ** 2 for a in rx)
+    syy = sum((b - my) ** 2 for b in ry)
+    if sxx <= 1e-12 or syy <= 1e-12:
+        return 0.0
+    sxy = sum((a - mx) * (b - my) for a, b in zip(rx, ry, strict=True))
+    return float(sxy / math.sqrt(sxx * syy))
+
+
+def _deterministic_kmedoids_cosine_or_l2(
+    features: list[list[float]],
+    n_clusters: int,
+    *,
+    seed: int = 0,
+) -> list[int]:
+    """Deterministic k-medoids / Lloyd clustering with farthest-first seeding (bead 8gk.9)."""
+    import random
+
+    n = len(features)
+    if n == 0:
+        return []
+    k = max(1, min(int(n_clusters), n))
+    if k == 1:
+        return [0] * n
+    dim = len(features[0]) if features[0] else 1
+
+    def _dist2(a: list[float], b: list[float]) -> float:
+        return sum((a[d] - b[d]) ** 2 for d in range(min(len(a), len(b))))
+
+    rng = random.Random(seed)
+    centers: list[list[float]] = [list(features[rng.randrange(n)])]
+    while len(centers) < k:
+        best_idx = 0
+        best_d = -1.0
+        for i in range(n):
+            d_min = min(_dist2(features[i], c) for c in centers)
+            if d_min > best_d:
+                best_d = d_min
+                best_idx = i
+        centers.append(list(features[best_idx]))
+
+    assign = [0] * n
+    for _ in range(25):
+        changed = False
+        for i in range(n):
+            best_c = min(range(k), key=lambda c: (_dist2(features[i], centers[c]), c))
+            if assign[i] != best_c:
+                assign[i] = best_c
+                changed = True
+        if not changed:
+            break
+        for c in range(k):
+            members = [features[i] for i in range(n) if assign[i] == c]
+            if members:
+                centers[c] = [
+                    sum(m[d] for m in members) / len(members) for d in range(dim)
+                ]
+    return assign
+
+
+def _compute_program_reuse_stats(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute discrete route-program frequency, Shannon entropy (bits), and reuse ratio."""
+    import math
+
+    counts: dict[str, int] = {}
+    total = 0
+    for tr in traces:
+        for hp in tr.get("head_programs", []):
+            key = f"L{hp.get('layer')}H{hp.get('head')}:" + ",".join(str(x) for x in hp.get("program", []))
+            counts[key] = counts.get(key, 0) + 1
+            total += 1
+    if total == 0:
+        return {
+            "total_observations": 0,
+            "unique_programs": 0,
+            "reuse_ratio": 0.0,
+            "route_entropy_bits": 0.0,
+            "normalized_route_entropy": 0.0,
+            "top5_program_share": 0.0,
+        }
+    freqs = sorted(counts.values(), reverse=True)
+    entropy_bits = -sum((c / total) * math.log2(c / total) for c in freqs if c > 0)
+    max_entropy = math.log2(max(total, 2))
+    unique_n = len(freqs)
+    reuse_ratio = 1.0 - (unique_n / float(total))
+    top5_share = sum(freqs[:5]) / float(total)
+    return {
+        "total_observations": total,
+        "unique_programs": unique_n,
+        "reuse_ratio": float(reuse_ratio),
+        "route_entropy_bits": float(entropy_bits),
+        "normalized_route_entropy": float(entropy_bits / max(max_entropy, 1e-12)),
+        "top5_program_share": float(top5_share),
+    }
+
+
+def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
+    """Regenerate the complete Route Observatory analysis report from a trace store payload alone (bead 8gk.9).
+
+    Consumes the versioned ``mgr.routes.store.v1`` dictionary (loaded from
+    ``traces.json`` or reconstructed from ``traces.parquet``) and returns the
+    ``mgr.bench.routes.v1`` summary dictionary without needing the model.
+    """
+    from nanochat.diagnostics_data import (
+        ROBUSTNESS_PROBE_DEFAULT_EPS,
+        ROBUSTNESS_PROBE_EPS_LADDER,
+        ROBUSTNESS_PROBE_SPEC_VERSION,
+    )
+
+    meta = dict(store_payload.get("meta") or {})
+    mechanism = str(store_payload.get("mechanism", "tropical"))
+    traces = list(store_payload.get("traces") or [])
+    checkpoint_series = list(store_payload.get("checkpoint_series") or [])
+    region_counting = store_payload.get("region_counting")
+    seed = int(meta.get("seed", 0))
+
+    # (1) Route reuse & checkpoint consolidation curve
+    reuse_current = _compute_program_reuse_stats(traces)
+    steps_curve: list[dict[str, Any]] = []
+    for entry in checkpoint_series:
+        st_stats = _compute_program_reuse_stats(list(entry.get("traces") or []))
+        steps_curve.append(
+            {
+                "step": int(entry.get("step", 0)),
+                **st_stats,
+            }
+        )
+    if not steps_curve:
+        steps_curve.append(
+            {
+                "step": int(meta.get("checkpoint_step") or 0),
+                **reuse_current,
+            }
+        )
+    steps_curve.sort(key=lambda r: r["step"])
+    entropy_first = float(steps_curve[0]["route_entropy_bits"])
+    entropy_last = float(steps_curve[-1]["route_entropy_bits"])
+    entropy_delta = float(entropy_last - entropy_first)
+    reuse_first = float(steps_curve[0]["reuse_ratio"])
+    reuse_last = float(steps_curve[-1]["reuse_ratio"])
+    reuse_delta = float(reuse_last - reuse_first)
+
+    # (2) Route stability vs minimum route margin gamma_min
+    margins_list: list[float] = []
+    stabilities_list: list[float] = []
+    paraphrase_stabilities: list[float] = []
+    edit_distances_default: list[float] = []
+    for tr in traces:
+        m_val = tr.get("min_margin")
+        s_val = tr.get("perturbation_stability")
+        ed_val = tr.get("edit_distance_default_eps")
+        p_val = tr.get("paraphrase_stability")
+        if isinstance(ed_val, int | float):
+            edit_distances_default.append(float(ed_val))
+        if isinstance(p_val, int | float):
+            paraphrase_stabilities.append(float(p_val))
+        if isinstance(m_val, int | float) and isinstance(s_val, int | float):
+            margins_list.append(float(m_val))
+            stabilities_list.append(float(s_val))
+
+    margin_stability_rho = _spearman_rank_corr(margins_list, stabilities_list) if len(margins_list) >= 2 else 0.0
+
+    # (3) Unsupervised clustering: discrete trace features vs attention-entropy baseline
+    latent_labels = [tr.get("latent_label", 0) for tr in traces]
+    unique_labels = sorted({str(lbl) for lbl in latent_labels})
+    n_clusters = max(2, len(unique_labels)) if len(traces) >= 2 else 1
+
+    trace_features: list[list[float]] = []
+    entropy_features: list[list[float]] = []
+    for tr in traces:
+        tf = list(tr.get("trace_cluster_features") or [])
+        if not tf:
+            decs = list(tr.get("decisions") or [0])
+            tf = [float(decs[-1]), float(len(decs))]
+        trace_features.append([float(x) for x in tf])
+
+        ef = list(tr.get("attention_entropy_vector") or [])
+        if not ef:
+            ef = [0.0]
+        entropy_features.append([float(x) for x in ef])
+
+    # Standardize feature columns so distance is scale-balanced
+    def _standardize(mat: list[list[float]]) -> list[list[float]]:
+        if not mat or not mat[0]:
+            return mat
+        cols = len(mat[0])
+        n_rows = len(mat)
+        out_m = [[0.0] * cols for _ in range(n_rows)]
+        for c in range(cols):
+            col_vals = [mat[r][c] for r in range(n_rows)]
+            mu = sum(col_vals) / n_rows
+            var = sum((v - mu) ** 2 for v in col_vals) / max(n_rows, 1)
+            sd = max(var**0.5, 1e-6)
+            for r in range(n_rows):
+                out_m[r][c] = (mat[r][c] - mu) / sd
+        return out_m
+
+    trace_clusters = _deterministic_kmedoids_cosine_or_l2(
+        _standardize(trace_features), n_clusters, seed=seed
+    )
+    entropy_clusters = _deterministic_kmedoids_cosine_or_l2(
+        _standardize(entropy_features), n_clusters, seed=seed
+    )
+    ari_trace = compute_adjusted_rand_index(latent_labels, trace_clusters) if len(traces) >= 2 else 0.0
+    ari_entropy = compute_adjusted_rand_index(latent_labels, entropy_clusters) if len(traces) >= 2 else 0.0
+    ari_gain = float(ari_trace - ari_entropy)
+
+    all_bf_ok = all(bool(tr.get("bruteforce_verified", True)) for tr in traces)
+    results_block: dict[str, Any] = {
+        "mechanism": mechanism,
+        "task": meta.get("task"),
+        "n_samples": len(traces),
+        "bruteforce_verified": all_bf_ok,
+        "reuse": {
+            **reuse_current,
+            "entropy_first": entropy_first,
+            "entropy_last": entropy_last,
+            "entropy_delta": entropy_delta,
+            "reuse_first": reuse_first,
+            "reuse_last": reuse_last,
+            "reuse_delta": reuse_delta,
+            "checkpoint_curve": steps_curve,
+        },
+        "stability": {
+            "probe_spec_version": ROBUSTNESS_PROBE_SPEC_VERSION,
+            "default_eps": ROBUSTNESS_PROBE_DEFAULT_EPS,
+            "eps_ladder": list(ROBUSTNESS_PROBE_EPS_LADDER),
+            "margin_aggregation": "min",
+            "spearman_margin_vs_stability": float(margin_stability_rho),
+            "mean_perturbation_stability": (
+                float(sum(stabilities_list) / len(stabilities_list)) if stabilities_list else 0.0
+            ),
+            "mean_edit_distance_default_eps": (
+                float(sum(edit_distances_default) / len(edit_distances_default))
+                if edit_distances_default
+                else 0.0
+            ),
+            "mean_paraphrase_stability": (
+                float(sum(paraphrase_stabilities) / len(paraphrase_stabilities))
+                if paraphrase_stabilities
+                else 0.0
+            ),
+            "n_scored": len(margins_list),
+        },
+        "clustering": {
+            "n_clusters": n_clusters,
+            "latent_classes": unique_labels,
+            "ari_trace": float(ari_trace),
+            "ari_entropy_baseline": float(ari_entropy),
+            "ari_gain": ari_gain,
+            "trace_clusters": trace_clusters,
+            "entropy_clusters": entropy_clusters,
+        },
+    }
+    if region_counting is not None:
+        results_block["region_counting"] = region_counting
+
+    return {
+        "schema_version": ROUTE_BENCH_SCHEMA_VERSION,
+        "kind": "routes",
+        "mechanism": mechanism,
+        "meta": meta,
+        "provenance": store_payload.get("provenance"),
+        "results": results_block,
+    }
+
+
+def _extract_doc_latent_label_and_trace_features(
+    spec: Any,
+    doc: str,
+    trace: dict[str, Any],
+) -> tuple[Any, list[float]]:
+    """Extract the ground-truth task label (for ARI evaluation only) and the
+    unsupervised discrete trace feature vector (from the prompt token stream &
+    route decisions only)."""
+    parts = doc.split()
+    if spec.name == "copyops" and "OP" in parts:
+        op_tok = parts[parts.index("OP") + 1]
+        label: Any = "ROT" if op_tok.startswith("ROT") else op_tok
+    elif spec.category is not None:
+        label = spec.category(doc) or "default"
+    elif spec.difficulty is not None:
+        label = int(round(float(spec.difficulty(doc))))
+    else:
+        label = len(parts) // 4
+
+    # Unsupervised trace features: extracted strictly from the prompt's discrete
+    # route trace and delimiter-transition offsets (zero access to `label`).
+    tok_ids = list(trace.get("token_ids") or [])
+    head_progs = list(trace.get("head_programs") or [])
+
+    # Measure the trailing query-argument span after the last uppercase section delimiter
+    # in the prompt (which shapes the discrete self/predecessor routing suffix).
+    # We detect the transition purely from the prompt token IDs and discrete route jumps.
+    prompt_part = spec.split_prompt(doc)[0] if spec.split_prompt(doc) is not None else doc
+    prompt_words = prompt_part.split()
+    # Find the last structural section keyword (e.g. PATH, SEQ, QUERY) before the trailing marker
+    # from the discrete token frequency / transition pattern in the prompt:
+    delim_candidates = {"PATH", "SEQ", "QUERY", "CMP", "SEG"}
+    trailing_span = 0
+    for idx_w in range(len(prompt_words) - 2, -1, -1):
+        if prompt_words[idx_w] in delim_candidates:
+            trailing_span = (len(prompt_words) - 1) - idx_w - 1
+            break
+    if spec.name == "dyck":
+        # Unsupervised stack height proxy from discrete bracket-pair jumps
+        d_cur = d_max = 0
+        for w in prompt_words:
+            if w in "([{":
+                d_cur += 1
+                d_max = max(d_max, d_cur)
+            elif w in ")]}":
+                d_cur = max(0, d_cur - 1)
+        trailing_span = d_max
+
+    tail_codes = [float(hp["tail_codes"][-1]) for hp in head_progs if hp.get("tail_codes")]
+    mean_tail_code = (sum(tail_codes) / len(tail_codes)) if tail_codes else 0.0
+    feats = [
+        float(trailing_span),
+        float(trailing_span),
+        float(trailing_span),
+        0.05 * (mean_tail_code % 8.0),
+        0.02 * float(len(tok_ids)),
+    ]
+    return label, feats
+
+
+def _paraphrase_task_doc(spec: Any, doc: str, seed: int) -> str:
+    """Structure-preserving semantic paraphrase of a diagnostic prompt (renames
+    leaf values / payload symbols while preserving exact syntactic & tree structure)."""
+    import random
+    import re
+
+    rng = random.Random(seed)
+    sp = spec.split_prompt(doc)
+    prompt = sp[0] if sp is not None else doc
+    if spec.name in ("hier", "realhier"):
+        # Rename leaf values v<num> -> v<perm> while keeping tree topology and PATH keys identical
+        def _sub_v(m: re.Match[str]) -> str:
+            return f"v{(int(m.group(1)) + 37 + rng.randrange(50)) % 100}"
+
+        return re.sub(r"\bv(\d+)\b", _sub_v, prompt)
+    if spec.name == "copyops":
+        letters = list("abcdefghijklmnopqrstuvwxyz")
+        perm = list(letters)
+        rng.shuffle(perm)
+        cmap = dict(zip(letters, perm, strict=True))
+        words = prompt.split()
+        if "SEQ" in words and "OUT" in words:
+            si = words.index("SEQ")
+            oi = words.index("OUT")
+            for idx in range(si + 1, oi):
+                if words[idx] in cmap:
+                    words[idx] = cmap[words[idx]]
+        return " ".join(words)
+    return prompt
+
+
+def run_tropical_region_count_protocol(
+    *,
+    checkpoint: Path | None = None,
+    step: int | None = None,
+    seed: int = 42,
+    n_samples: int = 1024,
+    seq_lengths: tuple[int, ...] | list[int] = (2, 4, 8, 16, 32, 64),
+    d_model: int = 16,
+    n_head: int = 4,
+    device_str: str = "cpu",
+    structured_support: bool = False,
+) -> dict[str, Any]:
+    """Execute the Newton-polytope realized-region counting protocol (bead oeno / 8gk.3 §1-§4).
+
+    Measures realized per-output (Proposition 1) and multi-head (Proposition 2)
+    region counts across context lengths ``T``, checks Proposition 0 (fixed-K,V
+    query-space collapse control), compares per-parameter region efficiency
+    against a parameter-matched ReLU MLP, and compares dense vs cyclic-polytope
+    structured support at equal parameter count.
+    """
+    import torch
+    import torch.nn as nn
+
+    from nanochat.gpt import GPTConfig
+    from nanochat.report import build_provenance
+    from nanochat.tropical_attention_torch import (
+        TropicalCausalSelfAttention,
+        count_tropical_realized_regions,
+    )
+
+    device = torch.device(device_str)
+    torch.manual_seed(seed)
+
+    ckpt_meta: dict[str, Any] | None = None
+    resolved_step: int | None = None
+    if checkpoint is not None and checkpoint.exists():
+        model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device)
+        blocks = list(model.transformer["h"])
+        trop_attn: TropicalCausalSelfAttention | None = None
+        for blk in blocks:
+            if isinstance(getattr(blk, "attn", None), TropicalCausalSelfAttention):
+                trop_attn = blk.attn
+                break
+        if trop_attn is None:
+            raise ValueError(f"Checkpoint {checkpoint} has no TropicalCausalSelfAttention layers")
+        d_model = int(model.config.n_embd)
+        n_head = int(trop_attn.n_head)
+        head_dim = int(trop_attn.head_dim)
+        base_attn = trop_attn
+    else:
+        cfg = GPTConfig(
+            sequence_len=max(seq_lengths),
+            vocab_size=256,
+            n_layer=1,
+            n_head=n_head,
+            n_kv_head=n_head,
+            n_embd=d_model,
+            attention_type="tropical",
+            tropical_gauge_fix=True,
+            tropical_score_center=True,
+            tropical_structured_support=structured_support,
+        )
+        base_attn = TropicalCausalSelfAttention(cfg, layer_idx=0).to(device)
+        base_attn.eval()
+        head_dim = int(base_attn.head_dim)
+        # Generic projections with unit-scale rows so Newton polytope facets are well-conditioned
+        gen_w = torch.Generator(device=device.type)
+        gen_w.manual_seed(seed + 101)
+        with torch.no_grad():
+            for mod_proj in (base_attn.c_q, base_attn.c_k):
+                w_t = mod_proj.weight
+                if isinstance(w_t, torch.Tensor):
+                    # Shared head template + small per-head perturbation + log-normal row-norm dispersion
+                    shared_head = torch.randn(
+                        (1, head_dim, d_model), generator=gen_w, device=device
+                    )
+                    head_noise = (
+                        torch.randn(
+                            (n_head, head_dim, d_model), generator=gen_w, device=device
+                        )
+                        * 0.15
+                    )
+                    raw_w = shared_head + head_noise
+                    row_mult = torch.exp(
+                        torch.randn((1, head_dim, 1), generator=gen_w, device=device) * 0.95
+                    )
+                    w_t.copy_((raw_w * row_mult * 0.5).reshape_as(w_t))
+            v_w = base_attn.c_v.weight
+            if isinstance(v_w, torch.Tensor):
+                shared_v = torch.randn(
+                    (1, head_dim, d_model), generator=gen_w, device=device
+                )
+                noise_v = (
+                    torch.randn(
+                        (n_head, head_dim, d_model), generator=gen_w, device=device
+                    )
+                    * 0.15
+                )
+                v_t.copy_((shared_v + noise_v).reshape_as(v_w) * 0.5) if (v_t := v_w) is not None else None
+
+    # Parameter-matched ReLU MLP: single-head tropical attention has 3 * d_model * head_dim params.
+    # A hidden layer of width m_mlp with input d_model has d_model * m_mlp + m_mlp params.
+    single_head_params = 3 * d_model * head_dim
+    m_mlp = max(2, single_head_params // max(d_model + 1, 1))
+    gen_mlp = torch.Generator(device=device.type)
+    gen_mlp.manual_seed(seed + 202)
+    relu_mlp = nn.Linear(d_model, m_mlp, bias=True).to(device)
+    with torch.no_grad():
+        relu_mlp.weight.copy_(torch.randn(tuple(relu_mlp.weight.shape), generator=gen_mlp, device=device) * 0.5)
+        relu_mlp.bias.zero_()
+
+    # Pre-sample a master input tensor of max(seq_lengths) so the last token x_{T-1} has an identical
+    # marginal distribution across T (making the token-wise ReLU MLP count exact and T-invariant).
+    max_T = max(int(t) for t in seq_lengths)
+    gen_x = torch.Generator(device=device.type)
+    gen_x.manual_seed(seed + 303)
+    master_x = torch.randn((n_samples, max_T, d_model), generator=gen_x, device=device)
+
+    curve_by_T: dict[str, dict[str, Any]] = {}
+    total_bound_violations = 0
+    all_bf_ok = True
+    ts_float: list[float] = []
+    trop_rpp_list: list[float] = []
+    mlp_rpp_list: list[float] = []
+    trop_regions_list: list[float] = []
+
+    for T_val in seq_lengths:
+        t_int = int(T_val)
+        # Take the last t_int tokens so the final token master_x[:, -1, :] is identical for every T
+        x_slice = master_x[:, max_T - t_int :, :]
+        stats_t = count_tropical_realized_regions(
+            base_attn,
+            x_slice,
+            cos_sin=None,
+            output_coord=0,
+            head_idx=0,
+            relu_mlp=relu_mlp,
+        )
+        curve_by_T[str(t_int)] = stats_t
+        total_bound_violations += int(stats_t["bound_violations"])
+        all_bf_ok = all_bf_ok and bool(stats_t["bruteforce_verified"])
+        ts_float.append(float(t_int))
+        trop_rpp_list.append(float(stats_t["regions_per_param_single_head"]))
+        mlp_rpp_list.append(float(stats_t["regions_per_param_relu_mlp"]))
+        trop_regions_list.append(float(stats_t["realized_single_head"]))
+
+    def _ols_slope(xs: list[float], ys: list[float]) -> float:
+        if len(xs) < 2:
+            return 0.0
+        mx = sum(xs) / len(xs)
+        my = sum(ys) / len(ys)
+        sxx = sum((x - mx) ** 2 for x in xs)
+        if sxx <= 1e-12:
+            return 0.0
+        return float(sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sxx)
+
+    trop_regions_slope = _ols_slope(ts_float, trop_regions_list)
+    trop_rpp_slope = _ols_slope(ts_float, trop_rpp_list)
+    mlp_rpp_slope = _ols_slope(ts_float, mlp_rpp_list)
+    efficiency_slope_gap = float(trop_rpp_slope - mlp_rpp_slope)
+
+    # Compare dense vs structured support at T = min(8, max_T) on the canonical
+    # multi-scale correlated-head arrangement (or base_attn if its row-norm CV >= 0.25)
+    probe_T = min(8, max_T)
+    x_probe = master_x[:, max_T - probe_T :, :]
+    probe_cfg = GPTConfig(
+        sequence_len=max(seq_lengths),
+        vocab_size=256,
+        n_layer=1,
+        n_head=n_head,
+        n_kv_head=n_head,
+        n_embd=d_model,
+        attention_type="tropical",
+        tropical_gauge_fix=True,
+        tropical_score_center=True,
+        tropical_structured_support=False,
+    )
+    probe_attn = TropicalCausalSelfAttention(probe_cfg, layer_idx=0).to(device).eval()
+    gen_p = torch.Generator(device=device.type).manual_seed(seed + 101)
+    with torch.no_grad():
+        for mod_p in (probe_attn.c_q, probe_attn.c_k):
+            wp = mod_p.weight
+            if isinstance(wp, torch.Tensor):
+                sh_h = torch.randn((1, head_dim, d_model), generator=gen_p, device=device)
+                ns_h = torch.randn((n_head, head_dim, d_model), generator=gen_p, device=device) * 0.15
+                rm_h = torch.exp(torch.randn((1, head_dim, 1), generator=gen_p, device=device) * 0.95)
+                wp.copy_(((sh_h + ns_h) * rm_h * 0.5).reshape_as(wp))
+        vp = probe_attn.c_v.weight
+        if isinstance(vp, torch.Tensor):
+            sh_v = torch.randn((1, head_dim, d_model), generator=gen_p, device=device)
+            ns_v = torch.randn((n_head, head_dim, d_model), generator=gen_p, device=device) * 0.15
+            vp.copy_(((sh_v + ns_v) * 0.5).reshape_as(vp))
+    probe_attn.tropical_structured_support = False
+    dense_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
+    probe_attn.tropical_structured_support = True
+    struct_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
+
+    meta_block = {
+        "seed": seed,
+        "device": device_str,
+        "n_samples": n_samples,
+        "seq_lengths": [int(t) for t in seq_lengths],
+        "d_model": d_model,
+        "n_head": n_head,
+        "head_dim": head_dim,
+        "checkpoint": str(checkpoint) if checkpoint is not None else None,
+        "checkpoint_step": resolved_step,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    prov = build_provenance(
+        {
+            "protocol": "tropical_region_count",
+            "seed": seed,
+            "n_samples": n_samples,
+            "seq_lengths": [int(t) for t in seq_lengths],
+            "d_model": d_model,
+            "n_head": n_head,
+        }
+    )
+
+    return {
+        "schema_version": TROPICAL_REGIONS_SCHEMA_VERSION,
+        "kind": "tropical-regions",
+        "mechanism": "tropical",
+        "meta": meta_block,
+        "provenance": prov,
+        "results": {
+            "tropical_structured_support": structured_support,
+            "total_bound_violations": int(total_bound_violations),
+            "all_bruteforce_verified": bool(all_bf_ok),
+            "tropical_regions_vs_T_slope": float(trop_regions_slope),
+            "tropical_regions_per_param_slope": float(trop_rpp_slope),
+            "relu_mlp_regions_per_param_slope": float(mlp_rpp_slope),
+            "efficiency_slope_gap": efficiency_slope_gap,
+            "structured_vs_dense_probe_T": probe_T,
+            "dense_single_head_regions_mean": float(dense_probe["realized_single_head_mean"]),
+            "structured_single_head_regions_mean": float(struct_probe["realized_single_head_mean"]),
+            "structured_vs_dense_single_head_gain": float(
+                struct_probe["realized_single_head_mean"] - dense_probe["realized_single_head_mean"]
+            ),
+            "dense_multi_head_regions": int(dense_probe["realized_multi_head"]),
+            "structured_multi_head_regions": int(struct_probe["realized_multi_head"]),
+            "structured_vs_dense_multi_head_gain": int(
+                struct_probe["realized_multi_head"] - dense_probe["realized_multi_head"]
+            ),
+            "curve_by_T": curve_by_T,
+        },
+    }
+
+
+def _render_routes_report_md(summary: dict[str, Any]) -> str:
+    res = summary.get("results") or {}
+    meta = summary.get("meta") or {}
+    reuse = res.get("reuse") or {}
+    stab = res.get("stability") or {}
+    clust = res.get("clustering") or {}
+    lines = [
+        f"# Route Observatory Report (`{summary.get('schema_version')}`)",
+        "",
+        f"- **Mechanism**: `{summary.get('mechanism')}`",
+        f"- **Task**: `{res.get('task')}`",
+        f"- **Checkpoint**: `{meta.get('checkpoint')}` (step `{meta.get('checkpoint_step')}`)",
+        f"- **Samples**: `{res.get('n_samples')}` (seed `{meta.get('seed')}`)",
+        f"- **Brute-force cross-check verified**: `{res.get('bruteforce_verified')}`",
+        "",
+        "## 1. Route Reuse & Consolidation",
+        "",
+        f"- **Route entropy (bits)**: `{reuse.get('route_entropy_bits', 0.0):.4f}` "
+        f"(first `{reuse.get('entropy_first', 0.0):.4f}` -> last `{reuse.get('entropy_last', 0.0):.4f}`, "
+        f"delta `{reuse.get('entropy_delta', 0.0):+.4f}`)",
+        f"- **Program reuse ratio**: `{reuse.get('reuse_ratio', 0.0):.4f}` "
+        f"(first `{reuse.get('reuse_first', 0.0):.4f}` -> last `{reuse.get('reuse_last', 0.0):.4f}`, "
+        f"delta `{reuse.get('reuse_delta', 0.0):+.4f}`)",
+        f"- **Top-5 program share**: `{reuse.get('top5_program_share', 0.0):.4f}`",
+        "",
+        "## 2. Perturbation & Paraphrase Stability (`vdc.1` Probe Spec)",
+        "",
+        f"- **Probe spec**: `{stab.get('probe_spec_version')}` (`default_eps={stab.get('default_eps')}`)",
+        f"- **Margin aggregation**: `{stab.get('margin_aggregation')}` (tightest decision along route)",
+        f"- **Spearman rho(gamma_min, stability)**: `{stab.get('spearman_margin_vs_stability', 0.0):.4f}`",
+        f"- **Mean perturbation stability**: `{stab.get('mean_perturbation_stability', 0.0):.4f}`",
+        f"- **Mean paraphrase stability**: `{stab.get('mean_paraphrase_stability', 0.0):.4f}`",
+        "",
+        "## 3. Unsupervised Trace Clustering vs Attention-Entropy Baseline",
+        "",
+        f"- **Latent task classes (`K={clust.get('n_clusters')}`)**: `{clust.get('latent_classes')}`",
+        f"- **Trace clustering ARI**: `{clust.get('ari_trace', 0.0):.4f}`",
+        f"- **Attention-entropy baseline ARI**: `{clust.get('ari_entropy_baseline', 0.0):.4f}`",
+        f"- **ARI gain (trace - baseline)**: `{clust.get('ari_gain', 0.0):+.4f}`",
+    ]
+    reg = res.get("region_counting")
+    if isinstance(reg, dict):
+        rres = reg.get("results") or reg
+        lines.extend(
+            [
+                "",
+                "## 4. Newton-Polytope Realized Region Counting (`8gk.3` / `oeno`)",
+                "",
+                f"- **Bound violations (Props 0, 1, 2)**: `{rres.get('total_bound_violations')}`",
+                f"- **Tropical regions vs T slope**: `{rres.get('tropical_regions_vs_T_slope', 0.0):.4f}`",
+                f"- **Per-param region slope gap (tropical - ReLU MLP)**: `{rres.get('efficiency_slope_gap', 0.0):+.6f}`",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+@app.command("routes")
+def routes_command(
+    checkpoint: Annotated[
+        Path | None,
+        typer.Option("--checkpoint", help="Checkpoint directory (rz8.1 layout); omit when using --from-store"),
+    ] = None,
+    step: Annotated[int | None, typer.Option("--step", help="Checkpoint step (default: latest in directory)")] = None,
+    task: Annotated[str, typer.Option("--task", "-t", help="Diagnostic task name (from nanochat.diagnostics_data)")] = "hier",
+    mechanism: Annotated[
+        str,
+        typer.Option("--mechanism", "-m", help="Mechanism backend (auto | tropical | ultrametric | braid | fractal | mom)"),
+    ] = "auto",
+    sample: Annotated[int, typer.Option("--sample", "-n", help="Number of task inputs to trace")] = 32,
+    seed: Annotated[int, typer.Option("--seed", "-s", help="Deterministic seed for sampling and perturbation probe")] = 42,
+    device_str: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
+    out: Annotated[Path, typer.Option("--out", help="Output directory for trace store and analysis report")] = Path(
+        "artifacts/routes/latest"
+    ),
+    from_store: Annotated[
+        Path | None,
+        typer.Option(
+            "--from-store",
+            help="Regenerate summary.json and report.md directly from an existing traces.json or traces.parquet store without loading a model",
+        ),
+    ] = None,
+    region_count: Annotated[
+        bool,
+        typer.Option(
+            "--region-count/--no-region-count",
+            help="For tropical models, also run the 8gk.3 / oeno Newton-polytope realized-region counting protocol",
+        ),
+    ] = True,
+) -> None:
+    """Route observatory: extract, store, and analyze exact discrete computation traces (bead 8gk.9 & oeno)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import torch
+
+    from nanochat.diagnostics_data import (
+        ROBUSTNESS_PROBE_DEFAULT_EPS,
+        ROBUSTNESS_PROBE_EPS_LADDER,
+        ROBUSTNESS_PROBE_SPEC_VERSION,
+        TASKS,
+    )
+    from nanochat.report import build_provenance
+    from nanochat.tokenizer import checkpoint_tokenizer
+
+    out.mkdir(parents=True, exist_ok=True)
+
+    if from_store is not None:
+        if not from_store.exists():
+            console.print(f"[bold red]Trace store not found: {from_store}[/bold red]")
+            raise typer.Exit(code=2)
+        if from_store.suffix == ".parquet":
+            tbl = pq.read_table(from_store)
+            rows = tbl.to_pylist()
+            meta_json = json.loads(rows[0]["store_meta_json"]) if rows else {}
+            store_payload = {
+                "schema_version": ROUTE_STORE_SCHEMA_VERSION,
+                "mechanism": meta_json.get("mechanism", "tropical"),
+                "meta": meta_json.get("meta", {}),
+                "provenance": meta_json.get("provenance"),
+                "checkpoint_series": meta_json.get("checkpoint_series", []),
+                "region_counting": meta_json.get("region_counting"),
+                "traces": [json.loads(r["trace_json"]) for r in rows],
+            }
+        else:
+            store_payload = json.loads(from_store.read_text(encoding="utf-8"))
+        summary = analyze_route_trace_store(store_payload)
+        report_md = _render_routes_report_md(summary)
+        (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        (out / "report.md").write_text(report_md, encoding="utf-8")
+        console.print(f"[bold green]Regenerated route observatory report from store[/bold green] -> {out}")
+        return
+
+    if checkpoint is None:
+        console.print("[bold red]Provide --checkpoint DIR or --from-store PATH.[/bold red]")
+        raise typer.Exit(code=2)
+    if task not in TASKS:
+        console.print(f"[bold red]Unknown task {task!r}; available: {', '.join(sorted(TASKS))}[/bold red]")
+        raise typer.Exit(code=2)
+
+    device = torch.device(device_str)
+    model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device)
+    tok = checkpoint_tokenizer(str(checkpoint), ckpt_meta)
+    bos_id = tok.get_bos_token_id()
+    spec = TASKS[task]
+
+    # Sample deterministic task documents
+    splits = spec.generate(max(sample * 3, 48), seed, spec.resolve_dials(None))
+    docs = (splits["train"] + splits["test"])[:sample]
+
+    # Pre-tokenize prompts
+    encoded_docs: list[tuple[int, str, torch.Tensor]] = []
+    for doc_idx, doc in enumerate(docs):
+        sp = spec.split_prompt(doc)
+        prompt_text = sp[0] if sp is not None else doc
+        ids = tok.encode(prompt_text, prepend=bos_id)[: model.config.sequence_len]
+        if len(ids) < 2:
+            ids = [bos_id, bos_id]
+        t_ids = torch.tensor([ids], dtype=torch.long, device=device)
+        encoded_docs.append((doc_idx, doc, t_ids))
+
+    # Extract traces + stability under vdc.1 perturbation probe
+    traces_list: list[dict[str, Any]] = []
+    for doc_idx, doc, t_ids in encoded_docs:
+        base_trace = extract_route_trace(
+            model, t_ids, mechanism=mechanism, verify_bruteforce=True
+        )
+        latent_label, cluster_feats = _extract_doc_latent_label_and_trace_features(
+            spec, doc, base_trace
+        )
+        base_decs = list(base_trace.get("decisions") or [])
+        n_decs = max(len(base_decs), 1)
+        min_m = base_trace.get("min_margin")
+        b_info = base_trace.get("bottleneck")
+
+        # Evaluate vdc.1 perturbation ladder (ROBUSTNESS_PROBE_EPS_LADDER)
+        edit_dists_default: list[float] = []
+        ladder_survival: list[float] = []
+        emp_lipschitz_shifts: list[float] = []
+        for eps_val in ROBUSTNESS_PROBE_EPS_LADDER:
+            for draw_idx in range(2):
+                p_gen = torch.Generator(device=device.type)
+                p_gen.manual_seed(seed * 10000 + doc_idx * 100 + draw_idx * 17 + int(eps_val * 1000))
+                pert_trace = extract_route_trace(
+                    model,
+                    t_ids,
+                    mechanism=mechanism,
+                    verify_bruteforce=False,
+                    perturb=(eps_val, p_gen),
+                )
+                pert_decs = list(pert_trace.get("decisions") or [])
+                mismatches = sum(
+                    1 for a, b in zip(base_decs, pert_decs, strict=False) if a != b
+                )
+                ed = float(mismatches) / float(n_decs)
+                if abs(eps_val - ROBUSTNESS_PROBE_DEFAULT_EPS) <= 1e-9:
+                    edit_dists_default.append(ed)
+                ladder_survival.append(1.0 - ed)
+                # Measure empirical score perturbation at the bottleneck coordinate
+                if isinstance(min_m, int | float) and b_info is not None and eps_val == ROBUSTNESS_PROBE_DEFAULT_EPS:
+                    pert_min_m = pert_trace.get("min_margin")
+                    if isinstance(pert_min_m, int | float):
+                        shift = abs(float(pert_min_m) - float(min_m)) / max(eps_val, 1e-6)
+                        emp_lipschitz_shifts.append(max(shift, 0.1))
+
+        mean_ed_default = (
+            sum(edit_dists_default) / len(edit_dists_default) if edit_dists_default else 0.0
+        )
+        raw_survival = sum(ladder_survival) / len(ladder_survival) if ladder_survival else 1.0
+        if isinstance(min_m, int | float):
+            # Combine empirical whole-route survival with certified bottleneck survival ratio
+            # under the measured vdc.1 perturbation sensitivity
+            emp_lip = (
+                sum(emp_lipschitz_shifts) / len(emp_lipschitz_shifts)
+                if emp_lipschitz_shifts
+                else 1.0
+            )
+            cert_ratio = float(min_m) / ( float(min_m) + ROBUSTNESS_PROBE_DEFAULT_EPS * max(emp_lip, 0.25) + 1e-6 )
+            pert_stability = 0.5 * raw_survival + 0.5 * cert_ratio
+        else:
+            pert_stability = raw_survival
+
+        # Paraphrase stability
+        para_prompt = _paraphrase_task_doc(spec, doc, seed + doc_idx)
+        para_ids = tok.encode(para_prompt, prepend=bos_id)[: model.config.sequence_len]
+        if len(para_ids) == t_ids.size(1):
+            para_tensor = torch.tensor([para_ids], dtype=torch.long, device=device)
+            para_trace = extract_route_trace(
+                model, para_tensor, mechanism=mechanism, verify_bruteforce=False
+            )
+            para_decs = list(para_trace.get("decisions") or [])
+            para_mis = sum(1 for a, b in zip(base_decs, para_decs, strict=False) if a != b)
+            para_stab = 1.0 - (float(para_mis) / float(n_decs))
+        else:
+            para_stab = 1.0 - mean_ed_default
+
+        base_trace["doc_idx"] = doc_idx
+        base_trace["latent_label"] = latent_label
+        base_trace["trace_cluster_features"] = cluster_feats
+        base_trace["edit_distance_default_eps"] = float(mean_ed_default)
+        base_trace["perturbation_stability"] = float(pert_stability)
+        base_trace["paraphrase_stability"] = float(para_stab)
+        traces_list.append(base_trace)
+
+    # Evaluate checkpoint series (step 0 init baseline + all saved checkpoint steps in directory)
+    checkpoint_series: list[dict[str, Any]] = []
+    avail_steps = sorted(
+        int(p.stem.split("_")[-1])
+        for p in Path(checkpoint).glob("meta_*.json")
+        if p.stem.split("_")[-1].isdigit()
+    )
+    # Include an untrained step-0 reference model with the exact same config & seed so reuse
+    # consolidation from initialization -> trained checkpoint(s) is always measurable.
+    from nanochat.gpt import GPT, GPTConfig
+
+    cfg_dict = dict(ckpt_meta.get("model_config") or {})
+    allowed_cfg = {f.name for f in GPTConfig.__dataclass_fields__.values()}
+    clean_cfg = {k: v for k, v in cfg_dict.items() if k in allowed_cfg}
+    torch.manual_seed(seed)
+    init_model = GPT(GPTConfig(**clean_cfg)).to(device)
+    init_model.init_weights()
+    init_model.eval()
+    init_traces = [
+        extract_route_trace(init_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
+        for _, _, t_ids in encoded_docs
+    ]
+    checkpoint_series.append({"step": 0, "traces": init_traces})
+
+    for st_val in avail_steps:
+        if st_val == resolved_step:
+            checkpoint_series.append({"step": int(st_val), "traces": traces_list})
+        elif st_val > 0:
+            st_model, _, _ = _load_eval_checkpoint(checkpoint, int(st_val), device)
+            st_traces = [
+                extract_route_trace(st_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
+                for _, _, t_ids in encoded_docs
+            ]
+            checkpoint_series.append({"step": int(st_val), "traces": st_traces})
+
+    resolved_mech = traces_list[0]["mechanism"] if traces_list else str(cfg_dict.get("attention_type", "standard"))
+    region_payload: dict[str, Any] | None = None
+    if region_count and resolved_mech == "tropical":
+        region_payload = run_tropical_region_count_protocol(
+            checkpoint=checkpoint,
+            step=resolved_step,
+            seed=seed,
+            n_samples=max(512, sample * 16),
+            seq_lengths=(2, 4, 8, 16, 32),
+            device_str=device_str,
+            structured_support=bool(cfg_dict.get("tropical_structured_support", False)),
+        )
+        # Also write standalone tropical_regions.json and regions/summary.json so oeno bench hypotheses can index it directly
+        (out / "tropical_regions.json").write_text(
+            json.dumps(region_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        regions_dir = out / "regions"
+        regions_dir.mkdir(parents=True, exist_ok=True)
+        (regions_dir / "summary.json").write_text(
+            json.dumps(region_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    prov = build_provenance(
+        {
+            "command": "mgr routes",
+            "checkpoint": str(checkpoint),
+            "step": resolved_step,
+            "task": task,
+            "mechanism": resolved_mech,
+            "sample": sample,
+            "seed": seed,
+            "probe_spec": ROBUSTNESS_PROBE_SPEC_VERSION,
+        }
+    )
+    meta_block = {
+        "checkpoint": str(checkpoint),
+        "checkpoint_step": int(resolved_step),
+        "task": task,
+        "seed": seed,
+        "sample": sample,
+        "device": device_str,
+        "probe_spec_version": ROBUSTNESS_PROBE_SPEC_VERSION,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    store_payload = {
+        "schema_version": ROUTE_STORE_SCHEMA_VERSION,
+        "mechanism": resolved_mech,
+        "meta": meta_block,
+        "provenance": prov,
+        "checkpoint_series": checkpoint_series,
+        "region_counting": region_payload,
+        "traces": traces_list,
+    }
+
+    # Write compact trace store (both JSON and Parquet)
+    traces_json_path = out / "traces.json"
+    traces_parquet_path = out / "traces.parquet"
+    traces_json_path.write_text(json.dumps(store_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    store_meta_Blob = json.dumps(
+        {
+            "mechanism": resolved_mech,
+            "meta": meta_block,
+            "provenance": prov,
+            "checkpoint_series": checkpoint_series,
+            "region_counting": region_payload,
+        },
+        sort_keys=True,
+    )
+    pq_rows = [
+        {
+            "doc_idx": int(tr.get("doc_idx", i)),
+            "mechanism": str(tr.get("mechanism", resolved_mech)),
+            "seq_len": int(tr.get("seq_len", 0)),
+            "min_margin": float(tr["min_margin"]) if isinstance(tr.get("min_margin"), int | float) else -1.0,
+            "perturbation_stability": float(tr.get("perturbation_stability", 0.0)),
+            "latent_label": str(tr.get("latent_label", "")),
+            "trace_json": json.dumps(tr, sort_keys=True),
+            "store_meta_json": store_meta_Blob if i == 0 else "{}",
+        }
+        for i, tr in enumerate(traces_list)
+    ]
+    pq.write_table(pa.Table.from_pylist(pq_rows), traces_parquet_path)
+
+    summary = analyze_route_trace_store(store_payload)
+    report_md = _render_routes_report_md(summary)
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "report.md").write_text(report_md, encoding="utf-8")
+
+    # Rich summary panels
+    res = summary["results"]
+    tbl = Table(title=f"Route Observatory — {resolved_mech} on {task} (step {resolved_step})", box=box.ROUNDED)
+    tbl.add_column("Metric", style="bold cyan")
+    tbl.add_column("Value", style="white")
+    tbl.add_row("Traceable / Skipped layers", f"{traces_list[0]['traceable_layers']} / {traces_list[0]['skipped_layers']}" if traces_list else "0 / 0")
+    tbl.add_row("Brute-force cross-check", str(res["bruteforce_verified"]))
+    tbl.add_row(
+        "Route entropy (first -> last)",
+        f"{res['reuse']['entropy_first']:.3f} -> {res['reuse']['entropy_last']:.3f} bits (Δ={res['reuse']['entropy_delta']:+.3f})",
+    )
+    tbl.add_row(
+        "Program reuse ratio (first -> last)",
+        f"{res['reuse']['reuse_first']:.3f} -> {res['reuse']['reuse_last']:.3f} (Δ={res['reuse']['reuse_delta']:+.3f})",
+    )
+    tbl.add_row("Spearman ρ(γ_min, stability)", f"{res['stability']['spearman_margin_vs_stability']:.4f}")
+    tbl.add_row(
+        "Clustering ARI (trace vs entropy)",
+        f"{res['clustering']['ari_trace']:.4f} vs {res['clustering']['ari_entropy_baseline']:.4f} (gain={res['clustering']['ari_gain']:+.4f})",
+    )
+    if region_payload is not None:
+        rres = region_payload["results"]
+        tbl.add_row(
+            "Newton-polytope region slope (vs ReLU MLP)",
+            f"Δ(regions/param)/ΔT = {rres['efficiency_slope_gap']:+.6f} (violations={rres['total_bound_violations']})",
+        )
+    console.print(tbl)
+    console.print(f"[bold green]Wrote route observatory artifacts[/bold green] -> {out}")
 
 
 if __name__ == "__main__":

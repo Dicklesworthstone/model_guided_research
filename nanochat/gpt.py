@@ -255,6 +255,7 @@ class GPTConfig:
     tropical_gauge_fix: bool = True
     tropical_score_center: bool = True
     tropical_record_margins: bool = False
+    tropical_structured_support: bool = False
     # Maslov smoothing for tropical ATTENTION (8gk.1): None = exact tropical
     # endpoint (bitwise-identical to the pre-8gk.1 path); finite beta>0
     # selects the (+)_beta semiring family. Annealing schedules update live
