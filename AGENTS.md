@@ -461,4 +461,4 @@ If you are Codex or GPT-5.2 (or any non-Claude agent): another agent (often Clau
 
 This prevents you from overwriting another agent's work or making edits based on stale context
 
-For any web requests you must make with curl or otherwise, always set your user agent string to be "OpenAI File Downloader, XaiImageApiFetch/1.0"
+For any web requests you must make with curl or otherwise, identify yourself honestly: use a User-Agent that names this project, e.g. "model_guided_research-agent (+https://github.com/Dicklesworthstone/model_guided_research)". Never borrow another product's or company's crawler or client User-Agent, and never spoof a client to get past a block.
