@@ -6858,7 +6858,12 @@ def gen_tasks(
 
 
 def _load_eval_checkpoint(
-    checkpoint_dir: Path, step: int | None, device: Any, *, model_overrides: dict[str, Any] | None = None
+    checkpoint_dir: Path,
+    step: int | None,
+    device: Any,
+    *,
+    model_overrides: dict[str, Any] | None = None,
+    fingerprint_weights: bool = False,
 ) -> tuple[Any, dict[str, Any], int]:
     """Load a nanochat GPT checkpoint for evaluation.
 
@@ -6889,7 +6894,9 @@ def _load_eval_checkpoint(
     from nanochat.gpt import GPT, GPTConfig
 
     resolved_step = step if step is not None else find_last_step(str(checkpoint_dir))
-    model_data, _optim, meta = load_checkpoint(str(checkpoint_dir), resolved_step, device)
+    model_data, _optim, meta = load_checkpoint(
+        str(checkpoint_dir), resolved_step, device, fingerprint_weights=fingerprint_weights
+    )
     model_data = {k.removeprefix("_orig_mod."): v for k, v in model_data.items()}
     if meta.get("model_type", "gpt") != "gpt":
         raise ValueError(f"eval-tasks supports model_type=gpt checkpoints, got {meta.get('model_type')!r}")
@@ -9422,7 +9429,7 @@ def probe_charges(
             raise typer.Exit(code=2)
         dial_overrides[key.strip()] = float(value)
 
-    model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device)
+    model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device, fingerprint_weights=True)
     tok = checkpoint_tokenizer(str(checkpoint), ckpt_meta)
     model_cfg = ckpt_meta.get("model_config", {})
     if model_cfg.get("attention_type") != "braid" or model_cfg.get("braid_crossing_law") != "rmatrix":
@@ -9606,11 +9613,13 @@ def probe_charges(
     run_dir = artifacts_dir / "probes" / "charges" / resolved_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     summary = {
-        "schema_version": "mgr.chargeprobe.v1",
+        "schema_version": "mgr.chargeprobe.v2",
         "kind": "probe-charges",
         "meta": {
             "run_id": resolved_run_id,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "training_seed": ckpt_meta.get("seed"),
+            "weights_sha256": ckpt_meta["weights_sha256"],
             # evaltasks-style checkpoint block: the verdict engine's arm
             # matching, variant selectors, and budget cohorts read these
             "checkpoint": {
@@ -12038,7 +12047,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v9"
+_ADJ_POLICY_VERSION = "ci-v10"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12112,7 +12121,8 @@ _ADJ_POLICY_VERSION = "ci-v9"
 #     resolve against the checks list; taint derives from the recorded git
 #     dirty flag (certify predates the provenance block); budget cohorts do
 #     not apply (mathematical invariants are budget-free by construction).
-#   - chargeprobe artifacts (mgr.chargeprobe.v1) are readable evidence with
+#   - chargeprobe artifacts are indexed with their recorded checkpoint budget;
+#     v2 supplies the training seed and digest needed for eligibility, with
 #     evaltasks-style arm matching via meta.checkpoint.
 #   - single-arm predictions (baseline: null): the claim is a THRESHOLD on
 #     the candidate arm alone (absolute_delta only) - one-sample t CI95
@@ -12230,7 +12240,7 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 schema = "evaltasks"
             elif sv == "mgr.telemetry.v1":
                 schema = "train"
-            elif sv == "mgr.chargeprobe.v1":
+            elif sv in ("mgr.chargeprobe.v1", "mgr.chargeprobe.v2"):
                 schema = "chargeprobe"
             elif sv in (
                 "mgr.bench.ultrametric_paths.v1",
@@ -12382,40 +12392,62 @@ def _adj_planned_flops(art: dict[str, Any]) -> float | None:
     return None
 
 
-def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One eval artifact per trained checkpoint (ci-v2): re-evals of the same
-    training run (lineage run_id + step) are repeated measurements of the same
-    model, never extra evidence. Keep the richest/newest artifact (schema v2
-    over v1, then generated_at, then path - all deterministic)."""
-    best: dict[Any, tuple[tuple[Any, ...], dict[str, Any]]] = {}
-    out: list[dict[str, Any]] = []
-    # Connected identities count once, even when someone copies one weights file and
-    # gives the copies different run IDs or seed labels.
-    route_parents: dict[tuple, tuple] = {}
+def _adj_distinct_probe_trainings(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pick one measurement from each connected set of training seeds, runs and weights."""
+    parents: dict[tuple, tuple] = {}
+    measurements = []
 
     def root(identity: tuple) -> tuple:
-        while route_parents[identity] != identity:
-            route_parents[identity] = route_parents[route_parents[identity]]
-            identity = route_parents[identity]
+        while parents[identity] != identity:
+            parents[identity] = parents[parents[identity]]
+            identity = parents[identity]
         return identity
 
     for art in arts:
         data = art["data"]
-        if data.get("schema_version") != ROUTE_BENCH_SCHEMA_VERSION:
+        meta = data.get("meta") or {}
+        if art["schema"] == "chargeprobe":
+            checkpoint = meta.get("checkpoint") or {}
+            scope = ("chargeprobe", checkpoint.get("attention_type"))
+            step = checkpoint.get("step")
+        else:
+            checkpoint = meta
+            scope = (data.get("mechanism"), meta.get("task"))
+            step = meta.get("checkpoint_step")
+        seed = meta.get("training_seed")
+        run = (checkpoint.get("lineage") or {}).get("run_id")
+        weights = meta.get("weights_sha256")
+        if type(seed) is not int or not isinstance(run, str) or not run.strip():
             continue
-        rm = data.get("meta") or {}
-        scope = (data.get("mechanism"), rm.get("task"))
+        if type(step) is not int or step < 0 or not re.fullmatch(r"[0-9a-f]{64}", str(weights)):
+            continue
         identities = [
-            (scope, "seed", rm.get("training_seed")),
-            (scope, "run", (rm.get("lineage") or {}).get("run_id")),
-            (scope, "weights", rm.get("weights_sha256")),
+            (scope, "seed", seed),
+            (scope, "run", run),
+            (scope, "weights", weights),
         ]
         for identity in identities:
-            route_parents.setdefault(identity, identity)
+            parents.setdefault(identity, identity)
         for identity in identities[1:]:
-            route_parents[root(identity)] = root(identities[0])
+            parents[root(identity)] = root(identities[0])
+        # Latest step, then lowest analysis seed, independently of the observed outcome.
+        measurements.append((identities[0], (step, -int(meta.get("seed") or 0), str(art["path"])), art))
+    best = {}
+    for identity, rank, art in measurements:
+        key = root(identity)
+        if key not in best or rank > best[key][0]:
+            best[key] = (rank, art)
+    return sorted((value[1] for value in best.values()), key=lambda a: str(a["path"]))
+
+
+def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Select one evaluation per checkpoint and one route observation per training."""
+    best: dict[Any, tuple[tuple[Any, ...], dict[str, Any]]] = {}
+    routes = []
+    out = []
     for a in arts:
-        if a["schema"] not in ("evaltasks", "chargeprobe", "certify", "bench"):
+        if a["schema"] not in ("evaltasks", "certify", "bench"):
+            # Charge probes are grouped once the eligible FLOP cohort is known.
             out.append(a)
             continue
         meta = a["data"].get("meta") or {}
@@ -12426,20 +12458,7 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             rank = ("", str(a["data"].get("run_id", "")), str(a["path"]))
         elif a["schema"] == "bench":
             if a["data"].get("schema_version") == ROUTE_BENCH_SCHEMA_VERSION:
-                # Re-probing a training seed at another analysis seed, device or step is a repeated measure.
-                # Prefer the latest selected checkpoint, then the lowest analysis seed, independently of outcome.
-                route_key = (
-                    "routes",
-                    root(((a["data"].get("mechanism"), meta.get("task")), "seed", meta.get("training_seed"))),
-                )
-                route_rank = (
-                    int(meta.get("checkpoint_step") or 0),
-                    -int(meta.get("seed") or 0),
-                    str(a["path"]),
-                )
-                previous = best.get(route_key)
-                if previous is None or route_rank > previous[0]:
-                    best[route_key] = (route_rank, a)
+                routes.append(a)
                 continue
             # one bench observation per (seed, device, checkpoint_step, variant_id); timings are best-of-N
             key = (
@@ -12456,18 +12475,9 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             lineage = ckpt.get("lineage") or {}
             run_id = lineage.get("run_id")
             if not isinstance(run_id, str) or not run_id:
-                if a["schema"] == "chargeprobe":
-                    # probe artifacts key on (checkpoint dir, step, task, seed)
-                    key = ("chargeprobe", ckpt.get("dir"), ckpt.get("step"), meta.get("task"), meta.get("seed"))
-                else:
-                    out.append(a)  # no lineage -> cannot dedupe; keep as-is
-                    continue
-            else:
-                key = (
-                    (a["schema"], run_id, ckpt.get("step"), meta.get("task"), meta.get("seed"))
-                    if a["schema"] == "chargeprobe"
-                    else (run_id, ckpt.get("step"))
-                )
+                out.append(a)
+                continue
+            key = (run_id, ckpt.get("step"))
             rank = (
                 str(a["data"].get("schema_version", "")),  # "...v2" > "...v1"
                 str(meta.get("generated_at", "")),
@@ -12476,6 +12486,7 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         prev = best.get(key)
         if prev is None or rank > prev[0]:
             best[key] = (rank, a)
+    out.extend(_adj_distinct_probe_trainings(routes))
     out.extend(a for _, a in best.values())
     return sorted(out, key=lambda a: str(a["path"]))
 
@@ -12811,7 +12822,11 @@ def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) 
         run_id = lineage.get("run_id")
         if not isinstance(run_id, str) or not run_id.strip() or type(step) is not int or step < 0:
             return "missing_checkpoint_identity"
-        if is_route and (
+        if art["schema"] == "chargeprobe" and (
+            data.get("schema_version") != "mgr.chargeprobe.v2" or type(meta.get("seed")) is not int
+        ):
+            return "missing_checkpoint_identity"
+        if (is_route or art["schema"] == "chargeprobe") and (
             not re.fullmatch(r"[0-9a-f]{64}", str(meta.get("weights_sha256", "")))
             or type(meta.get("training_seed")) is not int
         ):
@@ -13083,6 +13098,9 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
                 lo_bound = cohort_anchor * (1.0 - _ADJ_BUDGET_RTOL)
                 cc_try = [a for a, f in cand_f if lo_bound <= f <= cohort_anchor]
                 bb_try = [a for a, f in base_f if lo_bound <= f <= cohort_anchor]
+                if schema == "chargeprobe":
+                    cc_try = _adj_distinct_probe_trainings(cc_try)
+                    bb_try = _adj_distinct_probe_trainings(bb_try)
                 if not cc_try or (not bb_try and not single_arm):
                     continue
                 both_arms_seen = True

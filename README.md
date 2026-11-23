@@ -905,7 +905,7 @@ mgr bench-fixed-flops \
     --include-demo-certs
 
 # Resumable preregistered scorecard: sparse mechanism/task cells, checkpoint
-# eval, frozen claim allowlist, ci-v9 evidence eligibility, placebo gate, and JSON/Markdown/HTML reports.
+# eval, frozen claim allowlist, ci-v10 evidence eligibility, placebo gate, and JSON/Markdown/HTML reports.
 # Set this only from a committed, quarantined sizing probe.
 # Export this while still in the mutable coordination checkout, before entering
 # the detached producer worktree. It must not point into that frozen worktree.

@@ -30,6 +30,7 @@ implements torch's Optimizer state_dict protocol slots in unchanged.
 """
 
 import glob
+import hashlib
 import json
 import logging
 import os
@@ -110,10 +111,15 @@ def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data,
         logger.info(f"Saved metadata to: {meta_path}")
 
 
-def load_checkpoint(checkpoint_dir, step, device, load_optimizer=False, rank=0):
+def load_checkpoint(checkpoint_dir, step, device, load_optimizer=False, rank=0, *, fingerprint_weights=False):
     # Load the model state
     model_path = os.path.join(checkpoint_dir, f"model_{step:06d}.pt")
-    model_data = torch.load(model_path, map_location=device, weights_only=True)
+    with open(model_path, "rb") as weights:
+        digest = None
+        if fingerprint_weights:
+            digest = hashlib.file_digest(weights, "sha256").hexdigest()
+            weights.seek(0)
+        model_data = torch.load(weights, map_location=device, weights_only=True)
     # Load the optimizer state if requested
     optimizer_data = None
     if load_optimizer:
@@ -125,6 +131,8 @@ def load_checkpoint(checkpoint_dir, step, device, load_optimizer=False, rank=0):
     meta_path = os.path.join(checkpoint_dir, f"meta_{step:06d}.json")
     with open(meta_path, encoding="utf-8") as f:
         meta_data = json.load(f)
+    if digest is not None:
+        meta_data["weights_sha256"] = digest
     return model_data, optimizer_data, meta_data
 
 

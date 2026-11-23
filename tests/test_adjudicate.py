@@ -137,7 +137,7 @@ def test_supported_when_ci_clears_threshold(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v9"
+    assert v["policy_version"] == "ci-v10"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v9"
+    assert v["policy_version"] == "ci-v10"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
@@ -666,8 +666,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v9"
-    assert first["policy_version"] == "ci-v9" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v10"
+    assert first["policy_version"] == "ci-v10" and first["artifacts"]
     assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
@@ -906,11 +906,13 @@ def _chargeprobe_artifact(
     (run / "summary.json").write_text(
         json.dumps(
             {
-                "schema_version": "mgr.chargeprobe.v1",
+                "schema_version": "mgr.chargeprobe.v2",
                 "kind": "probe-charges",
                 "meta": {
                     "run_id": name,
                     "generated_at": "2026-06-11T20:00:00Z",
+                    "training_seed": seed,
+                    "weights_sha256": f"{seed:064x}",
                     "checkpoint": {
                         "dir": f"ck/{name}",
                         "step": 100,
@@ -954,7 +956,7 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v9"
+    assert v["policy_version"] == "ci-v10"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -1029,6 +1031,32 @@ def test_single_arm_chargeprobe_dissociation_with_variant_and_cohorts(tmp_path):
     assert abs(arm["effect"] - 4.1) < 1e-9
 
 
+def test_chargeprobe_repeated_fits_steps_and_copied_weights_count_once(tmp_path):
+    for seed in range(3):
+        _chargeprobe_artifact(tmp_path, f"probe{seed}", ratio=4.0, seed=seed)
+    arts = _index(tmp_path)
+    copies = [art["data"]["meta"] for art in arts]
+    # First two rows share a training. The third aliases the second row's weights.
+    copies[1]["training_seed"] = copies[0]["training_seed"]
+    copies[1]["checkpoint"]["lineage"] = copies[0]["checkpoint"]["lineage"]
+    copies[1]["checkpoint"]["step"] = 200
+    copies[2]["weights_sha256"] = copies[1]["weights_sha256"]
+    chosen = cli._adj_distinct_probe_trainings(arts)
+    assert len(chosen) == 1 and chosen[0]["data"]["meta"]["checkpoint"]["step"] == 200
+    hyp = _hyp(
+        {
+            "metric_path": "chargeprobe:dissociation.ratio",
+            "comparator": ">=",
+            "threshold_kind": "absolute_delta",
+            "threshold": 2.0,
+            "baseline": None,
+            "candidate_variant": {"braid_crossing_law": "rmatrix"},
+        },
+        mechanisms=["braid"],
+    )
+    assert _adj_score_cohort(hyp, arts)["reason_code"] == "insufficient_seeds"
+
+
 def test_single_arm_train_trend_route_coverage_delta(tmp_path):
     """The y4r8 within-run trend: route_coverage_delta > 0 adjudicates as a
     single-arm train-schema prediction."""
@@ -1077,7 +1105,7 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v9"
+    assert v["policy_version"] == "ci-v10"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):

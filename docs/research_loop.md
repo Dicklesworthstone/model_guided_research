@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v9`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v10`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -158,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v9`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v10`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -187,6 +187,13 @@ operator counts measure this particular configuration. Since `ci-v8` the engine 
 mixed HOSS and first-order comparisons from training or task-eval summaries
 with `optimizer_compute_unmeasured` when both arms carry the registered
 metric. Bead `sequ` tracks calibration across ranks and architectures.
+
+Under ci-v10, charge-decoding measurements that share a training seed, run
+or weights digest count once within each candidate budget cohort. Repeated
+probe fits and intermediate checkpoints measure the same training. The
+instrument hashes the open weights file used to load the model and records
+the training seed separately from the probe seed. Historical v1 files lack
+this identity. A new measurement must use the v2 producer.
 
 Policy `ci-v9` selects the registered evaluation task before choosing among
 repeat measurements. Scorecard cells reuse names such as `seed_0` across
