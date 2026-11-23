@@ -6772,6 +6772,9 @@ def gen_tasks(
     include_real: Annotated[
         bool, typer.Option("--include-real", help="Include the realhier task in --task all")
     ] = False,
+    realhier_context: Annotated[
+        int | None, typer.Option("--realhier-context", min=1, help="Measure full-query coverage with a train-only BPE")
+    ] = None,
     list_tasks: Annotated[bool, typer.Option("--list", help="List tasks, mechanisms, hypotheses, dials")] = False,
 ) -> None:
     """Generate the theory-aligned diagnostic task battery (bead vdc.1)."""
@@ -6811,6 +6814,8 @@ def gen_tasks(
     else:
         console.print(f"[bold red]Unknown task {task!r}; available: {', '.join(sorted(TASKS))} or 'all'[/bold red]")
         raise typer.Exit(code=2)
+    if realhier_context is not None and "realhier" not in names:
+        raise typer.BadParameter("--realhier-context requires --task realhier or --task all --include-real")
 
     summary = Table(title=f"gen-tasks → {out} (seed={seed}, size={size})", box=box.SIMPLE_HEAVY)
     summary.add_column("task", style="bold")
@@ -6824,7 +6829,14 @@ def gen_tasks(
     t0 = time.perf_counter()
     for name in names:
         with console.status(f"[bold cyan]generating {name}…[/bold cyan]"):
-            manifest = generate_task(name, out_dir=out, size=size, seed=seed, dial_overrides=dial_overrides or None)
+            manifest = generate_task(
+                name,
+                out_dir=out,
+                size=size,
+                seed=seed,
+                dial_overrides=dial_overrides or None,
+                realhier_context=realhier_context if name == "realhier" else None,
+            )
         import pyarrow.parquet as _pq
 
         train_path = out / name / "train_000.parquet"
@@ -7281,7 +7293,7 @@ def eval_tasks(
 
     import torch
 
-    from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS
+    from nanochat.diagnostics_data import DEFAULT_TASKS, TASKS, realhier_module_report, realhier_sources
     from nanochat.tokenizer import checkpoint_tokenizer
 
     device = torch.device(device_str)
@@ -7390,6 +7402,8 @@ def eval_tasks(
         # certified docs whose answer flipped) - the certified fraction under
         # the 1-Lipschitz sup-norm bound and the certificate's violation rate
         clean_correct: dict[tuple[str, int, int], bool] = {}
+        source_catalog = realhier_sources() if name == "realhier" else None
+        module_reports: dict[str, dict[str, Any]] = {}
         # (prompt tokens, mean margin) per scored greedy document, tropical only
         margin_points: list[tuple[float, float]] = []
         ladder_em: dict[str, dict[str, list[float | None]]] = {
@@ -7471,6 +7485,13 @@ def eval_tasks(
                         per_seed_em[mode][region].append(correct_n / scored_n if scored_n else None)
                         if mode == "greedy":
                             prior_counts[region].append(seed_expected)
+                if source_catalog is not None:
+                    outcomes = {
+                        doc: clean_correct.get(("held_out", eval_seed, i), False) for i, doc in enumerate(out_docs)
+                    }
+                    module_reports[str(eval_seed)] = realhier_module_report(
+                        source_catalog, tok, model.config.sequence_len, outcomes
+                    )
                 # v5 perturbation ladder: greedy exact match under each eps,
                 # paired per document with the unperturbed pass above so the
                 # degradation and the certificate's violation rate are exact
@@ -7667,6 +7688,14 @@ def eval_tasks(
             "skipped_too_long": skipped,
             "n_examples_per_seed": examples,
         }
+        if source_catalog is not None:
+            macro_scores = [module_reports[str(seed)]["macro_exact_match"] for seed in seed_list]
+            held_out = (
+                agg(macro_scores)
+                if None not in macro_scores
+                else {"mean": None, "ci95": None, "per_seed": macro_scores}
+            )
+            results[name]["module_macro"] = {"greedy": {"held_out": held_out}, "by_eval_seed": module_reports}
 
     resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "evals" / "tasks" / resolved_run_id

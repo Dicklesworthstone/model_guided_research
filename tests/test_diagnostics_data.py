@@ -30,6 +30,8 @@ from nanochat.diagnostics_data import (
     check_regime,
     generate_task,
     generate_texts,
+    realhier_module_report,
+    realhier_sources,
 )
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "diagnostics_generator_hashes.json"
@@ -68,6 +70,65 @@ def test_manifest_hashes_match_files(tmp_path):
     on_disk = json.loads((task_dir / "manifest.json").read_text())
     assert on_disk["sha256"] == manifest["sha256"]
     assert on_disk["generator_version"] == GENERATOR_VERSIONS["hier"]
+
+
+def test_realhier_separates_source_modules_and_exhausts_unique_test_paths(tmp_path):
+    import pyarrow.parquet as pq
+
+    manifest = generate_task("realhier", out_dir=tmp_path, size=1200, seed=42)
+    provenance = manifest["provenance"]
+    assert len(set(provenance["module_source_sha256"].values())) == 12
+    assert len(set(provenance["module_tree_sha256"].values())) == 12
+    sources = realhier_sources()
+    assert set(provenance["module_splits"]["test"]) == {"contextlib", "enum", "textwrap"}
+    eligible = {
+        f"TASK hier TREE {source['tree']} PATH {' '.join(path)} OUT {answer}"
+        for source in sources.values()
+        if source["split"] == "test"
+        for path, answer in source["paths"]
+    }
+    heldout = pq.read_table(tmp_path / "realhier/heldout/test_000.parquet")["text"].to_pylist()
+    assert len(heldout) == len(set(heldout)) == min(120, len(eligible))
+    assert set(heldout) <= eligible
+    assert all(check_hier(doc) for doc in heldout)
+
+
+def test_realhier_rejects_duplicate_tree_even_if_source_bytes_differ(monkeypatch):
+    import nanochat.diagnostics_data as diagnostics
+
+    monkeypatch.setattr(
+        diagnostics, "_module_tree", lambda name: ({"alias": "fn"}, hashlib.sha256(name.encode()).hexdigest())
+    )
+    with pytest.raises(ValueError, match="duplicate source or definition tree"):
+        realhier_sources()
+
+
+def test_realhier_macro_weights_modules_and_counts_overlength_errors():
+    class WordTokenizer:
+        def get_bos_token_id(self):
+            return 0
+
+        def encode(self, text, prepend=None):
+            return ([prepend] if prepend is not None else []) + text.split()
+
+    sources = {
+        "small": {"tree": "A", "paths": [(("a",), "fn")]},
+        "large": {"tree": "B", "paths": [(("a",), "fn"), (("a", "b"), "cls"), (("c",), "fn")]},
+    }
+    for source in sources.values():
+        source.update(split="test", source_sha256="source", tree_sha256="tree")
+    outcomes = {
+        "TASK hier TREE A PATH a OUT fn": True,
+        "TASK hier TREE B PATH a OUT fn": False,
+        "TASK hier TREE B PATH a b OUT cls": True,
+        "TASK hier TREE B PATH c OUT fn": True,
+    }
+    report = realhier_module_report(sources, WordTokenizer(), 9, outcomes)
+    assert report["modules"]["large"]["fits"] == 2
+    assert report["modules"]["large"]["majority_fraction"] == pytest.approx(2 / 3)
+    assert report["macro_exact_match"] == pytest.approx((1 + 1 / 3) / 2)
+    outcomes.pop("TASK hier TREE A PATH a OUT fn")
+    assert realhier_module_report(sources, WordTokenizer(), 9, outcomes)["macro_exact_match"] is None
 
 
 def test_generator_version_bump_enforced(tmp_path):

@@ -47,6 +47,7 @@ import hashlib
 import itertools
 import json
 import random
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,7 +70,7 @@ GENERATOR_VERSIONS: dict[str, int] = {
     "group": 1,
     "bag": 1,
     "placebo": 1,
-    "realhier": 1,
+    "realhier": 2,
 }
 
 PARQUET_ROW_GROUP_SIZE = 256  # small row groups so DDP iteration works on tiny datasets
@@ -875,7 +876,11 @@ def _gen_placebo(size: int, seed: int, dials: dict[str, float]) -> dict[str, lis
 # tasks prove a mechanism CAN win when geometry is planted; this one asks
 # whether the geometry exists in the wild at exploitable strength.
 
-_REALHIER_MODULES = ("json", "ast", "dataclasses", "pathlib", "argparse")
+_REALHIER_MODULE_SPLITS = {
+    "train": ("json", "ast", "dataclasses", "argparse", "logging", "unittest.case"),
+    "val": ("fractions", "configparser", "statistics"),
+    "test": ("contextlib", "enum", "textwrap"),
+}
 
 
 def _module_tree(module_name: str) -> tuple[dict, str]:
@@ -885,8 +890,8 @@ def _module_tree(module_name: str) -> tuple[dict, str]:
     spec = importlib.util.find_spec(module_name)
     if spec is None or spec.origin is None or not spec.origin.endswith(".py"):
         raise RuntimeError(f"cannot locate pure-python source for module {module_name!r}")
-    source = Path(spec.origin).read_text(encoding="utf-8")
-    digest = hashlib.sha256(source.encode()).hexdigest()
+    source = Path(spec.origin).read_bytes()
+    digest = hashlib.sha256(source).hexdigest()
     tree = ast_mod.parse(source)
 
     def build(node) -> dict:
@@ -901,45 +906,113 @@ def _module_tree(module_name: str) -> tuple[dict, str]:
     return build(tree), digest
 
 
+def realhier_sources() -> dict[str, dict[str, Any]]:
+    """Enumerate each source's eligible paths and reject aliasing between modules."""
+    sources: dict[str, dict[str, Any]] = {}
+    source_hashes: set[str] = set()
+    tree_hashes: set[str] = set()
+    for split, modules in _REALHIER_MODULE_SPLITS.items():
+        for module in modules:
+            tree, digest = _module_tree(module)
+            serialized = _hier_serialize(tree)
+            tree_digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+            paths = _hier_paths(tree)
+            if not paths:
+                raise ValueError(f"realhier source {module!r} contains no eligible paths")
+            if module in sources or digest in source_hashes or tree_digest in tree_hashes:
+                raise ValueError(f"realhier duplicate source or definition tree at {split}/{module}")
+            source_hashes.add(digest)
+            tree_hashes.add(tree_digest)
+            if split == "test":
+                paths.sort(key=lambda item: len(item[0]))
+                paths = paths[-max(1, len(paths) // 4) :]
+            sources[module] = {
+                "split": split,
+                "source_sha256": digest,
+                "tree_sha256": tree_digest,
+                "tree": serialized,
+                "paths": paths,
+            }
+    return sources
+
+
 def _gen_realhier(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[str]]:
     del dials
-    trees = {}
-    for mod in _REALHIER_MODULES:
-        try:
-            tree, _ = _module_tree(mod)
-        except (RuntimeError, OSError):
-            continue
-        if _hier_paths(tree):  # e.g. pathlib is a re-export shim on 3.13: empty AST
-            trees[mod] = tree
-    if not trees:
-        raise RuntimeError("realhier: no stdlib module sources available")
+    sources = realhier_sources()
     splits: dict[str, list[str]] = {}
     for split, n in _split_sizes(size).items():
         rng = _rng("realhier", split, seed)
-        docs = []
-        for _ in range(n):
-            mod = rng.choice(sorted(trees))
-            tree = trees[mod]
-            paths = _hier_paths(tree)
-            if split == "test":  # held-out DEPTH: deepest quartile
-                paths.sort(key=lambda pv: len(pv[0]))
-                paths = paths[-max(1, len(paths) // 4) :]
-            path, value = rng.choice(paths)
-            docs.append(f"TASK hier TREE {_hier_serialize(tree)} PATH {' '.join(path)} OUT {value}")
+        modules = list(_REALHIER_MODULE_SPLITS[split])
+        docs: list[str] = []
+        if split == "train":
+            selected = [(module, rng.choice(sources[module]["paths"])) for module in rng.choices(modules, k=n)]
+        else:
+            # Rotate across modules and exhaust each unique query at most once.
+            rng.shuffle(modules)
+            pools = {module: list(sources[module]["paths"]) for module in modules}
+            for pool in pools.values():
+                rng.shuffle(pool)
+            selected = []
+            while modules and len(selected) < n:
+                for module in modules:
+                    selected.append((module, pools[module].pop()))
+                    if len(selected) == n:
+                        break
+                modules = [module for module in modules if pools[module]]
+        for module, (path, value) in selected:
+            docs.append(f"TASK hier TREE {sources[module]['tree']} PATH {' '.join(path)} OUT {value}")
         splits[split] = docs
     return splits
 
 
 def realhier_provenance() -> dict[str, str]:
     """Source hashes for the manifest: {module: sha256-of-source}."""
-    out = {}
-    for mod in _REALHIER_MODULES:
-        try:
-            _, digest = _module_tree(mod)
-            out[mod] = digest
-        except (RuntimeError, OSError):
-            out[mod] = "unavailable"
-    return out
+    return {name: source["source_sha256"] for name, source in realhier_sources().items()}
+
+
+def realhier_module_report(
+    sources: dict[str, dict[str, Any]], tokenizer: Any, context: int, outcomes: dict[str, bool] | None = None
+) -> dict[str, Any]:
+    """Measure every unique eligible held-out path; a partial sample has no macro score."""
+    modules: dict[str, dict[str, Any]] = {}
+    for module, source in sources.items():
+        if source["split"] != "test":
+            continue
+        counts: Counter[str] = Counter()
+        lengths: list[int] = []
+        presented = correct = 0
+        for path, answer in source["paths"]:
+            prompt = f"TASK hier TREE {source['tree']} PATH {' '.join(path)} OUT"
+            document = f"{prompt} {answer}"
+            tokens = len(tokenizer.encode(prompt, prepend=tokenizer.get_bos_token_id())) + len(
+                tokenizer.encode(" " + answer)
+            )
+            lengths.append(tokens)
+            counts[answer] += 1
+            if outcomes is not None and document in outcomes:
+                presented += 1
+                correct += int(tokens <= context and outcomes[document])
+        total = len(lengths)
+        fits = sum(length <= context for length in lengths)
+        modules[module] = {
+            "source_sha256": source["source_sha256"],
+            "tree_sha256": source["tree_sha256"],
+            "eligible": total,
+            "fits": fits,
+            "coverage": fits / total,
+            "min_tokens": min(lengths),
+            "max_tokens": max(lengths),
+            "answer_counts": dict(sorted(counts.items())),
+            "majority_fraction": max(counts.values()) / total,
+            "presented": presented,
+            "exact_match": correct / total if presented == total else None,
+        }
+    scores = [row["exact_match"] for row in modules.values()]
+    return {
+        "context_tokens": context,
+        "modules": modules,
+        "macro_exact_match": sum(scores) / len(scores) if scores and None not in scores else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1189,12 +1262,15 @@ def generate_task(
     size: int,
     seed: int,
     dial_overrides: dict[str, float] | None = None,
+    realhier_context: int | None = None,
 ) -> dict[str, Any]:
     """Generate one task's splits + manifest; returns the manifest dict."""
     if task not in TASKS:
         raise ValueError(f"unknown task {task!r}; available: {sorted(TASKS)}")
     if size < 3:
         raise ValueError("size must be >= 3 (one document per split minimum)")
+    if realhier_context is not None and (task != "realhier" or realhier_context < 1):
+        raise ValueError("realhier_context requires the realhier task and a positive context length")
     spec = TASKS[task]
     dials = spec.resolve_dials(dial_overrides)
     splits = spec.generate(size, seed, dials)
@@ -1233,12 +1309,22 @@ def generate_task(
     if task == "realhier":
         import sys as _sys
 
+        sources = realhier_sources()
         manifest["provenance"] = {
             "source": "python stdlib AST structure (PSF license)",
             "python_version": _sys.version,
-            "module_source_sha256": realhier_provenance(),
+            "module_source_sha256": {name: s["source_sha256"] for name, s in sources.items()},
+            "module_tree_sha256": {name: s["tree_sha256"] for name, s in sources.items()},
+            "module_splits": _REALHIER_MODULE_SPLITS,
             "byte_identity": "conditional on python version (synthetic tasks carry the unconditional guarantee)",
         }
+        if realhier_context is not None:
+            from nanochat.tokenizer import TASK_TOKENIZER_DEFAULT_VOCAB, train_task_tokenizer
+
+            tokenizer = train_task_tokenizer([task_dir / "train_000.parquet"], TASK_TOKENIZER_DEFAULT_VOCAB)
+            manifest["preflight"] = realhier_module_report(sources, tokenizer, realhier_context)
+            manifest["preflight"]["tokenizer_vocab_size"] = tokenizer.get_vocab_size()
+            manifest["preflight"]["tokenizer_train_content_sha256"] = content_hashes["train_000.parquet"]
     (task_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
 
