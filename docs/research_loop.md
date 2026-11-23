@@ -157,8 +157,8 @@ Rules that have each cost a session to learn:
 **Paired hierarchy.** The opt-in `hier_paired` task places two queries on the
 same tree with distinct answers. Both paths have two keys by default.
 Held-out paths have one more key. The generator splits by tree and keeps
-both queries together. A predictor that ignores the query can answer at
-most one member of a pair correctly.
+both queries together. A deterministic tree-only predictor can answer
+at most one member of a pair correctly.
 
 ```bash
 uv run mgr gen-tasks --task hier_paired --size 64000 --out artifacts/probes/sizing/paired-hierarchy/data
@@ -174,7 +174,9 @@ the training corpus. The result at
 fraction of trees with both answers correct. Incomplete pairs stay in the
 denominator, including queries whose full document exceeds the training
 window. The JSON report gives counts by seed. Aggregate over training runs
-to draw conclusions about a mechanism.
+to draw conclusions about a mechanism. The first sizing screen archived the
+full evaluation panel, model outputs, and receipt recounts.
+[Paired hierarchy sizing results](../artifacts/probes/sizing/jida12-paired-hier/results.zip)
 
 ### 6. Adjudicate
 
