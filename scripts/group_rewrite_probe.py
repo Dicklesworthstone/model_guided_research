@@ -318,22 +318,26 @@ class Actions:
         return reps
 
 
+def infer_actions(actions: Actions, observations: dict[str, str], *, squares: bool) -> None:
+    """Propagate observed prefix and suffix extensions to a fixed point."""
+    while True:
+        before = sum(len(m) for m in actions.maps.values())
+        for word, target in observations.items():
+            for side, part, symbol in (("R", word[:-1], word[-1]), ("L", word[1:], word[0])):
+                start = actions.read_right(observations, part)
+                if start is not None:
+                    actions.bind(side + symbol, start, target)
+        actions.close(squares)
+        if before == sum(len(m) for m in actions.maps.values()):
+            return
+
+
 def teach_panel_case(initial: dict[str, str], vocabulary: set[str], ask: Callable[[str], str], *, squares: bool):
     observations = initial.copy()
     actions = Actions(vocabulary)
     queries: list[tuple[str, str]] = []
     while True:
-        # A newly known extension can make the other end of a paid word informative.
-        while True:
-            before = sum(len(m) for m in actions.maps.values())
-            for w, y in observations.items():
-                for side, part, symbol in (("R", w[:-1], w[-1]), ("L", w[1:], w[0])):
-                    start = actions.read_right(observations, part)
-                    if start is not None:
-                        actions.bind(side + symbol, start, y)
-            actions.close(squares)
-            if before == sum(len(m) for m in actions.maps.values()):
-                break
+        infer_actions(actions, observations, squares=squares)
         reps = actions.representatives(observations)
         missing = (
             (len(w) + 1, w + a, source, a)
