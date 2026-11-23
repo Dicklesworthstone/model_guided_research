@@ -11226,6 +11226,7 @@ _HYP_MECHANISMS = frozenset(
         "hyperbolic",
         "hoss",
         "ordinal",
+        "group_completion",  # symbolic endpoint-query reference, not a trainable attention type
     }
 )
 _HYP_METRIC_SCHEMAS = ("evaltasks", "train", "certify", "bench", "chargeprobe")

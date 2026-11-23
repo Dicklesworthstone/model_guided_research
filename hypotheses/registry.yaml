@@ -2718,3 +2718,25 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+
+  - id: hyp-group-completion-trusted-queries
+    statement: >-
+      On the fixed panel of six new S5 and six new A5 ordered generating pairs,
+      commuting left and right actions require at most half the total additional
+      endpoint queries of the identical learner with commuting-square inference
+      disabled, while recovering every transition exactly in all twenty test cases.
+    mechanisms: [group_completion]
+    source:
+      kind: model
+      provenance: "Bead ho58 specifies the presentation sampler, ablation and stopping rule. The original four presentations are spent."
+    date_registered: "2026-11-23"
+    prediction: null
+    operationalization_note: >-
+      The experimental units are marked finite groups with a blind vocabulary and
+      exhaustive edge certificates. The registered comparison counts endpoint
+      labels, and its denominator is the twelve fixed non-solvable presentations.
+      The existing adjudication collectors measure model runs and do not implement
+      this finite-panel decision. Keep the formal verdict open pending a matching collector.
+    status: open
+    evidence: []
+    verdict_history: []
