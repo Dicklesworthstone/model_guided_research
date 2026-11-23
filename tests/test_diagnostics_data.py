@@ -668,8 +668,27 @@ def test_equivalence_cache_keys_use_only_group_identities():
         return eval_word(a) == eval_word(b)
 
     raw, cancelled, cyclic = [acquire_with_memo(6, equal, key) for key in (pair_key, cancelled_key, relator_key)]
-    assert raw["edges"] == cancelled["edges"] == cyclic["edges"]
+    order_free = acquire_with_memo(None, equal, cancelled_key)
+    assert raw["edges"] == cancelled["edges"] == cyclic["edges"] == order_free["edges"]
+    assert order_free["representatives"] == cancelled["representatives"]
+    assert "forced" not in order_free["counts"]
     assert cyclic["counts"]["cache_different"] > 0
+
+
+def test_order_free_acquisition_checks_both_generators_of_the_trivial_action():
+    from scripts.group_student_probe import acquire_with_memo, cancelled_key
+
+    calls = []
+
+    def equal(word, representative):
+        calls.append((word, representative))
+        return True
+
+    result = acquire_with_memo(None, equal, cancelled_key)
+    assert calls == [("0", ""), ("1", "")]
+    assert result["representatives"] == [""]
+    assert result["edges"] == [[0, 0]]
+    assert result["counts"] == {"oracle_equal": 2}
 
 
 def test_congruence_combines_shortlex_rules_and_preserves_the_action():

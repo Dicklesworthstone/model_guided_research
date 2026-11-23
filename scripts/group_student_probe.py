@@ -412,17 +412,19 @@ class ShortlexRelations:
 
 
 def acquire_equalities(
-    size: int,
+    size: int | None,
     equal: Callable[[str, str], bool],
     rank: Callable[[str, str], float],
     cached: Callable[[str, str], bool | None] | None = None,
     *,
     relations: ShortlexRelations | None = None,
 ) -> dict:
-    """Recover a rooted action using only equality and the size and bijection promises.
+    """Recover a finite rooted action using equality and bijective generators.
 
     The ranker can change the order of queries. It cannot decide a merge or
     alter the candidate set. New representatives keep breadth-first order.
+    With no known size, finish when both outgoing edges of every discovered
+    representative have been established. Size-based forcing requires a size.
     """
     representatives = [""]
     indices = {"": 0}
@@ -479,7 +481,7 @@ def acquire_equalities(
             if relations is not None:
                 relations.record(word, representatives[target])
         edges.append(row)
-    if len(representatives) != size:
+    if size is not None and len(representatives) != size:
         raise ValueError("The advertised states are not all reachable")
     return dict(
         representatives=representatives, edges=edges, counts=dict(counts), trace=trace, ranked_words=sorted(demanded)
@@ -631,7 +633,7 @@ def relator_key(a: str, b: str) -> tuple[int, ...]:
 
 
 def acquire_with_memo(
-    size: int,
+    size: int | None,
     equal: Callable[[str, str], bool],
     key: Callable[[str, str], tuple],
     *,
