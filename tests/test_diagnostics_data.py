@@ -72,6 +72,30 @@ def test_manifest_hashes_match_files(tmp_path):
     assert on_disk["generator_version"] == GENERATOR_VERSIONS["hier"]
 
 
+def test_paired_hierarchy_separates_trees_and_matches_distinct_answers():
+    spec = TASKS["hier_paired"]
+    dials = spec.resolve_dials(None)
+    splits = spec.generate(200, 42, dials)
+    assert spec.generate(200, 42, dials) == splits
+    assert "hier_paired" not in DEFAULT_TASKS
+    assert {key: len(docs) for key, docs in splits.items()} == {"train": 160, "val": 20, "test": 20}
+    trees = set()
+    for split, docs in splits.items():
+        for left, right in zip(docs[::2], docs[1::2], strict=True):
+            tree, query = left.split(" PATH ", 1)
+            other_tree, other_query = right.split(" PATH ", 1)
+            path, answer = query.split(" OUT ")
+            other_path, other_answer = other_query.split(" OUT ")
+            assert tree == other_tree and tree not in trees
+            trees.add(tree)
+            assert path != other_path and answer != other_answer
+            assert len(path.split()) == len(other_path.split()) == (3 if split == "test" else 2)
+            assert check_hier(left) and check_hier(right)
+            assert check_hier(f"{tree} PATH {other_path} OUT {answer}") is False
+    with pytest.raises(ValueError, match="even document count"):
+        spec.generate(13, 42, dials)
+
+
 def test_realhier_separates_source_modules_and_exhausts_unique_test_paths(tmp_path):
     import pyarrow.parquet as pq
 

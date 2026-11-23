@@ -154,6 +154,28 @@ Rules that have each cost a session to learn:
   `artifacts/probes/charges/` stays
   evidence: chargeprobe instruments measure, they don't select.
 
+**Paired hierarchy.** The opt-in `hier_paired` task places two queries on the
+same tree with distinct answers. Both paths have two keys by default.
+Held-out paths have one more key. The generator splits by tree and keeps
+both queries together. A predictor that ignores the query can answer at
+most one member of a pair correctly.
+
+```bash
+uv run mgr gen-tasks --task hier_paired --size 64000 --out artifacts/probes/sizing/paired-hierarchy/data
+uv run mgr eval-tasks --task hier_paired --checkpoint "$CHECKPOINT" --examples 24 --seeds 0,1,2 \
+  --artifacts-dir artifacts/probes/sizing/paired-hierarchy --run-id paired-hierarchy
+```
+
+The counts above describe documents. Twenty-four queries yield twelve
+trees per split per evaluation seed. Use even counts. Before a campaign,
+check that evaluation trees generated at separate seeds are disjoint from
+the training corpus. The result at
+`tasks.hier_paired.paired_exact_match.greedy.held_out.mean` measures the
+fraction of trees with both answers correct. Incomplete pairs stay in the
+denominator, including queries whose full document exceeds the training
+window. The JSON report gives counts by seed. Aggregate over training runs
+to draw conclusions about a mechanism.
+
 ### 6. Adjudicate
 
 ```bash

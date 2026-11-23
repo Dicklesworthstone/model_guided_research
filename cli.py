@@ -6816,6 +6816,8 @@ def gen_tasks(
         raise typer.Exit(code=2)
     if realhier_context is not None and "realhier" not in names:
         raise typer.BadParameter("--realhier-context requires --task realhier or --task all --include-real")
+    if "hier_paired" in names and (size < 6 or size % 2):
+        raise typer.BadParameter("hier_paired requires an even document count of at least six", param_hint="--size")
 
     summary = Table(title=f"gen-tasks → {out} (seed={seed}, size={size})", box=box.SIMPLE_HEAVY)
     summary.add_column("task", style="bold")
@@ -7053,6 +7055,23 @@ def _eval_split_examples(
     if spec.difficulty is not None:
         in_range_max = max(spec.difficulty(d) for d in splits["train"])
     return in_range, held_out, in_range_max
+
+
+def _eval_hier_pair_counts(outcomes: list[bool | None]) -> dict[str, int]:
+    """Count complete greedy outcomes and preserve all requested pairs."""
+    if not outcomes or len(outcomes) % 2:
+        raise ValueError("hier_paired scoring requires complete query pairs")
+    counts = dict(pairs=len(outcomes) // 2, both_correct=0, one_correct=0, neither_correct=0, incomplete=0)
+    for left, right in zip(outcomes[::2], outcomes[1::2], strict=True):
+        if left is None or right is None:
+            counts["incomplete"] += 1
+        elif left and right:
+            counts["both_correct"] += 1
+        elif left or right:
+            counts["one_correct"] += 1
+        else:
+            counts["neither_correct"] += 1
+    return counts
 
 
 def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any, *, input_hash: Any = None) -> float:
@@ -7350,6 +7369,11 @@ def eval_tasks(
     if not seed_list:
         console.print("[bold red]--seeds must contain at least one integer.[/bold red]")
         raise typer.Exit(code=2)
+    if "hier_paired" in names:
+        if examples < 2 or examples % 2:
+            raise typer.BadParameter("hier_paired requires a positive even number of queries", param_hint="--examples")
+        if len(seed_list) != len(set(seed_list)):
+            raise typer.BadParameter("hier_paired requires distinct evaluation seeds", param_hint="--seeds")
 
     dial_overrides: dict[str, float] = {}
     for pair in dial or []:
@@ -7405,6 +7429,9 @@ def eval_tasks(
 
     for name in names:
         spec = TASKS[name]
+        pair_counts: dict[str, list[dict[str, int]]] | None = (
+            {"in_range": [], "held_out": []} if name == "hier_paired" else None
+        )
         ppl_input_hash = hashlib.sha256()
         # per_seed lists stay ALIGNED with seed_list: a seed whose docs were
         # all skipped (too long for the rotary cache) records None, never a
@@ -7460,14 +7487,28 @@ def eval_tasks(
                 )
                 if spec.answer_marker is None:
                     continue
+                # Paired hierarchy measures retrieval within the trained context.
+                # Overlength queries are incomplete outcomes, never dropped pairs.
+                outside_window: set[tuple[str, int]] = set()
+                if pair_counts is not None:
+                    for region, docs in (("in_range", in_docs), ("held_out", out_docs)):
+                        outside_window.update(
+                            (region, i)
+                            for i, doc in enumerate(docs)
+                            if len(tok.encode(doc, prepend=tok.get_bos_token_id())) > model.config.sequence_len + 1
+                        )
                 for mode, temp in decode_modes:
                     for region, docs in (("in_range", in_docs), ("held_out", out_docs)):
                         correct_n = 0
                         scored_n = 0
                         seed_expected: dict[str, int] = {}
                         for doc_idx, doc in enumerate(docs):
-                            scored = _eval_score_doc(
-                                model, tok, spec, doc, device=device, temperature=temp, seed=eval_seed
+                            scored = (
+                                None
+                                if (region, doc_idx) in outside_window
+                                else _eval_score_doc(
+                                    model, tok, spec, doc, device=device, temperature=temp, seed=eval_seed
+                                )
                             )
                             if scored is None:
                                 # each doc is scored once per mode; count its
@@ -7513,6 +7554,11 @@ def eval_tasks(
                         per_seed_em[mode][region].append(correct_n / scored_n if scored_n else None)
                         if mode == "greedy":
                             prior_counts[region].append(seed_expected)
+                            if pair_counts is not None:
+                                counts = _eval_hier_pair_counts(
+                                    [clean_correct.get((region, eval_seed, i)) for i in range(len(docs))]
+                                )
+                                pair_counts[region].append({"eval_seed": eval_seed, **counts})
                 if source_catalog is not None:
                     outcomes = {
                         doc: clean_correct.get(("held_out", eval_seed, i), False) for i, doc in enumerate(out_docs)
@@ -7725,6 +7771,14 @@ def eval_tasks(
                 else {"mean": None, "ci95": None, "per_seed": macro_scores}
             )
             results[name]["module_macro"] = {"greedy": {"held_out": held_out}, "by_eval_seed": module_reports}
+        if pair_counts is not None:
+            results[name]["paired_exact_match"] = {
+                "greedy": {
+                    region: agg([row["both_correct"] / row["pairs"] for row in rows])
+                    for region, rows in pair_counts.items()
+                },
+                "counts": pair_counts,
+            }
 
     resolved_run_id = _resolve_run_id(run_id)
     run_dir = artifacts_dir / "evals" / "tasks" / resolved_run_id
@@ -7852,6 +7906,16 @@ def eval_tasks(
         md_rows.append(f"| {name} | {em_in} | {em_out} | {ppl} | {slope_cell} | {curve_cell} |")
     console.print(table)
 
+    pair_lines = []
+    if paired := results.get("hier_paired"):
+        for region, rows in paired["paired_exact_match"]["counts"].items():
+            both = sum(row["both_correct"] for row in rows)
+            pairs = sum(row["pairs"] for row in rows)
+            incomplete = sum(row["incomplete"] for row in rows)
+            line = f"hier_paired {region}: both answers correct on {both}/{pairs} pairs ({incomplete} incomplete)"
+            console.print(line)
+            pair_lines.append(f"- {line}\n")
+
     report_md = (
         f"# eval-tasks — {resolved_run_id}\n\n"
         f"- checkpoint: `{checkpoint}` @ step {resolved_step}\n"
@@ -7860,7 +7924,9 @@ def eval_tasks(
         f"- seeds: {seed_list} · examples/seed: {examples} · decode: {[m for m, _ in decode_modes]}\n\n"
         "| task | EM in-range | EM held-out | ppl in/held | slope held-out [CI95] | curve |\n|---|---|---|---|---|---|\n"
         + "\n".join(md_rows)
-        + "\n\nSee `summary.json` (schema mgr.evaltasks.v4) for the full contract output and "
+        + "\n\n"
+        + "".join(pair_lines)
+        + f"\nSee `summary.json` (schema {_EVAL_TASKS_SCHEMA_VERSION}) for the full output and "
         "`generations.jsonl` for per-example receipts.\n"
     )
     (run_dir / "run.md").write_text(report_md)
@@ -11451,7 +11517,7 @@ _GROUP_PANEL_SCHEMA = "mgr.group_completion.v1"
 _GROUP_PANEL_SHA256 = "ce479b50cc86a80eaee8749ef3ef151d88d041dd3347c6d424ab6dd1fb50c26a"
 # evaltasks metric families that only exist for tasks with an answer marker
 # (LM-only tasks report perplexity alone)
-_HYP_ANSWER_METRIC_FAMILIES = frozenset({"exact_match", "answer_prior", "length_slope", "curve"})
+_HYP_ANSWER_METRIC_FAMILIES = frozenset({"exact_match", "paired_exact_match", "answer_prior", "length_slope", "curve"})
 _HYP_COMPARATORS = (">=", "<=")
 _HYP_THRESHOLD_KINDS = ("absolute_delta", "ratio")
 

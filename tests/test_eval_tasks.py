@@ -443,6 +443,86 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
 
 
 @pytest.mark.slow
+def test_paired_hierarchy_counts_both_queries_and_incomplete_pairs():
+    from cli import _eval_hier_pair_counts
+
+    spec = TASKS["hier_paired"]
+    docs = spec.generate(24, 42, spec.resolve_dials(None))["train"]
+    oracle = [spec.checker(doc) for doc in docs]
+    # Return the first label on both queries of every tree.
+    query_blind = [
+        spec.checker(f"{doc.rsplit(' OUT ', 1)[0]} OUT {left.rsplit(' OUT ', 1)[1]}")
+        for left, right in zip(docs[::2], docs[1::2], strict=True)
+        for doc in (left, right)
+    ]
+    assert _eval_hier_pair_counts(oracle)["both_correct"] == len(docs) // 2
+    blind = _eval_hier_pair_counts(query_blind)
+    assert blind["both_correct"] == 0 and blind["one_correct"] == len(docs) // 2
+    incomplete = _eval_hier_pair_counts([True, None, True, True])
+    assert incomplete["pairs"] == 2 and incomplete["both_correct"] == incomplete["incomplete"] == 1
+    with pytest.raises(ValueError, match="complete query pairs"):
+        _eval_hier_pair_counts([True])
+
+
+def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
+    from typer.testing import CliRunner
+
+    from cli import app
+    from nanochat import train as train_mod
+
+    runner = CliRunner()
+    corpus = tmp_path / "corpus"
+    generated = runner.invoke(app, ["gen-tasks", "--task", "hier_paired", "--size", "100", "--out", str(corpus)])
+    assert generated.exit_code == 0, (generated.output, generated.exception)
+    artifacts = tmp_path / "artifacts"
+    options = train_mod.build_parser().parse_args(
+        [
+            *("--device cpu --tokenizer task --max-steps 1 --sequence-len 320 --batch-size 2").split(),
+            *("--n-layer 1 --n-head 2 --n-kv-head 2 --n-embd 32").split(),
+            *("--val-interval 0 --checkpoint-interval 1 --checkpoint-keep 0 --run-id paired-train").split(),
+            "--data-dir",
+            str(corpus / "hier_paired"),
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+    train_mod.train(options)
+    checkpoint = artifacts / "baseline" / "nanochat" / "paired-train" / "checkpoints"
+    eval_args = [
+        "eval-tasks",
+        "--task",
+        "hier_paired",
+        "--checkpoint",
+        str(checkpoint),
+        "--artifacts-dir",
+        str(artifacts),
+        "--seeds",
+        "0,1",
+    ]
+
+    for run_id, extra in (("complete", []), ("short-context", ["--model-override", "sequence_len=16"])):
+        response = runner.invoke(app, [*eval_args, "--examples", "4", "--run-id", run_id, *extra])
+        assert response.exit_code == 0, (response.output, response.exception)
+        output = artifacts / "evals" / "tasks" / run_id
+        summary = json.loads((output / "summary.json").read_bytes())["tasks"]["hier_paired"]
+        receipts = [json.loads(line) for line in (output / "generations.jsonl").read_text().splitlines()]
+        for region, counts in summary["paired_exact_match"]["counts"].items():
+            assert len(counts) == 2
+            for row in counts:
+                outcomes = {
+                    rec["doc_index"]: rec["correct"]
+                    for rec in receipts
+                    if rec["region"] == region and rec["eval_seed"] == row["eval_seed"]
+                }
+                assert row["pairs"] == 2
+                assert row["both_correct"] == sum(bool(outcomes.get(i) and outcomes.get(i + 1)) for i in (0, 2))
+                assert row["incomplete"] == (0 if run_id == "complete" else 2)
+        assert "both answers correct" in (output / "run.md").read_text()
+
+    incomplete = runner.invoke(app, [*eval_args, "--examples", "3"])
+    assert incomplete.exit_code == 2 and "positive even" in incomplete.output
+
+
 def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monkeypatch):
     """Exercise real weights and all three public command stages in clean Git history."""
     from typer.testing import CliRunner

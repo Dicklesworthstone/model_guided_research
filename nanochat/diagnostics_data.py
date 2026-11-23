@@ -62,6 +62,7 @@ GENERATOR_VERSIONS: dict[str, int] = {
     "dyck": 1,
     "copyops": 1,
     "hier": 1,
+    "hier_paired": 1,
     "rel": 1,
     "rot": 1,
     "arith": 1,
@@ -373,6 +374,38 @@ def _gen_hier(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[s
             path, value = paths[-1] if rng.random() < 0.5 else rng.choice(paths)
             docs.append(f"TASK hier TREE {_hier_serialize(tree)} PATH {' '.join(path)} OUT {value}")
         splits[split] = docs
+    return splits
+
+
+def _gen_hier_paired(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[str]]:
+    if size < 6 or size % 2:
+        raise ValueError("hier_paired requires an even document count of at least six")
+    depth, branching = int(dials["depth"]), int(dials["branching"])
+    splits: dict[str, list[str]] = {}
+    seen_trees = set()
+    # Split by trees first. Individual queries never cross split boundaries.
+    for split, pair_count in _split_sizes(size // 2).items():
+        rng = _rng("hier_paired", split, seed)
+        tree_depth = depth + (split == "test")
+        documents: list[str] = []
+        for _ in range(100 + 20 * pair_count):
+            tree = _hier_tree(rng, tree_depth, branching, dials["zipf_alpha"])
+            text = _hier_serialize(tree)
+            if text in seen_trees:
+                continue
+            paths = [(path, value) for path, value in _hier_paths(tree) if len(path) == tree_depth]
+            if len({value for _, value in paths}) < 2:
+                continue
+            first = rng.choice(paths)
+            second = rng.choice([item for item in paths if item[1] != first[1]])
+            for path, value in (first, second):
+                documents.append(f"TASK hier TREE {text} PATH {' '.join(path)} OUT {value}")
+            seen_trees.add(text)
+            if len(documents) == 2 * pair_count:
+                break
+        else:
+            raise ValueError(f"hier_paired could not sample {pair_count} distinct trees for {split}; reduce --size")
+        splits[split] = documents
     return splits
 
 
@@ -1102,6 +1135,22 @@ TASKS: dict[str, TaskSpec] = {
             difficulty=_difficulty_span("PATH", "OUT"),
         ),
         TaskSpec(
+            name="hier_paired",
+            target_mechanisms=("ultrametric", "fractal", "hyperbolic"),
+            hypothesis="both queries on one tree must retrieve distinct values; held-out paths are one level deeper",
+            dials=(
+                Dial("depth", 2, "queried path depth (train; test uses depth+1)", 1, 4),
+                Dial("branching", 3, "children per node", 2, 4),
+                Dial("zipf_alpha", 1.0, "branch-mass imbalance (0 = uniform, larger = more imbalanced)", 0.0, 3.0),
+            ),
+            generate=_gen_hier_paired,
+            checker=check_hier,
+            delimiters=("(", ")", "TREE", "PATH", "OUT"),
+            answer_marker="OUT",
+            difficulty_axis="path_depth",
+            difficulty=_difficulty_span("PATH", "OUT"),
+        ),
+        TaskSpec(
             name="rel",
             target_mechanisms=("simplicial",),
             hypothesis="2-hop composition is triangle aggregation; gap grows with distractor fact count",
@@ -1232,9 +1281,8 @@ TASKS: dict[str, TaskSpec] = {
     ]
 }
 
-# Tasks built by `--task all`. realhier is opt-in (--include-real): it is the
-# one task whose byte-identity is conditional on the Python version.
-DEFAULT_TASKS: tuple[str, ...] = tuple(name for name in TASKS if name != "realhier")
+# Tasks built by `--task all`. realhier and hier_paired are opt-in.
+DEFAULT_TASKS: tuple[str, ...] = tuple(name for name in TASKS if name not in {"realhier", "hier_paired"})
 
 
 # ---------------------------------------------------------------------------
