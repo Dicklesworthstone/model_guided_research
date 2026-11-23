@@ -1,5 +1,24 @@
 # Bridge Plan: model_guided_research
 
+## How much supervision does group composition require?
+
+On 73 new long S5/A5 words, three frozen standard transformers scored 2, 0
+and 0. Substituting equivalent substrings learned from the original short-word
+training labels raised those scores to 54, 50 and 49. A direct dictionary lookup
+after substitution scored 57. On a fresh transfer panel, replacing true short-word
+labels with each network's own answers preserved only 10, 3 and 4 of 73 products.
+All three missed the required 95% preservation, ending the self-labeling pilot.
+[Paired interventions, weights and controls](../artifacts/probes/sizing/group-rewrite/README.md)
+
+On twelve new S5/A5 presentations, a symbolic learner recovered the complete
+right action with 89 additional endpoint labels. Disabling the inference that
+prepending and appending commute raised the count to 360. The arbitrary naming
+of unseen states alone accounts for a lower bound of 79. Running the study on
+macOS and Linux produced identical query transcripts. The
+independent verifier checked the recovered actions on all twenty presentations
+including S3 and Z60. Neural transfer without an inference-time rewrite is open.
+[Registration, query counts and certificates](../artifacts/probes/sizing/group-query-completion/README.md)
+
 ## Repairs following the November 2026 assessment
 
 The ci-v7 adjudicator checks the operational definition in Git and the
