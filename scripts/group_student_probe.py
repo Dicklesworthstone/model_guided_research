@@ -9,7 +9,7 @@ import random
 import time
 from collections import Counter
 from collections.abc import Callable
-from itertools import product
+from itertools import permutations, product
 from pathlib import Path
 
 import torch
@@ -577,24 +577,37 @@ def acquire_with_memo(size: int, equal: Callable[[str, str], bool], key: Callabl
     return acquired
 
 
+def fresh_marked_actions(group: str, elements, exclusions: set[str], rng: random.Random):
+    retained = []
+    for _ in range(10000):
+        generators = (rng.choice(elements), rng.choice(elements))
+        graph = rooted_graph(group, generators)
+        fingerprint = graph_digest(graph)
+        if len(graph) != len(elements) or fingerprint in exclusions:
+            continue
+        exclusions.add(fingerprint)
+        retained.append((generators, graph, fingerprint))
+        if len(retained) == 6:
+            return retained
+    raise ValueError(f"Found only {len(retained)} eligible marked actions for {group}")
+
+
 def relator_panel(data: Path, output: Path) -> None:
-    rng = random.Random(2026112303)
     exclusions = {
         *[case["graph_digest"] for case in json.loads(OLD_PANEL.read_bytes())["cases"]],
         *[json.loads((data / f"{i:02}.json").read_bytes())["graph_sha"] for i in range(24)],
         *(graph_digest(rooted_graph(g, tuple(gens))) for g, gens in _GROUP_GENERATORS.items()),
     }
+    leaked_s5 = fresh_marked_actions("s5", _group_elements("s5"), exclusions, random.Random(2026112303))
+    rng = random.Random(2026112307)
+    a6 = [p for p in permutations(range(6)) if sum(x > y for i, x in enumerate(p) for y in p[i + 1 :]) % 2 == 0]
+    fresh = {
+        group: fresh_marked_actions(group, elements, exclusions, rng)
+        for group, elements in (("s5", _group_elements("s5")), ("a6", a6), ("z60", _group_elements("z60")))
+    }
     results = []
-    for group in ("s5", "a5", "z60"):
-        elements = _group_elements(group)
-        retained = 0
-        while retained < 6:
-            generators = (rng.choice(elements), rng.choice(elements))
-            graph = rooted_graph(group, generators)
-            fingerprint = graph_digest(graph)
-            if len(graph) != len(elements) or fingerprint in exclusions:
-                continue
-            exclusions.add(fingerprint)
+    for group, cases in fresh.items():
+        for generators, graph, fingerprint in cases:
             case_index = len(results)
             eval_rng = random.Random(93700 + case_index)
             visited: set[str] = set()
@@ -603,9 +616,7 @@ def relator_panel(data: Path, output: Path) -> None:
             ]
             strategies = {}
             for name, key in (("raw", pair_key), ("cancelled", cancelled_key), ("relator", relator_key)):
-                table = acquire_with_memo(
-                    len(elements), lambda a, b: walk_action(a, graph) == walk_action(b, graph), key
-                )
+                table = acquire_with_memo(len(graph), lambda a, b: walk_action(a, graph) == walk_action(b, graph), key)
                 if table["edges"] != [list(row) for row in graph]:
                     raise ValueError("An algebraic cache changed the recovered action")
                 if any(walk_action(w, table["edges"]) != y for w, y in samples):
@@ -614,9 +625,8 @@ def relator_panel(data: Path, output: Path) -> None:
             results.append(
                 dict(group=group, generators=generators, graph_sha=fingerprint, samples=samples, strategies=strategies)
             )
-            retained += 1
             print(group, case_index, {k: t["counts"] for k, t in strategies.items()}, flush=True)
-    save(output, {"seed": 2026112303, "results": results})
+    save(output, {"seed": 2026112307, "excluded_incomplete_s5": [row[2] for row in leaked_s5], "results": results})
 
 
 if __name__ == "__main__":
