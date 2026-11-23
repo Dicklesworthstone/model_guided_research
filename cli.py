@@ -7072,6 +7072,11 @@ def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any, *, input_h
     return float(torch.exp(loss).item())
 
 
+def _is_sizing_path(path: Path) -> bool:
+    parts = path.resolve().parts
+    return ("probes", "sizing") in zip(parts, parts[1:])
+
+
 def _eval_tropical_gamma_stats(model: Any) -> dict[str, float] | None:
     """Tropical routing margins recorded on the model's last forward: ``min``
     (the smallest margin over layers; with the certified 1-Lipschitz sup-norm
@@ -7440,7 +7445,9 @@ def eval_tasks(
                     in_range_max = seed_in_range_max if in_range_max is None else max(in_range_max, seed_in_range_max)
                 ppl_input_hash.update(json.dumps([eval_seed, "in_range", len(in_docs)]).encode())
                 ppl_in.append(
-                    stats_mod.mean(_eval_doc_perplexity(model, tok, d, device, input_hash=ppl_input_hash) for d in in_docs)
+                    stats_mod.mean(
+                        _eval_doc_perplexity(model, tok, d, device, input_hash=ppl_input_hash) for d in in_docs
+                    )
                 )
                 ppl_input_hash.update(json.dumps([eval_seed, "held_out", len(out_docs)]).encode())
                 ppl_out.append(
@@ -7761,6 +7768,7 @@ def eval_tasks(
             "run_id": resolved_run_id,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "evaluator": {"bos_prefixed": True},  # v4: prompts/docs carry the trainer's <|bos|>
+            "sizing_input": _is_sizing_path(artifacts_dir) or _is_sizing_path(checkpoint),
             # v5: the perturbation ladder of this run (empty = unperturbed only);
             # the engine's evaltasks variant selectors read these keys
             "perturbation": {
@@ -9739,12 +9747,15 @@ def _curve_groups(schema: str, meta: dict[str, Any]) -> _CurveGroups:
 
 
 def _curve_sources(artifacts_dir: Path, groups: _CurveGroups) -> _CurveSources:
-    eval_root = artifacts_dir / "evals" / "tasks"
+    root = artifacts_dir.resolve()
+    eval_root = (root / "evals" / "tasks").resolve()
+    if not eval_root.is_relative_to(root):
+        raise ValueError("Evaluation directory escaped the artifact root")
     sources: _CurveSources = {}
     for anchor, points, _ in groups.values():
         for run_id in [anchor, *points]:
             path = eval_root / run_id / "summary.json"
-            if not path.resolve().is_relative_to(eval_root.resolve()):
+            if not path.resolve().is_relative_to(eval_root):
                 raise ValueError(f"{run_id}: evaluation path escaped the artifact root")
             raw = path.read_bytes()
             data = json.loads(raw)
@@ -9884,8 +9895,10 @@ def _curve_results(schema: str, meta: dict[str, Any], groups: _CurveGroups, sour
         float_lo = max(curves["float_shallow"][0][0], curves["float_deep"][0][0])
         float_shallow, float_deep = (_curve_auc(curves[role], float_lo) for role in ("float_shallow", "float_deep"))
         result.update(
-            auc_float_shallow=float_shallow, auc_float_deep=float_deep,
-            float_depth_auc_absdev=abs(float_deep / float_shallow - 1.0), float_window_lo=float_lo,
+            auc_float_shallow=float_shallow,
+            auc_float_deep=float_deep,
+            float_depth_auc_absdev=abs(float_deep / float_shallow - 1.0),
+            float_window_lo=float_lo,
         )
     return result
 
@@ -9906,8 +9919,12 @@ def _curve_eval_protocol(data: dict[str, Any], task: str, run_id: str) -> tuple[
         raise ValueError(f"{run_id}: missing current eval schema or run identity")
     seeds, count = meta.get("seeds"), meta.get("examples_per_seed")
     if (
-        not isinstance(seeds, list) or not seeds or any(type(seed) is not int for seed in seeds)
-        or len(seeds) != len(set(seeds)) or type(count) is not int or count < 1
+        not isinstance(seeds, list)
+        or not seeds
+        or any(type(seed) is not int for seed in seeds)
+        or len(seeds) != len(set(seeds))
+        or type(count) is not int
+        or count < 1
     ):
         raise ValueError(f"{run_id}: invalid evaluation seeds or sample count")
     evaluator = _curve_object(meta.get("evaluator"), run_id)
@@ -9924,7 +9941,7 @@ def _curve_eval_protocol(data: dict[str, Any], task: str, run_id: str) -> tuple[
     return {
         "seeds": seeds,
         "examples_per_seed": count,
-        "dials": meta.get("dials") or {},
+        "dials": _curve_object(meta.get("dials") or {}, run_id),
         "device": device.partition(":")[0],
     }, split
 
@@ -9933,16 +9950,22 @@ def _curve_checkpoint(data: dict[str, Any], run_id: str, seed: int) -> tuple[dic
     checkpoint = _curve_object(_curve_object(data.get("meta"), run_id).get("checkpoint"), run_id)
     lineage = _curve_object(checkpoint.get("lineage"), run_id)
     training = dict(
-        seed=checkpoint.get("training_seed"), run_id=lineage.get("run_id"),
-        step=checkpoint.get("step"), weights_sha256=checkpoint.get("weights_sha256"),
+        seed=checkpoint.get("training_seed"),
+        run_id=lineage.get("run_id"),
+        step=checkpoint.get("step"),
+        weights_sha256=checkpoint.get("weights_sha256"),
     )
     if (
-        type(training["seed"]) is not int or training["seed"] != seed
-        or not isinstance(training["run_id"], str) or not training["run_id"].strip()
-        or type(training["step"]) is not int or training["step"] < 0
+        type(training["seed"]) is not int
+        or training["seed"] != seed
+        or not isinstance(training["run_id"], str)
+        or not training["run_id"].strip()
+        or type(training["step"]) is not int
+        or training["step"] < 0
         or not re.fullmatch(r"[0-9a-f]{64}", str(training["weights_sha256"]))
     ):
         raise ValueError(f"{run_id}: checkpoint digest, training seed, run ID and step must match the pairing")
+    _curve_object(checkpoint.get("budget"), run_id)
     budget = _adj_planned_flops({"schema": "evaltasks", "data": data})
     if budget is None or not math.isfinite(budget) or budget <= 0.0:
         raise ValueError(f"{run_id}: missing planned training FLOPs")
@@ -9991,12 +10014,16 @@ def _curve_identity(meta: dict[str, Any], groups: _CurveGroups, sources: _CurveS
                     raise ValueError(f"{run_id}: float sweep requires 2–16 bits")
                 sweep.append(value)
             model.pop("ca_init_seed", None)
-            configs.add(_curve_json({
-                "model": model,
-                "planned_flops": budget,
-                "optimizer": checkpoint.get("optimizer_type"),
-                "scheduler": checkpoint.get("scheduler_type"),
-            }))
+            configs.add(
+                _curve_json(
+                    {
+                        "model": model,
+                        "planned_flops": budget,
+                        "optimizer": checkpoint.get("optimizer_type"),
+                        "scheduler": checkpoint.get("scheduler_type"),
+                    }
+                )
+            )
         if len(configs) != 1:
             raise ValueError(f"{role}: mixtures of training or model settings within a sweep are ineligible")
         roles[role] = {**json.loads(configs.pop()), "sweep": sorted(sweep)}
@@ -10011,7 +10038,9 @@ def _curve_identity(meta: dict[str, Any], groups: _CurveGroups, sources: _CurveS
         raise ValueError("Curve arms use different model widths or sequence coordinates")
     if "digit" in roles and roles["digit"]["model"].get("n_layer") != roles["float"]["model"].get("n_layer"):
         raise ValueError("Precision curve arms must be at the same depth")
-    design = dict(task=task, window_hi=meta.get("window_hi", 1.0), evaluation=json.loads(input_protocols.pop()), roles=roles)
+    design = dict(
+        task=task, window_hi=meta.get("window_hi", 1.0), evaluation=json.loads(input_protocols.pop()), roles=roles
+    )
     return {
         "curve_design": design,
         "curve_cohort": hashlib.sha256(_curve_json(design).encode()).hexdigest(),
@@ -10020,18 +10049,20 @@ def _curve_identity(meta: dict[str, Any], groups: _CurveGroups, sources: _CurveS
     }
 
 
-def _curve_capture(
-    artifacts_dir: Path, schema: str, meta: dict[str, Any]
-) -> tuple[dict[str, Any], dict[str, Any]]:
+def _curve_capture(artifacts_dir: Path, schema: str, meta: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     groups = _curve_groups(schema, meta)
     sources = _curve_sources(artifacts_dir, groups)
     results = _curve_results(schema, meta, groups, sources)
     proof: dict[str, Any] = {
         "eval_sha256": {run: sha for run, (_, _, sha) in sources.items()},
-        "curve_design": None, "curve_cohort": None, "curve_split_sha256": None, "curve_trainings": None,
+        "curve_design": None,
+        "curve_cohort": None,
+        "curve_split_sha256": None,
+        "curve_trainings": None,
     }
     try:
         proof.update(_curve_identity(meta, groups, sources))
+        console.print(f"[dim]Curve cohort[/dim] {proof['curve_cohort']}")
     except ValueError as exc:
         console.print(f"[yellow]Exploratory curve only[/yellow] · {exc}")
     return proof, results
@@ -10081,8 +10112,13 @@ def precision_curve(
     from nanochat.report import build_provenance
 
     spec = dict(
-        task=task, seed=seed, digit_runs=digit_run, float_runs=float_run,
-        digit_full=digit_full, float_full=float_full, window_hi=window_hi,
+        task=task,
+        seed=seed,
+        digit_runs=digit_run,
+        float_runs=float_run,
+        digit_full=digit_full,
+        float_full=float_full,
+        window_hi=window_hi,
     )
     proof, results = _curve_capture(artifacts_dir, _PRECISION_CURVE_SCHEMA, spec)
     auc_digit, auc_float = results["auc_digit"], results["auc_float"]
@@ -10180,9 +10216,16 @@ def depth_curve(
     from nanochat.report import build_provenance
 
     spec = dict(
-        task=task, seed=seed, shallow_runs=shallow_run, deep_runs=deep_run,
-        shallow_full=shallow_full, deep_full=deep_full, float_shallow_runs=float_shallow_run or [],
-        float_deep_runs=float_deep_run or [], float_shallow_full=float_shallow_full, float_deep_full=float_deep_full,
+        task=task,
+        seed=seed,
+        shallow_runs=shallow_run,
+        deep_runs=deep_run,
+        shallow_full=shallow_full,
+        deep_full=deep_full,
+        float_shallow_runs=float_shallow_run or [],
+        float_deep_runs=float_deep_run or [],
+        float_shallow_full=float_shallow_full,
+        float_deep_full=float_deep_full,
     )
     proof, results = _curve_capture(artifacts_dir, _DEPTH_CURVE_SCHEMA, spec)
     n_shallow, n_deep = results["n_layer_shallow"], results["n_layer_deep"]
@@ -10236,13 +10279,13 @@ def depth_curve(
     ]
     if have_float:
         md.append(
-            f"- float diagnostic AUC {float_results['auc_float_shallow']:.4f} vs "
-            f"{float_results['auc_float_deep']:.4f} -> absdev {float_results['float_depth_auc_absdev']:.4f}"
+            f"- float diagnostic AUC {results['auc_float_shallow']:.4f} vs "
+            f"{results['auc_float_deep']:.4f} -> absdev {results['float_depth_auc_absdev']:.4f}"
         )
     md += ["", "| arm | depth | fraction | quality |", "|---|---|---|---|"]
-    for name, nl, curve in (("digit", n_shallow, curve_shallow), ("digit", n_deep, curve_deep)):
-        for f, q in curve:
-            md.append(f"| {name} | L{nl} | {f:.3f} | {q:.4f} |")
+    for depth, key in ((n_shallow, "curve_digit_shallow"), (n_deep, "curve_digit_deep")):
+        for point in results[key]:
+            md.append(f"| digit | L{depth} | {point['fraction']:.3f} | {point['quality']:.4f} |")
     (run_dir / "run.md").write_text("\n".join(md) + "\n")
     console.print(f"[bold green]Wrote depth-curve artifacts[/bold green] → {run_dir}")
 
@@ -13014,6 +13057,54 @@ def _adj_revision_error(root: Path, anchor: str, revision: str, head: str) -> st
     return None
 
 
+def _adj_curve_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str, revision: str) -> str | None:
+    data = art["data"]
+    schema = data["schema_version"]
+    directory = "precision_curves" if schema == _PRECISION_CURVE_SCHEMA else "depth_curves"
+    path = Path(art["path"]).resolve()
+    if path.name != "summary.json" or path.parent.parent.name != directory or path.parent.parent.parent.name != "bench":
+        return "missing_input_lineage"
+    meta = data.get("meta")
+    if not isinstance(meta, dict) or not isinstance(meta.get("eval_sha256"), dict):
+        return "missing_input_lineage"
+    try:
+        groups = _curve_groups(schema, meta)
+        sources = _curve_sources(path.parents[3], groups)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return "missing_input_lineage"
+    recorded = meta["eval_sha256"]
+    if set(recorded) != set(sources) or any(
+        not isinstance(recorded[rid], str) or not hmac.compare_digest(recorded[rid], sha)
+        for rid, (_, _, sha) in sources.items()
+    ):
+        return "curve_input_digest_mismatch"
+    try:
+        identity = _curve_identity(meta, groups, sources)
+        if any(_curve_json(meta.get(key)) != _curve_json(value) for key, value in identity.items()):
+            return "curve_input_identity_mismatch"
+        outputs = _curve_results(schema, meta, groups, sources)
+        if _curve_json(outputs) != _curve_json(data.get("results")):
+            return "curve_result_mismatch"
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return "invalid_curve_protocol"
+    for source_path, evaluation, _ in sources.values():
+        if _is_sizing_path(source_path) or evaluation["meta"].get("sizing_input") is True:
+            return "quarantined_input"
+        if not isinstance(evaluation.get("provenance"), dict):
+            return "missing_input_lineage"
+        error = _adj_lineage_error({"schema": "evaltasks", "data": evaluation, "path": source_path}, root, anchor, head)
+        if error:
+            return error
+        eval_revision = evaluation["provenance"]["git_sha"]
+        if _adj_git(root, "merge-base", "--is-ancestor", eval_revision, revision) is None:
+            return "input_revision_after_or_divergent_from_curve"
+    for full, sweep, _ in groups.values():
+        anchor_provenance = sources[full][1]["train_provenance"]
+        if any(sources[rid][1]["train_provenance"] != anchor_provenance for rid in sweep):
+            return "curve_input_identity_mismatch"
+    return None
+
+
 def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) -> str | None:
     data = art["data"]
     if art["schema"] == "certify":
@@ -13032,6 +13123,8 @@ def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) 
         registered_blob = _adj_git(root, "rev-parse", "--verify", f"{anchor}:{path.relative_to(root)}")
         if registered_blob and registered_blob == _adj_git(root, "hash-object", str(path)):
             return "present_at_registration"
+    if data.get("schema_version") in _CURVE_SCHEMAS:
+        return _adj_curve_lineage_error(art, root, anchor, head, str(revision))
     is_route = data.get("schema_version") == ROUTE_BENCH_SCHEMA_VERSION
     if art["schema"] in ("evaltasks", "chargeprobe") or is_route:
         meta = data.get("meta") or {}
@@ -13150,6 +13243,15 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
             eligible.append(art)  # retain the statistics engine's specific taint / missing-metric refusals
             continue
         error = _adj_lineage_error(art, root, anchor, head)
+        if error is None and art["data"].get("schema_version") in _CURVE_SCHEMAS:
+            # Legacy curve claims describe their coordinates in prose. A new
+            # prospectively registered selector must identify this exact design.
+            cohort = (art["data"].get("meta") or {}).get("curve_cohort")
+            if not any(
+                isinstance(v, dict) and v.get("curve_cohort") == cohort and _adj_artifact_matches_arm(art, m, v)
+                for m, v in selectors
+            ):
+                error = "curve_coordinate_unregistered"
         if error:
             excluded.append({"path": art["path"], "reason_code": error})
         else:
@@ -13324,6 +13426,23 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
             base = _adj_dedupe_evaltasks(base)
         cand_m = [a for a in cand if _adj_observations(a, dotted)]
         base_m = [a for a in base if _adj_observations(a, dotted)]
+        if schema == "bench":
+            curve_inputs = [
+                a["data"]["meta"]["curve_split_sha256"]
+                for a in cand_m + base_m
+                if a["data"].get("schema_version") in _CURVE_SCHEMAS
+            ]
+            if len(set(curve_inputs)) > 1:
+                return {
+                    "id": hid,
+                    "verdict": "blocked",
+                    "reason_code": "mixed_curve_splits",
+                    "mechanism": mech,
+                    "reason": "The selected curves use different scored documents or token streams.",
+                }
+            if curve_inputs:
+                cand_m = _adj_distinct_curve_pairs(cand_m)
+                base_m = _adj_distinct_curve_pairs(base_m)
         if cand_m and base_m and schema in {"train", "evaltasks"} and ((mech == "hoss") != (eff_base_mech == "hoss")):
             return {
                 "id": hid,

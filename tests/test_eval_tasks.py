@@ -19,7 +19,10 @@ import hmac
 import json
 import os
 import platform
+import shutil
 import socket
+import subprocess
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -437,6 +440,302 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
         assert hmac.compare_digest(rounded_checkpoint["weights_sha256"], checkpoint["weights_sha256"])
         assert rounded_checkpoint["training_seed"] == checkpoint["training_seed"]
         assert rounded_checkpoint["model_overrides"] == {"eval_weight_quant_bits": 4}
+
+
+@pytest.mark.slow
+def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monkeypatch):
+    """Exercise real weights and all three public command stages in clean Git history."""
+    from typer.testing import CliRunner
+
+    import cli as mgr_cli
+    from nanochat.checkpoint_manager import save_checkpoint
+    from nanochat.gpt import GPT, GPTConfig
+    from nanochat.report import build_provenance
+    from nanochat.tokenizer import HuggingFaceTokenizer
+
+    runner = CliRunner()
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(workspace), *args], text=True).strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Curve control")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    git("commit", "-qm", "Before curve registration", "--allow-empty")
+    before = git("rev-parse", "HEAD")
+    tokenizer = HuggingFaceTokenizer.train_from_iterator(
+        ["2 + 3 = 5", "4 + 6 = 10", "1 + 1 = 2", "11 + 9 = 20"] * 16, 300
+    )
+    configs = {
+        role: GPTConfig(
+            sequence_len=64,
+            vocab_size=320,
+            n_layer=depth,
+            n_head=2,
+            n_kv_head=2,
+            n_embd=32,
+            attention_type=kind,
+            ultrametric_hard_digits=kind == "ultrametric",
+        )
+        for role, kind, depth in (("std", "standard", 1), ("small", "ultrametric", 1), ("deep", "ultrametric", 2))
+    }
+    knobs = {
+        "std": ("eval_weight_quant_bits", 4),
+        "small": ("ultrametric_digits_k", 2),
+        "deep": ("ultrametric_digits_k", 2),
+    }
+    planned_flops = 100_000_000.0
+
+    def cohort(mapping):
+        roles = {}
+        for label, config_name in mapping.items():
+            model = asdict(configs[config_name])
+            knob, value = knobs[config_name]
+            del model[knob], model["ca_init_seed"]
+            roles[label] = dict(
+                model=model, sweep=[value], planned_flops=planned_flops, optimizer="adamw", scheduler="none"
+            )
+        design = dict(
+            task="arith",
+            window_hi=1.0,
+            evaluation=dict(seeds=[0], examples_per_seed=2, dials={}, device="cpu"),
+            roles=roles,
+        )
+        return hashlib.sha256(json.dumps(design, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    claims = [
+        ("precision", "auc_ratio", cohort({"digit": "small", "float": "std"})),
+        ("depth", "digit_depth_auc_absdev", cohort({"shallow": "small", "deep": "deep"})),
+    ]
+    hypotheses = [
+        dict(
+            id=f"hyp-curve-{kind}-control",
+            statement=f"Verify {kind} reader on tiny checkpoint controls",
+            mechanisms=["ultrametric"],
+            source=dict(kind="human", provenance="test fixture"),
+            date_registered="2026-01-01",
+            status="open",
+            evidence=[],
+            verdict_history=[],
+            prediction=dict(
+                metric_path=f"bench:results.{metric}",
+                comparator=">=",
+                threshold=-100.0,
+                threshold_kind="absolute_delta",
+                baseline=None,
+                min_seeds=2,
+                candidate_variant={"curve_cohort": coordinate},
+            ),
+        )
+        for kind, metric, coordinate in claims
+    ]
+    registry = workspace / "hypotheses" / "registry.yaml"
+    registry.parent.mkdir()
+    registry.write_text(json.dumps(dict(schema_version=1, hypotheses=hypotheses)))
+    git("add", "hypotheses/registry.yaml")
+    git("commit", "-qm", "Register both curve controls")
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(mgr_cli, "_research_workspace", lambda: workspace)
+    artifacts = tmp_path / "original"
+
+    def cli(*args, **options):
+        cmd = list(args)
+        for name, value in options.items():
+            cmd.extend([f"--{name.replace('_', '-')}", str(value)])
+        result = runner.invoke(mgr_cli.app, cmd)
+        assert result.exit_code == 0, (result.output, result.exception)
+
+    def read_json(path):
+        return json.loads(path.read_bytes())
+
+    def save_json(path, value):
+        path.write_text(json.dumps(value) + "\n")
+
+    for seed in (10, 11):
+        for role, config in configs.items():
+            torch.manual_seed(seed)
+            model = GPT(config)
+            model.init_weights()
+            tokens = tokenizer.encode("2 + 3 = 5", prepend=tokenizer.get_bos_token_id())
+            sequence = torch.tensor([tokens])
+            optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+            model(sequence[:, :-1], targets=sequence[:, 1:]).backward()
+            optimizer.step()
+            checkpoint = tmp_path / "weights" / f"{role}-{seed}" / "checkpoints"
+            checkpoint.mkdir(parents=True)
+            tokenizer.save(str(checkpoint / "tokenizer"))
+            save_checkpoint(
+                str(checkpoint),
+                1,
+                model.state_dict(),
+                None,
+                dict(
+                    model_config=asdict(config),
+                    optimizer_type="adamw",
+                    scheduler_type="none",
+                    seed=seed,
+                    tokenizer={"kind": "task", "dir": "tokenizer"},
+                    budget={"target_flops": planned_flops},
+                    lineage={"run_id": f"{role}-{seed}", "parent_run_ids": []},
+                ),
+                rank=0,
+            )
+            save_json(
+                checkpoint.parent / "summary.json", {"provenance": build_provenance({"seed": seed, "role": role})}
+            )
+            for label, flags in (("full", []), ("point", ["--model-override", f"{knobs[role][0]}={knobs[role][1]}"])):
+                cli(
+                    "eval-tasks",
+                    *flags,
+                    checkpoint=checkpoint,
+                    task="arith",
+                    examples=2,
+                    seeds=0,
+                    artifacts_dir=artifacts,
+                    run_id=f"{role}-{seed}-{label}",
+                )
+
+    def produce(root, kind, seed, run_id, qualified=True):
+        roles = (
+            (("digit", "small"), ("float", "std")) if kind == "precision" else (("shallow", "small"), ("deep", "deep"))
+        )
+        inputs = {
+            f"{label}_{option}": f"{name}-{seed}-{suffix}"
+            for label, name in roles
+            for option, suffix in (("full", "full"), ("run", "point"))
+        }
+        cli(f"{kind}-curve", task="arith", seed=seed, artifacts_dir=root, run_id=run_id, **inputs)
+        result = root / "bench" / f"{kind}_curves" / run_id / "summary.json"
+        expected = next(hash_value for name, _, hash_value in claims if name == kind)
+        actual = read_json(result)["meta"]["curve_cohort"]
+        if qualified:
+            assert isinstance(actual, str) and hmac.compare_digest(actual, expected)
+        else:
+            assert actual is None
+        return result
+
+    for kind, _, _ in claims:
+        for seed in (10, 11):
+            produce(artifacts, kind, seed, f"{kind}-{seed}")
+    portable = tmp_path / "relocated"
+    shutil.copytree(artifacts, portable)
+
+    def adjudicate(kind, root, name):
+        cli(
+            "adjudicate",
+            "--dry-run",
+            hypothesis=f"hyp-curve-{kind}-control",
+            artifacts=root,
+            artifacts_dir=tmp_path / "reports",
+            run_id=name,
+        )
+        report = read_json(tmp_path / "reports" / "adjudications" / name / "verdicts.json")
+        return report["verdicts"][0]
+
+    for kind, _, _ in claims:
+        verdict = adjudicate(kind, portable, kind)
+        assert verdict["verdict"] == "supported" and verdict["arms"]["ultrametric"]["n_candidate"] == 2
+        assert all(str(portable) in path for path in verdict["artifacts"])
+
+    # Copies and relabeling may change the output location, but cannot add training units.
+    repeats = tmp_path / "repeats"
+    shutil.copytree(portable / "evals", repeats / "evals")
+    for label in ("one", "copy", "relabeled"):
+        produce(repeats, "precision", 10, label)
+    assert adjudicate("precision", repeats, "copies")["reason_code"] == "insufficient_seeds"
+    # A relabeled seed and run still share the exact loaded weight digests.
+    for role in ("small", "std"):
+        for suffix in ("full", "point"):
+            prefix = repeats / "evals" / "tasks"
+            data = read_json(prefix / f"{role}-10-{suffix}" / "summary.json")
+            new_id = f"{role}-12-{suffix}"
+            data["meta"]["run_id"] = new_id
+            data["meta"]["checkpoint"]["training_seed"] = 12
+            data["meta"]["checkpoint"]["lineage"]["run_id"] = f"{role}-12"
+            dest = prefix / new_id / "summary.json"
+            dest.parent.mkdir()
+            save_json(dest, data)
+    produce(repeats, "precision", 12, "same-weights-new-seed")
+    assert adjudicate("precision", repeats, "weight-alias")["reason_code"] == "insufficient_seeds"
+
+    # The producer accepts a new digest for an older but otherwise identical source.
+    # Only the adjudicator can check it against the registration in Git.
+    for field in ("train_provenance", "provenance"):
+        older = tmp_path / field
+        shutil.copytree(portable / "evals", older / "evals")
+        old_point = older / "evals" / "tasks" / "small-10-point" / "summary.json"
+        data = read_json(old_point)
+        data[field]["git_sha"] = before
+        save_json(old_point, data)
+        produce(older, "precision", 10, "pre-registration")
+        assert adjudicate("precision", older, field)["excluded_evidence"][0]["reason_code"] == "pre_registration"
+
+    sizing = tmp_path / "sizing"
+    shutil.copytree(portable / "evals", sizing / "evals")
+    sizing_point = sizing / "evals" / "tasks" / "small-10-point" / "summary.json"
+    data = read_json(sizing_point)
+    data["meta"]["sizing_input"] = True
+    save_json(sizing_point, data)
+    produce(sizing, "precision", 10, "quarantined")
+    assert adjudicate("precision", sizing, "copied-sizing")["excluded_evidence"][0]["reason_code"] == "quarantined_input"
+
+    missing = tmp_path / "without-evaluations"
+    shutil.copytree(portable / "bench", missing / "bench")
+    errors = adjudicate("precision", missing, "missing-companions")["excluded_evidence"]
+    assert len(errors) == 2 and {row["reason_code"] for row in errors} == {"missing_input_lineage"}
+
+    curve = portable / "bench" / "precision_curves" / "precision-10" / "summary.json"
+    legacy = tmp_path / "legacy" / "bench" / "precision_curves" / "old" / "summary.json"
+    legacy.parent.mkdir(parents=True)
+    data = read_json(curve)
+    data["schema_version"] = "mgr.bench.precision_curves.v1"
+    save_json(legacy, data)
+    assert adjudicate("precision", tmp_path / "legacy", "older-schema")["excluded_evidence"][0]["reason_code"] == (
+        "missing_input_lineage"
+    )
+
+    invalid = tmp_path / "invalid"
+    shutil.copytree(portable / "evals", invalid / "evals")
+    invalid_point = invalid / "evals" / "tasks" / "small-10-point" / "summary.json"
+    baseline_point = read_json(invalid_point)
+    for label, path, value in (
+        ("weights", ("meta", "checkpoint", "weights_sha256"), "f" * 64),
+        ("seed", ("meta", "checkpoint", "training_seed"), 99),
+        ("arm", ("meta", "checkpoint", "attention_type"), "standard"),
+        ("depth", ("meta", "checkpoint", "model_config", "n_layer"), 7),
+        ("extra-override", ("meta", "checkpoint", "model_overrides"), {"ultrametric_digits_k": 2, "n_layer": 1}),
+        ("split", ("tasks", "arith", "perplexity_input_sha256"), "b" * 64),
+        ("eval-seed", ("meta", "seeds"), [3]),
+    ):
+        data = json.loads(json.dumps(baseline_point))
+        node = data
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+        save_json(invalid_point, data)
+        produce(invalid, "precision", 10, label, qualified=False)
+    forged = invalid / "bench" / "precision_curves" / "eval-seed" / "summary.json"
+    data = read_json(forged)
+    data["meta"]["curve_cohort"] = claims[0][2]
+    save_json(forged, data)
+    assert adjudicate("precision", invalid, "forged-cohort")["excluded_evidence"][0]["reason_code"] == (
+        "invalid_curve_protocol"
+    )
+
+    data = read_json(curve)
+    data["results"]["auc_ratio"] += 0.25
+    save_json(curve, data)
+    assert adjudicate("precision", portable, "forged")["excluded_evidence"][0]["reason_code"] == "curve_result_mismatch"
+
+    control_point = portable / "evals" / "tasks" / "small-11-point" / "summary.json"
+    data = read_json(control_point)
+    data["tasks"]["arith"]["perplexity"]["in_range"] += 0.25
+    save_json(control_point, data)
+    reasons = {row["reason_code"] for row in adjudicate("precision", portable, "changed-input")["excluded_evidence"]}
+    assert reasons == {"curve_result_mismatch", "curve_input_digest_mismatch"}
 
 
 @pytest.mark.slow

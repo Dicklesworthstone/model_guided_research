@@ -137,7 +137,7 @@ def test_supported_when_ci_clears_threshold(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v11"
+    assert v["policy_version"] == "ci-v12"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v11"
+    assert v["policy_version"] == "ci-v12"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
@@ -690,8 +690,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v11"
-    assert first["policy_version"] == "ci-v11" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v12"
+    assert first["policy_version"] == "ci-v12" and first["artifacts"]
     assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
@@ -980,7 +980,7 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v11"
+    assert v["policy_version"] == "ci-v12"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -1129,7 +1129,7 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v11"
+    assert v["policy_version"] == "ci-v12"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
