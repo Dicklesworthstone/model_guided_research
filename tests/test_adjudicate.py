@@ -137,7 +137,7 @@ def test_supported_when_ci_clears_threshold(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v8"
+    assert v["policy_version"] == "ci-v9"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v8"
+    assert v["policy_version"] == "ci-v9"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
@@ -360,6 +360,39 @@ def test_train_schema_arm_detection(tmp_path):
     hyp["mechanisms"] = ["standard"]
     hyp["prediction"]["baseline"]["mechanism"] = "hoss"
     assert _adj_score_cohort(hyp, _index(tmp_path))["reason_code"] == "optimizer_compute_unmeasured"
+
+
+def test_checkpoint_training_axes_and_task_are_selected_before_deduplication(tmp_path):
+    for arm, optimizer, scheduler in (
+        ("standard", "adamw", "none"),
+        ("hoss", "hoss", "none"),
+        ("ordinal", "adamw", "ordinal"),
+    ):
+        for task in ("regime", "placebo"):
+            path = _evaltasks_artifact(
+                tmp_path,
+                f"{arm}-{task}",
+                mechanism="standard",
+                task=task,
+                per_seed=[0.50],
+                run_id="seed_0",
+                generated_at="2026-11-22T01:00:00Z" if task == "placebo" else "2026-11-22T00:00:00Z",
+            )
+            raw = json.loads(path.read_text())
+            raw["meta"]["checkpoint"].update(optimizer_type=optimizer, scheduler_type=scheduler)
+            path.write_text(json.dumps(raw))
+    hypothesis = _hyp({"metric_path": "evaltasks:tasks.regime.exact_match.greedy.held_out.mean"}, mechanisms=["hoss"])
+    artifacts = _index(tmp_path)
+    assert _adj_score_cohort(hypothesis, artifacts)["reason_code"] == "optimizer_compute_unmeasured"
+    for artifact in artifacts:
+        matches = [arm for arm in ("hoss", "ordinal", "standard") if cli._adj_artifact_matches_arm(artifact, arm)]
+        assert matches == [Path(artifact["path"]).parent.name.split("-")[0]]
+        checkpoint = artifact["data"]["meta"]["checkpoint"]
+        del checkpoint["scheduler_type"]
+        assert not cli._adj_artifact_matches_arm(artifact, "ordinal")
+        assert not cli._adj_artifact_matches_arm(artifact, "standard", required_axis="scheduler")
+        del checkpoint["optimizer_type"]
+        assert not cli._adj_artifact_matches_arm(artifact, "standard", required_axis="optimizer")
 
 
 def test_train_variant_selector_resolves_dataset_task(tmp_path):
@@ -633,8 +666,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v8"
-    assert first["policy_version"] == "ci-v8" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v9"
+    assert first["policy_version"] == "ci-v9" and first["artifacts"]
     assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
@@ -921,7 +954,7 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v8"
+    assert v["policy_version"] == "ci-v9"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -1044,7 +1077,7 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v8"
+    assert v["policy_version"] == "ci-v9"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):

@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v8`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v9`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -158,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v8`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v9`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -183,10 +183,17 @@ at width 32 and depth 2, AdamW and HOSS both received an estimate of 11,796,480
 FLOPs and started at loss 4.8520303. PyTorch counted 39 matrix multiplies and
 12 batched matrix multiplies for AdamW, versus 825 and 252 for HOSS. The extra
 work comes from differentiating gradients during the optimizer step. These
-operator counts measure this particular configuration. Policy `ci-v8` refuses
+operator counts measure this particular configuration. Since `ci-v8` the engine refuses
 mixed HOSS and first-order comparisons from training or task-eval summaries
 with `optimizer_compute_unmeasured` when both arms carry the registered
 metric. Bead `sequ` tracks calibration across ranks and architectures.
+
+Policy `ci-v9` selects the registered evaluation task before choosing among
+repeat measurements. Scorecard cells reuse names such as `seed_0` across
+tasks. Selecting the newest file first could replace a regime measurement
+with a later placebo measurement. Optimizer and scheduler comparisons require
+checkpoint metadata identifying the relevant axis on both arms. Each new
+evaluation carries the training optimizer and scheduler forward.
 
 #### November 2026 historical replay
 

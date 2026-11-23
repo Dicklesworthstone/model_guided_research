@@ -7754,6 +7754,8 @@ def eval_tasks(
                 "dir": str(checkpoint),
                 "step": resolved_step,
                 "attention_type": ckpt_meta.get("model_config", {}).get("attention_type"),
+                "optimizer_type": ckpt_meta.get("optimizer_type"),
+                "scheduler_type": ckpt_meta.get("scheduler_type"),
                 "n_params": n_params,
                 "budget": ckpt_meta.get("budget"),
                 "lineage": ckpt_meta.get("lineage"),
@@ -9616,6 +9618,8 @@ def probe_charges(
                 "step": resolved_step,
                 "attention_type": model_cfg.get("attention_type"),
                 "braid_crossing_law": model_cfg.get("braid_crossing_law"),
+                "optimizer_type": ckpt_meta.get("optimizer_type"),
+                "scheduler_type": ckpt_meta.get("scheduler_type"),
                 "n_params": sum(p.numel() for p in model.parameters()),
                 "budget": ckpt_meta.get("budget"),
                 "lineage": ckpt_meta.get("lineage"),
@@ -12034,7 +12038,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v8"
+_ADJ_POLICY_VERSION = "ci-v9"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12167,22 +12171,6 @@ _ADJ_POWER_FLOOR = (
 )
 _ADJ_POWER_TARGET = 0.8  # the n_for_80pct column solves for this
 _ADJ_FDR_Q = 0.10  # Benjamini-Hochberg level for the ledger-family headline (ci-v4)
-_ADJ_ATTENTION_MECHS = frozenset(
-    {
-        "standard",
-        "tropical",
-        "ultrametric",
-        "simplicial",
-        "quaternion",
-        "braid",
-        "fractal",
-        "octonion",
-        "surreal",
-        "reversible",
-        "gauge",
-        "hyperbolic",
-    }
-)
 
 _ADJ_BLOCK_REASONS = {
     "prediction_not_operationalized": "prediction is null; operationalization_note names the blocker",
@@ -12335,7 +12323,9 @@ def _adj_variant_matches(art: dict[str, Any], variant: dict[str, Any] | None) ->
     return True
 
 
-def _adj_artifact_matches_arm(art: dict[str, Any], mechanism: str, variant: dict[str, Any] | None = None) -> bool:
+def _adj_artifact_matches_arm(
+    art: dict[str, Any], mechanism: str, variant: dict[str, Any] | None = None, *, required_axis: str | None = None
+) -> bool:
     """Arm membership: an arm changes exactly ITS axis from the all-defaults
     baseline (attention standard, scheduler none, optimizer non-hoss); an
     optional variant selector further restricts within the mechanism."""
@@ -12353,19 +12343,23 @@ def _adj_artifact_matches_arm(art: dict[str, Any], mechanism: str, variant: dict
         # (bhjf - previously selectors were silently ignored here)
         return bool(data.get("mechanism") == mechanism) and _adj_variant_matches(art, variant)
     if art["schema"] in ("evaltasks", "chargeprobe"):
-        attn = ((data.get("meta") or {}).get("checkpoint") or {}).get("attention_type")
-        return attn == (mechanism if mechanism in _ADJ_ATTENTION_MECHS else "standard") and _adj_variant_matches(
-            art, variant
-        )
-    config = data.get("config") or {}
-    hparams = data.get("hparams") or {}
-    attn = config.get("attention_type")
-    sched = hparams.get("scheduler_type", "none")
-    opt = config.get("optimizer_type", "adamw")
+        checkpoint = (data.get("meta") or {}).get("checkpoint") or {}
+        config = checkpoint.get("model_config") or {}
+        attn = checkpoint.get("attention_type")
+        sched = checkpoint.get("scheduler_type") or config.get("scheduler_type")
+        opt = checkpoint.get("optimizer_type") or config.get("optimizer_type")
+        if (required_axis == "scheduler" and sched is None) or (required_axis == "optimizer" and opt is None):
+            return False
+    else:
+        config = data.get("config") or {}
+        hparams = data.get("hparams") or {}
+        attn = config.get("attention_type")
+        sched = hparams.get("scheduler_type", "none")
+        opt = config.get("optimizer_type", "adamw")
     if mechanism == "ordinal":
-        return attn == "standard" and sched == "ordinal" and _adj_variant_matches(art, variant)
+        return attn == "standard" and sched == "ordinal" and opt != "hoss" and _adj_variant_matches(art, variant)
     if mechanism == "hoss":
-        return attn == "standard" and opt == "hoss" and _adj_variant_matches(art, variant)
+        return attn == "standard" and opt == "hoss" and sched != "ordinal" and _adj_variant_matches(art, variant)
     return attn == mechanism and sched != "ordinal" and opt != "hoss" and _adj_variant_matches(art, variant)
 
 
@@ -12989,11 +12983,21 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
     # adjudicate; the overall verdict is the worst case across arms.
     for mech in hyp.get("mechanisms") or []:
         eff_base_mech = mech if baseline_mech == "same" else baseline_mech
-        cand_all = [a for a in pool if _adj_artifact_matches_arm(a, mech, cand_variant)]
-        base_all = [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, eff_base_mech, base_variant)]
+        contrast = {mech, eff_base_mech}
+        required_axis = "scheduler" if "ordinal" in contrast else "optimizer" if "hoss" in contrast else None
+        cand_all = [a for a in pool if _adj_artifact_matches_arm(a, mech, cand_variant, required_axis=required_axis)]
+        base_all = (
+            []
+            if single_arm
+            else [
+                a
+                for a in pool
+                if _adj_artifact_matches_arm(a, eff_base_mech, base_variant, required_axis=required_axis)
+            ]
+        )
         saw_tainted = saw_tainted or any(a["tainted"] for a in cand_all + base_all)
-        cand = _adj_dedupe_evaltasks([a for a in cand_all if not a["tainted"]])
-        base = _adj_dedupe_evaltasks([a for a in base_all if not a["tainted"]])
+        cand = [a for a in cand_all if not a["tainted"]]
+        base = [a for a in base_all if not a["tainted"]]
         if not cand:
             code = "tainted_evidence" if cand_all else "no_candidate_artifacts"
             return {
@@ -13014,8 +13018,14 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
             }
         # qualifying = carries the registered metric (keeps evidence lists
         # honest: an arith-trained model's eval cannot witness a hier claim)
-        cand_m = [a for a in cand if _adj_observations(a, dotted)]
-        base_m = [a for a in base if _adj_observations(a, dotted)]
+        if schema == "evaltasks" and dotted.startswith("tasks."):
+            # Scorecards reuse seed_N across training tasks. A newer evaluation
+            # of another task cannot replace a measurement of the registered one.
+            task_name = dotted.split(".", 2)[1]
+            cand = [a for a in cand if task_name in (a["data"].get("tasks") or {})]
+            base = [a for a in base if task_name in (a["data"].get("tasks") or {})]
+        cand_m = [a for a in _adj_dedupe_evaltasks(cand) if _adj_observations(a, dotted)]
+        base_m = [a for a in _adj_dedupe_evaltasks(base) if _adj_observations(a, dotted)]
         if cand_m and base_m and schema in {"train", "evaltasks"} and ((mech == "hoss") != (eff_base_mech == "hoss")):
             return {
                 "id": hid,
