@@ -17,7 +17,7 @@
 
 ### Genesis: AI as Mathematical Research Partner
 
-This repository emerged from a remarkable experiment in AI-guided mathematical discovery. What began as Jeffrey Emanuel (@doodlestein) posing a single question to GPT-5 Pro about matrix exponentials and Lie groups evolved into something unprecedented: **the AI model itself generated additional mathematical prompts, scored its own ideas, and helped design implementations for revolutionizing machine learning**.
+Jeffrey Emanuel (@doodlestein) asked GPT-5 Pro about matrix exponentials and Lie groups. The model proposed further questions, scored its ideas and helped design implementations. This repository tests those proposals against mathematical properties and trained transformer baselines.
 
 The meta-cognitive loop:
 1. **Human Question** → Emanuel asks about matrix exponentials in AI
@@ -27,7 +27,7 @@ The meta-cognitive loop:
 5. **Human-AI Implementation** → Collaborative translation to working code
 6. **Systematic Validation** → Empirical testing of theoretical predictions
 
-This represents a new paradigm: **AI systems as genuine partners in mathematical discovery**, capable not just of solving problems but of identifying which problems are worth solving.
+One prospectively scored proposal reached its stopping rule before training. All 43 held-out queries had the same answer, and only three fit the selected context window. [Proposal, scores and feasibility result](artifacts/proposals/hyp-realhier-prefix-transfer-three-modules/scoring.md)
 
 ### Evolution from demos to transformer experiments
 
@@ -990,7 +990,13 @@ python tests/test_mathematical_correctness.py
 
 The ledger records each prediction, comparison and historical verdict
 (`mgr hypotheses list --status supported` or `--status refuted`).
-The evidence for choosing an architecture depends on the task and training budget.
+For current eligibility, use `mgr status` and the corrected replay. Of the
+75 predictions in the frozen November registry, the replay supported 11,
+refuted one, placed six in the inconclusive category and blocked 57.
+Eight determinations changed. The historical ledger and four owner holds
+retain their original dispositions.
+[Eligibility replay](artifacts/adjudications/jida36-eligibility-replay/eligibility-audit.json)
+· [Replay with the current selection rules](artifacts/adjudications/ns1b-optimizer-eligibility/historical-comparison.json)
 
 - In the eight-seed-per-arm Dyck depth-extrapolation campaign, standard
   beat braid at the higher budget. Braid minus standard was −0.245 in
@@ -999,7 +1005,7 @@ The evidence for choosing an architecture depends on the task and training budge
   scored below the answer prior. It is on manual hold. [Dyck campaign](artifacts/adjudications/8h0e/campaign.md)
 - Some positive entries compare mechanisms directly, including surreal
   versus standard on structure-free data. Others measure a kernel or a
-  property within one mechanism. The current placebo control is INCONCLUSIVE.
+  property within one mechanism. The fixed-budget placebo scorecard is INCONCLUSIVE.
   Both the Dyck and placebo scorecards report publication BLOCKED.
   [Dyck scorecard](artifacts/scorecards/dyck-comparison-tasktok-1e12/report.md) ·
   [Placebo scorecard](artifacts/scorecards/placebo-guard-tasktok-1e12/report.md)
