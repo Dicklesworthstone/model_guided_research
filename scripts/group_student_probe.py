@@ -8,9 +8,10 @@ import math
 import random
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from itertools import permutations, product
 from pathlib import Path
+from typing import cast
 from zipfile import ZipFile
 
 import torch
@@ -31,6 +32,25 @@ OLD_PANEL = Path("artifacts/probes/sizing/group-query-completion/panel.json")
 EQUALITY_ARCHIVE = Path("artifacts/probes/sizing/group-equality/verification.zip")
 EQUALITY_VIEWS = (("", ""), ("0", ""), ("1", ""), ("", "0"), ("", "1"), ("0", "1"), ("1", "0"))
 EQUALITY_POLICIES = ("breadth_first", "symbol_counts", "one_view", "seven_views", "training_cache")
+
+
+type EqualityPlan[T] = Generator[tuple[str, str], bool, T]
+
+
+def _resume_equality_plan[T](
+    plan: EqualityPlan[T], answer: bool | None = None
+) -> tuple[tuple[str, str] | None, T | None]:
+    try:
+        return (next(plan) if answer is None else plan.send(answer)), None
+    except StopIteration as finished:
+        return None, finished.value
+
+
+def _run_equality_plan[T](plan: EqualityPlan[T], equal: Callable[[str, str], bool]) -> T:
+    question, result = _resume_equality_plan(plan)
+    while question is not None:
+        question, result = _resume_equality_plan(plan, equal(*question))
+    return cast(T, result)
 
 
 def config() -> GPTConfig:
@@ -426,6 +446,17 @@ def acquire_equalities(
     With no known size, finish when both outgoing edges of every discovered
     representative have been established. Size-based forcing requires a size.
     """
+    return _run_equality_plan(_plan_equalities(size, rank, cached, relations=relations), equal)
+
+
+def _plan_equalities(
+    size: int | None,
+    rank: Callable[[str, str], float],
+    cached: Callable[[str, str], bool | None] | None = None,
+    *,
+    relations: ShortlexRelations | None = None,
+    remember: Callable[[str, str, bool], None] | None = None,
+) -> EqualityPlan[dict]:
     representatives = [""]
     indices = {"": 0}
     edges = []
@@ -461,7 +492,9 @@ def acquire_equalities(
                     result = cached(word, ref) if cached else None
                     method = "cache"
                     if result is None:
-                        result = equal(word, ref)
+                        result = yield word, ref
+                        if remember is not None:
+                            remember(word, ref, result)
                         method = "oracle"
                     counts[f"{method}_{'equal' if result else 'different'}"] += 1
                     trials.append((target, method, result))
@@ -639,12 +672,20 @@ def acquire_with_memo(
     *,
     relations: ShortlexRelations | None = None,
 ) -> dict:
+    return _run_equality_plan(plan_acquire_with_memo(size, key, relations=relations), equal)
+
+
+def plan_acquire_with_memo(
+    size: int | None,
+    key: Callable[[str, str], tuple],
+    *,
+    relations: ShortlexRelations | None = None,
+) -> EqualityPlan[dict]:
+    """Yield cache misses and return the complete action after the frontier closes."""
     memo = {key("", ""): True}
 
-    def ask(word: str, ref: str) -> bool:
-        result = equal(word, ref)
+    def remember(word: str, ref: str, result: bool) -> None:
         memo[key(word, ref)] = result
-        return result
 
     def cached(word: str, ref: str) -> bool | None:
         normalized = key(word, ref)
@@ -657,7 +698,9 @@ def acquire_with_memo(
         return memo.get(normalized)
 
     started = time.perf_counter()
-    acquired = acquire_equalities(size, ask, symbol_count_rank, cached=cached, relations=relations)
+    acquired = yield from _plan_equalities(
+        size, symbol_count_rank, cached=cached, relations=relations, remember=remember
+    )
     acquired["seconds"] = time.perf_counter() - started
     acquired["memo_entries"] = len(memo)
     acquired["memo_symbols"] = sum(len(k) if not k or isinstance(k[0], int) else sum(map(len, k)) for k in memo)
@@ -778,6 +821,11 @@ def graph_equations(graph) -> list[tuple[str, ...]]:
 
 
 def identify_known_family(catalog, equal: Callable[[str, str], bool]) -> dict:
+    return _run_equality_plan(plan_known_family(catalog), equal)
+
+
+def plan_known_family(catalog) -> EqualityPlan[dict]:
+    """Yield separating questions in the same order as the blocking selector."""
     survivors = list(catalog)
     trace = []
     while len(survivors) > 1:
@@ -793,11 +841,45 @@ def identify_known_family(catalog, equal: Callable[[str, str], bool]) -> dict:
         if best is None:
             raise ValueError("Distinct action tables failed to yield a separating question")
         _, (left, right), matched = best
-        answer = equal(left, right)
+        answer = yield left, right
         positive = set(matched)
         survivors = [g for g in survivors if (g in positive) == answer]
         trace.append(dict(pair=[left, right], candidates=size, predicted_yes=len(positive), answer=answer))
     return dict(marked_class=survivors[0], queries=trace)
+
+
+def run_bounded_proposal(
+    frontier: EqualityPlan[dict],
+    proposal: EqualityPlan[dict | None],
+    equal: Callable[[str, str], bool],
+) -> dict:
+    """Resolve either exact plan, paying for at most one proposal per four frontier queries.
+
+    A rejected proposal returns None. Both plans must derive their answer from
+    exact oracle results. The scheduler shares only identical unordered pairs.
+    """
+    plans = (frontier, proposal)
+    pending = [_resume_equality_plan(plan) for plan in plans]
+    shared: dict[tuple[str, ...], bool] = {}
+    counts = [0, 0]
+    paid = []
+    names = ("frontier", "proposal")
+    while True:
+        for i, (question, result) in enumerate(pending):
+            while question is not None and (key := pair_key(*question)) in shared:
+                question, result = _resume_equality_plan(plans[i], shared[key])
+            pending[i] = question, result
+            if question is None and result is not None:
+                return dict(winner=names[i], result=result, paid=paid, counts=counts)
+
+        owner = 1 if pending[1][0] is not None and 4 * (counts[1] + 1) <= counts[0] else 0
+        question = pending[owner][0]
+        assert question is not None
+        answer = equal(*question)
+        shared[pair_key(*question)] = answer
+        counts[owner] += 1
+        paid.append((names[owner], *question, answer))
+        pending[owner] = _resume_equality_plan(plans[owner], answer)
 
 
 def congruence_panel(coverage: Path, output: Path) -> None:

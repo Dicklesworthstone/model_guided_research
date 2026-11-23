@@ -691,6 +691,49 @@ def test_order_free_acquisition_checks_both_generators_of_the_trivial_action():
     assert result["counts"] == {"oracle_equal": 2}
 
 
+@pytest.mark.parametrize("frontier_finishes", [False, True])
+def test_bounded_proposal_shares_reversed_answers_and_prefers_a_completed_frontier(frontier_finishes):
+    from scripts.group_student_probe import run_bounded_proposal
+
+    def frontier():
+        assert (yield "0", "") is True
+        if not frontier_finishes:
+            yield "1", ""
+        return {"edges": [[0, 0]]}
+
+    def proposal():
+        assert (yield "", "0") is True
+        return {"edges": [[0, 0]]}
+
+    def equal(left, right):
+        assert (left, right) == ("0", "")
+        return True
+
+    result = run_bounded_proposal(frontier(), proposal(), equal)
+    assert result["winner"] == ("frontier" if frontier_finishes else "proposal")
+    assert result["counts"] == [1, 0]
+    assert result["paid"] == [("frontier", "0", "", True)]
+
+
+@pytest.mark.parametrize("accepts", [False, True])
+def test_bounded_proposal_earns_budget_and_keeps_the_frontier_after_rejection(accepts):
+    from scripts.group_student_probe import run_bounded_proposal
+
+    def frontier():
+        for word in ("0", "00", "000", "0000", "00000", "000000"):
+            assert (yield word, "") is True
+        return {"edges": [[0, 0]]}
+
+    def proposal():
+        answer = yield "1", ""
+        return {"edges": [[0, 0]]} if answer else None
+
+    result = run_bounded_proposal(frontier(), proposal(), lambda left, _right: left != "1" or accepts)
+    assert result["winner"] == ("proposal" if accepts else "frontier")
+    assert result["counts"] == ([4, 1] if accepts else [6, 1])
+    assert [owner for owner, *_ in result["paid"][:5]] == ["frontier"] * 4 + ["proposal"]
+
+
 def test_congruence_combines_shortlex_rules_and_preserves_the_action():
     from scripts.group_student_probe import ShortlexRelations, acquire_with_memo, cancelled_key
 
