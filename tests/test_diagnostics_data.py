@@ -553,3 +553,47 @@ def test_cli_gen_tasks_and_profile_task(tmp_path):
     assert result.exit_code == 0, result.output
     profile = json.loads(result.output)
     assert profile["corpus"] == "task:hier:depth=4"
+
+
+def test_group_substitutions_need_only_equal_endpoint_names():
+    from scripts.group_rewrite_probe import Rewriter, oracle, record, verify_rewrite
+
+    # In S3 a transposition squared is the identity; insertion preserves any context.
+    labels = {"11": "x", "0011": "x", "00": "y", "01": "z"}
+    rules = Rewriter(labels)
+    word = "100110"
+    compact, proof = rules.reduce(word)
+    assert (compact, proof) == ("1110", [(1, "0011", "11")])
+    assert Rewriter({w: y + "!" for w, y in labels.items()}).reduce(word) == (compact, proof)
+    verify_rewrite("s3", word, compact)
+    assert oracle("s3", "01") != oracle("s3", "10")
+    with pytest.raises(ValueError, match="changed"):
+        verify_rewrite("s3", "01", "10")
+    with pytest.raises(ValueError, match="Inconsistent"):
+        record(labels, "11", "y")
+
+
+def test_active_group_table_queries_only_missing_edges():
+    from itertools import product
+
+    from scripts.group_rewrite_probe import complete_action, follow, oracle, transitions
+
+    def teacher(word):
+        return f"opaque-{oracle('s3', word)}"
+
+    labels = {a + b: teacher(a + b) for a in "01" for b in "01"}
+    before = transitions(labels)
+    calls = []
+
+    def counted(word):
+        assert word not in labels and word not in calls
+        calls.append(word)
+        return teacher(word)
+
+    edges, reps, queries = complete_action(labels, counted)
+    assert calls == [q[0] for q in queries]
+    assert len(reps) == 6 and len(edges) == 12 and len(calls) == 12 - len(before)
+    assert follow(labels, before, "0101") is None
+    for letters in product("01", repeat=7):
+        word = "".join(letters)
+        assert follow(labels, edges, word) == teacher(word)
