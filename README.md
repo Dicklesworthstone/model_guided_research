@@ -996,7 +996,7 @@ refuted one, placed six in the inconclusive category and blocked 57.
 Eight determinations changed. The historical ledger and four owner holds
 retain their original dispositions.
 [Eligibility replay](artifacts/adjudications/jida36-eligibility-replay/eligibility-audit.json)
-· [Replay with the current selection rules](artifacts/adjudications/ns1b-optimizer-eligibility/historical-comparison.json)
+· [Replay with the current selection rules](artifacts/adjudications/charge-training-units/historical-replay.json)
 
 - In the eight-seed-per-arm Dyck depth-extrapolation campaign, standard
   beat braid at the higher budget. Braid minus standard was −0.245 in

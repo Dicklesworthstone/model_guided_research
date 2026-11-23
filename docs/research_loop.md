@@ -195,6 +195,30 @@ instrument hashes the open weights file used to load the model and records
 the training seed separately from the probe seed. Historical v1 files lack
 this identity. A new measurement must use the v2 producer.
 
+At one trillion model FLOPs, three independently trained R-matrix models
+gave dissociation ratios of 0.333, 0.167 and 0.333 against the registered
+minimum of 2.0. All three fits used the same 240 prompts. For each model
+19 exceeded its 64-token context. The best non-solvable group score was
+three times its measured floor in all three runs. The abelian score reached
+1.0, 0.5 and 1.0 times its floor. This tests the proposed difference between
+group families at this coordinate. The June measurement used a hundred
+trillion model FLOPs.
+
+To repeat a measurement, extract the checkpoint archive into an empty
+directory and use the following check in DSR from clean source revision `8d51a4d`.
+Use the unpacked root in `WEIGHTS` and a fresh directory in `RESULTS`.
+Repeating with `rmatrix-s4` and `rmatrix-s5` reproduces the other two rows.
+
+```bash
+uv run --locked mgr probe-charges --checkpoint "$WEIGHTS/campaigns/charges-group-1e12/rmatrix-s3/checkpoints" \
+  --step 4780 --task group --examples 240 --seed 0 --device cpu \
+  --artifacts-dir "$RESULTS" --run-id replay-s3
+```
+
+[Archived checkpoints](../artifacts/adjudications/charge-training-units/checkpoints.zip)
+· [Repeated-checkpoint result](../artifacts/adjudications/charge-training-units/v10-repeated-checkpoint.json)
+· [Historical replay](../artifacts/adjudications/charge-training-units/historical-replay.json)
+
 Policy `ci-v9` selects the registered evaluation task before choosing among
 repeat measurements. Scorecard cells reuse names such as `seed_0` across
 tasks. Selecting the newest file first could replace a regime measurement
