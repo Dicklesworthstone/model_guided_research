@@ -1,5 +1,35 @@
 # Bridge Plan: model_guided_research
 
+## Repairs following the November 2026 assessment
+
+The ci-v7 adjudicator checks the operational definition in Git and the
+training and measurement commits before scoring a cohort. On the same 526
+tracked summaries, seven prior rulings became blocked and the placebo
+prediction moved from inconclusive to supported. Four owner holds still
+apply. The historical ledger retains its original policy stamps. [Replay and transition matrix](research_loop.md#november-2026-historical-replay)
+
+The route observatory now records whole-route survival counts, uses discrete
+decisions for clustering, reports a prompt-only comparator and identifies the
+exact training weights. Five small CPU training runs yielded fifteen saved
+checkpoints. Repeated analyses of those weights counted as five independent
+units. Constant routes yielded ARI 0, a planted signal yielded 1, and shuffling
+labels gave −0.0333. Reversing measured survival at fixed margins reversed
+Spearman correlation from +1 to −1. JSON and Parquet replay agreed byte for
+byte. The five trained models qualified the measurement code. The existing
+route hypotheses still require their registered scientific campaigns.
+
+The depth-eight symplectic check now captures the eight layer calls from each
+training forward. In the original seed and 24-step scenario the worst band
+fell from 2.0276 to 0.010479 against the existing 0.10 limit. In a separate
+replay, merging 16 certificate-probe readings into eight training readings
+reproduced a band above 2. A quadratic control conserves its exact modified
+energy even when the logged staggered energy fails the band. [Derivation](../markdown_documentation/symplectic_transformer.md)
+
+A fresh macOS Python 3.13 wheel install ran finite forward and backward passes
+for all 13 standalone mechanisms. Both registries and all 13 demo descriptions
+resolved outside the checkout. Governance operations require an explicit
+research checkout. [Installed CLI usage](../README.md)
+
 ## November 2026 assessment
 
 **Audited November 22 at `e6fcf5131543cb69bdecf70a51b5138efbb29e40`.** The project can train mathematical transformers, test their algebra, compare them with standard attention, and record a loss against a favored idea. The evidence does not yet say which replacement a user should choose on a new task. Two parts of the measurement system can produce apparent confirmation from information the protocol intended to exclude. Repairing those parts has higher scientific value than filling more cells with their current outputs.

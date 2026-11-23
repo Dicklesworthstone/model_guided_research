@@ -123,6 +123,12 @@ only-include = [
     "utils.py",
 ]
 
+[tool.hatch.build.targets.wheel.force-include]
+"hypotheses" = "nanochat/research_data/hypotheses"
+"markdown_documentation" = "nanochat/research_data/markdown_documentation"
+"proofs/AxiomCheck.lean" = "nanochat/research_data/proofs/AxiomCheck.lean"
+"proofs/MGRProofs" = "nanochat/research_data/proofs/MGRProofs"
+
 # Ruff configuration
 [tool.ruff]
 line-length = 120

@@ -56,6 +56,102 @@ def test_module_imports(module_name):
         pytest.fail(f"Failed to import {module_name}: {e}")
 
 
+@pytest.mark.parametrize(
+    ("policy", "executed", "successful", "failed", "skipped"),
+    [
+        ("--skip-errors", ["first", "broken", "last"], 2, 2, 0),
+        ("--stop-on-error", ["first", "broken"], 1, 1, 2),
+    ],
+)
+def test_aggregate_demo_failure_and_isolation(tmp_path, policy, executed, successful, failed, skipped):
+    import os
+    import random
+    import subprocess
+    import sys
+    from textwrap import dedent
+
+    import cli
+
+    # Exercise real interpreters, the public commands, and their exit codes
+    # with a small catalogue covering success, an exception, and a missing entry.
+    launcher = tmp_path / "fixture_cli.py"
+    launcher.write_text(dedent("""\
+        import json
+        import os
+        import random
+        import sys
+
+        import cli
+        from config import get_config
+
+        def demo():
+            name = sys.argv[2]
+            with open("calls.jsonl", "a", encoding="utf-8") as calls:
+                print(json.dumps({
+                    "name": name, "argv": sys.argv[1:], "pid": os.getpid(),
+                    "seed": get_config().random_seed, "draw": random.random(),
+                    "prior_value": os.environ.get("MGR_TEST_PRIOR_DEMO"),
+                }), file=calls)
+            os.environ["MGR_TEST_PRIOR_DEMO"] = name
+            get_config().random_seed = 999
+            if name == "broken":
+                print("fixture writes to stderr", file=sys.stderr)
+                raise ValueError("deliberate demo failure")
+
+        cli.DEMOS = {
+            name: {"description": name, "module": "__main__", "func": name if name == "missing" else "demo"}
+            for name in ("first", "broken", "missing", "last")
+        }
+        cli.__file__ = __file__
+        cli.app()
+        """), encoding="utf-8")
+    env = os.environ.copy()
+    env.pop("MGR_TEST_PRIOR_DEMO", None)
+    env["PYTHONPATH"] = str(Path(cli.__file__).resolve().parent)
+    result = subprocess.run(
+        [sys.executable, str(launcher), "run-all", "--seed", "7", "--delay", "0", policy],
+        cwd=tmp_path, env=env, text=True, capture_output=True, check=False, timeout=120,
+    )
+    require(result.returncode == 1, result.stdout + result.stderr)
+    require("deliberate demo failure" in result.stdout, result.stdout)
+    require("fixture writes to stderr" in result.stderr, result.stderr)
+    for label, value in {"Successful": successful, "Failed": failed, "Attempted": 4 - skipped,
+                         "Skipped": skipped, "Total": 4}.items():
+        require(f"{label}: {value}" in result.stdout.splitlines(), result.stdout)
+    missing_reported = "has no demo function 'missing'" in result.stdout
+    require(missing_reported == (policy == "--skip-errors"), result.stdout)
+    rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    require([row["name"] for row in rows] == executed, str(rows))
+    require(len({row["pid"] for row in rows}) == len(rows), str(rows))
+    for row in rows:
+        require(row["argv"] == ["run", row["name"], "--seed", "7"], str(row))
+        require(row["seed"] == 7 and row["draw"] == random.Random(7).random(), str(row))
+        require(row["prior_value"] is None, str(row))
+
+
+def test_ordinal_demo_arguments(monkeypatch, capsys):
+    import sys
+
+    import config
+    from ordinal_schedules_and_well_founded_optimization import demo
+
+    monkeypatch.setattr(config, "_config", config.ProjectConfig(random_seed=9, use_rich_output=False))
+    monkeypatch.setattr(sys, "argv", ["mgr", "run-all", "--delay", "0"])
+    demo(["--runs", "1", "--steps", "128", "--dim", "6"])
+    require("runs=1 steps=128 dim=6 seed=9" in capsys.readouterr().out, "ordinal demo lost its settings")
+
+
+def test_demo_info_outside_project(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    import cli
+
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli.app, ["info", "tropical"])
+    require(result.exit_code == 0, result.output)
+    require("File exists: ✓" in result.output and "Tropical Transformer (JAX)" in result.output, result.output)
+
+
 def test_jax_available():
     """Test that JAX is properly installed and configured."""
     devices = jax.devices()
@@ -2135,8 +2231,8 @@ def test_standalone_public_api_from_dims_all_mechanisms():
     )
     require(len(MECHANISM_CLASSES) == 13, f"expected 13 MECHANISM_CLASSES, got {len(MECHANISM_CLASSES)}")
 
-    # head_dim=8 (n_embd=32, n_head=4) satisfies octonion (head_dim%8==0),
-    # quaternion/clifford (head_dim%4==0), and gauge/reversible (even n_embd, even n_head).
+    # head_dim=8 satisfies octonion/Clifford (multiple of 8) and quaternion
+    # (multiple of 4). Gauge and reversible also have even n_embd and n_head.
     cases: list[tuple[Any, dict[str, Any]]] = [
         (CausalSelfAttention, {}),
         (TropicalCausalSelfAttention, {"semiring_beta": 2.0, "tropical_gauge_fix": True}),

@@ -262,7 +262,7 @@ class AttentionCore(nn.Module):
         n_embd : int
             Residual-stream embedding dimension ``C`` (must be divisible by ``n_head``;
             mechanism-specific divisibility rules also apply, e.g. ``head_dim % 4 == 0``
-            for quaternion/clifford and ``head_dim % 8 == 0`` for octonion).
+            for quaternion and ``head_dim % 8 == 0`` for Clifford and octonion).
         n_head : int
             Number of query attention heads ``H``.
         n_kv_head : int | None, optional

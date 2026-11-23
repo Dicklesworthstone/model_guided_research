@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v6`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v7`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -74,20 +74,22 @@ uv run mgr hypotheses add --id hyp-<mechanism>-<claim-slug> \
 uv run mgr hypotheses validate   # append-only governance vs git HEAD
 ```
 
-The following rules govern registration. The registry validator checks schema
-and append-only fields. The verdict engine still needs a producer-ancestry
-check for prospective evidence.
+The registry validator checks schema and append-only fields. The verdict
+engine verifies the committed operational definition and the producer history
+before scoring evidence.
 
-- **Pre-evidence registration.** Identify the commit that first contained the
-  operational prediction, including any promotion from a null prediction.
-  Verify that it was available before each qualifying training run and that
-  the evaluation used the intended frozen checkpoint. Record the producer
-  SHAs and keep discovery cohorts separate. A later evaluation of an old
-  checkpoint needs an explicit eligibility decision. Until the engine can
-  verify this ordering, flag ambiguous history in the campaign report and
-  withhold prospective interpretation. The November audit gives a working
-  counterexample and two affected historical comparisons.
-  [Audit and repair criteria](bridge_plan.md#november-2026-assessment)
+- **Pre-evidence registration.** The report's `registration_commit` identifies
+  the commit introducing the current statement, population and executable
+  prediction. A change to a threshold or selector starts a new eligibility
+  window, as does promotion from a null prediction. Descriptive source notes
+  and `scale_caveats` can be revised without changing that commit. A reviewer
+  must still check substantive constraints recorded only in prose.
+  A successor has its own registration. The adjudicator follows merged Git
+  history and requires a clean producer revision on a path from registration
+  to the checkout's HEAD. A run launched from the registration commit itself
+  may qualify. An identical artifact already committed there at its recorded
+  path belongs to the discovery set. The report lists excluded measurements
+  in `excluded_evidence` with paths and machine-readable causes.
 - **Falsification criteria in the prediction**: metric path, comparator,
   threshold, baseline arm, `min_seeds`. Exact-match claims register a
   `validity.baseline_floor` (the answer-prior floor; see the worked example
@@ -131,9 +133,12 @@ uv run python scripts/run_campaign.py \
 The launcher freezes a **detached worktree at a clean SHA** to isolate a
 campaign from edits in the main checkout. The collector excludes artifacts
 flagged as tainted, and task evaluations propagate recorded training taint.
-For checkpoint-backed route benchmarks, verify the original training
-provenance and count independent trained models. The collector does not yet
-apply the same lineage checks to those summaries. [Audit](bridge_plan.md#november-2026-assessment)
+For task evaluations and charge probes, record the training run ID, checkpoint
+step and clean training and evaluation SHAs. The training commit must be at
+or after registration and reachable from the evaluation commit. A later
+evaluation of earlier weights, an unknown SHA or a resumed run with unverified
+parent weights cannot qualify. Derived benchmarks with unverified source
+inputs receive `missing_input_lineage`. [Original audit](bridge_plan.md#november-2026-assessment)
 
 Rules that have each cost a session to learn:
 
@@ -153,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v6`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v7`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -172,6 +177,41 @@ headline is always "N supported, of which M survive FDR at q=0.10".
 Prefer `-H <id>` over `--all` unless you intend a full-ledger re-adjudication:
 `--all` recomputes *every* hypothesis against the grown evidence pool, which
 can move verdicts you weren't looking at.
+
+#### November 2026 historical replay
+
+Two DSR dry runs used the same 75 registry entries and 526 tracked artifact
+summaries from `4db6657`. The rows show the `ci-v6` results. The columns show
+the `ci-v7` results after the registration and checkpoint checks.
+
+| Previous verdict | Supported | Refuted | Inconclusive | Blocked | Total |
+|---|---:|---:|---:|---:|---:|
+| Supported | 10 | 0 | 0 | 1 | 11 |
+| Refuted | 0 | 1 | 0 | 2 | 3 |
+| Inconclusive | 1 | 0 | 6 | 4 | 11 |
+| Blocked | 0 | 0 | 0 | 50 | 50 |
+| **Total** | **11** | **1** | **6** | **57** | **75** |
+
+There were 214 exclusions across 147 distinct files. Of those
+hypothesis–file pairs, 101 predated registration and 113 lacked training
+lineage. For `hyp-surreal-optimization-rate`, six summaries predated its
+registration at `1c6abc5` and seven lacked training lineage. The remaining
+evidence could not meet the registered five-training-run minimum per arm at a
+common budget. The placebo registry prediction moved from INCONCLUSIVE to
+SUPPORTED on 43 selected summaries. Its separate fixed-budget scorecard and
+publication decision still require their own evidence and owner disposition.
+The path audit includes each hypothesis, its registration commit where
+applicable, both decisions and the files each policy selected or excluded.
+[Machine-readable replay](../artifacts/adjudications/jida36-eligibility-replay/eligibility-audit.json)
+
+The append-only ledger still records 14 SUPPORTED, 4 REFUTED, 14 INCONCLUSIVE,
+7 BLOCKED and 36 OPEN. Interpret earlier verdicts under their stamped policy.
+Both runs respected the four owner holds on `hyp-braid-dyck-depth-extrapolation`,
+`hyp-braid-dyck-directional`, `hyp-symplectic-nonorm-depth-tied` and
+`hyp-symplectic-nonorm-depth-untied`. The directional braid hold therefore
+has no new ruling in this replay. The prior audit found that 18 of its 50
+cited evaluations predated registration. A later replication needs its own
+evidence and an explicit owner decision on the held report.
 
 ### 7. Beliefs update → next proposals
 

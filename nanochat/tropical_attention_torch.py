@@ -511,6 +511,7 @@ def extract_tropical_routes(
 
     return {
         "score_key_route": score_key_route,
+        "score_entropy": torch.distributions.Categorical(logits=attn_scores.float()).entropy().mean(dim=2),
         "score_dim_route": score_dim_route,
         "score_margin": score_margin,
         "key_route": key_route,

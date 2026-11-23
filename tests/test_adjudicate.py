@@ -11,12 +11,14 @@ evidence - is tested explicitly per the bead.
 
 import json
 import math
+import subprocess
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 import cli
+from cli import _adj_score_cohort
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -81,6 +83,7 @@ def _evaltasks_artifact(
             "seeds": list(range(len(per_seed))),
         },
         "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
+        "train_provenance": CLEAN_PROV,
         "tasks": {task: task_rec},
     }
     (run_dir / "summary.json").write_text(json.dumps(summary))
@@ -129,12 +132,12 @@ def _index(root: Path):
 def test_supported_when_ci_clears_threshold(tmp_path):
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path, "base", "standard", [0.50, 0.51, 0.52])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v6"
+    assert v["policy_version"] == "ci-v7"
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +152,8 @@ def test_manual_hold_blocks_a_would_be_supported_hypothesis(tmp_path):
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path, "base", "standard", [0.50, 0.51, 0.52])
     pool = _index(tmp_path)
-    assert cli._adjudicate_hypothesis(_hyp(), pool)["verdict"] == "supported"
-    held = cli._adjudicate_hypothesis(
+    assert _adj_score_cohort(_hyp(), pool)["verdict"] == "supported"
+    held = _adj_score_cohort(
         _hyp(manual_hold={"held": True, "reason": "val-CE incommensurable; hand-checked INCONCLUSIVE"}), pool
     )
     assert held["verdict"] == "blocked"
@@ -162,7 +165,7 @@ def test_manual_hold_false_is_a_noop(tmp_path):
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path, "base", "standard", [0.50, 0.51, 0.52])
     # held=false is a released/cleared hold: the engine adjudicates normally.
-    v = cli._adjudicate_hypothesis(_hyp(manual_hold={"held": False, "reason": "released"}), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(manual_hold={"held": False, "reason": "released"}), _index(tmp_path))
     assert v["verdict"] == "supported"
 
 
@@ -170,7 +173,7 @@ def test_refuted_when_ci_clears_opposite_side(tmp_path):
     # no floor info in fixture or prediction -> the gate stays out of the way
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.50, 0.51, 0.50])
     _arm_artifacts(tmp_path, "base", "standard", [0.50, 0.50, 0.51])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "refuted", v  # effect ~0, CI well below the +0.05 claim
 
 
@@ -183,21 +186,21 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     refutation_margin, and the confirm-power qualifier no longer fires."""
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.30, 0.36, 0.42])
     _arm_artifacts(tmp_path, "base", "standard", [0.55, 0.60, 0.65])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "refuted", v
     arm = v["arms"]["ultrametric"]
     assert arm["power"] < 0.5  # low power to CONFIRM the registered +0.05...
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v6"
+    assert v["policy_version"] == "ci-v7"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
     # high variance across training runs: CI spans the 0.05 threshold
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.40, 0.75, 0.55])
     _arm_artifacts(tmp_path, "base", "standard", [0.45, 0.55, 0.50])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "inconclusive", v
 
 
@@ -209,7 +212,7 @@ def test_welch_t_not_normal_critical_value(tmp_path):
     cand_means, base_means = [0.50, 0.55, 0.60], [0.50, 0.51, 0.52]
     _arm_artifacts(tmp_path, "cand", "ultrametric", cand_means)
     _arm_artifacts(tmp_path, "base", "standard", base_means)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     arm = v["arms"]["ultrametric"]
     se = (stats_mod.variance(cand_means) / 3 + stats_mod.variance(base_means) / 3) ** 0.5
     half = (arm["ci95"][1] - arm["ci95"][0]) / 2
@@ -227,7 +230,7 @@ def test_ratio_threshold_kind_supported(tmp_path):
     )
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.30, 0.31, 0.29])
     _arm_artifacts(tmp_path, "base", "standard", [0.60, 0.61, 0.59])
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert abs(v["arms"]["ultrametric"]["effect"] - 0.5) < 0.05
 
@@ -238,12 +241,12 @@ def test_ratio_threshold_kind_supported(tmp_path):
 
 def test_blocked_reasons(tmp_path):
     # no artifacts at all
-    v = cli._adjudicate_hypothesis(_hyp(), [])
+    v = _adj_score_cohort(_hyp(), [])
     assert v["verdict"] == "blocked" and v["reason_code"] == "no_candidate_artifacts"
 
     # candidate present, baseline missing
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.8, 0.8, 0.8])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "blocked" and v["reason_code"] == "no_baseline_artifacts"
 
     # insufficient training runs (2 < min_seeds=3; eval seeds inside an
@@ -251,25 +254,25 @@ def test_blocked_reasons(tmp_path):
     root2 = tmp_path / "few"
     _arm_artifacts(root2, "cand", "ultrametric", [0.8, 0.8])
     _arm_artifacts(root2, "base", "standard", [0.5, 0.5])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(root2))
+    v = _adj_score_cohort(_hyp(), _index(root2))
     assert v["verdict"] == "blocked" and v["reason_code"] == "insufficient_seeds"
 
     # budget mismatch beyond 5%: no cohort contains both arms
     root3 = tmp_path / "budget"
     _arm_artifacts(root3, "cand", "ultrametric", [0.8, 0.8, 0.8], target_flops=2e9)
     _arm_artifacts(root3, "base", "standard", [0.5, 0.5, 0.5], target_flops=4e9)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(root3))
+    v = _adj_score_cohort(_hyp(), _index(root3))
     assert v["verdict"] == "blocked" and v["reason_code"] == "budget_mismatch"
 
     # metric missing at the registered path
     root4 = tmp_path / "metric"
     _arm_artifacts(root4, "cand", "ultrametric", [0.8, 0.8, 0.8], task="dyck")
     _arm_artifacts(root4, "base", "standard", [0.5, 0.5, 0.5], task="dyck")
-    v = cli._adjudicate_hypothesis(_hyp(), _index(root4))  # hyp points at tasks.hier
+    v = _adj_score_cohort(_hyp(), _index(root4))  # hyp points at tasks.hier
     assert v["verdict"] == "blocked" and v["reason_code"] == "metric_missing"
 
     # not operationalized
-    v = cli._adjudicate_hypothesis(_hyp() | {"prediction": None}, [])
+    v = _adj_score_cohort(_hyp() | {"prediction": None}, [])
     assert v["verdict"] == "blocked" and v["reason_code"] == "prediction_not_operationalized"
 
 
@@ -279,13 +282,13 @@ def test_tainted_evidence_refused_and_clean_twin_adjudicates(tmp_path):
     dirty = tmp_path / "dirty"
     _arm_artifacts(dirty, "cand", "ultrametric", [0.8, 0.82, 0.81], tainted=True)
     _arm_artifacts(dirty, "base", "standard", [0.5, 0.51, 0.52])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(dirty))
+    v = _adj_score_cohort(_hyp(), _index(dirty))
     assert v["verdict"] == "blocked" and v["reason_code"] == "tainted_evidence", v
 
     clean = tmp_path / "clean"
     _arm_artifacts(clean, "cand", "ultrametric", [0.8, 0.82, 0.81])
     _arm_artifacts(clean, "base", "standard", [0.5, 0.51, 0.52])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(clean))
+    v = _adj_score_cohort(_hyp(), _index(clean))
     assert v["verdict"] == "supported"
 
     # missing provenance entirely == tainted (pre-rz8.2 artifacts)
@@ -297,7 +300,7 @@ def test_tainted_evidence_refused_and_clean_twin_adjudicates(tmp_path):
         del data["provenance"]
         p.write_text(json.dumps(data))
     _arm_artifacts(noprov, "base", "standard", [0.5, 0.51, 0.52])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(noprov))
+    v = _adj_score_cohort(_hyp(), _index(noprov))
     assert v["verdict"] == "blocked" and v["reason_code"] == "tainted_evidence"
 
 
@@ -307,14 +310,14 @@ def test_forall_multi_mechanism_worst_case(tmp_path):
     _arm_artifacts(tmp_path, "c2-", "fractal", [0.50, 0.51, 0.50])
     _arm_artifacts(tmp_path, "base", "standard", [0.50, 0.51, 0.52])
     hyp = _hyp(mechanisms=["ultrametric", "fractal"])
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "refuted"  # fractal arm fails the +0.05 claim decisively
     assert v["arms"]["ultrametric"]["verdict"] == "supported"
     assert v["arms"]["fractal"]["verdict"] == "refuted"
 
     # any arm without evidence blocks the whole FOR-ALL claim
     hyp = _hyp(mechanisms=["ultrametric", "braid"])
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "blocked" and v["mechanism"] == "braid"
 
 
@@ -345,7 +348,7 @@ def test_train_schema_arm_detection(tmp_path):
         {"metric_path": "train:results.val_ce_final", "comparator": "<=", "threshold_kind": "ratio", "threshold": 0.98},
         mechanisms=["ordinal"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["ordinal"]["n_candidate"] == 3
 
@@ -384,10 +387,10 @@ def test_train_variant_selector_resolves_dataset_task(tmp_path):
         "baseline": None,
         "candidate_variant": {"task": "hier"},
     }
-    v = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["hyperbolic"]), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(spec, mechanisms=["hyperbolic"]), _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["hyperbolic"]["n_candidate"] == 3  # the three placebo runs are not in the arm
-    pooled = cli._adjudicate_hypothesis(
+    pooled = _adj_score_cohort(
         _hyp({**spec, "candidate_variant": None}, mechanisms=["hyperbolic"]), _index(tmp_path)
     )
     assert pooled["arms"]["hyperbolic"]["n_candidate"] == 6  # without the selector they would pool
@@ -402,7 +405,7 @@ def test_floor_gate_recorded_prior_downgrades_refuted(tmp_path):
     A null effect there is no-power, not evidence of absence."""
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.0208, 0.0208, 0.0208], answer_prior=0.0208)
     _arm_artifacts(tmp_path, "base", "standard", [0.0208, 0.0208, 0.0208], answer_prior=0.0208)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "inconclusive", v
     arm = v["arms"]["ultrametric"]
     assert arm["floor_effect"] is True and arm["floor_source"] == "recorded_answer_prior"
@@ -416,7 +419,7 @@ def test_floor_gate_registered_fallback_for_v1_artifacts(tmp_path):
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.5, 0.5, 0.5], schema_version="mgr.evaltasks.v1")
     _arm_artifacts(tmp_path, "base", "standard", [0.5, 0.5, 0.5], schema_version="mgr.evaltasks.v1")
     hyp = _hyp({"validity": {"baseline_floor": 0.521, "floor_source": "population prior (test)"}})
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "inconclusive", v
     assert v["arms"]["ultrametric"]["floor_source"] == "registered_baseline_floor"
 
@@ -425,7 +428,7 @@ def test_floor_gate_leaves_real_refutations_alone(tmp_path):
     """Baseline far above its floor: a tight null effect is a REAL refutation."""
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.40, 0.41, 0.40], answer_prior=0.05)
     _arm_artifacts(tmp_path, "base", "standard", [0.40, 0.40, 0.41], answer_prior=0.05)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "refuted", v
     arm = v["arms"]["ultrametric"]
     assert "floor_effect" not in arm and arm["baseline_mean"] > arm["baseline_floor"]
@@ -438,7 +441,7 @@ def test_budget_cohorts_largest_qualifying_wins(tmp_path):
     _arm_artifacts(tmp_path, "pb", "standard", [0.02, 0.02, 0.02], target_flops=1e13, answer_prior=0.02)
     _arm_artifacts(tmp_path, "ec", "ultrametric", [0.80, 0.81, 0.82], target_flops=1e14, answer_prior=0.02)
     _arm_artifacts(tmp_path, "eb", "standard", [0.50, 0.51, 0.52], target_flops=1e14, answer_prior=0.02)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["ultrametric"]
     assert arm["budget_flops"] == pytest.approx(1e14)
@@ -451,7 +454,7 @@ def test_budget_cohorts_largest_qualifying_wins(tmp_path):
     _arm_artifacts(root2, "pb", "standard", [0.50, 0.50, 0.51], target_flops=1e13)
     _arm_artifacts(root2, "ec", "ultrametric", [0.9], target_flops=1e14)  # 1 run only
     _arm_artifacts(root2, "eb", "standard", [0.5], target_flops=1e14)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(root2))
+    v = _adj_score_cohort(_hyp(), _index(root2))
     assert v["verdict"] == "refuted", v
     assert v["arms"]["ultrametric"]["budget_flops"] == pytest.approx(1e13)
 
@@ -496,7 +499,7 @@ def test_lineage_dedupe_re_evals_never_double_count(tmp_path):
             answer_prior=0.0208,
             generated_at="2026-06-10T23:00:00Z",
         )
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     arm = v["arms"]["ultrametric"]
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3, arm
     assert all("/new-" in p for p in v["artifacts"]), v["artifacts"]
@@ -508,14 +511,28 @@ def test_lineage_dedupe_re_evals_never_double_count(tmp_path):
 # determinism + CLI + ledger
 
 
+def _commit_fixture_registration(registry, monkeypatch, provenance=None):
+    def git(*args):
+        return subprocess.check_output(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "-C", str(registry.parent), *args], text=True
+        ).strip()
+
+    git("init", "-q")
+    git("add", "--", registry.name)
+    git("commit", "-qm", "Register the operational claim")
+    monkeypatch.setitem(CLEAN_PROV if provenance is None else provenance, "git_sha", git("rev-parse", "HEAD"))
+    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+
+
 def test_determinism_byte_identical_verdicts(tmp_path, monkeypatch):
-    _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.6, 0.7, 0.65])
-    _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.55, 0.52])
     registry = tmp_path / "registry.yaml"
     registry.write_text(
         "schema_version: 1\nhypotheses:\n" + _yaml_entry(_hyp({"threshold_kind": "ratio", "threshold": 1.05}))
     )
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch)
+    _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.6, 0.7, 0.65])
+    _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.55, 0.52])
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
 
     outs = []
@@ -571,7 +588,7 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
         "# HAND-WRITTEN HEADER COMMENT - must survive ledger surgery\n"
         "schema_version: 1\nhypotheses:\n" + _yaml_entry(_hyp())
     )
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.8, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.51, 0.52])
@@ -598,8 +615,9 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v6"
-    assert first["policy_version"] == "ci-v6" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v7"
+    assert first["policy_version"] == "ci-v7" and first["artifacts"]
+    assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
     result = runner.invoke(
@@ -629,7 +647,7 @@ def test_dry_run_leaves_registry_untouched(tmp_path, monkeypatch):
     registry = tmp_path / "registry.yaml"
     registry.write_text("schema_version: 1\nhypotheses:\n" + _yaml_entry(_hyp()))
     before = registry.read_text()
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.8, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.5, 0.51, 0.52])
@@ -655,7 +673,7 @@ def test_blocked_refusals_do_not_touch_the_ledger(tmp_path, monkeypatch):
     registry = tmp_path / "registry.yaml"
     registry.write_text("schema_version: 1\nhypotheses:\n" + _yaml_entry(_hyp()))
     before = registry.read_text()
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     result = runner.invoke(
         cli.app,
@@ -732,7 +750,7 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
         },
         mechanisms=["tropical"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["tropical"]
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
@@ -751,7 +769,7 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
         },
         mechanisms=["tropical"],
     )
-    v = cli._adjudicate_hypothesis(hyp_null, _index(tmp_path))
+    v = _adj_score_cohort(hyp_null, _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["tropical"]["n_baseline"] == 3  # all three legacy/null artifacts
     assert all("anneal" in p or "legacy" in p for p in v["artifacts"]), v["artifacts"]
@@ -762,7 +780,7 @@ def test_variant_selector_distinguishes_semiring_beta_arms(tmp_path):
         mechanisms=["tropical"],
     )
     hyp_plain["prediction"]["baseline"] = {"mechanism": "tropical", "equal_flops": True}
-    v = cli._adjudicate_hypothesis(hyp_plain, _index(tmp_path))
+    v = _adj_score_cohort(hyp_plain, _index(tmp_path))
     assert v["arms"]["tropical"]["n_candidate"] == 9
 
 
@@ -879,13 +897,13 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
         },
         mechanisms=["braid"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["braid"]
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v6"
+    assert v["policy_version"] == "ci-v7"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -903,14 +921,14 @@ def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
         },
         mechanisms=["braid"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "refuted", v
 
     # dedupe: three artifacts sharing one seed collapse to a single observation
     dup_root = tmp_path / "dup"
     for i in range(3):
         _certify_artifact(dup_root, f"dup{i}", seed=7, measured=1e-6)
-    v = cli._adjudicate_hypothesis(hyp | {"id": "hyp-dup"}, _index(dup_root))
+    v = _adj_score_cohort(hyp | {"id": "hyp-dup"}, _index(dup_root))
     assert v["verdict"] == "blocked" and v["reason_code"] == "insufficient_seeds", v
 
 
@@ -928,7 +946,7 @@ def test_certify_taint_derives_from_git_dirty(tmp_path):
         },
         mechanisms=["braid"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "blocked" and v["reason_code"] == "tainted_evidence", v
 
 
@@ -952,7 +970,7 @@ def test_single_arm_chargeprobe_dissociation_with_variant_and_cohorts(tmp_path):
         },
         mechanisms=["braid"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["braid"]
     assert arm["n_candidate"] == 3  # soft-law and small-budget probes excluded
@@ -992,7 +1010,7 @@ def test_single_arm_train_trend_route_coverage_delta(tmp_path):
         },
         mechanisms=["tropical"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["tropical"]["single_arm"] is True
 
@@ -1003,12 +1021,12 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     ci-v4 ADDS power/p_value instrumentation without touching the decision)."""
     _arm_artifacts(tmp_path, "cand", "ultrametric", [0.50, 0.52, 0.54], answer_prior=0.01)
     _arm_artifacts(tmp_path, "base", "standard", [0.30, 0.31, 0.32], answer_prior=0.01)
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "supported"
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v6"
+    assert v["policy_version"] == "ci-v7"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
@@ -1073,7 +1091,7 @@ def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
         },
         mechanisms=["braid"],
     )
-    v = cli._adjudicate_hypothesis(hyp, _index(tmp_path))
+    v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["braid"]
     assert arm["n_candidate"] == 3  # restricted-law artifacts excluded
@@ -1093,14 +1111,14 @@ def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
         mechanisms=["braid"],
     )
     hyp_bad["id"] = "hyp-inverted"
-    v_bad = cli._adjudicate_hypothesis(hyp_bad, _index(tmp_path))
+    v_bad = _adj_score_cohort(hyp_bad, _index(tmp_path))
     assert v_bad["verdict"] == "refuted", v_bad
 
     # artifacts WITHOUT model_config cannot satisfy the selector
     legacy_root = tmp_path / "legacy"
     for i in range(3):
         _evaltasks_artifact(legacy_root, f"old{i}", mechanism="braid", per_seed=[0.5])
-    v2 = cli._adjudicate_hypothesis(hyp, _index(legacy_root))
+    v2 = _adj_score_cohort(hyp, _index(legacy_root))
     assert v2["verdict"] == "blocked" and v2["reason_code"] == "no_candidate_artifacts", v2
 
 
@@ -1155,7 +1173,7 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
         "threshold_kind": "ratio",
         "threshold": 0.5,
     }
-    v = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["braid"]), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(spec, mechanisms=["braid"]), _index(tmp_path))
     arm = v["arms"]["braid"]
     assert v["verdict"] == "inconclusive", v
     assert arm["floor_effect"] is True and arm["floor_source"] == "slope_em_floor"
@@ -1165,7 +1183,7 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
     spec_rev = {**spec, "comparator": ">="}
     hyp_rev = _hyp(spec_rev, mechanisms=["braid"])
     hyp_rev["id"] = "hyp-rev"
-    v_rev = cli._adjudicate_hypothesis(hyp_rev, _index(tmp_path))
+    v_rev = _adj_score_cohort(hyp_rev, _index(tmp_path))
     assert v_rev["verdict"] == "inconclusive", v_rev
     assert v_rev["arms"]["braid"]["floor_source"] == "slope_em_floor"
 
@@ -1176,7 +1194,7 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
     for i, (cs, bs) in enumerate(((0.0027, 0.0), (0.0, -0.001), (0.0, 0.0))):
         slope_eval(noisy, f"cand{i}", mechanism="braid", slope=cs, em=0.03, prior=0.097)
         slope_eval(noisy, f"base{i}", mechanism="standard", slope=bs, em=0.02, prior=0.097)
-    v_noisy = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["braid"]), _index(noisy))
+    v_noisy = _adj_score_cohort(_hyp(spec, mechanisms=["braid"]), _index(noisy))
     assert v_noisy["verdict"] == "inconclusive", v_noisy
     assert v_noisy["arms"]["braid"]["floor_source"] == "slope_em_floor" and v_noisy["floor_effect"] is True
 
@@ -1187,7 +1205,7 @@ def test_slope_floor_gate_vacuous_in_both_directions(tmp_path):
     for i in range(3):
         slope_eval(off, f"cand{i}", mechanism="braid", slope=0.0, em=0.5, prior=0.097)
         slope_eval(off, f"base{i}", mechanism="standard", slope=-0.002, em=0.4, prior=0.097)
-    v_off = cli._adjudicate_hypothesis(_hyp(spec, mechanisms=["braid"]), _index(off))
+    v_off = _adj_score_cohort(_hyp(spec, mechanisms=["braid"]), _index(off))
     assert v_off["verdict"] == "supported", v_off
     assert not v_off["arms"]["braid"].get("floor_effect")
 
@@ -1207,7 +1225,7 @@ def test_training_taint_propagates_through_eval_artifacts(tmp_path):
         data = json.loads(p.read_text())
         data["train_provenance"] = {**CLEAN_PROV, "git_dirty": True, "tainted": True}
         p.write_text(json.dumps(data))
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "blocked" and v["reason_code"] == "tainted_evidence", v
 
     # clean train_provenance adjudicates normally
@@ -1218,7 +1236,7 @@ def test_training_taint_propagates_through_eval_artifacts(tmp_path):
         data = json.loads(p.read_text())
         data["train_provenance"] = dict(CLEAN_PROV)
         p.write_text(json.dumps(data))
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path))
     assert v["verdict"] == "supported", v
 
 
@@ -1787,7 +1805,7 @@ def test_underpowered_qualifier_on_supported_verdict(tmp_path):
     achieved power ~ 41%, but the CI (df=2, crit 4.303) still clears."""
     _arm_artifacts(tmp_path / "weak", "cand", "ultrametric", [0.65, 0.70, 0.75])
     _arm_artifacts(tmp_path / "weak", "base", "standard", [0.50, 0.50, 0.50])
-    v = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path / "weak"))
+    v = _adj_score_cohort(_hyp(), _index(tmp_path / "weak"))
     assert v["verdict"] == "supported", v
     arm = v["arms"]["ultrametric"]
     assert arm["underpowered"] is True and v["underpowered"] is True
@@ -1797,7 +1815,7 @@ def test_underpowered_qualifier_on_supported_verdict(tmp_path):
 
     _arm_artifacts(tmp_path / "tight", "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path / "tight", "base", "standard", [0.50, 0.51, 0.52])
-    v2 = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path / "tight"))
+    v2 = _adj_score_cohort(_hyp(), _index(tmp_path / "tight"))
     assert v2["verdict"] == "supported"
     arm2 = v2["arms"]["ultrametric"]
     assert arm2["power"] > 0.99 and "underpowered" not in arm2
@@ -1810,13 +1828,13 @@ def test_p_value_matches_ci_decision_welch(tmp_path):
     inconclusive straddle <=> p > 0.025 (for >= claims)."""
     _arm_artifacts(tmp_path / "s", "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path / "s", "base", "standard", [0.50, 0.51, 0.52])
-    vs = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path / "s"))
+    vs = _adj_score_cohort(_hyp(), _index(tmp_path / "s"))
     assert vs["verdict"] == "supported" and vs["arms"]["ultrametric"]["p_value"] <= 0.025
     assert vs["p_value"] == vs["arms"]["ultrametric"]["p_value"]
 
     _arm_artifacts(tmp_path / "i", "cand", "ultrametric", [0.50, 0.60, 0.55])
     _arm_artifacts(tmp_path / "i", "base", "standard", [0.48, 0.52, 0.50])
-    vi = cli._adjudicate_hypothesis(_hyp(), _index(tmp_path / "i"))
+    vi = _adj_score_cohort(_hyp(), _index(tmp_path / "i"))
     assert vi["verdict"] == "inconclusive" and vi["arms"]["ultrametric"]["p_value"] > 0.025
 
 
@@ -1846,7 +1864,7 @@ def test_fdr_headline_and_qvalues_in_run_report(tmp_path, monkeypatch):
     h2["id"] = "hyp-engine-test-2"
     h2["prediction"]["metric_path"] = "evaltasks:tasks.hier.exact_match.greedy.in_range.mean"
     registry.write_text("schema_version: 1\nhypotheses:\n" + _yaml_entry(h1) + _yaml_entry(h2))
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch)
     monkeypatch.setattr(cli, "_load_parent_hypothesis_registry", lambda repo_root: None)
     _arm_artifacts(tmp_path / "a", "cand", "ultrametric", [0.80, 0.82, 0.81])
     _arm_artifacts(tmp_path / "a", "base", "standard", [0.50, 0.51, 0.52])
@@ -1928,8 +1946,7 @@ def test_coord_curves_ingest_as_bench_with_arm_selectors(tmp_path):
 
 
 def test_coord_curve_single_arm_hypothesis_adjudicates(tmp_path):
-    """End-to-end engine path: a single-arm flatness claim (baseline: null) on
-    clean-provenance nsa-arm coord curves reaches SUPPORTED through ci-v6."""
+    """Three independent nsa-arm curves put the flatness statistic below the registered threshold."""
     for seed, slope in ((0, 0.010), (1, 0.020), (2, 0.015)):
         # explicit CLEAN provenance: production writers record real (dirty =>
         # tainted) provenance; this fixture exercises the verdict path
@@ -1946,7 +1963,7 @@ def test_coord_curve_single_arm_hypothesis_adjudicates(tmp_path):
         },
         mechanisms=["tropical"],
     )
-    v = cli._adjudicate_hypothesis(hyp, cli._adj_collect_artifacts([tmp_path]))
+    v = _adj_score_cohort(hyp, cli._adj_collect_artifacts([tmp_path]))
     assert v["verdict"] == "supported", v
 
 

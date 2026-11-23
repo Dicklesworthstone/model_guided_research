@@ -1,5 +1,17 @@
 # CI-lite — fast local pre-push gate
 
+The repository's DSR manifest runs lint, formatting, the locked type environment,
+fast and full tests, registry validation, CPU certificates, seven pipeline
+scenarios, the Lean axiom audit and an installed-wheel check. Invoke it from a
+clean checkout on a host with Python 3.13, uv and the pinned Lean toolchain.
+
+```bash
+DSR_REPOS_FILE="$PWD/dsr.yaml" dsr quality --tool model_guided_research --work-dir "$PWD" --check-timeout 18000
+```
+
+DSR writes the receipts, wheel, certificates, and scenario reports under its
+quality log directory. Its exit status includes each configured check.
+
 **Bead:** `model_guided_research-c6v`
 **Script:** `scripts/ci_lite.sh` (uv-only, venv-respecting, no pip)
 

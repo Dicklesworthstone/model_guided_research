@@ -12,9 +12,11 @@ import math
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 import cli
+from tests.test_adjudicate import _commit_fixture_registration
 
 runner = CliRunner()
 REGISTRY_PATH = Path(cli.__file__).resolve().parent / "hypotheses" / "registry.yaml"
@@ -980,6 +982,9 @@ def test_scorecard_failure_is_recorded_without_stopping_other_cells(tmp_path, mo
     assert (suite / "summary.json").exists() and (suite / "report.html").exists()
 
 
+_SCORECARD_FIXTURE_PROVENANCE = {"tainted": False, "git_dirty": False}
+
+
 def _write_scorecard_placebo_evidence(root: Path, *, budget: float, mechanism: str, seed: int, value: float) -> None:
     run_id = f"b{int(budget)}-{mechanism}-s{seed}"
     run_dir = root / run_id
@@ -998,8 +1003,8 @@ def _write_scorecard_placebo_evidence(root: Path, *, budget: float, mechanism: s
                 "model_config": {"attention_type": mechanism},
             },
         },
-        "provenance": {"tainted": False},
-        "train_provenance": {"tainted": False},
+        "provenance": _SCORECARD_FIXTURE_PROVENANCE,
+        "train_provenance": _SCORECARD_FIXTURE_PROVENANCE,
         "tasks": {"placebo": {"perplexity": {"in_range": value, "held_out": value}}},
     }
     (run_dir / "summary.json").write_text(json.dumps(summary))
@@ -1027,7 +1032,7 @@ hypotheses:
     verdict_history: []
 """
     )
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
+    _commit_fixture_registration(registry, monkeypatch, _SCORECARD_FIXTURE_PROVENANCE)
     evidence = tmp_path / "scorecard"
     for seed in range(3):
         _write_scorecard_placebo_evidence(evidence, budget=1e6, mechanism="standard", seed=seed, value=1.0)
@@ -1085,7 +1090,7 @@ def test_scorecard_fdr_reports_only_bh_surviving_supported_rows():
     assert "q_value" not in verdicts[3]
 
 
-def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific_controls(tmp_path):
+def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific_controls(tmp_path, monkeypatch):
     universal = {
         "id": "hyp-placebo-no-winner",
         "mechanisms": ["tropical"],
@@ -1110,6 +1115,10 @@ def test_scorecard_placebo_gate_blocks_missing_blocked_and_inconclusive_specific
             "min_seeds": 3,
         },
     }
+    universal["date_registered"] = hyperbolic["date_registered"] = "2026-01-01"
+    registry = tmp_path / "registry.yaml"
+    registry.write_text(yaml.safe_dump({"schema_version": 1, "hypotheses": [universal, hyperbolic]}))
+    _commit_fixture_registration(registry, monkeypatch, _SCORECARD_FIXTURE_PROVENANCE)
     for seed in range(3):
         _write_scorecard_placebo_evidence(tmp_path, budget=1e6, mechanism="standard", seed=seed, value=1.0)
         _write_scorecard_placebo_evidence(tmp_path, budget=1e6, mechanism="tropical", seed=seed, value=1.0)

@@ -1,0 +1,1210 @@
+{
+  "description": "Dry-run decisions on the tracked 4db6657 corpus. Paths are repository relative. A path can match more than one hypothesis.",
+  "corpus_commit": "4db6657e80d6cd657d8ca85ef86ca01380c2e9c0",
+  "artifact_tree": "bd97f6eeb731d2a070e84535883754e46f90d010",
+  "registry_blob": "aeddb746fccc3d3cb2f8e4b4f131260a7eb5bcb0",
+  "source": {
+    "ci-v6": {
+      "cli_blob": "e5acbfcf73fa2234aa3b141738a46dcb9996a8c0",
+      "raw_report_sha256": "2ed8cbb38b5e07597af41bd5e34d87ab84ffa7828f7a3d26baebc16d48c70faf"
+    },
+    "ci-v7": {
+      "cli_blob": "b030c99d451dd01b6686e3138e0fe1e142aa913a",
+      "raw_report_sha256": "e79554cd1c8c0157412c0ec3d14bc7d358a21fd4fd95bb794c544371a29ee17c"
+    }
+  },
+  "statuses": {
+    "ci-v6": {
+      "inconclusive": 11,
+      "blocked": 50,
+      "supported": 11,
+      "refuted": 3
+    },
+    "ci-v7": {
+      "blocked": 57,
+      "supported": 11,
+      "inconclusive": 6,
+      "refuted": 1
+    }
+  },
+  "exclusion_counts": {
+    "missing_training_lineage": 113,
+    "pre_registration": 101
+  },
+  "distinct_excluded_paths": 147,
+  "manual_hold_count": 4,
+  "manual_holds": [
+    "hyp-braid-dyck-depth-extrapolation",
+    "hyp-braid-dyck-directional",
+    "hyp-symplectic-nonorm-depth-tied",
+    "hyp-symplectic-nonorm-depth-untied"
+  ],
+  "hypotheses": {
+    "hyp-ultrametric-hier-heldout-depth": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-hier-standard-s2/summary.json",
+        "artifacts/evals/tasks/e1-hier-ultrametric-s0/summary.json",
+        "artifacts/evals/tasks/e1-hier-ultrametric-s1/summary.json",
+        "artifacts/evals/tasks/e1-hier-ultrametric-s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-hier-ultrametric-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-ultrametric-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-ultrametric-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-ultrametric-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-ultrametric-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-ultrametric-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-fractal-hier-heldout-depth": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-hier-fractal-s0/summary.json",
+        "artifacts/evals/tasks/e1-hier-fractal-s1/summary.json",
+        "artifacts/evals/tasks/e1-hier-fractal-s2/summary.json",
+        "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-hier-standard-s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-hier-fractal-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-fractal-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-fractal-s2/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-fractal-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-fractal-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-fractal-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-ultrametric-needle-long-context": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5"
+    },
+    "hyp-ultrametric-trie-decode-speedup": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "1c74b2ef1c45bc2fc84292fa84416a6a3a9a1dec",
+      "ci-v7_selected": [
+        "artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"
+      ]
+    },
+    "hyp-braid-dyck-depth-extrapolation": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "manual_hold",
+      "ci-v7_reason": "manual_hold"
+    },
+    "hyp-braid-length-generalization": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5"
+    },
+    "hyp-reversible-activation-memory": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "8e74cdc71f0a05cf4af5b897c920177eedf6f6f9"
+    },
+    "hyp-reversible-gradient-stability": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "7553163ae453bf89b67fc782c26bd3c5323f7b79"
+    },
+    "hyp-symplectic-nonorm-depth-tied": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "manual_hold",
+      "ci-v7_reason": "manual_hold"
+    },
+    "hyp-symplectic-nonorm-depth-untied": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "manual_hold",
+      "ci-v7_reason": "manual_hold"
+    },
+    "hyp-tropical-needle-no-dilution": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5"
+    },
+    "hyp-tropical-certified-robustness": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "d3a3e4a2cec27d2c20724c1aa470a106f2b073ea"
+    },
+    "hyp-quaternion-rotation-composition": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-rot-quaternion-s0/summary.json",
+        "artifacts/evals/tasks/e1-rot-quaternion-s1/summary.json",
+        "artifacts/evals/tasks/e1-rot-quaternion-s2/summary.json",
+        "artifacts/evals/tasks/e1-rot-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-rot-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-rot-standard-s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-rot-quaternion-s0/summary.json",
+          "artifacts/evals/tasks/e1-rot-quaternion-s1/summary.json",
+          "artifacts/evals/tasks/e1-rot-quaternion-s2/summary.json",
+          "artifacts/evals/tasks/e1-rot-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-rot-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-rot-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-quaternion-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-quaternion-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-quaternion-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-octonion-rotation-composition": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-rot-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-rot-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-rot-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rot-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-octonion-norm-stability": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "7553163ae453bf89b67fc782c26bd3c5323f7b79"
+    },
+    "hyp-simplicial-two-hop-composition": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-rel-simplicial-s0/summary.json",
+        "artifacts/evals/tasks/e1-rel-simplicial-s1/summary.json",
+        "artifacts/evals/tasks/e1-rel-simplicial-s2/summary.json",
+        "artifacts/evals/tasks/e1-rel-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-rel-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-rel-standard-s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-rel-simplicial-s0/summary.json",
+          "artifacts/evals/tasks/e1-rel-simplicial-s1/summary.json",
+          "artifacts/evals/tasks/e1-rel-simplicial-s2/summary.json",
+          "artifacts/evals/tasks/e1-rel-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-rel-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-rel-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-simplicial-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-simplicial-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-simplicial-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-surreal-wide-dynamic-range": {
+      "ci-v6": "refuted",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-arith-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s2/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s3/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s4/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s5/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s6/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s7/summary.json",
+        "artifacts/evals/tasks/e1-arith-standard-s8/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s0/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s1/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s2/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s3/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s4/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s5/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s6/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s7/summary.json",
+        "artifacts/evals/tasks/e1-arith-surreal-s8/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-arith-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s3/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s4/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s7/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s8/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s0/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s1/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s2/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s3/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s4/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s5/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s6/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s7/summary.json",
+          "artifacts/evals/tasks/e1-arith-surreal-s8/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-surreal-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-surreal-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-surreal-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-surreal-scaling-axis-prediction": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-ordinal-regime-shift-recovery": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "8e74cdc71f0a05cf4af5b897c920177eedf6f6f9"
+    },
+    "hyp-hoss-stiff-lr-robustness": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-gauge-gradient-stability": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "7553163ae453bf89b67fc782c26bd3c5323f7b79"
+    },
+    "hyp-gauge-bag-conservation": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "351bd3b6a145f60b232e740a91d90bb6621e97e5"
+    },
+    "hyp-group-nonsolvable-barrier": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-placebo-no-winner": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "supported",
+      "registration_commit": "8e74cdc71f0a05cf4af5b897c920177eedf6f6f9",
+      "ci-v7_selected": [
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s3/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s4/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s5/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s6/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s7/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s3/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s4/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s5/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s6/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s7/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-gauge-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-octonion-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-reversible-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-tropical-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s2/summary.json"
+      ],
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-placebo-braid-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-braid-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-braid-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-fractal-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-quaternion-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-simplicial-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s3/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s7/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-ultrametric-s2/summary.json"
+      ],
+      "ci-v7_only": [
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s3/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s4/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s5/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s6/summary.json",
+        "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s7/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-braid-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-fractal-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-quaternion-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-simplicial-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-surreal-s2/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s0/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s1/summary.json",
+        "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-ultrametric-s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-placebo-braid-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-braid-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-braid-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-fractal-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-fractal-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-fractal-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-quaternion-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-quaternion-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-quaternion-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-simplicial-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-simplicial-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-simplicial-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s3/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s7/summary.json",
+          "artifacts/evals/tasks/e1-placebo-ultrametric-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-ultrametric-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-ultrametric-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-ordinal-cosine-parity-simple": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "8e74cdc71f0a05cf4af5b897c920177eedf6f6f9"
+    },
+    "hyp-gauge-grad-stability-demo": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-maslov-anneal-loss-retention": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "284bb616ec25d6e06e20a0cfba3a864894e341f2",
+      "ci-v7_selected": [
+        "artifacts/campaigns/9qk3/arith-tropical-anneal-s0/summary.json",
+        "artifacts/campaigns/9qk3/arith-tropical-anneal-s1/summary.json",
+        "artifacts/campaigns/9qk3/arith-tropical-anneal-s2/summary.json",
+        "artifacts/campaigns/9qk3/arith-tropical-b1-s0/summary.json",
+        "artifacts/campaigns/9qk3/arith-tropical-b1-s1/summary.json",
+        "artifacts/campaigns/9qk3/arith-tropical-b1-s2/summary.json"
+      ]
+    },
+    "hyp-braid-dyck-directional": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "manual_hold",
+      "ci-v7_reason": "manual_hold"
+    },
+    "hyp-surreal-optimization-rate": {
+      "ci-v6": "supported",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "insufficient_seeds",
+      "registration_commit": "1c6abc57c168386d1faeb6f340b47b975f7c998b",
+      "ci-v6_only": [
+        "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s0/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s1/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s2/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s3/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s5/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s6/summary.json",
+        "artifacts/evals/tasks/e1-placebo-surreal-s7/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "missing_training_lineage": [
+          "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s3/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s7/summary.json"
+        ],
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-surreal-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-balltree-valued-attention-speedup": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "1c74b2ef1c45bc2fc84292fa84416a6a3a9a1dec",
+      "ci-v7_selected": [
+        "artifacts/bench/ultrametric_paths/bench-ultra-s0/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s1-r2/summary.json",
+        "artifacts/bench/ultrametric_paths/bench-ultra-s2-r2/summary.json"
+      ]
+    },
+    "hyp-tie-locus-density-decreases": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-rmatrix-s5-length-slope": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "86a5a313a8c004b896b2861e4b5789c2e00c0a7b",
+      "ci-v7_selected": [
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s5/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s5/summary.json"
+      ]
+    },
+    "hyp-rmatrix-solvable-control-specificity": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "86a5a313a8c004b896b2861e4b5789c2e00c0a7b",
+      "ci-v7_selected": [
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/rmatrix-s5/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/group-comparison-evals/evals/tasks/standard-s5/summary.json"
+      ]
+    },
+    "hyp-rmatrix-charge-drift-separation": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79",
+      "ci-v7_selected": [
+        "artifacts/certs/nanochat/cert-braid-s1/summary.json",
+        "artifacts/certs/nanochat/cert-braid-s2/summary.json",
+        "artifacts/certs/nanochat/cert-swh1-2026-10-14/summary.json",
+        "artifacts/certs/nanochat/fdxb-cert-refresh-all/summary.json"
+      ]
+    },
+    "hyp-rmatrix-charge-decodability": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79"
+    },
+    "hyp-padic-truncation-graceful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "bdb33df79c66a2799116e174fb799d932b90fd66"
+    },
+    "hyp-padic-truncation-graceful-k16": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "cd76796a043da255793479f632e1e4c4fcbde15b"
+    },
+    "hyp-hensel-curriculum-parity": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-padic-truncation-depth-independent": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "541ee1f82da59f7bec1ad68a3e35cae10cdc5f8b"
+    },
+    "hyp-coordcheck-clt-flat": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "74bfca6553b2d72c0c1c1a9ef5b7750df2a96349",
+      "ci-v7_selected": [
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/reversible_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/standard_current_s2/summary.json"
+      ]
+    },
+    "hyp-tropical-evt-miscoupling": {
+      "ci-v6": "refuted",
+      "ci-v7": "blocked",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "658c70421b75e3a46d0ce668405d64ea01e39bab",
+      "ci-v6_only": [
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s3/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s4/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_current_s5/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s3/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s4/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02-b/tropical_nsa_s5/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-2026-09-02/tropical_nsa_s2/summary.json"
+        ]
+      }
+    },
+    "hyp-tropical-post-cproj-gauge-flattens": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "658c70421b75e3a46d0ce668405d64ea01e39bab",
+      "ci-v7_selected": [
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s10/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s11/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s6/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s7/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s8/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_current_s9/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s10/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s11/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s6/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s7/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s8/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-tropical-post-cproj-2026-10-14/tropical_nsa_s9/summary.json"
+      ]
+    },
+    "hyp-tropical-length-evt-signature": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5bcf238ea9ad8c7a841fb47611de32042b06cf3a"
+    },
+    "hyp-hyperbolic-hierarchy-retrieval": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "bc13f0fe27384db3094106714ae2d3c9b192c105",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-hyperbolic-placebo-specificity": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "bc13f0fe27384db3094106714ae2d3c9b192c105",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json"
+        ]
+      }
+    },
+    "hyp-hyperbolic-curvature-readout": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "prediction_not_operationalized",
+      "ci-v7_reason": "prediction_not_operationalized"
+    },
+    "hyp-reversible-copyops-inversion": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-gauge-group-state-tracking": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-ultrametric-realhier-wild": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-fractal-realhier-wild": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-ordinal-regime-recovery": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-hoss-regime-curvature": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f"
+    },
+    "hyp-tropical-robustness-perturbation": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "d3a3e4a2cec27d2c20724c1aa470a106f2b073ea"
+    },
+    "hyp-control-no-context-planted-effect": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "668592ad64117cf2a8615626a8d6d532c35f8c22",
+      "ci-v7_selected": [
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s3/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s4/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s5/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s3/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s4/summary.json",
+        "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s5/summary.json"
+      ]
+    },
+    "hyp-hyperbolic-curvature-readout-hier": {
+      "ci-v6": "refuted",
+      "ci-v7": "refuted",
+      "registration_commit": "986067ea5aacc081b773e63f58fc3cc74fb0ccd0",
+      "ci-v7_selected": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s2/summary.json"
+      ]
+    },
+    "hyp-hyperbolic-curvature-readout-placebo": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "986067ea5aacc081b773e63f58fc3cc74fb0ccd0"
+    },
+    "hyp-tie-locus-density-decreases-tropical": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "metric_missing",
+      "ci-v7_reason": "metric_missing",
+      "registration_commit": "986067ea5aacc081b773e63f58fc3cc74fb0ccd0"
+    },
+    "hyp-coordcheck-isometry-flat": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+      "ci-v7_selected": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/octonion_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/quaternion_current_s5/summary.json"
+      ],
+      "ci-v6_only": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/octonion_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/quaternion_current_s2/summary.json"
+        ]
+      }
+    },
+    "hyp-coordcheck-branching-radial-flat": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+      "ci-v7_selected": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/hyperbolic_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/ultrametric_current_s5/summary.json"
+      ],
+      "ci-v6_only": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/hyperbolic_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/ultrametric_current_s2/summary.json"
+        ]
+      }
+    },
+    "hyp-coordcheck-clt-assumed-flat": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "f89066f181c36355f715d77f7c9c688ee0f4d354",
+      "ci-v7_selected": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/braid_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/fractal_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/gauge_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/simplicial_current_s5/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s3/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s4/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03-b/surreal_current_s5/summary.json"
+      ],
+      "ci-v6_only": [
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s2/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s0/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s1/summary.json",
+        "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s2/summary.json"
+      ],
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/braid_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/fractal_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/gauge_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/simplicial_current_s2/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s0/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s1/summary.json",
+          "artifacts/bench/coord_curves/coordcheck-all-2026-09-03/surreal_current_s2/summary.json"
+        ]
+      }
+    },
+    "hyp-fractal-hier-heldout-depth-faithful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "10789ce3755eb573bb18c958bcc33b7f3a2abed2",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-hier-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-hier-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-fractal-realhier-wild-faithful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "10789ce3755eb573bb18c958bcc33b7f3a2abed2"
+    },
+    "hyp-simplicial-two-hop-composition-faithful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "10789ce3755eb573bb18c958bcc33b7f3a2abed2",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-rel-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-rel-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-rel-standard-s2/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-rel-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-surreal-wide-dynamic-range-faithful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "10789ce3755eb573bb18c958bcc33b7f3a2abed2",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s3/summary.json",
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s4/summary.json",
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/nocontext-s5/summary.json",
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s3/summary.json",
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s4/summary.json",
+          "artifacts/campaigns/control-no-context-evals/evals/tasks/standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s3/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s4/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s7/summary.json",
+          "artifacts/evals/tasks/e1-arith-standard-s8/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s0/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s1/summary.json",
+          "artifacts/evals/tasks/pilot1r-arith-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-surreal-optimization-rate-faithful": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "ineligible_evidence",
+      "registration_commit": "10789ce3755eb573bb18c958bcc33b7f3a2abed2",
+      "ci-v7_excluded_by_reason": {
+        "pre_registration": [
+          "artifacts/evals/tasks/e1-placebo-standard-s0/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s1/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s2/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s5/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s6/summary.json",
+          "artifacts/evals/tasks/e1-placebo-standard-s7/summary.json",
+          "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s3/summary.json",
+          "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s4/summary.json",
+          "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s5/summary.json",
+          "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s6/summary.json",
+          "artifacts/scorecards/dyck-comparison-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s7/summary.json",
+          "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s0/summary.json",
+          "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s1/summary.json",
+          "artifacts/scorecards/placebo-guard-tasktok-1e12/evals/tasks/eval-b0-placebo-standard-s2/summary.json"
+        ]
+      }
+    },
+    "hyp-tie-locus-density-decreases-ultrametric": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "63eac571fb8fc236223762816e5c0eae9f9cdb65"
+    },
+    "hyp-geo-init-early-advantage": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "cd98f851ceac91ced16c8fa2738f797d6026fb45",
+      "ci-v7_selected": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s2/summary.json"
+      ]
+    },
+    "hyp-geo-init-less-distance-traveled": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "cd98f851ceac91ced16c8fa2738f797d6026fb45",
+      "ci-v7_selected": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-geo-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-geo-s2/summary.json"
+      ]
+    },
+    "hyp-geo-init-mismatched-safety": {
+      "ci-v6": "supported",
+      "ci-v7": "supported",
+      "registration_commit": "cd98f851ceac91ced16c8fa2738f797d6026fb45",
+      "ci-v7_selected": [
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/fractal-mismatch-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/hyperbolic-mismatch-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-default-s2/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s0/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s1/summary.json",
+        "artifacts/campaigns/geo-init-77l4/runs/baseline/nanochat/ultrametric-mismatch-s2/summary.json"
+      ]
+    },
+    "hyp-cert-telemetry-leads-divergence": {
+      "ci-v6": "inconclusive",
+      "ci-v7": "inconclusive",
+      "registration_commit": "6628242463ff1a580c086f1b84c22c412c113238",
+      "ci-v7_selected": [
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s101/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s102/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s103/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s104/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-stable-s105/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s101/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s102/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s103/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s104/summary.json",
+        "artifacts/campaigns/cert-telemetry-5ki5/runs/baseline/nanochat/gauge-unstable-s105/summary.json"
+      ]
+    },
+    "hyp-routes-reuse-increases-with-training": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "0cfd727bcf1b360ead9cb72944aa0df56e513770"
+    },
+    "hyp-routes-margin-rank-correlates-stability": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "0cfd727bcf1b360ead9cb72944aa0df56e513770"
+    },
+    "hyp-routes-clusters-beat-entropy-ari": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "0cfd727bcf1b360ead9cb72944aa0df56e513770"
+    },
+    "hyp-tropical-region-count-grows-with-t": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "0cfd727bcf1b360ead9cb72944aa0df56e513770"
+    },
+    "hyp-tropical-structured-support-beats-dense": {
+      "ci-v6": "blocked",
+      "ci-v7": "blocked",
+      "ci-v6_reason": "no_candidate_artifacts",
+      "ci-v7_reason": "no_candidate_artifacts",
+      "registration_commit": "0cfd727bcf1b360ead9cb72944aa0df56e513770"
+    }
+  },
+  "dsr": {
+    "quality_tool": "mgr-historical",
+    "quality_run": "20261122T193530-ERj2deKM",
+    "command_in_each_checkout": "python cli.py adjudicate --all --dry-run --artifacts artifacts",
+    "ci-v6_check_log_sha256": "609caebba8772e0e7bd5b2118c816287efbf30476fab55343828578260bb48e4",
+    "ci-v7_check_log_sha256": "935d314aa112aaf8125f782616323a2fb336b1ecc890024d56f0c1f35811b240"
+  }
+}

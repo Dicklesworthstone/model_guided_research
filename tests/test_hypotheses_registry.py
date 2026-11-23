@@ -299,6 +299,44 @@ def test_cli_list_show_validate():
     assert result.exit_code == 0, result.output
 
 
+def test_installed_registry_uses_snapshot_outside_a_research_checkout(tmp_path, monkeypatch):
+    installed = tmp_path / "site-packages"
+    bundle = installed / "nanochat" / "research_data" / "hypotheses"
+    bundle.mkdir(parents=True)
+    registry = bundle / "registry.yaml"
+    registry.write_bytes((REPO_ROOT / "hypotheses" / "registry.yaml").read_bytes())
+    (bundle / "theorems.yaml").write_bytes((REPO_ROOT / "hypotheses" / "theorems.yaml").read_bytes())
+    monkeypatch.setattr(cli, "__file__", str(installed / "cli.py"))
+    monkeypatch.chdir(tmp_path)
+
+    assert cli._hypotheses_registry_path() == registry
+    before = registry.read_bytes()
+    result = runner.invoke(cli.app, ["hypotheses", "validate", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["parent_checked"] is False
+    for args in (
+        ["hypotheses", "hold", "hyp-placebo-no-winner", "--reason", "regression check"],
+        ["hypotheses", "release", "hyp-placebo-no-winner"],
+        ["adjudicate", "--all"],
+        ["theorems", "validate", "--deep"],
+        ["status"],
+    ):
+        result = runner.invoke(cli.app, args)
+        assert result.exit_code == 2 and "Git checkout" in result.output, result.output
+    assert registry.read_bytes() == before
+
+    monkeypatch.chdir(REPO_ROOT / "tests")
+    assert cli._hypotheses_registry_path() == REPO_ROOT / "hypotheses" / "registry.yaml"
+    result = runner.invoke(cli.app, ["hypotheses", "validate", "--json"])
+    assert result.exit_code == 0 and json.loads(result.output)["parent_checked"] is True, result.output
+
+    monkeypatch.chdir(tmp_path)
+    (bundle / "theorems.yaml").write_text("theorems: []\n", encoding="utf-8")
+    result = runner.invoke(cli.app, ["hypotheses", "validate", "--json"])
+    assert result.exit_code == 1
+    assert any("theorem_refs" in error for error in json.loads(result.output)["errors"])
+
+
 def test_cli_add_appends_preserving_comments_and_rolls_back_on_error(tmp_path, monkeypatch):
     registry_copy = tmp_path / "registry.yaml"
     registry_copy.write_text(cli._hypotheses_registry_path().read_text(encoding="utf-8"), encoding="utf-8")

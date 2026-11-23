@@ -126,11 +126,13 @@ class HeadTrie:
         if res in L.res2idx:
             return L.res2idx[res]
         idx = len(L.residues)
+        if idx == L.S.shape[0]:
+            # Only the prefix indexed by residues is live. Doubling capacity
+            # avoids compiling JAX gathers and updates for every new row count.
+            padding = ((0, max(1, idx)), (0, 0))
+            L.S, L.R = jnp.pad(L.S, padding), jnp.pad(L.R, padding)
         L.res2idx[res] = idx
         L.residues.append(res)
-        L.S = jnp.vstack([L.S, jnp.zeros((1, self.m), jnp.int32)])
-        L.R = jnp.vstack([L.R, jnp.zeros((1, self.m), jnp.int8)])
-        self.levels[d] = L
         return idx
 
     def deepest_occupied(self, digits):

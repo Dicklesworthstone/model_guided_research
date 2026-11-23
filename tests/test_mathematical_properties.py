@@ -1317,6 +1317,41 @@ class TestSymplecticReversible:
             require(err < 1e-12, f"{mode} round-trip err {err:.3e}")
         print("  ✅ exact inverse round-trip, both modes")
 
+    def test_tied_quadratic_distinguishes_modified_energy_from_logged_energy(self):
+        import math
+
+        import pytest
+        import torch
+
+        from nanochat.train import _collect_symplectic_energy_stats
+
+        block = self._tiny_block("symplectic", lambda_min=0.5)
+        block.record_energy = True
+        q = torch.zeros(1, self.T, self.CH, dtype=torch.float64)
+        q[0, 0, 0] = 2
+        p = torch.zeros_like(q)
+        wrong_q, wrong_p = 2.0, 0.0
+        with torch.no_grad():
+            for kick in (block.f_block, block.g_block):
+                kick.energy.v.zero_()
+                kick.energy.lambda_raw.fill_(math.log(math.expm1(0.5)))
+            for _ in range(8):
+                q, p = block(torch.cat([q, p], dim=-1)).chunk(2, dim=-1)
+                modified = 0.5 * (q.square() + p.square() + q * p).sum()
+                assert float(modified) == pytest.approx(2.0, abs=1e-12)
+                wrong_q += wrong_p
+                wrong_p += wrong_q
+        stats = _collect_symplectic_energy_stats(block)
+        assert stats is not None and stats["layers_recorded"] == 8
+        assert stats["energy_min"] == pytest.approx(2.0)
+        assert stats["energy_max"] == pytest.approx(4.0)
+        assert stats["energy_band_layers"] / (1 + abs(stats["shadow_energy_mean"])) > 0.10
+        assert 0.5 * (wrong_q**2 + wrong_p**2 + wrong_q * wrong_p) > 1e6
+        for bad in (math.nan, math.inf, -math.inf):
+            block.energy_trace.append({"shadow_energy": bad})
+            with pytest.raises(FloatingPointError, match="Non-finite"):
+                _collect_symplectic_energy_stats(block)
+
     def test_corrected_sign_conserves_coercive_energy(self):
         """256 tied layers: the shipped (corrected-sign) block keeps the
         coercive H = phi_F(x2) + phi_G(x1) in a tight band and norms bounded;

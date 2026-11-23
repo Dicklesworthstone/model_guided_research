@@ -700,6 +700,53 @@ def test_extract_route_trace_determinism_and_backend_conformance() -> None:
     assert "discrete argmax route" in std_trace["layers"][0]["reason"].lower()
 
 
+def test_route_controls_do_not_recover_labels_or_construct_a_margin_correlation():
+    import random
+
+    import cli
+
+    spec = TASKS["hier"]
+    docs = spec.generate(96, 42, spec.resolve_dials(None))["train"][:32]
+    traces = []
+    for i, doc in enumerate(docs):
+        label, features = cli._extract_doc_latent_label_and_trace_features(spec, doc, {"decisions": [0]})
+        traces.append({
+            "decisions": [0], "latent_label": label, "trace_cluster_features": features,
+            "prompt_control_features": cli._route_prompt_control(spec, doc),
+            "attention_entropy_vector": [0.0], "min_margin": i,
+            "scored_draws": len(docs), "surviving_draws": i,
+        })
+    store = {"schema_version": cli.ROUTE_STORE_SCHEMA_VERSION, "traces": traces, "meta": {"seed": 42}}
+    results = cli.analyze_route_trace_store(store)["results"]
+    cl = results["clustering"]
+    assert cl["ari_trace"] == cl["ari_entropy_baseline"] == cl["ari_gain"] == 0
+    assert cl["ari_prompt_only_control"] == 1
+    assert results["stability"]["spearman_margin_vs_stability"] == pytest.approx(1)
+    labels = [tr["latent_label"] for tr in traces]
+    random.Random(42).shuffle(labels)
+    for i, tr in enumerate(traces):
+        tr["latent_label"] = labels[i]
+        tr["surviving_draws"] = len(docs) - i
+    reversed_results = cli.analyze_route_trace_store(store)["results"]
+    assert reversed_results["stability"]["spearman_margin_vs_stability"] == pytest.approx(-1)
+    assert reversed_results["clustering"]["ari_trace"] == 0
+    assert reversed_results["clustering"]["ari_prompt_only_control"] < 0.15
+    for tr in traces:
+        tr["min_margin"] = 1
+        tr["latent_label"] = 0
+    degenerate = cli.analyze_route_trace_store(store)["results"]
+    assert degenerate["stability"]["spearman_margin_vs_stability"] is None
+    assert degenerate["clustering"]["ari_gain"] is None
+    assert degenerate["stability"]["mean_paraphrase_stability"] is None
+    empty = cli.analyze_route_trace_store({**store, "traces": []})["results"]
+    assert empty["clustering"]["ari_trace"] is None and not empty["bruteforce_verified"]
+    assert cli._route_agreement([1, 2], [1, 2, 3]) == (2, 3)
+    assert cli._route_agreement([1, 2, 3], [1]) == (1, 3)
+    assert cli._route_agreement([], []) == (0, 0)
+    with pytest.raises(ValueError, match="v2"):
+        cli.analyze_route_trace_store({**store, "schema_version": "mgr.routes.store.v1"})
+
+
 def test_routes_cli_and_from_store_regeneration(monkeypatch, tmp_path: Path) -> None:
     """Verify mgr routes writes traces.parquet/json + summary.json + report.md and regenerates via --from-store."""
     _tokenizer_or_skip()
@@ -737,7 +784,7 @@ def test_routes_cli_and_from_store_regeneration(monkeypatch, tmp_path: Path) -> 
     assert store_json_path.exists()
 
     summary_orig = json.loads(summary_path.read_text())
-    assert summary_orig["schema_version"] == "mgr.bench.routes.v1"
+    assert summary_orig["schema_version"] == "mgr.bench.routes.v2"
     assert summary_orig["results"]["bruteforce_verified"] is True
     assert "ari_trace" in summary_orig["results"]["clustering"]
     assert "spearman_margin_vs_stability" in summary_orig["results"]["stability"]
@@ -778,7 +825,9 @@ def test_tropical_region_count_propositions_and_structured_support() -> None:
         seed=42,
         device_str="cpu",
     )
-    assert proto["schema_version"] == "mgr.bench.tropical_regions.v1"
+    assert proto["schema_version"] == "mgr.bench.tropical_regions.v2"
+    assert proto["meta"]["curve_weight_source"] == "generated"
+    assert proto["results"]["support_arm_bound_violations"] == {"dense": 0, "structured": 0}
     assert proto["results"]["total_bound_violations"] == 0
     assert proto["results"]["tropical_regions_per_param_slope"] > 0.0
     assert proto["results"]["relu_mlp_regions_per_param_slope"] == 0.0
@@ -829,5 +878,68 @@ def test_tropical_region_count_propositions_and_structured_support() -> None:
     assert res_struct["realized_q_space_fixed_kv"] <= res_struct["prop0_bound"]
     assert res_struct["realized_single_head"] <= res_struct["prop1_bound"]
     assert res_struct["realized_multi_head"] <= res_struct["prop2_bound"]
+
+
+@pytest.mark.slow
+def test_routes_early_checkpoint_uses_saved_training_init_and_replays_parquet(tmp_path: Path) -> None:
+    import hashlib
+    import hmac
+
+    from typer.testing import CliRunner
+
+    import cli
+    from nanochat.diagnostics_data import generate_task
+    from nanochat.train import build_parser, train
+
+    dataset = tmp_path / "data"
+    generate_task("hier", out_dir=dataset, size=96, seed=99)
+    train(build_parser().parse_args([
+        "--device", "cpu", "--tokenizer", "task", "--data-dir", str(dataset / "hier"),
+        "--attention-type", "tropical", "--batch-size", "2", "--sequence-len", "32",
+        "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "16",
+        "--max-steps", "6", "--warmup-steps", "0", "--seed", "11", "--run-id", "native-routes",
+        "--checkpoint-interval", "2", "--save-initial-weights", "--artifacts-dir", str(tmp_path),
+    ]))
+    checkpoints = tmp_path / "baseline" / "nanochat" / "native-routes" / "checkpoints"
+    assert sorted(p.name for p in checkpoints.glob("meta_*.json")) == [
+        "meta_000001.json", "meta_000003.json", "meta_000005.json",
+    ]
+
+    def digest(path):
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+
+    output = tmp_path / "early"
+    runner = CliRunner()
+    result = runner.invoke(cli.app, [
+        "routes", "--checkpoint", str(checkpoints), "--step", "1", "--task", "hier",
+        "--sample", "4", "--seed", "42", "--no-region-count", "--out", str(output),
+    ])
+    assert result.exit_code == 0, result.output
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["meta"]["training_seed"] == 11
+    assert summary["meta"]["lineage"]["run_id"] == "native-routes"
+    assert hmac.compare_digest(summary["meta"]["weights_sha256"], digest(checkpoints / "model_000001.pt"))
+    assert hmac.compare_digest(summary["meta"]["initial_weights_sha256"], digest(checkpoints / "initial" / "model_000000.pt"))
+    assert [row["step"] for row in summary["results"]["reuse"]["checkpoint_curve"]] == [-1, 1]
+    store = json.loads((output / "traces.json").read_text())
+    stability = summary["results"]["stability"]
+    assert stability["perturbation_draws_scored"] == sum(t["scored_draws"] for t in store["traces"]) > 0
+    assert stability["perturbation_draws_survived"] == sum(t["surviving_draws"] for t in store["traces"])
+    replay = tmp_path / "replayed"
+    result = runner.invoke(cli.app, ["routes", "--from-store", str(output / "traces.parquet"), "--out", str(replay)])
+    assert result.exit_code == 0, result.output
+    assert (replay / "summary.json").read_bytes() == (output / "summary.json").read_bytes()
+    assert (replay / "report.md").read_bytes() == (output / "report.md").read_bytes()
+    # A store replay must enforce the same selected endpoint as extraction.
+    store["checkpoint_series"].append({
+        **store["checkpoint_series"][-1],
+        "step": 3,
+        "weights_sha256": digest(checkpoints / "model_000003.pt"),
+    })
+    future = tmp_path / "future.json"
+    future.write_text(json.dumps(store))
+    result = runner.invoke(cli.app, ["routes", "--from-store", str(future), "--out", str(tmp_path / "invalid")])
+    assert result.exit_code != 0
 
 

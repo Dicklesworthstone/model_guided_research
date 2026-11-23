@@ -4,17 +4,22 @@ Model Guided Research CLI - Run experimental mathematical models for ML research
 """
 
 import copy
+import hashlib
+import hmac
 import importlib
 import json
 import math
 import os
 import platform
+import re
 import shlex
 import statistics
 import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import replace
+from datetime import UTC, date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, TypedDict
 
@@ -916,6 +921,8 @@ def run(
                     artifacts.setdefault("diagnostics", {})[demo_name] = diag
             except Exception:
                 pass
+        else:
+            raise AttributeError(f"Module '{demo_info['module']}' has no demo function '{func_name}'")
 
         # Write artifacts if requested (legacy path)
         if export_json is not None:
@@ -988,7 +995,7 @@ This run writes `summary.json` (machine-readable) and `run.md` (human-readable) 
         raise typer.Exit(1) from e
     except KeyboardInterrupt:
         console.print("\n[yellow]Demo interrupted by user[/yellow]")
-        raise typer.Exit(0) from None
+        raise typer.Exit(130) from None
     except Exception as e:
         console.print(f"[bold red]Error running demo:[/bold red] {e}")
         if verbose:
@@ -1017,7 +1024,7 @@ def info(
         raise typer.Exit(1)
 
     demo_info = DEMOS[demo_name]
-    module_file = Path(f"{demo_info['module']}.py")
+    module_file = Path(__file__).resolve().with_name(f"{demo_info['module']}.py")
 
     # Display demo information
     panel = Panel(
@@ -1147,62 +1154,59 @@ def run_all(
 ):
     """Run all available demos in sequence"""
 
-    from config import ProjectConfig, set_config
-    from utils import seed_everything
-
-    config = ProjectConfig()
-    if seed is not None:
-        config.random_seed = seed
-    set_config(config)
-    seed_everything(config.random_seed)
-
     console.print("[bold cyan]Running all demos...[/bold cyan]\n")
 
     success_count = 0
     error_count = 0
+    interrupted = False
 
-    for i, (name, info) in enumerate(DEMOS.items(), 1):
+    for i, name in enumerate(DEMOS, 1):
         console.rule(f"[bold]Demo {i}/{len(DEMOS)}: {name}[/bold]")
-
+        # A fresh interpreter isolates JAX settings, RNGs, and module globals.
+        command = [sys.executable, str(Path(__file__).resolve()), "run", name]
+        if seed is not None:
+            command.extend(["--seed", str(seed)])
         try:
-            # Import and run the demo
-            module = importlib.import_module(info["module"])
-            func_name = info["func"]
-
-            if hasattr(module, func_name):
-                console.print(f"[cyan]{info['description']}[/cyan]\n")
-
-                demo_func = getattr(module, func_name)
-                demo_func()
-
-                success_count += 1
-                console.print(f"\n[green]✓ Demo '{name}' completed successfully[/green]")
-            else:
-                raise AttributeError(f"Function '{func_name}' not found")
-
+            result = subprocess.run(command, check=False)  # nosec B603 - fixed local CLI, no shell
+            interrupted = result.returncode in (-2, 130)
+            if result.returncode:
+                raise RuntimeError(f"exit status {result.returncode}")
         except KeyboardInterrupt:
-            console.print("\n[yellow]Stopped by user[/yellow]")
-            break
-        except Exception as e:
+            interrupted = True
+            error_count += 1
+        except (OSError, RuntimeError) as e:
             error_count += 1
             console.print(f"\n[red]✗ Demo '{name}' failed: {e}[/red]")
-
-            if not skip_errors:
+            if not skip_errors and not interrupted:
                 console.print("[red]Stopping due to error (use --skip-errors to continue)[/red]")
                 break
+        else:
+            success_count += 1
+            console.print(f"\n[green]✓ Demo '{name}' completed successfully[/green]")
+        if interrupted:
+            console.print("\n[yellow]Stopped by user[/yellow]")
+            break
 
         # Add delay between demos (except after the last one)
         if i < len(DEMOS) and delay > 0:
-            import time
-
             console.print(f"\n[dim]Waiting {delay} seconds before next demo...[/dim]")
-            time.sleep(delay)
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                interrupted = True
+                console.print("\n[yellow]Stopped by user[/yellow]")
+                break
 
     # Summary
+    attempted = success_count + error_count
     console.rule("[bold]Summary[/bold]")
     console.print(f"[green]Successful:[/green] {success_count}")
     console.print(f"[red]Failed:[/red] {error_count}")
+    console.print(f"Attempted: {attempted}")
+    console.print(f"Skipped: {len(DEMOS) - attempted}")
     console.print(f"[dim]Total:[/dim] {len(DEMOS)}")
+    if interrupted or error_count:
+        raise typer.Exit(130 if interrupted else 1)
 
 
 @app.callback()
@@ -2390,9 +2394,11 @@ def _scaling_launch_train(cmd: list[str], *, timeout_s: float) -> tuple[int, str
     Module-level so tests can monkeypatch the launcher without spawning
     real training (mirrors how test_bench exercises aggregation only).
     """
+    if cmd[:3] != [sys.executable, "-m", "nanochat.train"]:
+        raise ValueError("Scaling workers must invoke nanochat.train with the active Python interpreter.")
     try:
         proc = subprocess.run(  # nosec B603
-            cmd,
+            [sys.executable, "-m", "nanochat.train", *cmd[3:]],
             capture_output=True,
             text=True,
             timeout=float(timeout_s),
@@ -7798,6 +7804,7 @@ def eval_tasks(
 _SCORECARD_SCHEMA_VERSION = "mgr.scorecard.v3"
 _SCORECARD_HYPOTHESIS_SNAPSHOT_KEYS = (
     "id",
+    "supersedes",
     "statement",
     "mechanisms",
     "source",
@@ -8195,8 +8202,8 @@ def _scorecard_hypothesis_snapshot(hypothesis_ids: list[str]) -> list[dict[str, 
     if not normalized:
         return []
 
+    repo_root = _require_research_workspace()
     registry, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
-    repo_root = Path(__file__).resolve().parent
     validation_errors, _warnings, _summary = _validate_hypothesis_registry(
         registry,
         load_errors,
@@ -8306,8 +8313,8 @@ def _scorecard_live_manual_holds(
     """Read only live governance holds; claim definitions remain frozen in the manifest."""
     if not hypothesis_ids:
         return {}, None
+    repo_root = _require_research_workspace()
     registry, load_errors = _load_hypothesis_registry(registry_path)
-    repo_root = Path(__file__).resolve().parent
     validation_errors, _warnings, _summary = _validate_hypothesis_registry(
         registry,
         load_errors,
@@ -8869,7 +8876,7 @@ def scorecard(
         bool, typer.Option("--dry-run", help="Print the cell plan without writing or launching")
     ] = False,
 ) -> None:
-    """Run the preregistered fixed-FLOPs mechanism scorecard (bead vdc.4).
+    """Run the preregistered fixed-FLOPs mechanism scorecard. Claims require a research Git checkout.
 
     The manifest is the operational authority: every selected mechanism-task
     cell and seed moves through pending/running/done/failed, is written
@@ -9596,6 +9603,7 @@ def probe_charges(
                 "probe": {"task": task, "examples": examples, "seed": seed, "dials": dial_overrides or None},
             }
         ),
+        "train_provenance": _read_train_provenance(checkpoint),
         "categories": results,
         "dissociation": dissociation,
         "skipped_too_long": skipped,
@@ -10709,8 +10717,32 @@ def _certify_known_check_names() -> frozenset[str]:
     return _CERTIFY_NAMED_CHECKS | causality
 
 
+def _research_workspace() -> Path | None:
+    """Prefer the user's current research checkout, including linked Git worktrees."""
+    here = Path.cwd()
+    for root in (here, *here.parents, Path(__file__).resolve().parent):
+        if (root / ".git").exists() and (root / "nanochat" / "gpt.py").is_file() and (root / "cli.py").is_file():
+            return root
+    return None
+
+
+def _require_research_workspace() -> Path:
+    workspace = _research_workspace()
+    if workspace is None:
+        console.print(
+            "[red]This command needs a model_guided_research Git checkout. "
+            "Run it from the checkout root. The wheel's bundled research registry is read-only.[/red]"
+        )
+        raise typer.Exit(code=2)
+    return workspace
+
+
+def _registry_root() -> Path:
+    return _research_workspace() or (Path(__file__).resolve().parent / "nanochat" / "research_data")
+
+
 def _theorems_registry_path() -> Path:
-    return Path(__file__).resolve().parent / "hypotheses" / "theorems.yaml"
+    return _registry_root() / "hypotheses" / "theorems.yaml"
 
 
 def _load_theorem_registry(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -10958,7 +10990,7 @@ def _validate_theorem_registry(
 _STATUS_STYLE = {"conjecture": "yellow", "proved-on-paper": "cyan", "lean-checked": "green"}
 
 theorems_app = typer.Typer(
-    help="Theorem registry — the project's mathematical claims with proof status and check pointers.",
+    help="Browse mathematical claims and proof pointers. Deep validation requires a research Git checkout.",
     rich_markup_mode="rich",
 )
 app.add_typer(theorems_app, name="theorems")
@@ -11065,8 +11097,8 @@ def theorems_validate(
     ] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit JSON report")] = False,
 ) -> None:
-    """Validate the registry: schema, anchors, pointer integrity. Exit 1 on errors."""
-    repo_root = Path(__file__).resolve().parent
+    """Validate schema, anchors and pointers. --deep requires a research checkout with pytest."""
+    repo_root = _require_research_workspace() if deep else _registry_root()
     data, load_errors = _load_theorem_registry(_theorems_registry_path())
     collected: list[str] | None = None
     collect_problem: str | None = None
@@ -11161,7 +11193,7 @@ _HYP_THRESHOLD_KINDS = ("absolute_delta", "ratio")
 
 
 def _hypotheses_registry_path() -> Path:
-    return Path(__file__).resolve().parent / "hypotheses" / "registry.yaml"
+    return _registry_root() / "hypotheses" / "registry.yaml"
 
 
 def _load_hypothesis_registry(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -11352,7 +11384,8 @@ def _validate_hypothesis_registry(
     summary["entries"] = len(entries)
 
     theorem_ids: set[str] = set()
-    th_data, _th_errors = _load_theorem_registry(_theorems_registry_path())
+    th_data, th_errors = _load_theorem_registry(repo_root / "hypotheses" / "theorems.yaml")
+    errors.extend(f"theorem references: {error}" for error in th_errors)
     if th_data is not None:
         theorem_ids = {
             str(t["id"]) for t in th_data.get("theorems", []) if isinstance(t, dict) and isinstance(t.get("id"), str)
@@ -11395,7 +11428,7 @@ def _validate_hypothesis_registry(
         if status not in _HYP_STATUSES:
             errors.append(f"{where}: status {status!r} must be one of {_HYP_STATUSES}")
         for ref in h.get("theorem_refs") or []:
-            if theorem_ids and ref not in theorem_ids:
+            if ref not in theorem_ids:
                 errors.append(f"{where}: theorem_refs entry {ref!r} not found in hypotheses/theorems.yaml")
 
         pred = h.get("prediction", "MISSING")
@@ -11509,7 +11542,7 @@ _HYP_STATUS_STYLE = {
 }
 
 hypotheses_app = typer.Typer(
-    help="Hypothesis registry — the project's empirical claims with preregistered predictions.",
+    help="Browse preregistered predictions. Add, hold and release require a research Git checkout.",
     rich_markup_mode="rich",
 )
 app.add_typer(hypotheses_app, name="hypotheses")
@@ -11641,10 +11674,11 @@ def hypotheses_show(
 def hypotheses_validate(
     json_out: Annotated[bool, typer.Option("--json", help="Emit JSON report")] = False,
 ) -> None:
-    """Validate the registry: schema, vocab, prediction contract, append-only history. Exit 1 on errors."""
-    repo_root = Path(__file__).resolve().parent
+    """Validate the registry. A research checkout also checks append-only history against HEAD."""
+    workspace = _research_workspace()
+    repo_root = _registry_root()
     data, load_errors = _load_hypothesis_registry(_hypotheses_registry_path())
-    parent = _load_parent_hypothesis_registry(repo_root)
+    parent = _load_parent_hypothesis_registry(workspace) if workspace is not None else None
     errors, warnings, summary = _validate_hypothesis_registry(data, load_errors, repo_root, parent=parent)
     if json_out:
         console.print_json(
@@ -11666,7 +11700,9 @@ def hypotheses_validate(
                 wtable.add_row(w)
             console.print(wtable)
         color = "red" if errors else ("yellow" if warnings else "green")
-        governance = "append-only vs HEAD" if parent is not None else "no committed parent (first commit)"
+        governance = "append-only vs HEAD" if parent is not None else "no committed parent available"
+        if workspace is None:
+            governance = "bundled snapshot, no Git history"
         console.print(
             Panel(
                 f"[bold {color}]{summary['entries']} entries · {summary['by_status']} · "
@@ -11724,6 +11760,7 @@ def hypotheses_add(
     if baseline_floor is not None and not (floor_source and floor_source.strip()):
         console.print("[bold red]--floor-source is required when --baseline-floor is given.[/bold red]")
         raise typer.Exit(code=2)
+    repo_root = _require_research_workspace()
     path = _hypotheses_registry_path()
     original = path.read_text(encoding="utf-8")
 
@@ -11775,7 +11812,6 @@ def hypotheses_add(
     lines.extend(["    evidence: []", "    verdict_history: []", ""])
 
     path.write_text(original.rstrip("\n") + "\n" + "\n".join(lines), encoding="utf-8")
-    repo_root = Path(__file__).resolve().parent
     data, load_errors = _load_hypothesis_registry(path)
     parent = _load_parent_hypothesis_registry(repo_root)
     errors, _warnings, _summary = _validate_hypothesis_registry(data, load_errors, repo_root, parent=parent)
@@ -11820,7 +11856,7 @@ def _registry_set_manual_hold(path: Path, hyp_id: str, *, held: bool, reason: st
 def _hypotheses_revalidate_or_rollback(path: Path, original: str, action: str) -> None:
     """Re-run full registry validation after a textual edit; restore the saved
     text and exit 1 if anything regressed."""
-    repo_root = Path(__file__).resolve().parent
+    repo_root = _require_research_workspace()
     new_data, load_errors = _load_hypothesis_registry(path)
     parent = _load_parent_hypothesis_registry(repo_root)
     errors, _w, _s = _validate_hypothesis_registry(new_data, load_errors, repo_root, parent=parent)
@@ -11844,6 +11880,7 @@ def hypotheses_hold(
     if not reason.strip():
         console.print("[bold red]--reason is required (document why the verdict is frozen).[/bold red]")
         raise typer.Exit(code=2)
+    _require_research_workspace()
     path = _hypotheses_registry_path()
     data = _hypotheses_load_or_exit()
     if not any(h.get("id") == hypothesis_id for h in data.get("hypotheses", [])):
@@ -11864,6 +11901,7 @@ def hypotheses_release(
 ) -> None:
     """Clear a manual hold (a deliberate human action) so the engine can
     adjudicate the hypothesis again."""
+    _require_research_workspace()
     path = _hypotheses_registry_path()
     data = _hypotheses_load_or_exit()
     match = next((h for h in data.get("hypotheses", []) if h.get("id") == hypothesis_id), None)
@@ -11965,7 +12003,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v6"
+_ADJ_POLICY_VERSION = "ci-v7"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12180,8 +12218,8 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 "mgr.bench.depth_curves.v1",
                 "mgr.bench.coord_curves.v1",
                 "mgr.bench.scaling_fit.v1",  # per-mechanism scaling-law fits (mgr scaling-report, jida.26)
-                "mgr.bench.routes.v1",  # route observatory discrete trace analysis (mgr routes, 8gk.9)
-                "mgr.bench.tropical_regions.v1",  # Newton-polytope region counting protocol (oeno / 8gk.3)
+                ROUTE_BENCH_SCHEMA_VERSION,
+                TROPICAL_REGIONS_SCHEMA_VERSION,
             ):
                 # coord_curves (bp08): coordinate-check curves from
                 # nanochat.parameterization.write_coord_check_artifact -
@@ -12323,8 +12361,30 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     training run (lineage run_id + step) are repeated measurements of the same
     model, never extra evidence. Keep the richest/newest artifact (schema v2
     over v1, then generated_at, then path - all deterministic)."""
-    best: dict[Any, tuple[tuple[str, str, str], dict[str, Any]]] = {}
+    best: dict[Any, tuple[tuple[Any, ...], dict[str, Any]]] = {}
     out: list[dict[str, Any]] = []
+    # Connected identities count once, even when someone copies one weights file and
+    # gives the copies different run IDs or seed labels.
+    route_parents: dict[tuple, tuple] = {}
+
+    def root(identity: tuple) -> tuple:
+        while route_parents[identity] != identity:
+            route_parents[identity] = route_parents[route_parents[identity]]
+            identity = route_parents[identity]
+        return identity
+
+    for art in arts:
+        data = art["data"]
+        if data.get("schema_version") != ROUTE_BENCH_SCHEMA_VERSION:
+            continue
+        rm = data.get("meta") or {}
+        scope = (data.get("mechanism"), rm.get("task"))
+        identities = [(scope, "seed", rm.get("training_seed")), (scope, "run", (rm.get("lineage") or {}).get("run_id")),
+                      (scope, "weights", rm.get("weights_sha256"))]
+        for identity in identities:
+            route_parents.setdefault(identity, identity)
+        for identity in identities[1:]:
+            route_parents[root(identity)] = root(identities[0])
     for a in arts:
         if a["schema"] not in ("evaltasks", "chargeprobe", "certify", "bench"):
             out.append(a)
@@ -12336,6 +12396,17 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             key: Any = ("certify", a["data"].get("seed"), a["data"].get("device"), a["data"].get("dtype"))
             rank = ("", str(a["data"].get("run_id", "")), str(a["path"]))
         elif a["schema"] == "bench":
+            if a["data"].get("schema_version") == ROUTE_BENCH_SCHEMA_VERSION:
+                # Re-probing a training seed at another analysis seed, device or step is a repeated measure.
+                # Prefer the latest selected checkpoint, then the lowest analysis seed, independently of outcome.
+                route_key = ("routes", root(((a["data"].get("mechanism"), meta.get("task")), "seed", meta.get("training_seed"))))
+                route_rank = (
+                    int(meta.get("checkpoint_step") or 0), -int(meta.get("seed") or 0), str(a["path"]),
+                )
+                previous = best.get(route_key)
+                if previous is None or route_rank > previous[0]:
+                    best[route_key] = (route_rank, a)
+                continue
             # one bench observation per (seed, device, checkpoint_step, variant_id); timings are best-of-N
             key = (
                 "bench",
@@ -12617,7 +12688,194 @@ def _adj_bh_qvalues(pvals: dict[str, float]) -> dict[str, float]:
     return {items[i][0]: q[i] for i in range(m)}
 
 
+def _adj_git(root: Path, *args: str) -> str | None:
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _adj_definition(hyp: dict[str, Any]) -> str:
+    """Freeze the claim, population, effect, selectors and stopping criteria independently of ledger edits."""
+    keys = ("statement", "mechanisms", "date_registered", "supersedes")
+    definition = {key: hyp.get(key) for key in keys}
+    definition["prediction"] = {k: v for k, v in hyp["prediction"].items() if k != "scale_caveats"}
+    return json.dumps(definition, sort_keys=True, default=str)
+
+
+@lru_cache(maxsize=8)
+def _adj_registration_history(root: Path, rel: str, head: str) -> dict[str, tuple[str, str]]:
+    """Find the introducing commit across the registry DAG, including registrations on merged branches."""
+    if _adj_git(root, "rev-parse", "--is-shallow-repository") != "false":
+        return {}
+    log = _adj_git(root, "rev-list", "--parents", "--simplify-merges", "--topo-order", "--reverse", head, "--", rel)
+    snapshots: dict[str, dict[str, tuple[str, str]]] = {}
+    state: dict[str, tuple[str, str]] = {}
+    for row in (log or "").splitlines():
+        commit, *parents = row.split()
+        state = {}
+        snapshots[commit] = state
+        raw = _adj_git(root, "show", f"{commit}:{rel}")
+        if raw is None:
+            continue
+        try:
+            registry = yaml.load(raw, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
+        except yaml.YAMLError:
+            continue
+        for entry in (registry.get("hypotheses") or []) if isinstance(registry, dict) else []:
+            if isinstance(entry, dict) and isinstance(entry.get("prediction"), dict):
+                hid = str(entry.get("id"))
+                definition = _adj_definition(entry)
+                for parent in parents:
+                    previous = snapshots[parent].get(hid)
+                    if previous and previous[0] == definition:
+                        state[hid] = previous
+                        break
+                else:
+                    state[hid] = (definition, commit)
+    return state
+
+
+@lru_cache(maxsize=8192)
+def _adj_revision_error(root: Path, anchor: str, revision: str, head: str) -> str | None:
+    if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+        return "unknown_revision"
+    commit = _adj_git(root, "rev-parse", "--verify", f"{revision}^{{commit}}")
+    if not commit:
+        return "unknown_revision"
+    if _adj_git(root, "merge-base", "--is-ancestor", anchor, commit) is None:
+        if _adj_git(root, "merge-base", "--is-ancestor", commit, anchor) is not None:
+            return "pre_registration"
+        return "divergent_revision"
+    if _adj_git(root, "merge-base", "--is-ancestor", commit, head) is None:
+        return "divergent_revision"
+    return None
+
+
+def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) -> str | None:
+    data = art["data"]
+    if art["schema"] == "certify":
+        git = data.get("git") or {}
+        revision = git.get("commit_full") or git.get("commit")
+    else:
+        provenance = data.get("provenance") or {}
+        if provenance.get("git_dirty") or provenance.get("tainted", True):
+            return "tainted_evidence"
+        revision = provenance.get("git_sha")
+    error = _adj_revision_error(root, anchor, str(revision), head)
+    if error:
+        return error
+    path = Path(art["path"]).resolve()
+    if path.is_relative_to(root):
+        registered_blob = _adj_git(root, "rev-parse", "--verify", f"{anchor}:{path.relative_to(root)}")
+        if registered_blob and registered_blob == _adj_git(root, "hash-object", str(path)):
+            return "present_at_registration"
+    is_route = data.get("schema_version") == ROUTE_BENCH_SCHEMA_VERSION
+    if art["schema"] in ("evaltasks", "chargeprobe") or is_route:
+        meta = data.get("meta") or {}
+        checkpoint = meta if is_route else meta.get("checkpoint") or {}
+        lineage = checkpoint.get("lineage") or {}
+        step = checkpoint.get("checkpoint_step" if is_route else "step")
+        run_id = lineage.get("run_id")
+        if not isinstance(run_id, str) or not run_id.strip() or type(step) is not int or step < 0:
+            return "missing_checkpoint_identity"
+        if is_route and (
+            not re.fullmatch(r"[0-9a-f]{64}", str(meta.get("weights_sha256", "")))
+            or type(meta.get("training_seed")) is not int
+        ):
+            return "missing_checkpoint_identity"
+        if is_route and (data.get("results") or {}).get("bruteforce_verified") is not True:
+            return "unverified_route_extraction"
+        if lineage.get("parent_run_ids"):
+            # A resume's local SHA does not establish the acquisition time of its ancestor weights.
+            return "missing_parent_training_lineage"
+        train = data.get("train_provenance")
+        if not isinstance(train, dict) or not train.get("git_sha"):
+            return "missing_training_lineage"
+        if train.get("tainted", True) or train.get("git_dirty"):
+            return "tainted_training_lineage"
+        error = _adj_revision_error(root, anchor, str(train["git_sha"]), head)
+        if error:
+            return error
+        if _adj_git(root, "merge-base", "--is-ancestor", str(train["git_sha"]), str(revision)) is None:
+            return "training_revision_after_or_divergent_from_evaluation"
+        return None
+    if data.get("schema_version") == TROPICAL_REGIONS_SCHEMA_VERSION:
+        results = data.get("results") or {}
+        counts = results.get("support_arm_bound_violations")
+        curve = results.get("curve_by_T")
+        lengths = (data.get("meta") or {}).get("seq_lengths") or []
+        if (type(results.get("total_bound_violations")) is not int or results["total_bound_violations"] != 0
+                or results.get("all_bruteforce_verified") is not True
+                or not isinstance(counts, dict) or set(counts) != {"dense", "structured"}
+                or any(type(n) is not int or n != 0 for n in counts.values())
+                or not isinstance(curve, dict) or not curve or set(curve) != {str(length) for length in lengths}
+                or any(not isinstance(row, dict) or type(row.get("bound_violations")) is not int
+                       or row["bound_violations"] != 0 or row.get("bruteforce_verified") is not True for row in curve.values())):
+            return "region_bound_or_oracle_failure"
+        if (data.get("meta") or {}).get("curve_weight_source") != "generated":
+            # The registered structural comparison uses generated projection seeds.
+            return "checkpoint_curve_requires_separate_cohort"
+    if data.get("schema_version") in {
+        "mgr.bench.precision_curves.v1", "mgr.bench.depth_curves.v1", "mgr.bench.scaling_fit.v1",
+        "mgr.bench.routes.v1", "mgr.bench.tropical_regions.v1",
+    }:
+        # A freshly computed statistic cannot establish when its inputs were produced.
+        return "missing_input_lineage"
+    return None
+
+
 def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Admit only evidence produced under the committed operational definition, then score it."""
+    hold = hyp.get("manual_hold")
+    pred = hyp.get("prediction")
+    if not isinstance(pred, dict) or (isinstance(hold, dict) and hold.get("held")):
+        return _adj_score_cohort(hyp, [])
+    registry = _hypotheses_registry_path().resolve()
+    root_name = _adj_git(registry.parent, "rev-parse", "--show-toplevel")
+    root = Path(root_name).resolve() if root_name else None
+    head = _adj_git(root, "rev-parse", "--verify", "HEAD") if root else None
+    entry = None
+    if root and head and registry.is_relative_to(root):
+        entry = _adj_registration_history(root, registry.relative_to(root).as_posix(), head).get(str(hyp.get("id")))
+    try:
+        future = date.fromisoformat(str(hyp.get("date_registered"))) > datetime.now(UTC).date()
+    except ValueError:
+        future = False
+        entry = None
+    if future or not entry or entry[0] != _adj_definition(hyp) or not root or not head:
+        return {
+            "id": hyp.get("id"), "verdict": "blocked",
+            "reason_code": "registration_in_future" if future else "registration_unverified",
+            "reason": "A prospective verdict requires this exact operational definition in committed registry history.",
+            "registration_commit": None, "excluded_evidence": [],
+        }
+    anchor = entry[1]
+    schema, _, metric = str(pred.get("metric_path", "")).partition(":")
+    selectors = [(m, pred.get("candidate_variant")) for m in hyp.get("mechanisms") or []]
+    baseline = pred.get("baseline")
+    if isinstance(baseline, dict):
+        bm = baseline.get("mechanism", "standard")
+        selectors.extend((m if bm == "same" else bm, baseline.get("variant")) for m in hyp.get("mechanisms") or [])
+    eligible = []
+    excluded = []
+    for art in artifacts:
+        if art["schema"] != schema or not any(_adj_artifact_matches_arm(art, m, v) for m, v in selectors):
+            continue
+        if art["tainted"] or not _adj_observations(art, metric):
+            eligible.append(art)  # retain the statistics engine's specific taint / missing-metric refusals
+            continue
+        error = _adj_lineage_error(art, root, anchor, head)
+        if error:
+            excluded.append({"path": art["path"], "reason_code": error})
+        else:
+            eligible.append(art)
+    result = _adj_score_cohort(hyp, eligible)
+    if excluded and result.get("reason_code") in ("no_candidate_artifacts", "no_baseline_artifacts", "metric_missing"):
+        result.update(reason_code="ineligible_evidence", reason="No qualifying arm remains after provenance checks.")
+    result.update(registration_commit=anchor, excluded_evidence=excluded)
+    return result
+
+
+def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     """One hypothesis -> a verdict record (verdict in supported/refuted/
     inconclusive) or a refusal (verdict 'blocked' + reason_code)."""
     hid = hyp.get("id")
@@ -13198,14 +13456,14 @@ def status(
         bool, typer.Option("--write-index", help="Persist the payload as artifacts/index.json (+ index.md)")
     ] = False,
 ) -> None:
-    """Project state in one call (bead 2vs): what exists, how old it is, and
+    """Inspect a research Git checkout: what exists, how old it is, and
     what is stale - so sessions stop spelunking artifacts/. Latest artifact
     per kind with ages; per-mechanism certificate freshness (a cert older
     than its mechanism's source file is STALE); which registered hypotheses
     the engine would rule on TODAY vs refuse (and why). --json is the agent
     schema; --write-index persists the same payload as the durable manifest."""
     now = time.time()
-    repo_root = Path(__file__).resolve().parent
+    repo_root = _require_research_workspace()
 
     # ---- latest artifact per top-level kind ----
     kinds: dict[str, dict[str, Any]] = {}
@@ -13491,7 +13749,7 @@ def adjudicate(
     artifacts_dir: Annotated[Path, typer.Option(help="Output root for the adjudication report")] = Path("artifacts"),
     run_id: Annotated[str | None, typer.Option(help="Report run id (default: date)")] = None,
 ) -> None:
-    """Adjudicate registry hypotheses against artifact evidence (bead hij.2).
+    """Adjudicate a research Git checkout's registry hypotheses against artifact evidence.
 
     Verdicts are deterministic (fixed bootstrap seed) and stamped with the
     statistical policy version. The engine REFUSES weak evidence: missing
@@ -13501,7 +13759,7 @@ def adjudicate(
     append to the registry ledger (append-only, validated, rolled back on
     any validation failure).
     """
-    repo_root = Path(__file__).resolve().parent
+    repo_root = _require_research_workspace()
     data = _hypotheses_load_or_exit()
     entries = [h for h in data.get("hypotheses", []) if isinstance(h, dict)]
     if hypothesis:
@@ -13565,6 +13823,8 @@ def adjudicate(
                     + json.dumps(f"engine:{_ADJ_POLICY_VERSION}")
                     + ", policy_version: "
                     + json.dumps(_ADJ_POLICY_VERSION)
+                    + ", registration_commit: "
+                    + json.dumps(v["registration_commit"])
                     + ", arms: "
                     + arms_txt
                     + "}"
@@ -14191,9 +14451,9 @@ def quickstart(
 # ---------------------------------------------------------------------------
 
 ROUTE_TRACE_SCHEMA_VERSION = "mgr.routes.trace.v1"
-ROUTE_STORE_SCHEMA_VERSION = "mgr.routes.store.v1"
-ROUTE_BENCH_SCHEMA_VERSION = "mgr.bench.routes.v1"
-TROPICAL_REGIONS_SCHEMA_VERSION = "mgr.bench.tropical_regions.v1"
+ROUTE_STORE_SCHEMA_VERSION = "mgr.routes.store.v2"
+ROUTE_BENCH_SCHEMA_VERSION = "mgr.bench.routes.v2"
+TROPICAL_REGIONS_SCHEMA_VERSION = "mgr.bench.tropical_regions.v2"
 
 ROUTE_MECHANISM_TRACEABILITY: dict[str, dict[str, Any]] = {
     "tropical": {
@@ -14545,7 +14805,6 @@ def extract_route_trace(
                     layer_decisions: list[dict[str, Any]] = []
                     for h in range(H):
                         head_seq: list[int] = []
-                        key_hist: dict[int, int] = {}
                         for pos in range(T):
                             k_idx = int(v_key[h][pos])
                             d_idx = int(v_dim[h][pos])
@@ -14557,7 +14816,6 @@ def extract_route_trace(
                             code = min(rel_off, 16) * D + d_idx
                             head_seq.append(code)
                             all_decisions.append(code)
-                            key_hist[k_idx] = key_hist.get(k_idx, 0) + 1
                             if pos >= 1 and math.isfinite(g_val):
                                 all_margins.append(g_val)
                                 if g_val < float(bottleneck_info["margin"]):
@@ -14582,13 +14840,8 @@ def extract_route_trace(
                                     "margin": g_val if math.isfinite(g_val) else None,
                                 }
                             )
-                        # Head-level route entropy (used by the attention-entropy baseline)
-                        ent = 0.0
-                        for cnt in key_hist.values():
-                            p = cnt / max(T, 1)
-                            if p > 0:
-                                ent -= p * math.log(p)
-                        entropy_vector.append(float(ent))
+                        # Continuous comparator: entropy of the normalized causal score distribution.
+                        entropy_vector.append(float(t_routes["score_entropy"][0, h].item()))
                         # Canonical per-head discrete program signature over the tail query window
                         tail_w = min(4, T)
                         tail_margins = [
@@ -14604,16 +14857,7 @@ def extract_route_trace(
                             if isinstance(c_proj_w, torch.Tensor)
                             else 0.0
                         )
-                        # Trained heads with active residual projection (c_proj_norm > 1e-5) and positive
-                        # certified margin consolidate onto structural feature buckets; untrained (c_proj=0)
-                        # or uncertified near-tie heads retain fine coordinate scatter.
-                        if c_proj_norm > 1e-5 and mean_tail_margin > 1e-4:
-                            prog_sig = [int(v_dim[h][T - 1]) // max(1, D // 4)]
-                        else:
-                            prog_sig = [
-                                int(v_key[h][p]) * D + int(v_dim[h][p])
-                                for p in range(max(0, T - tail_w), T)
-                            ]
+                        prog_sig = head_seq[-tail_w:]
                         head_programs.append(
                             {
                                 "layer": layer_idx,
@@ -15045,9 +15289,9 @@ def _compute_program_reuse_stats(traces: list[dict[str, Any]]) -> dict[str, Any]
 def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
     """Regenerate the complete Route Observatory analysis report from a trace store payload alone (bead 8gk.9).
 
-    Consumes the versioned ``mgr.routes.store.v1`` dictionary (loaded from
+    Consumes the versioned ``mgr.routes.store.v2`` dictionary (loaded from
     ``traces.json`` or reconstructed from ``traces.parquet``) and returns the
-    ``mgr.bench.routes.v1`` summary dictionary without needing the model.
+    ``mgr.bench.routes.v2`` summary dictionary without needing the model.
     """
     from nanochat.diagnostics_data import (
         ROBUSTNESS_PROBE_DEFAULT_EPS,
@@ -15055,12 +15299,28 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
         ROBUSTNESS_PROBE_SPEC_VERSION,
     )
 
+    if store_payload.get("schema_version") != ROUTE_STORE_SCHEMA_VERSION:
+        raise ValueError("Route analysis requires a v2 trace store with independent perturbation measurements.")
     meta = dict(store_payload.get("meta") or {})
     mechanism = str(store_payload.get("mechanism", "tropical"))
     traces = list(store_payload.get("traces") or [])
     checkpoint_series = list(store_payload.get("checkpoint_series") or [])
     region_counting = store_payload.get("region_counting")
     seed = int(meta.get("seed", 0))
+    if checkpoint_series:
+        steps = [entry.get("step") for entry in checkpoint_series]
+        selected = meta.get("checkpoint_step")
+        if (type(selected) is not int or any(type(s) is not int or s < -1 or s > selected for s in steps)
+                or steps != sorted(set(steps)) or steps[-1] != selected):
+            raise ValueError("Checkpoint series must end at the selected step in strictly increasing order.")
+        if checkpoint_series[-1].get("traces") != traces:
+            raise ValueError("Selected checkpoint series and primary route traces disagree.")
+        for entry in checkpoint_series:
+            digest = entry.get("weights_sha256")
+            if (entry.get("lineage") != meta.get("lineage") or not re.fullmatch(r"[0-9a-f]{64}", str(digest))
+                    or (entry["step"] == -1 and digest != meta.get("initial_weights_sha256"))
+                    or (entry["step"] == selected and digest != meta.get("weights_sha256"))):
+                raise ValueError("Checkpoint series contains an unbound model or a different training lineage.")
 
     # (1) Route reuse & checkpoint consolidation curve
     reuse_current = _compute_program_reuse_stats(traces)
@@ -15081,6 +15341,7 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     steps_curve.sort(key=lambda r: r["step"])
+    has_initial = bool(meta.get("initial_weights_sha256")) and steps_curve[0]["step"] == -1
     entropy_first = float(steps_curve[0]["route_entropy_bits"])
     entropy_last = float(steps_curve[-1]["route_entropy_bits"])
     entropy_delta = float(entropy_last - entropy_first)
@@ -15095,7 +15356,9 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
     edit_distances_default: list[float] = []
     for tr in traces:
         m_val = tr.get("min_margin")
-        s_val = tr.get("perturbation_stability")
+        scored = tr.get("scored_draws", 0)
+        survived = tr.get("surviving_draws", 0)
+        s_val = survived / scored if scored > 0 and 0 <= survived <= scored else None
         ed_val = tr.get("edit_distance_default_eps")
         p_val = tr.get("paraphrase_stability")
         if isinstance(ed_val, int | float):
@@ -15106,26 +15369,24 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
             margins_list.append(float(m_val))
             stabilities_list.append(float(s_val))
 
-    margin_stability_rho = _spearman_rank_corr(margins_list, stabilities_list) if len(margins_list) >= 2 else 0.0
+    margin_stability_rho = (
+        _spearman_rank_corr(margins_list, stabilities_list)
+        if len(set(margins_list)) > 1 and len(set(stabilities_list)) > 1 else None
+    )
 
     # (3) Unsupervised clustering: discrete trace features vs attention-entropy baseline
-    latent_labels = [tr.get("latent_label", 0) for tr in traces]
+    paired_traces = [
+        tr for tr in traces if tr.get("decisions") and tr.get("attention_entropy_vector") and tr.get("latent_label") is not None
+    ]
+    latent_labels = [tr["latent_label"] for tr in paired_traces]
     unique_labels = sorted({str(lbl) for lbl in latent_labels})
-    n_clusters = max(2, len(unique_labels)) if len(traces) >= 2 else 1
+    n_clusters = len(unique_labels)
 
     trace_features: list[list[float]] = []
     entropy_features: list[list[float]] = []
-    for tr in traces:
-        tf = list(tr.get("trace_cluster_features") or [])
-        if not tf:
-            decs = list(tr.get("decisions") or [0])
-            tf = [float(decs[-1]), float(len(decs))]
-        trace_features.append([float(x) for x in tf])
-
-        ef = list(tr.get("attention_entropy_vector") or [])
-        if not ef:
-            ef = [0.0]
-        entropy_features.append([float(x) for x in ef])
+    for tr in paired_traces:
+        trace_features.append(_route_decision_features(tr["decisions"]))
+        entropy_features.append(list(tr["attention_entropy_vector"]))
 
     # Standardize feature columns so distance is scale-balanced
     def _standardize(mat: list[list[float]]) -> list[list[float]]:
@@ -15149,11 +15410,18 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
     entropy_clusters = _deterministic_kmedoids_cosine_or_l2(
         _standardize(entropy_features), n_clusters, seed=seed
     )
-    ari_trace = compute_adjusted_rand_index(latent_labels, trace_clusters) if len(traces) >= 2 else 0.0
-    ari_entropy = compute_adjusted_rand_index(latent_labels, entropy_clusters) if len(traces) >= 2 else 0.0
-    ari_gain = float(ari_trace - ari_entropy)
+    informative = 1 < n_clusters < len(paired_traces)
+    ari_trace = compute_adjusted_rand_index(latent_labels, trace_clusters) if informative else None
+    ari_entropy = compute_adjusted_rand_index(latent_labels, entropy_clusters) if informative else None
+    ari_gain = ari_trace - ari_entropy if ari_trace is not None and ari_entropy is not None else None
+    prompt_ari = None
+    if informative and all(tr.get("prompt_control_features") for tr in paired_traces):
+        prompt_clusters = _deterministic_kmedoids_cosine_or_l2(
+            _standardize([tr["prompt_control_features"] for tr in paired_traces]), n_clusters, seed=seed
+        )
+        prompt_ari = compute_adjusted_rand_index(latent_labels, prompt_clusters)
 
-    all_bf_ok = all(bool(tr.get("bruteforce_verified", True)) for tr in traces)
+    all_bf_ok = bool(traces) and all(tr.get("bruteforce_verified") is True and tr.get("decisions") for tr in traces)
     results_block: dict[str, Any] = {
         "mechanism": mechanism,
         "task": meta.get("task"),
@@ -15163,10 +15431,11 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
             **reuse_current,
             "entropy_first": entropy_first,
             "entropy_last": entropy_last,
-            "entropy_delta": entropy_delta,
+            "entropy_delta": entropy_delta if has_initial else None,
             "reuse_first": reuse_first,
             "reuse_last": reuse_last,
-            "reuse_delta": reuse_delta,
+            "reuse_delta": reuse_delta if has_initial else None,
+            "initial_weights_available": has_initial,
             "checkpoint_curve": steps_curve,
         },
         "stability": {
@@ -15174,27 +15443,36 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
             "default_eps": ROBUSTNESS_PROBE_DEFAULT_EPS,
             "eps_ladder": list(ROBUSTNESS_PROBE_EPS_LADDER),
             "margin_aggregation": "min",
-            "spearman_margin_vs_stability": float(margin_stability_rho),
+            "spearman_margin_vs_stability": margin_stability_rho,
             "mean_perturbation_stability": (
-                float(sum(stabilities_list) / len(stabilities_list)) if stabilities_list else 0.0
+                float(sum(stabilities_list) / len(stabilities_list)) if stabilities_list else None
             ),
             "mean_edit_distance_default_eps": (
                 float(sum(edit_distances_default) / len(edit_distances_default))
                 if edit_distances_default
-                else 0.0
+                else None
             ),
             "mean_paraphrase_stability": (
                 float(sum(paraphrase_stabilities) / len(paraphrase_stabilities))
                 if paraphrase_stabilities
-                else 0.0
+                else None
             ),
             "n_scored": len(margins_list),
+            "n_excluded": len(traces) - len(margins_list),
+            "paraphrases_scored": len(paraphrase_stabilities),
+            "perturbation_draws_survived": sum(tr.get("surviving_draws", 0) for tr in traces),
+            "perturbation_draws_scored": sum(tr.get("scored_draws", 0) for tr in traces),
         },
         "clustering": {
             "n_clusters": n_clusters,
             "latent_classes": unique_labels,
-            "ari_trace": float(ari_trace),
-            "ari_entropy_baseline": float(ari_entropy),
+            "ari_trace": ari_trace,
+            "ari_entropy_baseline": ari_entropy,
+            "ari_prompt_only_control": prompt_ari,
+            "n_scored": len(paired_traces),
+            "n_excluded": len(traces) - len(paired_traces),
+            "trace_features": ["mean_decision_code", "sd_decision_code", "probability_equal", "transition_rate"],
+            "entropy_features": "per-head entropy; tropical uses softmax over causal max-plus scores at unit temperature",
             "ari_gain": ari_gain,
             "trace_clusters": trace_clusters,
             "entropy_clusters": entropy_clusters,
@@ -15209,8 +15487,28 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
         "mechanism": mechanism,
         "meta": meta,
         "provenance": store_payload.get("provenance"),
+        "train_provenance": store_payload.get("train_provenance"),
         "results": results_block,
     }
+
+
+def _route_decision_features(decisions: list[int]) -> list[float]:
+    from collections import Counter
+
+    if not decisions:
+        return []
+    counts = Counter(decisions)
+    n = len(decisions)
+    return [
+        statistics.mean(decisions), statistics.pstdev(decisions),
+        sum((count / n) ** 2 for count in counts.values()),
+        sum(a != b for a, b in zip(decisions, decisions[1:], strict=False)) / max(1, n - 1),
+    ]
+
+
+def _route_agreement(base: list[int], observed: list[int]) -> tuple[int, int]:
+    """Aligned equal decisions and total positions. Extra suffix positions always disagree."""
+    return sum(a == b for a, b in zip(base, observed, strict=False)), max(len(base), len(observed))
 
 
 def _extract_doc_latent_label_and_trace_features(
@@ -15218,9 +15516,7 @@ def _extract_doc_latent_label_and_trace_features(
     doc: str,
     trace: dict[str, Any],
 ) -> tuple[Any, list[float]]:
-    """Extract the ground-truth task label (for ARI evaluation only) and the
-    unsupervised discrete trace feature vector (from the prompt token stream &
-    route decisions only)."""
+    """Compute the held-out scoring label separately from the route-only features."""
     parts = doc.split()
     if spec.name == "copyops" and "OP" in parts:
         op_tok = parts[parts.index("OP") + 1]
@@ -15232,18 +15528,13 @@ def _extract_doc_latent_label_and_trace_features(
     else:
         label = len(parts) // 4
 
-    # Unsupervised trace features: extracted strictly from the prompt's discrete
-    # route trace and delimiter-transition offsets (zero access to `label`).
-    tok_ids = list(trace.get("token_ids") or [])
-    head_progs = list(trace.get("head_programs") or [])
+    return label, _route_decision_features(trace.get("decisions") or [])
 
-    # Measure the trailing query-argument span after the last uppercase section delimiter
-    # in the prompt (which shapes the discrete self/predecessor routing suffix).
-    # We detect the transition purely from the prompt token IDs and discrete route jumps.
+
+def _route_prompt_control(spec: Any, doc: str) -> list[float]:
+    """Prompt-only positive control for task structure such as hierarchy PATH depth."""
     prompt_part = spec.split_prompt(doc)[0] if spec.split_prompt(doc) is not None else doc
     prompt_words = prompt_part.split()
-    # Find the last structural section keyword (e.g. PATH, SEQ, QUERY) before the trailing marker
-    # from the discrete token frequency / transition pattern in the prompt:
     delim_candidates = {"PATH", "SEQ", "QUERY", "CMP", "SEG"}
     trailing_span = 0
     for idx_w in range(len(prompt_words) - 2, -1, -1):
@@ -15251,7 +15542,6 @@ def _extract_doc_latent_label_and_trace_features(
             trailing_span = (len(prompt_words) - 1) - idx_w - 1
             break
     if spec.name == "dyck":
-        # Unsupervised stack height proxy from discrete bracket-pair jumps
         d_cur = d_max = 0
         for w in prompt_words:
             if w in "([{":
@@ -15261,16 +15551,7 @@ def _extract_doc_latent_label_and_trace_features(
                 d_cur = max(0, d_cur - 1)
         trailing_span = d_max
 
-    tail_codes = [float(hp["tail_codes"][-1]) for hp in head_progs if hp.get("tail_codes")]
-    mean_tail_code = (sum(tail_codes) / len(tail_codes)) if tail_codes else 0.0
-    feats = [
-        float(trailing_span),
-        float(trailing_span),
-        float(trailing_span),
-        0.05 * (mean_tail_code % 8.0),
-        0.02 * float(len(tok_ids)),
-    ]
-    return label, feats
+    return [float(trailing_span)]
 
 
 def _paraphrase_task_doc(spec: Any, doc: str, seed: int) -> str:
@@ -15339,7 +15620,7 @@ def run_tropical_region_count_protocol(
 
     ckpt_meta: dict[str, Any] | None = None
     resolved_step: int | None = None
-    if checkpoint is not None and checkpoint.exists():
+    if checkpoint is not None:
         model, ckpt_meta, resolved_step = _load_eval_checkpoint(checkpoint, step, device)
         blocks = list(model.transformer["h"])
         trop_attn: TropicalCausalSelfAttention | None = None
@@ -15353,6 +15634,7 @@ def run_tropical_region_count_protocol(
         n_head = int(trop_attn.n_head)
         head_dim = int(trop_attn.head_dim)
         base_attn = trop_attn
+        structured_support = bool(trop_attn.tropical_structured_support)
     else:
         cfg = GPTConfig(
             sequence_len=max(seq_lengths),
@@ -15465,8 +15747,7 @@ def run_tropical_region_count_protocol(
     mlp_rpp_slope = _ols_slope(ts_float, mlp_rpp_list)
     efficiency_slope_gap = float(trop_rpp_slope - mlp_rpp_slope)
 
-    # Compare dense vs structured support at T = min(8, max_T) on the canonical
-    # multi-scale correlated-head arrangement (or base_attn if its row-norm CV >= 0.25)
+    # Both support arms use identical generated projections, regardless of the source of the context-length curve.
     probe_T = min(8, max_T)
     x_probe = master_x[:, max_T - probe_T :, :]
     probe_cfg = GPTConfig(
@@ -15500,6 +15781,9 @@ def run_tropical_region_count_protocol(
     dense_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
     probe_attn.tropical_structured_support = True
     struct_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
+    arm_violations = {name: int(arm["bound_violations"]) for name, arm in (("dense", dense_probe), ("structured", struct_probe))}
+    total_bound_violations += sum(arm_violations.values())
+    all_bf_ok = all_bf_ok and all(arm["bruteforce_verified"] for arm in (dense_probe, struct_probe))
 
     meta_block = {
         "seed": seed,
@@ -15510,6 +15794,9 @@ def run_tropical_region_count_protocol(
         "n_head": n_head,
         "head_dim": head_dim,
         "checkpoint": str(checkpoint) if checkpoint is not None else None,
+        "curve_weight_source": "checkpoint" if checkpoint is not None else "generated",
+        "support_comparison_weight_source": "generated_correlated_heads",
+        "support_comparison_seed": seed + 101,
         "checkpoint_step": resolved_step,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -15533,6 +15820,7 @@ def run_tropical_region_count_protocol(
         "results": {
             "tropical_structured_support": structured_support,
             "total_bound_violations": int(total_bound_violations),
+            "support_arm_bound_violations": arm_violations,
             "all_bruteforce_verified": bool(all_bf_ok),
             "tropical_regions_vs_T_slope": float(trop_regions_slope),
             "tropical_regions_per_param_slope": float(trop_rpp_slope),
@@ -15573,26 +15861,28 @@ def _render_routes_report_md(summary: dict[str, Any]) -> str:
         "",
         f"- **Route entropy (bits)**: `{reuse.get('route_entropy_bits', 0.0):.4f}` "
         f"(first `{reuse.get('entropy_first', 0.0):.4f}` -> last `{reuse.get('entropy_last', 0.0):.4f}`, "
-        f"delta `{reuse.get('entropy_delta', 0.0):+.4f}`)",
+        f"delta `{_route_metric_text(reuse.get('entropy_delta'))}`)",
         f"- **Program reuse ratio**: `{reuse.get('reuse_ratio', 0.0):.4f}` "
         f"(first `{reuse.get('reuse_first', 0.0):.4f}` -> last `{reuse.get('reuse_last', 0.0):.4f}`, "
-        f"delta `{reuse.get('reuse_delta', 0.0):+.4f}`)",
+        f"delta `{_route_metric_text(reuse.get('reuse_delta'))}`)",
         f"- **Top-5 program share**: `{reuse.get('top5_program_share', 0.0):.4f}`",
         "",
         "## 2. Perturbation & Paraphrase Stability (`vdc.1` Probe Spec)",
         "",
         f"- **Probe spec**: `{stab.get('probe_spec_version')}` (`default_eps={stab.get('default_eps')}`)",
         f"- **Margin aggregation**: `{stab.get('margin_aggregation')}` (tightest decision along route)",
-        f"- **Spearman rho(gamma_min, stability)**: `{stab.get('spearman_margin_vs_stability', 0.0):.4f}`",
-        f"- **Mean perturbation stability**: `{stab.get('mean_perturbation_stability', 0.0):.4f}`",
-        f"- **Mean paraphrase stability**: `{stab.get('mean_paraphrase_stability', 0.0):.4f}`",
+        f"- **Spearman rho(gamma_min, stability)**: `{_route_metric_text(stab.get('spearman_margin_vs_stability'))}`",
+        f"- **Unchanged perturbation draws**: {stab['perturbation_draws_survived']} / {stab['perturbation_draws_scored']}",
+        f"- **Mean perturbation stability**: `{_route_metric_text(stab.get('mean_perturbation_stability'))}`",
+        f"- **Mean paraphrase stability**: `{_route_metric_text(stab.get('mean_paraphrase_stability'))}` ({stab['paraphrases_scored']} measured)",
         "",
         "## 3. Unsupervised Trace Clustering vs Attention-Entropy Baseline",
         "",
         f"- **Latent task classes (`K={clust.get('n_clusters')}`)**: `{clust.get('latent_classes')}`",
-        f"- **Trace clustering ARI**: `{clust.get('ari_trace', 0.0):.4f}`",
-        f"- **Attention-entropy baseline ARI**: `{clust.get('ari_entropy_baseline', 0.0):.4f}`",
-        f"- **ARI gain (trace - baseline)**: `{clust.get('ari_gain', 0.0):+.4f}`",
+        f"- **Trace clustering ARI**: `{_route_metric_text(clust.get('ari_trace'))}`",
+        f"- **Attention-entropy baseline ARI**: `{_route_metric_text(clust.get('ari_entropy_baseline'))}`",
+        f"- **Prompt-only control ARI**: `{_route_metric_text(clust.get('ari_prompt_only_control'))}`",
+        f"- **ARI gain (trace - baseline)**: `{_route_metric_text(clust.get('ari_gain'))}`",
     ]
     reg = res.get("region_counting")
     if isinstance(reg, dict):
@@ -15610,6 +15900,10 @@ def _render_routes_report_md(summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _route_metric_text(value: float | None) -> str:
+    return f"{value:.4f}" if value is not None else "unavailable"
+
+
 @app.command("routes")
 def routes_command(
     checkpoint: Annotated[
@@ -15622,7 +15916,7 @@ def routes_command(
         str,
         typer.Option("--mechanism", "-m", help="Mechanism backend (auto | tropical | ultrametric | braid | fractal | mom)"),
     ] = "auto",
-    sample: Annotated[int, typer.Option("--sample", "-n", help="Number of task inputs to trace")] = 32,
+    sample: Annotated[int, typer.Option("--sample", "-n", min=1, help="Number of task inputs to trace")] = 32,
     seed: Annotated[int, typer.Option("--seed", "-s", help="Deterministic seed for sampling and perturbation probe")] = 42,
     device_str: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
     out: Annotated[Path, typer.Option("--out", help="Output directory for trace store and analysis report")] = Path(
@@ -15668,17 +15962,23 @@ def routes_command(
             rows = tbl.to_pylist()
             meta_json = json.loads(rows[0]["store_meta_json"]) if rows else {}
             store_payload = {
-                "schema_version": ROUTE_STORE_SCHEMA_VERSION,
+                "schema_version": meta_json.get("schema_version"),
                 "mechanism": meta_json.get("mechanism", "tropical"),
                 "meta": meta_json.get("meta", {}),
                 "provenance": meta_json.get("provenance"),
+                "train_provenance": meta_json.get("train_provenance"),
                 "checkpoint_series": meta_json.get("checkpoint_series", []),
                 "region_counting": meta_json.get("region_counting"),
                 "traces": [json.loads(r["trace_json"]) for r in rows],
             }
         else:
             store_payload = json.loads(from_store.read_text(encoding="utf-8"))
-        summary = analyze_route_trace_store(store_payload)
+        if store_payload.get("schema_version") != ROUTE_STORE_SCHEMA_VERSION:
+            raise typer.BadParameter("Replay requires raw measurements from a v2 route store.")
+        try:
+            summary = analyze_route_trace_store(store_payload)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
         report_md = _render_routes_report_md(summary)
         (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (out / "report.md").write_text(report_md, encoding="utf-8")
@@ -15723,13 +16023,12 @@ def routes_command(
             spec, doc, base_trace
         )
         base_decs = list(base_trace.get("decisions") or [])
-        n_decs = max(len(base_decs), 1)
         min_m = base_trace.get("min_margin")
-        b_info = base_trace.get("bottleneck")
 
         # Evaluate vdc.1 perturbation ladder (ROBUSTNESS_PROBE_EPS_LADDER)
         edit_dists_default: list[float] = []
-        ladder_survival: list[float] = []
+        surviving_draws = 0
+        scored_draws = 0
         emp_lipschitz_shifts: list[float] = []
         for eps_val in ROBUSTNESS_PROBE_EPS_LADDER:
             for draw_idx in range(2):
@@ -15743,93 +16042,96 @@ def routes_command(
                     perturb=(eps_val, p_gen),
                 )
                 pert_decs = list(pert_trace.get("decisions") or [])
-                mismatches = sum(
-                    1 for a, b in zip(base_decs, pert_decs, strict=False) if a != b
-                )
-                ed = float(mismatches) / float(n_decs)
+                if not base_decs or not pert_decs:
+                    continue
+                matched, total = _route_agreement(base_decs, pert_decs)
+                ed = 1.0 - matched / total
                 if abs(eps_val - ROBUSTNESS_PROBE_DEFAULT_EPS) <= 1e-9:
                     edit_dists_default.append(ed)
-                ladder_survival.append(1.0 - ed)
+                scored_draws += 1
+                surviving_draws += int(matched == total)
                 # Measure empirical score perturbation at the bottleneck coordinate
-                if isinstance(min_m, int | float) and b_info is not None and eps_val == ROBUSTNESS_PROBE_DEFAULT_EPS:
+                if isinstance(min_m, int | float) and eps_val == ROBUSTNESS_PROBE_DEFAULT_EPS:
                     pert_min_m = pert_trace.get("min_margin")
                     if isinstance(pert_min_m, int | float):
                         shift = abs(float(pert_min_m) - float(min_m)) / max(eps_val, 1e-6)
                         emp_lipschitz_shifts.append(max(shift, 0.1))
 
         mean_ed_default = (
-            sum(edit_dists_default) / len(edit_dists_default) if edit_dists_default else 0.0
+            sum(edit_dists_default) / len(edit_dists_default) if edit_dists_default else None
         )
-        raw_survival = sum(ladder_survival) / len(ladder_survival) if ladder_survival else 1.0
-        if isinstance(min_m, int | float):
-            # Combine empirical whole-route survival with certified bottleneck survival ratio
-            # under the measured vdc.1 perturbation sensitivity
-            emp_lip = (
-                sum(emp_lipschitz_shifts) / len(emp_lipschitz_shifts)
-                if emp_lipschitz_shifts
-                else 1.0
+        pert_stability = surviving_draws / scored_draws if scored_draws else None
+        if isinstance(min_m, int | float) and emp_lipschitz_shifts:
+            base_trace["margin_sensitivity_control"] = min_m / (
+                min_m + ROBUSTNESS_PROBE_DEFAULT_EPS * max(statistics.mean(emp_lipschitz_shifts), 0.25) + 1e-6
             )
-            cert_ratio = float(min_m) / ( float(min_m) + ROBUSTNESS_PROBE_DEFAULT_EPS * max(emp_lip, 0.25) + 1e-6 )
-            pert_stability = 0.5 * raw_survival + 0.5 * cert_ratio
-        else:
-            pert_stability = raw_survival
 
         # Paraphrase stability
         para_prompt = _paraphrase_task_doc(spec, doc, seed + doc_idx)
         para_ids = tok.encode(para_prompt, prepend=bos_id)[: model.config.sequence_len]
-        if len(para_ids) == t_ids.size(1):
+        para_stab = None
+        if base_decs and len(para_ids) == t_ids.size(1) and para_ids != t_ids[0].tolist():
             para_tensor = torch.tensor([para_ids], dtype=torch.long, device=device)
             para_trace = extract_route_trace(
                 model, para_tensor, mechanism=mechanism, verify_bruteforce=False
             )
             para_decs = list(para_trace.get("decisions") or [])
-            para_mis = sum(1 for a, b in zip(base_decs, para_decs, strict=False) if a != b)
-            para_stab = 1.0 - (float(para_mis) / float(n_decs))
-        else:
-            para_stab = 1.0 - mean_ed_default
+            if para_decs:
+                matched, total = _route_agreement(base_decs, para_decs)
+                para_stab = matched / total
 
         base_trace["doc_idx"] = doc_idx
         base_trace["latent_label"] = latent_label
         base_trace["trace_cluster_features"] = cluster_feats
-        base_trace["edit_distance_default_eps"] = float(mean_ed_default)
-        base_trace["perturbation_stability"] = float(pert_stability)
-        base_trace["paraphrase_stability"] = float(para_stab)
+        base_trace["prompt_control_features"] = _route_prompt_control(spec, doc)
+        base_trace["surviving_draws"] = surviving_draws
+        base_trace["scored_draws"] = scored_draws
+        base_trace["edit_distance_default_eps"] = mean_ed_default
+        base_trace["perturbation_stability"] = pert_stability
+        base_trace["paraphrase_stability"] = para_stab
         traces_list.append(base_trace)
 
-    # Evaluate checkpoint series (step 0 init baseline + all saved checkpoint steps in directory)
+    # Training labels step 0 AFTER its first update. A pristine init is a distinct snapshot.
     checkpoint_series: list[dict[str, Any]] = []
     avail_steps = sorted(
         int(p.stem.split("_")[-1])
         for p in Path(checkpoint).glob("meta_*.json")
         if p.stem.split("_")[-1].isdigit()
     )
-    # Include an untrained step-0 reference model with the exact same config & seed so reuse
-    # consolidation from initialization -> trained checkpoint(s) is always measurable.
-    from nanochat.gpt import GPT, GPTConfig
-
     cfg_dict = dict(ckpt_meta.get("model_config") or {})
-    allowed_cfg = {f.name for f in GPTConfig.__dataclass_fields__.values()}
-    clean_cfg = {k: v for k, v in cfg_dict.items() if k in allowed_cfg}
-    torch.manual_seed(seed)
-    init_model = GPT(GPTConfig(**clean_cfg)).to(device)
-    init_model.init_weights()
-    init_model.eval()
-    init_traces = [
-        extract_route_trace(init_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
-        for _, _, t_ids in encoded_docs
-    ]
-    checkpoint_series.append({"step": 0, "traces": init_traces})
+    with (checkpoint / f"model_{resolved_step:06d}.pt").open("rb") as weights:
+        selected_digest = hashlib.file_digest(weights, "sha256").hexdigest()
+    initial_digest = None
+    initial_dir = checkpoint / "initial"
+    initial_file = initial_dir / "model_000000.pt"
+    if ckpt_meta.get("initial_weights_sha256") and initial_file.is_file():
+        with initial_file.open("rb") as weights:
+            initial_digest = hashlib.file_digest(weights, "sha256").hexdigest()
+        if not hmac.compare_digest(initial_digest, ckpt_meta["initial_weights_sha256"]):
+            raise typer.BadParameter("Initial weights do not match the digest in the selected checkpoint.")
+        init_model, init_meta, _ = _load_eval_checkpoint(initial_dir, 0, device)
+        if init_meta.get("batches_consumed") != 0 or init_meta.get("lineage") != ckpt_meta.get("lineage"):
+            raise typer.BadParameter("Initial checkpoint does not identify the same pre-update training run.")
+        init_traces = [
+            extract_route_trace(init_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
+            for _, _, t_ids in encoded_docs
+        ]
+        checkpoint_series.append({"step": -1, "weights_sha256": initial_digest, "lineage": init_meta["lineage"], "traces": init_traces})
 
     for st_val in avail_steps:
         if st_val == resolved_step:
-            checkpoint_series.append({"step": int(st_val), "traces": traces_list})
-        elif st_val > 0:
-            st_model, _, _ = _load_eval_checkpoint(checkpoint, int(st_val), device)
+            checkpoint_series.append({"step": int(st_val), "weights_sha256": selected_digest, "lineage": ckpt_meta.get("lineage"), "traces": traces_list})
+        elif st_val < resolved_step:
+            st_model, st_meta, _ = _load_eval_checkpoint(checkpoint, int(st_val), device)
+            if st_meta.get("lineage") != ckpt_meta.get("lineage"):
+                continue
             st_traces = [
                 extract_route_trace(st_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
                 for _, _, t_ids in encoded_docs
             ]
-            checkpoint_series.append({"step": int(st_val), "traces": st_traces})
+            with (checkpoint / f"model_{st_val:06d}.pt").open("rb") as weights:
+                st_digest = hashlib.file_digest(weights, "sha256").hexdigest()
+            checkpoint_series.append({"step": int(st_val), "weights_sha256": st_digest, "lineage": st_meta.get("lineage"), "traces": st_traces})
 
     resolved_mech = traces_list[0]["mechanism"] if traces_list else str(cfg_dict.get("attention_type", "standard"))
     region_payload: dict[str, Any] | None = None
@@ -15865,8 +16167,13 @@ def routes_command(
             "probe_spec": ROBUSTNESS_PROBE_SPEC_VERSION,
         }
     )
+    training_provenance = _read_train_provenance(checkpoint)
     meta_block = {
         "checkpoint": str(checkpoint),
+        "weights_sha256": selected_digest,
+        "initial_weights_sha256": initial_digest,
+        "training_seed": ckpt_meta.get("seed"),
+        "lineage": ckpt_meta.get("lineage"),
         "checkpoint_step": int(resolved_step),
         "task": task,
         "seed": seed,
@@ -15880,6 +16187,7 @@ def routes_command(
         "mechanism": resolved_mech,
         "meta": meta_block,
         "provenance": prov,
+        "train_provenance": training_provenance,
         "checkpoint_series": checkpoint_series,
         "region_counting": region_payload,
         "traces": traces_list,
@@ -15892,9 +16200,11 @@ def routes_command(
 
     store_meta_Blob = json.dumps(
         {
+            "schema_version": ROUTE_STORE_SCHEMA_VERSION,
             "mechanism": resolved_mech,
             "meta": meta_block,
             "provenance": prov,
+            "train_provenance": training_provenance,
             "checkpoint_series": checkpoint_series,
             "region_counting": region_payload,
         },
@@ -15906,7 +16216,7 @@ def routes_command(
             "mechanism": str(tr.get("mechanism", resolved_mech)),
             "seq_len": int(tr.get("seq_len", 0)),
             "min_margin": float(tr["min_margin"]) if isinstance(tr.get("min_margin"), int | float) else -1.0,
-            "perturbation_stability": float(tr.get("perturbation_stability", 0.0)),
+            "perturbation_stability": tr.get("perturbation_stability"),
             "latent_label": str(tr.get("latent_label", "")),
             "trace_json": json.dumps(tr, sort_keys=True),
             "store_meta_json": store_meta_Blob if i == 0 else "{}",
@@ -15929,16 +16239,16 @@ def routes_command(
     tbl.add_row("Brute-force cross-check", str(res["bruteforce_verified"]))
     tbl.add_row(
         "Route entropy (first -> last)",
-        f"{res['reuse']['entropy_first']:.3f} -> {res['reuse']['entropy_last']:.3f} bits (Δ={res['reuse']['entropy_delta']:+.3f})",
+        f"{res['reuse']['entropy_first']:.3f} -> {res['reuse']['entropy_last']:.3f} bits (Δ={_route_metric_text(res['reuse']['entropy_delta'])})",
     )
     tbl.add_row(
         "Program reuse ratio (first -> last)",
-        f"{res['reuse']['reuse_first']:.3f} -> {res['reuse']['reuse_last']:.3f} (Δ={res['reuse']['reuse_delta']:+.3f})",
+        f"{res['reuse']['reuse_first']:.3f} -> {res['reuse']['reuse_last']:.3f} (Δ={_route_metric_text(res['reuse']['reuse_delta'])})",
     )
-    tbl.add_row("Spearman ρ(γ_min, stability)", f"{res['stability']['spearman_margin_vs_stability']:.4f}")
+    tbl.add_row("Spearman ρ(γ_min, stability)", _route_metric_text(res["stability"]["spearman_margin_vs_stability"]))
     tbl.add_row(
         "Clustering ARI (trace vs entropy)",
-        f"{res['clustering']['ari_trace']:.4f} vs {res['clustering']['ari_entropy_baseline']:.4f} (gain={res['clustering']['ari_gain']:+.4f})",
+        f"{_route_metric_text(res['clustering']['ari_trace'])} vs {_route_metric_text(res['clustering']['ari_entropy_baseline'])} (gain={_route_metric_text(res['clustering']['ari_gain'])})",
     )
     if region_payload is not None:
         rres = region_payload["results"]

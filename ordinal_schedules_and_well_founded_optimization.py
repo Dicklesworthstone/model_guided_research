@@ -33,9 +33,11 @@ evaluation using final‑window MSE with median and dominance thresholds.
 # - Pass/Fail evaluation with crisp criteria
 #
 # Requires: jax, numpy
-# Run: python ordinal_scheduler_jax.py --runs 20 --steps 200000
+# Run: uv run python ordinal_schedules_and_well_founded_optimization.py --runs 20 --steps 200000
 
 import argparse
+import sys
+from collections.abc import Sequence
 from typing import NamedTuple
 
 import jax
@@ -110,7 +112,13 @@ def patience_for_B(B: jnp.int32, params: OrdinalParams) -> jnp.int32:
 
 
 def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: OrdinalParams):
-    L_ema_new = jnp.float32(params.ema_decay) * st.L_ema + jnp.float32(1.0 - params.ema_decay) * val_loss
+    # Validation MSE is nonnegative, so -inf uniquely marks an empty history.
+    # A real overflow to +inf must remain visible on subsequent observations.
+    L_ema_new = lax.cond(
+        jnp.isneginf(st.L_ema),
+        lambda: jnp.float32(val_loss),
+        lambda: jnp.float32(params.ema_decay) * st.L_ema + jnp.float32(1.0 - params.ema_decay) * val_loss,
+    )
     improved = L_ema_new < st.L_best
 
     def on_improved(_):
@@ -155,7 +163,9 @@ def ordinal_scheduler_step(st: OrdinalState, val_loss: jnp.float32, params: Ordi
 
             return lax.cond(st.B > 0, anneal_branch, restart_branch, operand=None)
 
-        return lax.cond(st.C > 0, dec_C, consolidate, operand=None)
+        can_consolidate = (st.C == 0) & ((st.B > 0) | (st.A > 0))
+        # At (0, 0, 0) the clamped successor keeps training at the current rate.
+        return lax.cond(can_consolidate, consolidate, dec_C, operand=None)
 
     st2, reset_mom, fired_limit = lax.cond(improved, on_improved, on_not_improved, operand=None)
     return st2, reset_mom, fired_limit
@@ -168,18 +178,16 @@ def ordinal_state_init(params: OrdinalParams):
         C=patience_for_B(jnp.int32(params.B_init), params),
         eta=jnp.float32(params.eta0),
         L_best=jnp.float32(jnp.inf),
-        L_ema=jnp.float32(jnp.inf),
+        L_ema=jnp.float32(-jnp.inf),
         anneals=jnp.int32(0),
         restarts=jnp.int32(0),
     )
 
 
 def ordinal_rank(st: OrdinalState) -> int:
-    """Return Cantor-normal rank ω^2·A + ω·B + C as a comparable integer for tests.
-    This preserves lexicographic order by mapping (A,B,C) ↦ A*10^6 + B*10^3 + C.
-    """
-    # Large base factors to preserve lexicographic ordering in finite ints for tests
-    return int(st.A) * 1_000_000 + int(st.B) * 1_000 + int(st.C)
+    """Order the scheduler's nonnegative int32 triples exactly as (A, B, C)."""
+    radix = int(np.iinfo(np.int32).max) + 1
+    return (int(st.A) * radix + int(st.B)) * radix + int(st.C)
 
 
 # -----------------------------
@@ -450,16 +458,26 @@ def summarize(results):
     lin_arr = np.array([r["lin_mse"] for r in results], dtype=np.float64)
 
     base_min_per_run = np.minimum(cos_arr, lin_arr)
-    dominance = np.sum(ord_arr <= 0.95 * base_min_per_run)
+    finite = np.isfinite(ord_arr) & np.isfinite(cos_arr) & np.isfinite(lin_arr)
+    finite_runs = int(np.count_nonzero(finite))
+    dominance = np.count_nonzero(finite & (ord_arr <= 0.95 * base_min_per_run))
 
     med_ord = float(np.median(ord_arr))
     med_cos = float(np.median(cos_arr))
     med_lin = float(np.median(lin_arr))
     med_base = min(med_cos, med_lin)
 
-    pass_median = med_ord <= 0.95 * med_base
-    pass_dominance = dominance >= max(16, int(0.8 * len(results)))
+    all_finite = finite_runs == len(results)
+    enough_runs = len(results) >= 20
+    pass_median = all_finite and med_ord <= 0.95 * med_base
+    pass_dominance = all_finite and enough_runs and 5 * dominance >= 4 * len(results)
     passed = pass_median and pass_dominance
+    if not all_finite:
+        status = "nonfinite"
+    elif not enough_runs:
+        status = "underpowered"
+    else:
+        status = "thresholds met" if passed else "thresholds missed"
 
     return {
         "median_ord": med_ord,
@@ -467,6 +485,9 @@ def summarize(results):
         "median_lin": med_lin,
         "dominance_count": int(dominance),
         "runs": int(len(results)),
+        "finite_runs": finite_runs,
+        "enough_runs": enough_runs,
+        "status": status,
         "pass_median": bool(pass_median),
         "pass_dominance": bool(pass_dominance),
         "passed": bool(passed),
@@ -481,7 +502,7 @@ def summarize(results):
 # -----------------------------
 
 
-def main():
+def main(argv: Sequence[str] = ()):
     from config import get_config
     from utils import conditional_print, print_metrics
 
@@ -501,7 +522,7 @@ def main():
     ap.add_argument("--beta", type=float, default=0.9)
     ap.add_argument("--nu", type=float, default=3.0)
     ap.add_argument("--mu", type=float, default=0.9)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     params = OrdinalParams(
         A_init=args.A0,
@@ -562,6 +583,9 @@ def main():
         print_metrics(mse_metrics, "Median MSE Results")
 
         validation_metrics = {
+            "Comparison Status": summ["status"],
+            "Finite Replicates": f"{summ['finite_runs']}/{summ['runs']}",
+            "Minimum 20 Replicates": summ["enough_runs"],
             "Dominance Count": f"{summ['dominance_count']}/{summ['runs']}",
             "Pass Median Test": summ["pass_median"],
             "Pass Dominance Test": summ["pass_dominance"],
@@ -589,6 +613,7 @@ def main():
         print("=== Ordinal Scheduler vs. Cosine/Linear Baselines ===")
         print(f"runs={summ['runs']} steps={args.steps} dim={args.dim} seed={args.seed}")
         print(f"median MSE: ord={summ['median_ord']:.6f}  cos={summ['median_cos']:.6f}  lin={summ['median_lin']:.6f}")
+        print(f"comparison={summ['status']} finite={summ['finite_runs']}/{summ['runs']} minimum_20_runs={summ['enough_runs']}")
         print(f"per-run dominance (ord <= 0.95 * best(baselines)): {summ['dominance_count']}/{summ['runs']}")
         print(f"pass_median={summ['pass_median']}  pass_dominance={summ['pass_dominance']}  PASSED={summ['passed']}")
         print("\nExample replicate details (first run):")
@@ -599,7 +624,7 @@ def main():
         print(f"  ordinal anneals={r0['anneals']} restarts={r0['restarts']} (strict rank drops at limits)")
 
 
-def demo():
+def demo(argv: Sequence[str] = ()):
     """Run the ordinal schedules and well founded optimization demonstration."""
     from config import get_config
     from utils import conditional_print, get_device_info, print_metrics
@@ -612,8 +637,8 @@ def demo():
         print_metrics(device_info, "JAX Configuration")
 
     conditional_print("[bold blue]Ordinal Schedules & Well-Founded Optimization Demo[/bold blue]", level=1)
-    main()
+    main(argv)
 
 
 if __name__ == "__main__":
-    demo()
+    demo(sys.argv[1:])

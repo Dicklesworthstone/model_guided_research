@@ -7,16 +7,16 @@ additive (the classic RevNet form — volume-preserving for ANY F, G):
     y1 = x1 + F(x2)          y2 = x2 + G(y1)
     x2 = y2 - G(y1)          x1 = y1 - F(x2)
 
-symplectic (kick-kick / Stormer-Verlet, F and G are EXACT GRADIENTS of
+symplectic (symplectic Euler, F and G are EXACT GRADIENTS of
 scalar potentials — each kick is an exact symplectic shear, so the block
 satisfies J^T Omega J = Omega identically; theory note
 markdown_documentation/symplectic_transformer.md):
     y1 = x1 + grad(phi_F)(x2)        y2 = x2 - grad(phi_G)(y1)
     x2 = y2 + grad(phi_G)(y1)        x1 = y1 - grad(phi_F)(x2)
 
-The MINUS on the second kick is load-bearing: it makes the block the
-splitting integrator of the COERCIVE Hamiltonian H = phi_G(x1) + phi_F(x2),
-whose shadow is conserved across tied depth and bounds activation norms.
+The minus on the second kick makes the block a first-order splitting of
+H = phi_G(x1) + phi_F(x2). Tied layers iterate the same map. The trainer
+measures the range of F(x2) + G(y1) on one forward pass.
 With ++ signs the conserved quantity is the non-coercive DIFFERENCE
 phi_F - phi_G and norms can blow up (validated: 6.5e4x at kick scale 0.2).
 
@@ -224,8 +224,8 @@ class ReversibleBlock(nn.Module):
             f_out = self.f_block(x2, cos_sin, kv_cache, record=rec)
             y1 = x1 + f_out
             g_out = self.g_block(y1, record=rec)
-            # MINUS: the corrected kick-kick sign — conserves the coercive
-            # H = phi_G + phi_F instead of the unbounded difference (note 1.1)
+            # Minus gives the Hamiltonian kick. The recorded sum uses staggered
+            # states F(x2) + G(y1); its across-layer band is an empirical diagnostic.
             y2 = x2 - g_out
             if rec:
                 with torch.no_grad():

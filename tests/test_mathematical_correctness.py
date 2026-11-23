@@ -222,7 +222,48 @@ class TestOrdinalSchedules:
         require(final_rank == 0, f"Did not reach rank 0: final rank = {final_rank}")
         require(steps < max_steps, f"Too many steps to terminate: {steps}")
 
+        for loss in (1.0, 10.0, 20.0):
+            after, reset, fired = ordinal.ordinal_scheduler_step(state, loss, params)
+            require(tuple(after[:4]) == tuple(state[:4]), "Exhausted rank and learning rate must stay fixed")
+            require(not reset and not fired and after.restarts == state.restarts, "Exhausted scheduler restarted")
+            state = after
+
         print(f"  ✅ Well-foundedness verified: terminated at rank 0 in {steps} steps")
+
+    def test_observed_ema_and_default_patience_transition(self):
+        params = ordinal.OrdinalParams(A_init=2, B_init=3, P_init=1200, ema_decay=0.75, eta0=0.1, gamma=0.5)
+        state = ordinal.ordinal_state_init(params)
+        step = jax.jit(ordinal.ordinal_scheduler_step)
+        # Independently calculated EMAs are 8, 0.75*8+0.25*4=7, and 0.75*7+0.25*12=8.25.
+        for loss, ema, best, patience in [(8.0, 8.0, 8.0, 1200), (4.0, 7.0, 7.0, 1200), (12.0, 8.25, 7.0, 1199)]:
+            state, reset, fired = step(state, jnp.float32(loss), params)
+            require((float(state.L_ema), float(state.L_best), int(state.C)) == (ema, best, patience), str(state))
+            require(not reset and not fired, "An ordinary observation triggered a limit transition")
+
+        before = state._replace(C=jnp.int32(0))
+        after, reset, fired = step(before, jnp.float32(12), params)
+        require(tuple(map(int, after[:3])) == (2, 2, 2400), str(after))
+        require(fired and not reset and after.anneals == 1, "Expected exactly one anneal")
+        require(ordinal.ordinal_rank(after) < ordinal.ordinal_rank(before), "Encoded rank reversed the tuple order")
+
+        overflow, _, _ = step(state, jnp.float32(jnp.inf), params)
+        after_overflow, _, _ = step(overflow, jnp.float32(1), params)
+        require(jnp.isposinf(after_overflow.L_ema), "An observed overflow was mistaken for an empty EMA")
+
+    def test_comparison_reports_finite_and_replication_controls(self):
+        win = {"ord_mse": 0.9, "cos_mse": 1.0, "lin_mse": 1.0}
+        loss = {**win, "ord_mse": 1.0}
+        for rows, status, finite, dominant in [
+            ([win] * 16 + [loss] * 4, "thresholds met", 20, 16),
+            ([win] * 15 + [loss] * 5, "thresholds missed", 20, 15),
+            ([win] * 16, "underpowered", 16, 16),
+            ([win] * 19 + [{**win, "cos_mse": math.nan}], "nonfinite", 19, 19),
+            ([{**win, "cos_mse": math.inf, "lin_mse": math.inf}] * 5, "nonfinite", 0, 0),
+        ]:
+            result = ordinal.summarize(rows)
+            require(result["status"] == status, str(result))
+            require(result["passed"] == (status == "thresholds met"), str(result))
+            require(result["finite_runs"] == finite and result["dominance_count"] == dominant, str(result))
 
 
 class TestMatrixExponentialGauge:
@@ -468,6 +509,31 @@ class TestSimplicialComplexes:
 
 class TestUltrametricWorlds:
     """Test p-adic and ultrametric properties."""
+
+    def test_reference_trie_capacity_and_hensel_live_rows(self):
+        p = 11
+        model = padic.LCPTreeAttention(p=p, K=1, H=1, m=2, r=3)
+        head = padic._dict_backed_heads(model)[0]
+        labels = np.asarray([[n + 1, p - n - 1] for n in range(7)], dtype=np.int32)
+        for digit, label in enumerate(labels):
+            require(head.volf_update([digit], jnp.asarray(label)) == 1, "Expected one new prefix")
+            require(head.ensure(0, digit) == digit, "Repeated insertion changed the node index")
+        level = head.levels[0]
+        require(level.residues == list(range(7)) and level.S.shape == level.R.shape == (8, 2), str(level))
+        np.testing.assert_array_equal(level.S[:7], labels)
+        np.testing.assert_array_equal(level.R[:7], np.sign(np.where(labels > p // 2, labels - p, labels)))
+        np.testing.assert_array_equal(model.lookup([[n] for n in range(7)]), labels)
+
+        lifted = padic.hensel_lift_model(model, 2)
+        lifted_head = padic._dict_backed_heads(lifted)[0]
+        require(lifted_head.frozen_mark == [7], "A spare row was frozen as a real residue")
+        snapshot = padic._frozen_snapshot(lifted, 1)
+        for digit in (7, 8):
+            require(lifted_head.volf_update([digit, 0], jnp.array([1, 2])) == 1, "New coarse prefix should be writable")
+        require(lifted_head.levels[0].S.shape == (16, 2), "Expected capacity to double on the ninth live row")
+        np.testing.assert_array_equal(lifted.lookup([[7, 0], [8, 0], [9, 0]]), [[1, 2], [1, 2], [0, 0]])
+        padic._assert_residues_preserved(lifted, snapshot, 1)
+        require(len(level.residues) == 7 and not bool(jnp.any(level.S[7])), "Lift mutated its source model")
 
     def test_ultrametric_inequality(self):
         """Verify strong triangle inequality d(x,z) ≤ max(d(x,y), d(y,z))."""

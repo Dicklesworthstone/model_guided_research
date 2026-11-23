@@ -17,7 +17,7 @@ Scenarios (run one with --scenario, or all):
                   holes and the planned final step reached
   determinism     greedy same-seed sampling across the mechanism zoo is
                   byte-identical across two invocations; tokens/s recorded
-                  (octonion SKIPPED until 7b0.6 vectorizes its loop)
+                  for all thirteen standalone mechanisms
   regression-gate bench-fixed-flops two variants -> mgr regressions passes on
                   self-vs-self and TRIPS (--fail-on-regression, exit 1) on a
                   deliberately degraded fixture copy
@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import shlex
@@ -175,7 +176,8 @@ class Runner:
     def _doctor_probe(self) -> str:
         try:
             proc = subprocess.run(
-                CLI + ["doctor", "--json"], capture_output=True, text=True, timeout=120, cwd=REPO, env=self._env()
+                [sys.executable, str(REPO / "cli.py"), "doctor", "--json"],
+                capture_output=True, text=True, timeout=120, cwd=REPO, env=self._env(),
             )
             return proc.stdout[-1500:] or proc.stderr[-500:]
         except Exception as exc:  # noqa: BLE001 - probe is best-effort by design
@@ -617,6 +619,9 @@ DETERMINISM_MECHS = [
     "tropical",
     "reversible",
     "gauge",
+    "octonion",
+    "clifford",
+    "hyperbolic",
 ]
 
 
@@ -630,7 +635,6 @@ def scenario_determinism(work: Path) -> bool:
                 "gen-tasks",
                 CLI + ["gen-tasks", "--task", "arith", "--out", str(work / "diag"), "--size", "300", "--seed", "7"],
             )
-        r.skip("octonion", "excluded until 7b0.6 vectorizes the octonion loop (slow at any size)")
         for mech in DETERMINISM_MECHS:
             r.run(
                 f"train-{mech}",
@@ -804,28 +808,26 @@ def scenario_symplectic(work: Path) -> bool:
             if rec.get("type") == "step" and "symplectic_shadow_energy_mean" in rec
         ]
         r.assert_true(
-            "energy-telemetry-present", len(recs) >= 24, f"{len(recs)} step records carry shadow-energy telemetry"
+            "energy-telemetry-present",
+            [rec["step"] for rec in recs] == list(range(24)) and all(rec["symplectic_layers_recorded"] == 8 for rec in recs),
+            f"{len(recs)}/24 training forwards, expected exactly eight layers in each"
         )
         finite = all(
-            rec["symplectic_shadow_energy_mean"] == rec["symplectic_shadow_energy_mean"]
-            and rec["symplectic_x_norm_mean"] == rec["symplectic_x_norm_mean"]
-            for rec in recs
+            math.isfinite(rec[key]) for rec in recs
+            for key in ("symplectic_shadow_energy_mean", "symplectic_x_norm_mean", "symplectic_energy_band_layers",
+                        "symplectic_energy_min", "symplectic_energy_max", "symplectic_lambda_mean")
         )
         r.assert_true("energy-telemetry-finite", finite, "all shadow-energy/norm readings finite")
         # conservation-across-depth: the per-step across-layer band stays small
         # relative to the energy scale (loose: training moves the potentials
         # BETWEEN steps; the theorem speaks within each forward)
-        bands_ok = all(
-            rec["symplectic_energy_band_layers"] <= 0.10 * (1.0 + abs(rec["symplectic_shadow_energy_mean"]))
-            for rec in recs
-        )
-        worst = max(
-            rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"])) for rec in recs
-        )
+        bands = [rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"])) for rec in recs]
+        first_failure = next((rec["step"] for rec, band in zip(recs, bands, strict=True) if not band <= 0.10), None)
+        worst = max(bands, default=math.inf)
         r.assert_true(
             "across-layer-energy-band",
-            bands_ok,
-            f"across-layer shadow-energy band <= 10% of scale at every step (worst {worst:.4f})",
+            bool(bands) and first_failure is None,
+            f"(max-min)/(1+abs(mean)) <= 0.10; worst {worst:.6f}; first failing step {first_failure}",
         )
         norms = [rec["symplectic_x_norm_mean"] for rec in recs]
         r.assert_true(

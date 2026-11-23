@@ -1,0 +1,41 @@
+tools:
+  model_guided_research:
+    repo: Dicklesworthstone/model_guided_research
+    language: python
+    checks:
+      - uv run --locked --extra dev ruff check .
+      - uv run --locked --extra dev ruff format --check .
+      - uv run --locked --exact --extra dev --extra server --extra viz --extra tokenizer-train ty check
+      - uv run --locked --extra dev --extra test pytest tests -m 'not slow' -q --tb=short --ignore=tests/test_runner.py --ignore=tests/test_runner_enhanced.py
+      - uv run --locked --extra dev --extra test pytest tests -q --tb=short --ignore=tests/test_runner.py --ignore=tests/test_runner_enhanced.py
+      - uv run --locked mgr hypotheses validate && uv run --locked mgr theorems validate
+      - JAX_PLATFORMS=cpu uv run --locked mgr certify --device cpu --dtype fp32 --seed 42 --artifacts-dir "$DSR_QUALITY_RUN_DIR/certificates"
+      - uv run --locked python scripts/e2e_pipeline.py --scenario all --workdir "$DSR_QUALITY_RUN_DIR/e2e" --resume-kill-seed 1337 --keep
+      - |
+        cd proofs && lake build &&
+        lake env lean AxiomCheck.lean > "$DSR_QUALITY_RUN_DIR/axioms.txt" 2>&1 &&
+        cat "$DSR_QUALITY_RUN_DIR/axioms.txt" &&
+        test "$(grep -Ec 'depends on axioms|does not depend on any axioms' "$DSR_QUALITY_RUN_DIR/axioms.txt")" -eq "$(grep -c '^#print axioms ' AxiomCheck.lean)" &&
+        test "$(grep -c '^#print axioms ' AxiomCheck.lean)" -gt 0 &&
+        ! grep -F sorryAx "$DSR_QUALITY_RUN_DIR/axioms.txt"
+      - |
+        uv build --wheel --out-dir "$DSR_QUALITY_RUN_DIR/dist" &&
+        cd "$DSR_QUALITY_RUN_DIR" &&
+        uv run --isolated --no-project --python 3.13 --with "$PWD"/dist/*.whl python -I - <<'PY'
+        from pathlib import Path
+        import subprocess
+        import sys
+        import torch
+        import nanochat
+        assert Path(nanochat.__file__).resolve().is_relative_to(Path(sys.prefix))
+        for name, cls in nanochat.MECHANISM_CLASSES.items():
+            model = cls.from_dims(n_embd=32, n_head=4)
+            x = torch.randn(2, 8, 32, requires_grad=True)
+            output = model(x)
+            assert output.shape == x.shape and torch.isfinite(output).all(), name
+            output.sum().backward()
+            assert x.grad is not None and torch.isfinite(x.grad).all(), name
+        for registry in ("hypotheses", "theorems"):
+            subprocess.run([sys.executable, "-I", "-m", "cli", registry, "validate"], check=True)
+        print(f"Installed mechanisms exercised: {len(nanochat.MECHANISM_CLASSES)}")
+        PY

@@ -11,6 +11,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import cli
+from tests.test_adjudicate import _commit_fixture_registration
 
 runner = CliRunner()
 
@@ -85,6 +86,7 @@ def _eval_summary(
                     "seeds": [0, 1, 2],
                 },
                 "provenance": TAINTED_PROV if tainted else CLEAN_PROV,
+                "train_provenance": CLEAN_PROV,
                 "tasks": {
                     task: {
                         "exact_match": {"greedy": {"held_out": {"mean": em, "per_seed": [em] * 3}}},
@@ -215,6 +217,14 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     import os
     import time as time_mod
 
+    registry = tmp_path / "registry.yaml"
+    blocked = _hyp_status()
+    blocked["id"] = "hyp-status-blocked"
+    blocked["mechanisms"] = ["braid"]
+    registry.write_text(
+        "schema_version: 1\nhypotheses:\n" + _yaml_entry_status(_hyp_status()) + _yaml_entry_status(blocked)
+    )
+    _commit_fixture_registration(registry, monkeypatch, CLEAN_PROV)
     arts = tmp_path / "artifacts"
     _train_summary(arts, "dyck-braid-s0", mechanism="braid", task="dyck", seed=0, ce=0.9)
     _eval_summary(arts, "e-ultra-0", mechanism="ultrametric", task="hier", em=0.8, flops=1e14)
@@ -230,15 +240,6 @@ def test_status_reports_staleness_and_engine_view(tmp_path, monkeypatch):
     fresh_cert = _cert_summary(arts, "ultra-new", mechanism="ultrametric")
     fresh_time = max(time_mod.time(), ultra_mtime) + 3600
     os.utime(fresh_cert, (fresh_time, fresh_time))  # newer than any source file
-
-    registry = tmp_path / "registry.yaml"
-    blocked = _hyp_status()
-    blocked["id"] = "hyp-status-blocked"
-    blocked["mechanisms"] = ["braid"]  # no braid eval artifacts -> blocked
-    registry.write_text(
-        "schema_version: 1\nhypotheses:\n" + _yaml_entry_status(_hyp_status()) + _yaml_entry_status(blocked)
-    )
-    monkeypatch.setattr(cli, "_hypotheses_registry_path", lambda: registry)
 
     result = runner.invoke(
         cli.app,

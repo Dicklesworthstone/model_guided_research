@@ -5,6 +5,7 @@ Intentionally lightweight: small model, short run, and a streaming parquet-backe
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -478,18 +479,21 @@ def _collect_symplectic_energy_stats(model: torch.nn.Module) -> dict[str, Any] |
             continue
         seen.add(id(module))
         entries.extend(drain())
-    finite = [e for e in entries if math.isfinite(e.get("shadow_energy", float("nan")))]
-    if not finite:
+    if not entries:
         return None
-    energies = [e["shadow_energy"] for e in finite]
-    x_norms = [e["x1_norm"] + e["x2_norm"] for e in finite]
-    lams = [0.5 * (e["lambda_f"] + e["lambda_g"]) for e in finite]
+    if any(not math.isfinite(value) for entry in entries for value in entry.values()):
+        raise FloatingPointError("Non-finite reversible-layer energy telemetry in training forward.")
+    energies = [e["shadow_energy"] for e in entries]
+    x_norms = [e["x1_norm"] + e["x2_norm"] for e in entries]
+    lams = [0.5 * (e["lambda_f"] + e["lambda_g"]) for e in entries]
     return {
         "shadow_energy_mean": sum(energies) / len(energies),
         "energy_band_layers": max(energies) - min(energies),
+        "energy_min": min(energies),
+        "energy_max": max(energies),
         "x_norm_mean": sum(x_norms) / len(x_norms),
         "lambda_mean": sum(lams) / len(lams),
-        "layers_recorded": len(finite),
+        "layers_recorded": len(entries),
     }
 
 
@@ -2174,6 +2178,16 @@ def train(args) -> None:
     run_dir = Path(args.artifacts_dir) / artifacts_kind / artifacts_topic / resolved_run_id
 
     checkpoint_dir = str(getattr(args, "checkpoint_dir", None) or (run_dir / "checkpoints"))
+    initial_weights_sha256 = (resume_meta or {}).get("initial_weights_sha256")
+    if getattr(args, "save_initial_weights", False) and resume_meta is None and ddp_rank == 0:
+        initial_dir = Path(checkpoint_dir) / "initial"
+        save_checkpoint(
+            str(initial_dir), 0, raw_model.state_dict(), None,
+            {"step": 0, "batches_consumed": 0, "model_config": asdict(config), "model_type": model_type,
+             "seed": int(args.seed), "lineage": {"run_id": resolved_run_id, "parent_run_ids": []}},
+        )
+        with (initial_dir / "model_000000.pt").open("rb") as weights:
+            initial_weights_sha256 = hashlib.file_digest(weights, "sha256").hexdigest()
     if task_tokenizer is not None and ddp_rank == 0:
         # The vocabulary travels with the weights: every checkpoint consumer
         # loads it through nanochat.tokenizer.checkpoint_tokenizer.
@@ -2342,6 +2356,7 @@ def train(args) -> None:
             "seed": int(args.seed),
             "world_size": int(ddp_world_size),
             "batches_consumed": step + 1,
+            "initial_weights_sha256": initial_weights_sha256,
             # the annealed beta these weights were saved at (y2h9); loaders
             # must construct at this value, not model_config's schedule b0
             "semiring_beta_live": last_semiring_beta,
@@ -2443,6 +2458,21 @@ def train(args) -> None:
     # energy and final activation norm, promoted into the summary so the
     # symplectic no-norm program's diagnostics are engine-readable.
     symplectic_energy_first: float | None = None
+    from nanochat.reversible_block_torch import ReversibleBlock
+
+    energy_modules = [module for module in raw_model.modules() if isinstance(module, ReversibleBlock) and module.record_energy]
+    sym_stats: dict[str, Any] | None = None
+
+    def training_loss(inputs, targets):
+        # Certificates, validation and activation recomputation also call these blocks.
+        # Capture precisely this training forward, before backward can replay a layer.
+        nonlocal sym_stats
+        for module in energy_modules:
+            module.drain_energy_trace()
+        loss = _extract_loss(model(inputs, targets))
+        if energy_modules:
+            sym_stats = _collect_symplectic_energy_stats(raw_model)
+        return loss
     symplectic_energy_last: float | None = None
     symplectic_x_norm_last: float | None = None
     # Live semiring beta at the most recent step (bead y2h9): recorded into
@@ -2581,9 +2611,9 @@ def train(args) -> None:
                 with autocast_ctx():
                     if is_hoss:
                         with _hvp_safe_sdpa_ctx():
-                            loss = _extract_loss(model(inputs, targets))
+                            loss = training_loss(inputs, targets)
                     else:
-                        loss = _extract_loss(model(inputs, targets))
+                        loss = training_loss(inputs, targets)
                 if check_numerics and (not torch.isfinite(loss).all().item()):
                     if ddp_rank == 0:
                         console.print("[bold red]Non-finite loss detected[/bold red]")
@@ -2630,7 +2660,7 @@ def train(args) -> None:
                         raise FloatingPointError("Non-finite gradients detected (NaN/Inf).")
             else:
                 with autocast_ctx():
-                    loss = _extract_loss(model(inputs, targets))
+                    loss = training_loss(inputs, targets)
                 if check_numerics and (not torch.isfinite(loss).all().item()):
                     if ddp_rank == 0:
                         console.print("[bold red]Non-finite loss detected[/bold red]")
@@ -2894,12 +2924,14 @@ def train(args) -> None:
                         and getattr(config, "reversible_record_energy", False)
                     ):
                         # D2 schema gains the shadow-energy telemetry (u55.5):
-                        # the across-layer band of the conserved H-tilde plus
+                        # the empirical across-layer band of the staggered energy plus
                         # activation norms and the live confinement lambda.
-                        sym_stats = _collect_symplectic_energy_stats(raw_model)
                         if sym_stats is not None:
                             record["symplectic_shadow_energy_mean"] = sym_stats["shadow_energy_mean"]
                             record["symplectic_energy_band_layers"] = sym_stats["energy_band_layers"]
+                            record["symplectic_energy_min"] = sym_stats["energy_min"]
+                            record["symplectic_energy_max"] = sym_stats["energy_max"]
+                            record["symplectic_layers_recorded"] = sym_stats["layers_recorded"]
                             record["symplectic_x_norm_mean"] = sym_stats["x_norm_mean"]
                             record["symplectic_lambda_mean"] = sym_stats["lambda_mean"]
                             if symplectic_energy_first is None:
@@ -4064,6 +4096,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-steps", type=int, default=5, help="How many of the FINAL steps to profile when --profile is on."
     )
     # Checkpoint/resume (bead rz8.1).
+    parser.add_argument(
+        "--save-initial-weights", action="store_true",
+        help="Save the actual pre-update model under checkpoints/initial and bind its digest to training checkpoints.",
+    )
     parser.add_argument(
         "--checkpoint-interval",
         type=int,

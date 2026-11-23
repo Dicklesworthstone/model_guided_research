@@ -335,27 +335,71 @@ def test_coord_check_command_writes_one_artifact_per_arm_and_seed(tmp_path):
     assert bad.exit_code == 2 and "at least two widths" in bad.output
 
 
-def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(tmp_path):
+def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(tmp_path, monkeypatch):
     """The operationalized predictions (bp08) resolve against exactly the
     artifact shape the command writes: planted slopes give SUPPORTED for both
     hypotheses, and a tropical pair that is flat under BOTH arms REFUTES the
     EVT separation claim (a check that cannot fail is not evidence)."""
     import json
+    import subprocess
+    from pathlib import Path
+    from typing import Any
 
     from typer.testing import CliRunner
 
     import cli as mgr_cli
 
+    # Copy the two operational definitions into a separate Git history. The
+    # fixtures can then name real producer commits on either side of promotion.
+    ids = {"hyp-coordcheck-clt-flat", "hyp-tropical-evt-miscoupling"}
+    registry, errors = mgr_cli._load_hypothesis_registry(mgr_cli._hypotheses_registry_path())
+    assert registry is not None and not errors
+    entries: list[dict[str, Any]] = [
+        dict(h, status="open", verdict_history=[]) for h in registry["hypotheses"] if h["id"] in ids
+    ]
+    assert {h["id"] for h in entries} == ids
+    source = Path(mgr_cli.__file__).resolve().parent
+    (tmp_path / "cli.py").symlink_to(source / "cli.py")
+    (tmp_path / "nanochat").symlink_to(source / "nanochat", target_is_directory=True)
+    registry_path = tmp_path / "hypotheses" / "registry.yaml"
+    registry_path.parent.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(
+            [
+                "git", "-C", str(tmp_path),
+                "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "-c", "commit.gpgSign=false", *args,
+            ],
+            text=True,
+        ).strip()
+
+    git("init", "--quiet", "-b", "main")
+    blocked = [dict(h, prediction=None, status="blocked") for h in entries]
+    registry_path.write_text(json.dumps({"schema_version": 1, "hypotheses": blocked}, indent=2))
+    git("add", "hypotheses/registry.yaml")
+    git("commit", "--quiet", "-m", "Register two unmeasurable proposals")
+    discovery = git("rev-parse", "HEAD")
+    registry_path.write_text(json.dumps({"schema_version": 1, "hypotheses": entries}, indent=2))
+    git("commit", "--quiet", "-am", "Specify coordinate-check predictions")
+    registration = git("rev-parse", "HEAD")
+    git("commit", "--quiet", "--allow-empty", "-m", "Freeze a prospective measurement")
+    producer = git("rev-parse", "HEAD")
+    for entry in entries:
+        entry["prediction"]["scale_caveats"] += " Historical replay available for this cohort."
+    registry_path.write_text(json.dumps({"schema_version": 1, "hypotheses": entries}, indent=2))
+    git("commit", "--quiet", "-am", "Annotate completed measurements without changing the predictions")
+    monkeypatch.chdir(tmp_path)
+
     clean = {
         "schema_version": "mgr.metrics.v1",
-        "git_sha": "deadbeef",
         "git_dirty": False,
         "config_hash": "abc",
         "data_snapshot_hash": None,
         "tainted": False,
     }
 
-    def plant(root, mech, arm, seed, slope):
+    def plant(root, mech, arm, seed, slope, *, sha=producer):
         res = {
             "attention_type": mech,
             "widths": [64, 128, 256],
@@ -365,7 +409,11 @@ def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(
             "concentration_class": "clt",
         }
         P.write_coord_check_artifact(
-            res, root / f"{mech}_{arm}_s{seed}", parameterization=arm, seed=seed, provenance=clean
+            res,
+            root / f"{mech}_{arm}_s{seed}",
+            parameterization=arm,
+            seed=seed,
+            provenance={**clean, "git_sha": sha},
         )
 
     def verdicts(root, out):
@@ -396,6 +444,7 @@ def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(
         plant(supported, "reversible", "current", seed, 2 * slope)
         plant(supported, "tropical", "current", seed, 0.15 + 0.01 * seed)  # drifts under the CLT rule
         plant(supported, "tropical", "nsa", seed, 0.02 + 0.005 * seed)  # flat under the EVT correction
+    original = registry_path.read_bytes()
     got = verdicts(supported, tmp_path / "out-supported")
     assert got["hyp-coordcheck-clt-flat"]["verdict"] == "supported", got["hyp-coordcheck-clt-flat"]
     assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "supported", got["hyp-tropical-evt-miscoupling"]
@@ -409,6 +458,36 @@ def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(
     got = verdicts(refuted, tmp_path / "out-refuted")
     assert got["hyp-coordcheck-clt-flat"]["verdict"] == "refuted", got["hyp-coordcheck-clt-flat"]
     assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "refuted", got["hyp-tropical-evt-miscoupling"]
+
+    early = tmp_path / "before-promotion"
+    for seed in range(3):
+        plant(early, "standard", "current", seed, 0.001, sha=discovery)
+        plant(early, "reversible", "current", seed, 0.002, sha=discovery)
+        plant(early, "tropical", "current", seed, 0.20, sha=discovery)
+        plant(early, "tropical", "nsa", seed, 0.01, sha=discovery)
+    got = verdicts(early, tmp_path / "out-before")
+    assert set(got) == ids
+    for verdict in got.values():
+        assert verdict["verdict"] == "blocked", verdict
+        assert verdict["registration_commit"] == registration
+        excluded = verdict["excluded_evidence"]
+        assert len({row["path"] for row in excluded}) == 6
+        assert {row["reason_code"] for row in excluded} == {"pre_registration"}
+        assert all("before-promotion" in row["path"] for row in excluded), verdict
+    assert registry_path.read_bytes() == original
+
+    # A threshold edit really changes the contract, even when the same
+    # measurements would clear both cutoffs.
+    clt = next(entry for entry in entries if entry["id"] == "hyp-coordcheck-clt-flat")
+    clt["prediction"]["threshold"] = 0.06
+    registry_path.write_text(json.dumps({"schema_version": 1, "hypotheses": entries}, indent=2))
+    git("commit", "--quiet", "-am", "Change CLT threshold")
+    amended = registry_path.read_bytes()
+    got = verdicts(supported, tmp_path / "out-threshold-edit")
+    assert got[clt["id"]]["verdict"] == "blocked"
+    assert got[clt["id"]]["registration_commit"] == git("rev-parse", "HEAD")
+    assert got["hyp-tropical-evt-miscoupling"]["verdict"] == "supported"
+    assert registry_path.read_bytes() == amended
 
 
 def test_nsa_tropical_finalize_eliminates_post_cproj_gumbel_drift():

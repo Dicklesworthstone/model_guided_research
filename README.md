@@ -72,9 +72,9 @@ mgr run matrix-gauge        # Run specific demo
 mgr run-all                 # Sequential demo runner
 ```
 
-On the November 22 audit revision, `run-all --delay 0 --seed 7` completed
-seven demos before the ordinal demo's argument parser exited. The remaining
-five entries were never reached by that invocation. [Audit](docs/bridge_plan.md#november-2026-assessment)
+The runner isolates demo arguments and reports successful, failed and skipped
+entries. The ordinal experiment also reports finite replicate counts. In the
+default five-replicate seed-7 run, all three median errors were nonfinite.
 
 ### PyTorch transformer experiments
 **Location**: `nanochat/` directory
@@ -142,6 +142,21 @@ uv sync --extra dev
 mgr --help
 python -m nanochat.train --help
 ```
+
+To consume a wheel in another Python 3.13 uv project, build it in the checkout
+with `uv build --wheel`, then run `uv add /absolute/path/to/the.whl` in the
+consumer project. The wheel includes the standalone `nanochat` classes, both
+research registries, and the notes and Lean sources used by static validation.
+`mgr info <demo-name>` reads the installed demo's documentation. From any
+directory, `mgr theorems list|show|validate` and
+`mgr hypotheses list|show|validate` can read the bundled snapshot. Hypothesis
+validation reports `parent_checked: false` when it has no Git history.
+
+For live research work, run from the root of a model_guided_research Git
+checkout. Its registry takes precedence over the bundled snapshot. Registry
+writes (`hypotheses add|hold|release` and `adjudicate`), claim-bearing
+scorecards, `status`, and `theorems validate --deep` require a checkout.
+Deep theorem validation also needs the dev dependencies to collect pytest tests.
 
 ### Quick Tour
 
@@ -890,7 +905,7 @@ mgr bench-fixed-flops \
     --include-demo-certs
 
 # Resumable preregistered scorecard: sparse mechanism/task cells, checkpoint
-# eval, frozen ci-v6 claim allowlist, placebo gate, and JSON/Markdown/HTML reports.
+# eval, frozen claim allowlist, ci-v7 evidence eligibility, placebo gate, and JSON/Markdown/HTML reports.
 # Set this only from a committed, quarantined sizing probe.
 # Export this while still in the mutable coordination checkout, before entering
 # the detached producer worktree. It must not point into that frozen worktree.
@@ -920,7 +935,7 @@ mgr scorecard \
 # Re-running that identical command skips completed cells via
 # artifacts/scorecards/hierarchy_scorecard/manifest.json.
 # Cells planning fewer than --min-evidence-steps (default 10) are labeled
-# SMOKE-ONLY and excluded from ci-v6, preventing tiny floored plumbing runs
+# SMOKE-ONLY and excluded from adjudication, preventing tiny floored plumbing runs
 # from being laundered into scientific verdicts. Step-qualified cells are still
 # excluded unless every standard seed and its lower 95% CI clear recorded prior.
 

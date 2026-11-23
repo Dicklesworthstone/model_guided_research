@@ -45,8 +45,7 @@ Jacobian and the block is merely volume-preserving. Validated numerically:
 
 ### 1.1 The sign correction (and why it is load-bearing)
 
-The composition above is precisely one step of the **Störmer–Verlet / leapfrog
-splitting** for the separable Hamiltonian
+The composition above is one step of **symplectic Euler** for the separable Hamiltonian
 
 ```
 H(x1, x2) = φ_G(x1) + φ_F(x2)
@@ -86,24 +85,28 @@ O(1)-memory property is inherited unchanged.
 
 ## 2. What symplecticity buys: backward error analysis, honestly scoped
 
-Classical backward error analysis (Hairer–Lubich–Wanner, *Geometric Numerical
-Integration*, ch. IX) says: a symplectic integrator of step `h` applied to a
-(real-analytic, bounded-derivative) Hamiltonian `H` exactly follows the flow of
-a **shadow Hamiltonian** `H̃ = H + O(h²)` up to an error exponentially small in
-`1/h`, for times `t ≤ e^{c/h}`. Translation to depth: composing `L` identical
-blocks holds `H̃` fixed to `O(h²)` oscillation for `L` up to exponentially
-large — activations cannot drift along the conserved direction; they
-oscillate on a level set.
+For a small step on a bounded analytic domain, backward error analysis gives
+this first-order splitting a modified Hamiltonian whose leading correction is
+`O(h)` (Hairer–Lubich–Wanner, *Geometric Numerical Integration*, ch. IX).
+The size of the correction for a learned block depends on its potentials and
+the region visited. The trainer records the staggered sum `F(p) + G(q′)`.
+
+For quadratic potentials `F(p) = a p²/2` and `G(q) = b q²/2`, substitution of
+`q′ = q + h a p` and `p′ = p − h b q′` gives an exact discrete invariant
+`H* = (b q² + a p² + h a b q p)/2`. For positive `a,b` it is positive
+definite when `h²ab < 4`. At `a=b=h=1` and `(q,p)=(2,0)`, eight tied steps keep
+`H*=2` exactly while the staggered sum visits both 2 and 4. The 10% band in
+the depth-eight training scenario is an empirical regression threshold for
+that seed, model and input. Each logged range covers one training forward.
 
 The theorem is about **iterating the same map**. That gives a claim hierarchy
 that the experiment matrix must respect:
 
 1. **Per-layer exact symplecticity + volume preservation** — unconditional,
    any potentials, tied or untied. (Theorem; certified in tests.)
-2. **Strong shadow conservation across depth** — holds for **layer-tied
-   potentials** (`φ` shared across all layers, universal-transformer style;
-   also a parameter-efficiency win). This is the theory-backed regime.
-   Validated: energy band 0.007 over 256 tied layers at h = 0.05.
+2. **Tied potentials** iterate one map. Small-step estimates also require
+   regularity and control of the visited domain. One measured energy band
+   was 0.007 over 256 tied layers at h = 0.05.
 3. **Slowly-varying untied potentials** — adiabatic regime. One step with
    `φ^{(l)}` followed by one with `φ^{(l+1)}` changes the conserved reference
    by `H^{(l+1)} − H^{(l)}`, so the energy drift across `L` layers is bounded

@@ -246,12 +246,15 @@ state:
   C := P(B)
   eta := eta0
   L_best := +inf
-  L_ema := +inf
+  L_ema := uninitialized
   consolidations := 0  # optional counter
 
 function scheduler_step(observed_val_loss):
   # update smoothed metric (fixed beta=0.9)
-  L_ema := 0.9 * L_ema + 0.1 * observed_val_loss
+  if L_ema is uninitialized:
+    L_ema := observed_val_loss
+  else:
+    L_ema := 0.9 * L_ema + 0.1 * observed_val_loss
 
   improved := (L_ema < L_best)
   if improved:
@@ -325,8 +328,7 @@ function scheduler_step(observed_val_loss):
   * $\eta_0=0.1,\ \gamma=0.5,\ A_0=2,\ B_{\text{init}}=3,\ P_0=1200$.
   * $P(B)=P_0\cdot 2^{(B_{\text{init}}-B)}$ → patience ladder $1200,2400,4800$.
 
-**What will happen (reasoning):**
-Cosine/linear inevitably shrink LR early, so after the shifts at $0.4T$ and $0.7T$ they adapt slowly. The ordinal scheduler preserves LR during genuine improvement bursts and only decays after a proven plateau; after the late shift it **restarts** to $\eta_0$, regaining fast adaptation while still strictly descending in the ranking.
+**Prediction.** A restart after the late shift could let the ordinal scheduler adapt more quickly than cosine or linear decay. Its timing depends on the observed validation losses.
 
 **Evaluation metric:** final test MSE averaged over the last $0.05T$ steps of each segment (so the last window uses segment 3), computed on a fresh stream.
 
@@ -342,6 +344,12 @@ Cosine/linear inevitably shrink LR early, so after the shifts at $0.4T$ and $0.7
 * **Fail** otherwise.
 
 (These thresholds force a clear, practically meaningful gap on this noisy, shifting task.)
+
+The shorter public demonstration uses five replicates and 50,000 steps. On the November 22, 2026 CPU run with seed 7, the ordinal, cosine, and linear median MSEs were all NaN. The comparison cannot establish an advantage for any scheduler. The CLI reports how many replicates yielded finite MSEs in all three arms and whether the run reached the 20-replicate minimum.
+
+The three arms share the ground-truth coefficients and draw independent training and test samples. With the learning rate set to zero, all predictors stay at zero. A 256-step, single-replicate control at dimension 50 and seed 7 nevertheless measured ordinal, cosine, and linear MSEs of 1.850163, 4.336200, and 16.028721. These differences measure sampling variation between test streams.
+
+There is a stability issue even in the noise-free first update with zero initial momentum. For $x\sim N(0,I_d)$ and parameter error $e$, one update gives $e'=(I-\eta xx^\top)e$. Using $E[xx^\top]=I$ and $E[\|x\|^2xx^\top]=(d+2)I$ yields $E\|e'\|^2=(1-2\eta+\eta^2(d+2))\|e\|^2$. At the documented $d=50$ and $\eta=0.1$, that multiplier is $1.32$. This one-step calculation does not determine which arm first diverged in the observed momentum runs.
 
 ---
 
