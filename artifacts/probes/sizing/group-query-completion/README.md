@@ -6,6 +6,8 @@ A learner received the opaque endpoint labels of all 508 binary words of lengths
 
 Take any word `w`. Prepending `a` and appending `b` gives the same word whichever operation is performed first. Once three sides of the resulting square of endpoint labels are known, its fourth side follows. This works even when `ab` and `ba` have different products. For a group, each generator is a permutation, so the same inference applies when an edge is traversed backwards.
 
+The compatibility of the two directions is a defining axiom of classical biautomata. The experimental question here concerns how many paid labels that axiom saves when learning an unknown action from short words. [Klíma and Polák, *On Biautomata*, §3.1](https://www.math.muni.cz/~klima/Math/biautomata.pdf)
+
 Both learners observed left and right extensions, used inverses and filled the last unknown edge of a bijection by elimination. Both queried the shortest accessible representative extended by one symbol, with lexical tie-breaking. One also propagated commuting squares. Neither learner received a multiplication table, group identity, group name, permutation representation, or test answers. Each received the complete set of opaque output names, the two input symbols, its own transcript of paid answers, and the same initial word labels.
 
 | Fresh presentations | Cases | Queries without squares | Queries with squares | Label-naming lower bound | Right transitions checked per learner |
@@ -14,6 +16,10 @@ Both learners observed left and right extensions, used inverses and filled the l
 | A5 | 6 | 86 | 25 | 22 | 720 |
 | S3 | 2 | 0 | 0 | 0 | 24 |
 | Z60 | 6 | 344 | 148 | 135 | 720 |
+
+![On the fresh transfer panel, supervised rewriting approached direct dictionary lookup. In the query experiment, commuting squares reduced label costs for both groups.](group-results.png)
+
+The left panel uses the separate neural transfer sample. The right panel shows all twelve primary presentations, with circles for S5, triangles for A5, and a dashed line for the label-naming lower bound. Points with identical values overlap.
 
 On the twelve primary cases, ten required fewer queries with squares and two were solved without querying in either arm. The case with the most unseen S5 labels had 32. Its query counts were 112 and 34. Some Z60 presentations required more queries than an A5 presentation, even though addition in Z60 commutes. The short-word labels expose different parts of the state graph under different generators.
 
@@ -33,4 +39,4 @@ Use source revision `24819abed491ac698741d989a749f0cb05c35831` and an unused out
 uv run --locked python -m scripts.group_rewrite_probe --query-panel --output /path/to/panel.json
 ```
 
-macOS and Linux produced byte-identical JSON with SHA-256 `ce479b50cc86a80eaee8749ef3ef151d88d041dd3347c6d424ab6dd1fb50c26a`. The archive includes the independent verifier and DSR logs. [Queries and full recovered tables](panel.json) · [Verification archive](verification.zip) · [Frozen transformer intervention](../group-rewrite/README.md)
+macOS and Linux produced byte-identical JSON with SHA-256 `ce479b50cc86a80eaee8749ef3ef151d88d041dd3347c6d424ab6dd1fb50c26a`. At that source revision, the full Linux regression suite passed 922 tests with 16 skips. The archive includes the independent verifier, figure source, and DSR logs. [Queries and full recovered tables](panel.json) · [Verification archive](verification.zip) · [Frozen transformer intervention](../group-rewrite/README.md)

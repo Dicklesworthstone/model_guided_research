@@ -4,6 +4,8 @@ Three standard transformers trained on the group benchmark at 30 trillion estima
 
 Within each group, two short words with the same product can replace one another inside any longer word. The preprocessor learned these substitutions from the 80,000 archived training documents. It repeatedly applied the substitution that saved the most symbols, breaking ties deterministically. It received only the input word at inference. A shuffled control preserved the exact symbol counts and length of each shortened prompt. The model saw a BOS-prefixed prompt and a fixed decoding budget independent of the correct answer.
 
+There are only 508 binary words of lengths two through eight. All 508 occurred in training for each of the four groups. An evaluation at those lengths can therefore measure recognition of previously seen words. The long-word intervention tests whether that local knowledge can be composed.
+
 ### Verified training labels
 
 The first panel had 144 new prompts across four groups. The primary contrast used its 73 S5/A5 prompts. Every supervised rewrite preserved its product. The table reports correct answers on the same 73 words per checkpoint.
