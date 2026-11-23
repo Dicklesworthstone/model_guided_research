@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-23",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 0,
+    "ledger_policy_versions": [
+      "ci-v10",
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "fixed_panel_verdicts": [
+    "hyp-group-completion-trusted-queries"
+  ],
+  "policy_version": "ci-v11",
+  "verdicts": [
+    {
+      "arms": {
+        "group_completion": {
+          "baseline_queries": 360,
+          "candidate_queries": 89,
+          "ci95": null,
+          "effect": 0.24722222222222223,
+          "lower_bound": 79,
+          "n_baseline": 12,
+          "n_candidate": 12,
+          "threshold": 0.5,
+          "verified_cases": 20,
+          "verified_right_edges_per_arm": 2904
+        }
+      },
+      "artifacts": [
+        "artifacts/campaigns/group-query-completion/summary.json"
+      ],
+      "evidence_design": "verified_fixed_panel",
+      "excluded_evidence": [],
+      "id": "hyp-group-completion-trusted-queries",
+      "registration_commit": "ec8dd112ae94fb8740f41802b4d197edd9ec9a72",
+      "verdict": "supported"
+    }
+  ]
+}
