@@ -78,8 +78,6 @@ TINY_MODEL = [
     "64",
     "--batch-size",
     "4",
-    "--device",
-    "cpu",
     "--warmup-steps",
     "0",
 ]
@@ -247,11 +245,14 @@ def _train_argv(
     data_dir: Path,
     seed: int = 7,
     certify_interval: int = 5,
+    device: str = "cpu",
 ) -> list[str]:
     return (
         TRAIN
         + TINY_MODEL
         + [
+            "--device",
+            device,
             "--attention-type",
             mech,
             "--data-dir",
@@ -629,7 +630,7 @@ DETERMINISM_MECHS = [
 ]
 
 
-def scenario_determinism(work: Path) -> bool:
+def scenario_determinism(work: Path, device: str = "cpu") -> bool:
     r = Runner(work, "determinism")
     data_dir = work / "diag" / "arith"
     rates: list[tuple[str, float]] = []
@@ -642,7 +643,9 @@ def scenario_determinism(work: Path) -> bool:
         for mech in DETERMINISM_MECHS:
             r.run(
                 f"train-{mech}",
-                _train_argv(work, f"e2e-det-{mech}", mech, max_steps=12, ckpt_interval=12, data_dir=data_dir),
+                _train_argv(
+                    work, f"e2e-det-{mech}", mech, max_steps=12, ckpt_interval=12, data_dir=data_dir, device=device
+                ),
                 timeout=900,
             )
             texts = []
@@ -652,6 +655,8 @@ def scenario_determinism(work: Path) -> bool:
                     CLI
                     + [
                         "sample",
+                        "--device",
+                        device,
                         "--checkpoint",
                         str(_run_dir(work, f"e2e-det-{mech}") / "checkpoints"),
                         "--prompt",
@@ -665,9 +670,15 @@ def scenario_determinism(work: Path) -> bool:
                     ],
                 )
                 payload = json.loads(out[out.index("{") :])
-                texts.append(payload["results"][0]["text"])
+                sample = payload["results"][0]
+                r.assert_true(
+                    f"decode-{mech}-{rep}",
+                    payload["device"] == device and sample["n_tokens"] == 8,
+                    f"{sample['n_tokens']} generated tokens on {payload['device']}",
+                )
+                texts.append(sample["text"])
                 if rep == 2:
-                    rates.append((mech, payload["results"][0]["tokens_per_s"]))
+                    rates.append((mech, sample["tokens_per_s"]))
             r.assert_true(
                 f"determinism-{mech}", texts[0] == texts[1], f"{mech}: greedy same-seed outputs byte-identical"
             )
@@ -1067,6 +1078,12 @@ def main() -> int:
     )
     parser.add_argument("--keep", action="store_true", help="Keep the workdir even on success")
     parser.add_argument(
+        "--determinism-device",
+        choices=["cpu", "cuda"],
+        default="cpu",
+        help="Training and sampling device for determinism",
+    )
+    parser.add_argument(
         "--resume-kill-seed",
         type=int,
         default=None,
@@ -1081,7 +1098,7 @@ def main() -> int:
     runners = {
         "full-loop": lambda: scenario_full_loop(work),
         "resume": lambda: scenario_resume(work, args.resume_kill_seed),
-        "determinism": lambda: scenario_determinism(work),
+        "determinism": lambda: scenario_determinism(work, args.determinism_device),
         "regression-gate": lambda: scenario_regression_gate(work),
         "scorecard": lambda: scenario_scorecard(work),
         "word-problem": lambda: scenario_word_problem(work),

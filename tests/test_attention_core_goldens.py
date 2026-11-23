@@ -13,6 +13,10 @@ Capture / recapture (writes fixtures, then passes):
 
     MGR_CAPTURE_ATTENTION_GOLDENS=1 uv run pytest tests/test_attention_core_goldens.py
 
+The CUDA suite uses the same CPU initialization and batches, then trains on
+the GPU. Set MGR_ATTENTION_GOLDEN_DEVICE=cuda and CUBLAS_WORKSPACE_CONFIG=:4096:8
+for capture and replay. Its fixtures live in attention_goldens/cuda/.
+
 A golden that cannot be re-derived is not a golden: every fixture embeds the
 full config, seed, step count, torch version, and host fingerprint needed to
 reproduce it. Trajectories chaotically amplify any ulp-level difference over
@@ -22,6 +26,7 @@ recapture instruction instead of failing.
 """
 
 import json
+import math
 import os
 import platform
 import socket
@@ -105,16 +110,24 @@ def _config_for(attention_type: str) -> GPTConfig:
     return GPTConfig(**kwargs)
 
 
-def _host_fingerprint() -> dict[str, str]:
-    return {
+def _host_fingerprint(device: str) -> dict[str, str]:
+    host = {
         "hostname": socket.gethostname(),
         "machine": platform.machine(),
         "torch_version": torch.__version__,
     }
+    if device == "cuda":
+        host.update(
+            gpu=torch.cuda.get_device_name(),
+            capability=str(torch.cuda.get_device_capability()),
+            cuda=str(torch.version.cuda),
+            cublas_workspace=os.environ.get("CUBLAS_WORKSPACE_CONFIG", ""),
+        )
+    return host
 
 
-def _run_trajectory(attention_type: str) -> list[float]:
-    """Deterministic 50-step CPU training run; returns the per-step losses.
+def _run_trajectory(attention_type: str, device: str) -> list[float]:
+    """Run 50 optimizer steps and return each loss.
 
     Single-threaded so BLAS reduction order is fixed; model init draws from
     the globally seeded RNG (construction order == draw order), data from an
@@ -123,11 +136,16 @@ def _run_trajectory(attention_type: str) -> list[float]:
     """
     config = _config_for(attention_type)
     saved_threads = torch.get_num_threads()
+    deterministic = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
     torch.set_num_threads(1)
     try:
+        if device == "cuda":
+            torch.use_deterministic_algorithms(True)
         torch.manual_seed(SEED)
         model = GPT(config)
         model.init_weights()
+        model.to(device)
         model.train()
 
         data_gen = torch.Generator(device="cpu").manual_seed(SEED + 1)
@@ -140,6 +158,7 @@ def _run_trajectory(attention_type: str) -> list[float]:
         optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.95), eps=1e-8)
         losses: list[float] = []
         for tokens in batches:
+            tokens = tokens.to(device)
             x, y = tokens[:, :-1].contiguous(), tokens[:, 1:].contiguous()
             loss = model(x, y)
             optimizer.zero_grad(set_to_none=True)
@@ -148,15 +167,13 @@ def _run_trajectory(attention_type: str) -> list[float]:
             losses.append(float(loss.item()))
         return losses
     finally:
+        if device == "cuda":
+            torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
         torch.set_num_threads(saved_threads)
 
 
-def _fixture_path(attention_type: str) -> Path:
-    return FIXTURE_DIR / f"{attention_type}.json"
-
-
-def _write_fixture(attention_type: str, losses: list[float]) -> None:
-    FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+def _write_fixture(path: Path, attention_type: str, device: str, losses: list[float]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     config = _config_for(attention_type)
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -167,22 +184,27 @@ def _write_fixture(attention_type: str, losses: list[float]) -> None:
         "batch_size": BATCH_SIZE,
         "learning_rate": LEARNING_RATE,
         "optimizer": "torch.optim.AdamW(betas=(0.9, 0.95), eps=1e-8)",
-        "host": _host_fingerprint(),
+        "host": _host_fingerprint(device),
         "config": dict(vars(config)),
         "losses": losses,
     }
-    _fixture_path(attention_type).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 @pytest.mark.parametrize("attention_type", MECHANISMS)
 def test_attention_golden_trajectory(attention_type: str) -> None:
     capture = os.environ.get(CAPTURE_ENV, "").strip() not in {"", "0"}
-    path = _fixture_path(attention_type)
+    device = os.environ.get("MGR_ATTENTION_GOLDEN_DEVICE", "cpu")
+    assert device in {"cpu", "cuda"}, f"Unknown trajectory device {device}"
+    if device == "cuda":
+        assert torch.cuda.is_available(), "CUDA trajectories require an accessible GPU"
+    directory = FIXTURE_DIR / "cuda" if device == "cuda" else FIXTURE_DIR
+    path = directory / f"{attention_type}.json"
 
     if capture:
-        losses = _run_trajectory(attention_type)
-        assert all(map(lambda v: v == v, losses)), f"NaN loss during capture for {attention_type}"
-        _write_fixture(attention_type, losses)
+        losses = _run_trajectory(attention_type, device)
+        assert all(map(math.isfinite, losses)), f"Non-finite loss during capture for {attention_type}"
+        _write_fixture(path, attention_type, device, losses)
         return
 
     if not path.exists():
@@ -192,7 +214,7 @@ def test_attention_golden_trajectory(attention_type: str) -> None:
         )
 
     golden = json.loads(path.read_text())
-    host = _host_fingerprint()
+    host = _host_fingerprint(device)
     recorded = golden["host"]
     if recorded != host:
         pytest.skip(
@@ -209,7 +231,7 @@ def test_attention_golden_trajectory(attention_type: str) -> None:
     )
     assert golden["seed"] == SEED and golden["steps"] == STEPS and golden["batch_size"] == BATCH_SIZE
 
-    losses = _run_trajectory(attention_type)
+    losses = _run_trajectory(attention_type, device)
     expected = golden["losses"]
     assert len(losses) == len(expected)
     mismatches = [(i, e, a) for i, (e, a) in enumerate(zip(expected, losses, strict=True)) if e != a]
