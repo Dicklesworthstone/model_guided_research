@@ -597,3 +597,25 @@ def test_active_group_table_queries_only_missing_edges():
     for letters in product("01", repeat=7):
         word = "".join(letters)
         assert follow(labels, edges, word) == teacher(word)
+
+
+def test_prepend_append_rectangle_and_its_inverse():
+    from scripts.group_rewrite_probe import Actions
+
+    actions = Actions(set("abcdef"))
+    actions.bind("L0", "a", "b")
+    actions.bind("R1", "a", "c")
+    actions.bind("R1", "b", "d")
+    actions.close(squares=False)
+    assert "c" not in actions.maps["L0"]
+    actions.close(squares=True)
+    assert actions.maps["L0"]["c"] == "d" and actions.maps["l0"]["d"] == "c"
+    with pytest.raises(ValueError, match="Inconsistent"):
+        actions.bind("L0", "c", "e")
+    # Two prefixes act on the same side. They have no commuting-square constraint.
+    actions = Actions(set("abcdef"))
+    actions.bind("L0", "a", "b")
+    actions.bind("L1", "a", "c")
+    actions.bind("L1", "b", "d")
+    actions.close(squares=True)
+    assert "c" not in actions.maps["L0"]

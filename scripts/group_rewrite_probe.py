@@ -11,6 +11,8 @@ import random
 from collections import defaultdict
 from collections.abc import Callable
 from functools import cache
+from heapq import heapify, heappop, heappush
+from itertools import product
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -19,7 +21,15 @@ import torch
 from rich.console import Console
 
 from cli import _eval_score_doc, _eval_split_examples, _load_eval_checkpoint
-from nanochat.diagnostics_data import _GROUP_ELEMENT_INDEX, TASKS, _group_compose, content_sha256
+from nanochat.diagnostics_data import (
+    _GROUP_ELEMENT_INDEX,
+    _GROUP_GENERATORS,
+    TASKS,
+    _group_compose,
+    _group_elements,
+    _perm_mul,
+    content_sha256,
+)
 from nanochat.tokenizer import checkpoint_tokenizer
 
 SUITE = "vdc4-group-tasktok-shuf-b30-s256-rung"
@@ -239,6 +249,193 @@ def save(path: Path, data) -> None:
         output.write("\n")
 
 
+class Actions:
+    """A map and its inverse for each generator on each side of the word."""
+
+    def __init__(self, vocabulary: set[str]):
+        self.vocabulary = vocabulary
+        self.maps: dict[str, dict[str, str]] = {side + a: {} for side in "RrLl" for a in SYMBOLS}
+
+    def bind(self, edge: str, source: str, target: str) -> bool:
+        if source not in self.vocabulary or target not in self.vocabulary:
+            raise ValueError("Unknown endpoint")
+        forward, backward = self.maps[edge], self.maps[edge.swapcase()]
+        if source in forward and forward[source] != target or target in backward and backward[target] != source:
+            raise ValueError("Inconsistent permutation edge")
+        fresh = source not in forward
+        forward[source] = target
+        backward[target] = source
+        return fresh
+
+    def close(self, squares: bool) -> None:
+        while True:
+            changed = False
+            for edge in ("R0", "R1", "L0", "L1"):
+                mapping = self.maps[edge]
+                if len(mapping) == len(self.vocabulary) - 1:
+                    (source,) = self.vocabulary.difference(mapping)
+                    (target,) = self.vocabulary.difference(mapping.values())
+                    changed |= self.bind(edge, source, target)
+            if squares:
+                for left in ("L0", "L1", "l0", "l1"):
+                    for right in ("R0", "R1", "r0", "r1"):
+                        lm, rm = self.maps[left], self.maps[right]
+                        for s in sorted(lm.keys() & rm.keys()):
+                            ls, rs = lm[s], rm[s]
+                            if ls in rm:
+                                changed |= self.bind(left, rs, rm[ls])
+                            if rs in lm:
+                                changed |= self.bind(right, ls, lm[rs])
+            if not changed:
+                return
+
+    def read_right(self, observations: dict[str, str], word: str) -> str | None:
+        if word in observations:
+            return observations[word]
+        state = observations.get(word[:2])
+        for g in word[2:]:
+            if state is None:
+                return None
+            state = self.maps["R" + g].get(state)
+        return state
+
+    def representatives(self, observations: dict[str, str]) -> dict[str, str]:
+        reps = shortest(observations)
+        queue = [(len(w), w, y) for y, w in reps.items()]
+        heapify(queue)
+        while queue:
+            _, w, source = heappop(queue)
+            if w != reps[source]:
+                continue
+            for a in SYMBOLS:
+                target = self.maps["R" + a].get(source)
+                if target is None:
+                    continue
+                word = w + a
+                if target not in reps or (len(word), word) < (len(reps[target]), reps[target]):
+                    reps[target] = word
+                    heappush(queue, (len(word), word, target))
+        return reps
+
+
+def teach_panel_case(initial: dict[str, str], vocabulary: set[str], ask: Callable[[str], str], *, squares: bool):
+    observations = initial.copy()
+    actions = Actions(vocabulary)
+    queries: list[tuple[str, str]] = []
+    while True:
+        # A newly known extension can make the other end of a paid word informative.
+        while True:
+            before = sum(len(m) for m in actions.maps.values())
+            for w, y in observations.items():
+                for side, part, symbol in (("R", w[:-1], w[-1]), ("L", w[1:], w[0])):
+                    start = actions.read_right(observations, part)
+                    if start is not None:
+                        actions.bind(side + symbol, start, y)
+            actions.close(squares)
+            if before == sum(len(m) for m in actions.maps.values()):
+                break
+        reps = actions.representatives(observations)
+        missing = (
+            (len(w) + 1, w + a, source, a)
+            for source, w in reps.items()
+            for a in SYMBOLS
+            if source not in actions.maps["R" + a]
+        )
+        choice = min(missing, default=None)
+        if choice is None:
+            if any(len(actions.maps["R" + a]) != len(vocabulary) for a in SYMBOLS):
+                raise ValueError("Learner stalled before covering every advertised state")
+            return actions, queries
+        _, word, source, symbol = choice
+        if word in observations:
+            raise ValueError("Requested an already labeled word")
+        target = ask(word)
+        queries.append((word, target))
+        record(observations, word, target)
+        actions.bind("R" + symbol, source, target)
+
+
+def rooted_graph(group: str, generators: tuple) -> tuple[tuple[int, int], ...]:
+    """Canonical BFS numbering depends on the ordered action, never on endpoint names."""
+    identity = (0,) if group == "z60" else tuple(range(len(generators[0])))
+    states = [identity]
+    indices = {identity: 0}
+    edges = []
+    for state in states:
+        destinations = []
+        for g in generators:
+            result = ((g[0] + state[0]) % 60,) if group == "z60" else _perm_mul(g, state)
+            if result not in indices:
+                indices[result] = len(states)
+                states.append(result)
+            destinations.append(indices[result])
+        edges.append((destinations[0], destinations[1]))
+    return tuple(edges)
+
+
+def panel_study(output: Path) -> None:
+    rng = random.Random(2026112301)
+    cases = []
+    for group, count in (("s5", 6), ("a5", 6), ("s3", 2), ("z60", 6)):
+        elements = _group_elements(group)
+        original = rooted_graph(group, tuple(_GROUP_GENERATORS[group]))
+        seen = {original}
+        attempts = 0
+        while len(seen) <= count:
+            attempts += 1
+            if attempts > 100000:
+                raise ValueError("Insufficient distinct marked presentations")
+            generators = (rng.choice(elements), rng.choice(elements))
+            graph = rooted_graph(group, generators)
+            if len(graph) != len(elements) or graph in seen:
+                continue
+            seen.add(graph)
+            names = [f"id{i:03d}" for i in range(len(graph))]
+            rng.shuffle(names)
+
+            def teacher(word):
+                state = 0
+                for g in word:
+                    state = graph[state][int(g)]
+                return names[state]
+
+            initial = {
+                (word := "".join(letters)): teacher(word)
+                for length in range(2, 9)
+                for letters in product(SYMBOLS, repeat=length)
+            }
+            unseen = len(graph) - len(set(initial.values()))
+            lower_bound = max(0, unseen - 1)
+            arms = {}
+            case = dict(
+                group=group,
+                generators=generators,
+                graph_digest=hashlib.sha256(json.dumps(graph).encode()).hexdigest(),
+                names=names,
+                short_words=len(initial),
+                unseen=unseen,
+                lower_bound=lower_bound,
+                arms=arms,
+            )
+            for arm, squares in (("ablation", False), ("commuting", True)):
+                actions, queries = teach_panel_case(initial, set(names), teacher, squares=squares)
+                for i, targets in enumerate(graph):
+                    for letter, target in enumerate(targets):
+                        if actions.maps[f"R{letter}"][names[i]] != names[target]:
+                            raise ValueError(f"Wrong recovered transition in {group} for {arm}")
+                if any(teacher(a + b) != initial[a + b] for a in SYMBOLS for b in SYMBOLS):
+                    raise ValueError("Incorrect length-two anchors")
+                if len(queries) < lower_bound:
+                    raise ValueError("Fell below the opaque-label information bound")
+                arms[arm] = {
+                    "queries": queries,
+                    "verified_edges": 2 * len(graph),
+                    "right": {letter: actions.maps["R" + letter] for letter in SYMBOLS},
+                }
+            cases.append(case)
+    save(output, {"seed": 2026112301, "cases": cases})
+
+
 def run(inputs: Path, reference: Path, output: Path) -> None:
     torch.set_num_threads(1)
     output.mkdir(parents=True, exist_ok=False)
@@ -347,10 +544,17 @@ def run(inputs: Path, reference: Path, output: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--inputs", type=Path, required=True, help="Original scorecard with weights and training parquet"
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--inputs", type=Path, help="Original scorecard with weights and training parquet")
+    action.add_argument(
+        "--query-panel", action="store_true", help="Run the blind presentation study registered in ho58"
     )
     parser.add_argument("--reference", type=Path, default=Path("artifacts/probes/sizing/scorecards") / SUITE)
-    parser.add_argument("--output", type=Path, required=True, help="A new directory for raw paired results")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="New results directory, or new JSON file for the panel"
+    )
     args = parser.parse_args()
-    run(args.inputs, args.reference, args.output)
+    if args.query_panel:
+        panel_study(args.output)
+    else:
+        run(args.inputs, args.reference, args.output)
