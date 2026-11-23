@@ -74,12 +74,20 @@ uv run mgr hypotheses add --id hyp-<mechanism>-<claim-slug> \
 uv run mgr hypotheses validate   # append-only governance vs git HEAD
 ```
 
-Non-negotiables, all engine-enforced:
+The following rules govern registration. The registry validator checks schema
+and append-only fields. The verdict engine still needs a producer-ancestry
+check for prospective evidence.
 
-- **Pre-evidence registration.** The registration commit must predate every
-  qualifying artifact. The kgj1 K=16 verdict and the 9qeq depth-independence
-  verdict were both *promoted before any qualifying checkpoint existed* —
-  that is what makes a SUPPORTED verdict mean something.
+- **Pre-evidence registration.** Identify the commit that first contained the
+  operational prediction, including any promotion from a null prediction.
+  Verify that it was available before each qualifying training run and that
+  the evaluation used the intended frozen checkpoint. Record the producer
+  SHAs and keep discovery cohorts separate. A later evaluation of an old
+  checkpoint needs an explicit eligibility decision. Until the engine can
+  verify this ordering, flag ambiguous history in the campaign report and
+  withhold prospective interpretation. The November audit gives a working
+  counterexample and two affected historical comparisons.
+  [Audit and repair criteria](bridge_plan.md#november-2026-assessment)
 - **Falsification criteria in the prediction**: metric path, comparator,
   threshold, baseline arm, `min_seeds`. Exact-match claims register a
   `validity.baseline_floor` (the answer-prior floor; see the worked example
@@ -120,9 +128,12 @@ uv run python scripts/run_campaign.py \
     --target-flops 3e14 --topic e2-dyck
 ```
 
-The launcher freezes a **detached worktree at a clean SHA** — runs are immune
-to concurrent agents dirtying the main tree, and every artifact records that
-SHA in its provenance. The engine refuses tainted artifacts outright.
+The launcher freezes a **detached worktree at a clean SHA** to isolate a
+campaign from edits in the main checkout. The collector excludes artifacts
+flagged as tainted, and task evaluations propagate recorded training taint.
+For checkpoint-backed route benchmarks, verify the original training
+provenance and count independent trained models. The collector does not yet
+apply the same lineage checks to those summaries. [Audit](bridge_plan.md#november-2026-assessment)
 
 Rules that have each cost a session to learn:
 

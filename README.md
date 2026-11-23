@@ -1,14 +1,14 @@
 # Model-Guided Research: Mathematical Foundations for Next-Generation AI
 
-*From theoretical exploration to production implementation: A systematic investigation of exotic mathematical structures in deep learning*
+*An experimental study of mathematical structures in deep learning, from JAX demonstrations to comparisons in a PyTorch transformer.*
 
 ## 📍 Quick Navigation
 
 - [**Project Overview**](#-project-overview) - What this project is about
-- [**Dual Implementation Strategy**](#-dual-implementation-strategy) - Research (JAX) + Production (PyTorch)
+- [**Dual Implementation Strategy**](#-dual-implementation-strategy) - JAX demonstrations and PyTorch experiments
 - [**Quick Start**](#-quick-start) - Get up and running
 - [**The 13 Mathematical Frameworks**](#-the-13-mathematical-frameworks) - Browse all implementations
-- [**Nanochat: Production Transformer**](#-nanochat-production-transformer-implementation) - Unified GPT with 13 selectable attention types
+- [**Nanochat transformer**](#-nanochat-transformer-implementation) - Unified GPT with 13 selectable attention types
 - [**Experimental Matrix**](#-experimental-matrix) - Systematic evaluation framework
 - [**CLI Usage**](#-cli-usage) - How to run demos and experiments
 - [**Project Structure**](#-project-structure) - Repository organization
@@ -29,7 +29,7 @@ The meta-cognitive loop:
 
 This represents a new paradigm: **AI systems as genuine partners in mathematical discovery**, capable not just of solving problems but of identifying which problems are worth solving.
 
-### Evolution: From Demos to Production
+### Evolution from demos to transformer experiments
 
 The project has evolved through three distinct phases:
 
@@ -40,7 +40,7 @@ The project has evolved through three distinct phases:
 - Property validation and sanity checks
 
 **Phase 2: Unification (Nanochat)**
-- Production-ready GPT transformer in PyTorch
+- Trainable GPT transformer in PyTorch
 - 13 selectable attention types spanning the framework implementations
 - Systematic experimental framework
 - Runtime configuration without code changes
@@ -49,11 +49,11 @@ The project has evolved through three distinct phases:
 - Comprehensive benchmarking infrastructure
 - MCP Agent Mail for task coordination
 - Multiple optimizers and schedulers
-- A/B testing across the full experimental matrix
+- Fixed-budget A/B testing, with completed comparisons on a subset of the matrix
 
 ## 🔄 Dual Implementation Strategy
 
-This project maintains **two complementary implementations** of each mathematical framework:
+The project explores the frameworks in JAX and implements trainable mechanisms, blocks, an optimizer and a scheduler in PyTorch.
 
 ### JAX Demonstrations (Exploration)
 **Location**: Root directory (`*.py` files)
@@ -69,12 +69,16 @@ This project maintains **two complementary implementations** of each mathematica
 ```bash
 mgr list                    # See all demos
 mgr run matrix-gauge        # Run specific demo
-mgr run-all                 # Run all 13 demos
+mgr run-all                 # Sequential demo runner
 ```
 
-### PyTorch Production (Implementation)
+On the November 22 audit revision, `run-all --delay 0 --seed 7` completed
+seven demos before the ordinal demo's argument parser exited. The remaining
+five entries were never reached by that invocation. [Audit](docs/bridge_plan.md#november-2026-assessment)
+
+### PyTorch transformer experiments
 **Location**: `nanochat/` directory
-**Purpose**: Production-ready transformer with all frameworks
+**Purpose**: Compare the frameworks within one trainable transformer
 **Characteristics**:
 - Unified GPT architecture
 - Drop-in attention mechanism swapping
@@ -98,13 +102,13 @@ python -m nanochat.train --attention-type quaternion --scheduler-type ordinal
 
 **PyTorch Nanochat provides**:
 - **Systematic comparison**: A/B test all frameworks
-- **Production readiness**: Real training infrastructure
+- **Training infrastructure**: Checkpoints, resume and task evaluation
 - **Reproducibility**: Standardized evaluation protocol
-- **Scalability**: From toy models to production-scale
+- **Scaling experiments**: Configurable model sizes, sequence lengths and training budgets
 
 **Together they create**:
-- **Research → Implementation pipeline**: Validate in JAX, deploy in PyTorch
-- **Bidirectional learning**: Production insights inform research
+- **Research pipeline**: Test mathematical properties in JAX and evaluate task predictions in PyTorch
+- **Feedback**: Training results inform subsequent research questions
 - **Comprehensive validation**: Theory, demos, and empirical results
 
 ## 🚀 Quick Start
@@ -212,7 +216,7 @@ model_guided_research/
 │   ├── test_mathematical_correctness.py
 │   └── test_mathematical_properties.py
 │
-├── nanochat/                          # Production PyTorch implementation
+├── nanochat/                          # PyTorch transformer and training infrastructure
 │   ├── __init__.py
 │   ├── gpt.py                         # Main GPT architecture
 │   ├── train.py                       # Training script (PyTorch)
@@ -266,9 +270,7 @@ model_guided_research/
 
 ## 🔬 The 13 Mathematical Frameworks
 
-Each framework is implemented twice:
-1. **JAX Demo**: Interactive exploration with visualizations
-2. **PyTorch Attention**: Production-ready mechanism in nanochat
+Each entry below describes its JAX demonstration and its role in nanochat. HOSS is an optimizer, ordinal is a scheduler, and gauge and reversible are whole-block transforms.
 
 Fidelity note: three of the PyTorch mechanisms (`simplicial`, `fractal`, `surreal`)
 support both a lightweight default proxy tier (for backward golden/ledger parity)
@@ -562,11 +564,11 @@ entries (ids ending in `-faithful`) select the corresponding config flag.
 - Curvature collapse is an honest internal null indicating Euclidean behavior
 - Per-head curvature and radius are emitted as adjudicable training telemetry
 
-## 🔬 Nanochat: Production Transformer Implementation
+## 🔬 Nanochat Transformer Implementation
 
 ### Architecture Overview
 
-**Nanochat** is a production-ready GPT transformer that serves as a unified testbed with 13 selectable attention types. It provides:
+**Nanochat** is the PyTorch GPT used for the project's training experiments. Its 13 selectable attention types include the standard baseline and two whole-block transforms. It provides:
 
 - **Modular attention mechanisms**: Drop-in replacements for standard softmax attention
 - **Multiple optimizers**: AdamW, Muon, HOSS
@@ -959,11 +961,11 @@ python tests/test_mathematical_correctness.py
 
 ### Theoretical Advantages
 
-1. **Geometric Structure = Free Regularization**: Manifold-based architectures (Lie groups, simplicial complexes) provide stability without explicit regularization
+1. **Geometric constraints** can enforce properties such as norm preservation by construction. Their effect on training stability needs a separate test.
 
 2. **Discrete ≠ Approximate**: p-adic numbers and tropical geometry show discrete math can be exact
 
-3. **Topology > Vectors**: Topological structures (knots, braids) provide invariances impossible with vectors
+3. **Topological structure** gives braid models explicit algebraic relations whose consequences can be checked on learned representations.
 
 4. **Infinity is Computational**: Surreal numbers, ordinals, and hyperreals make infinite quantities algorithmic
 
@@ -971,20 +973,26 @@ python tests/test_mathematical_correctness.py
 
 ### Empirical Observations
 
-Empirical claims live in the hypothesis ledger, where the verdict engine can
-confirm or retire them (`mgr hypotheses list --status supported`,
-`--status refuted`). Two facts from the ledger set the current baseline
-honestly:
+The ledger records each prediction, comparison and historical verdict
+(`mgr hypotheses list --status supported` or `--status refuted`).
+The evidence for choosing an architecture depends on the task and training budget.
 
-- The only mechanism-versus-standard comparisons adjudicated at a rung where
-  the standard baseline actually learned the task are braid on Dyck
-  (REFUTED, standard wins) and surreal on arith (REFUTED, a clean null).
-  Every other cross-mechanism entry is INCONCLUSIVE at a floored baseline,
-  BLOCKED on infrastructure, or OPEN.
-- The SUPPORTED entries are within-mechanism or single-arm results (Maslov
-  annealing costs nothing relative to a fixed tropical beta; ball-tree
-  ultrametric attention is exact and faster than the dense kernel; p-adic
-  digit truncation degrades gracefully at K=16).
+- In the eight-seed-per-arm Dyck depth-extrapolation campaign, standard
+  beat braid at the higher budget. Braid minus standard was −0.245 in
+  held-out exact match (95% CI −0.326 to −0.164). The directional braid
+  claim separately records a SUPPORTED result at a budget where standard
+  scored below the answer prior. It is on manual hold. [Dyck campaign](artifacts/adjudications/8h0e/campaign.md)
+- Some positive entries compare mechanisms directly, including surreal
+  versus standard on structure-free data. Others measure a kernel or a
+  property within one mechanism. The current placebo control is INCONCLUSIVE.
+  Both the Dyck and placebo scorecards report publication BLOCKED.
+  [Dyck scorecard](artifacts/scorecards/dyck-comparison-tasktok-1e12/report.md) ·
+  [Placebo scorecard](artifacts/scorecards/placebo-guard-tasktok-1e12/report.md)
+- For a prospective interpretation, verify the registration commit and
+  producer lineage. A November audit found older producers among the
+  citations for both the directional braid and surreal optimization-rate
+  results. Six ledger entries also cite files missing from the checkout.
+  [Evidence and reproduction details](docs/bridge_plan.md#november-2026-assessment)
 
 `tests/test_practical_utility.py` produces demo-scale diagnostics with
 green/yellow/red verdicts; those are sanity checks on toy problems, not
@@ -1244,7 +1252,7 @@ Every mathematical attention mechanism and block-level transform is exported dir
 | **Mask Semantics** | Strictly causal lower-triangular when `kv_cache is None` or `Tq == Tk`; unmasked over cached prefix on single-token decode (`Tq == 1`); full prefix + causal chunk when `Tk > Tq > 1` |
 | **Rotary & KV Cache** | `forward(x, cos_sin=None, kv_cache=None)` — both `cos_sin` and `kv_cache` are optional; when `cos_sin` is omitted, rotary embeddings `(cos, sin)` are computed automatically for `(T, head_dim)` |
 | **Dtype Expectations** | Supports `torch.float32` and `torch.bfloat16` (sensitive algebraic kernels promote to fp32/fp64 islands internally and cast back to `x.dtype`) |
-| **Dimension Constraints** | `n_embd % n_head == 0`; `QuaternionCausalSelfAttention` and `CliffordCausalSelfAttention` require `head_dim % 4 == 0`; `OctonionCausalSelfAttention` requires `head_dim % 8 == 0`; `GaugeBlock` and `ReversibleBlock` require even `n_embd` |
+| **Dimension Constraints** | `n_embd % n_head == 0`. Quaternion head dimensions are multiples of 4. Clifford and octonion head dimensions are multiples of 8. Gauge and reversible blocks require even `n_embd`. Standalone reversible blocks also require even `n_head` and use half the heads on the split stream. |
 
 ### Runnable Example: Tropical Attention Inside a Vanilla PyTorch Block
 
