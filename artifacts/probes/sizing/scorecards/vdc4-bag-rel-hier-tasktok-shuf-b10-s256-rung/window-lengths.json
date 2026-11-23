@@ -1,0 +1,186 @@
+{
+  "scorecard": "vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung",
+  "length_definition": "BOS + prompt + expected completion",
+  "rows": [
+    {
+      "task": "bag",
+      "training_seed": 0,
+      "training_window": 256,
+      "tokenizer_sha256": "85c2183e49d294b79f5be5aba75ecdea540b0020cfdb5af9ace2c1b78a75990a",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 43,
+          "max": 43
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 79,
+          "max": 79
+        }
+      }
+    },
+    {
+      "task": "bag",
+      "training_seed": 1,
+      "training_window": 256,
+      "tokenizer_sha256": "85c2183e49d294b79f5be5aba75ecdea540b0020cfdb5af9ace2c1b78a75990a",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 43,
+          "max": 43
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 79,
+          "max": 79
+        }
+      }
+    },
+    {
+      "task": "bag",
+      "training_seed": 2,
+      "training_window": 256,
+      "tokenizer_sha256": "85c2183e49d294b79f5be5aba75ecdea540b0020cfdb5af9ace2c1b78a75990a",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 43,
+          "max": 43
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 79,
+          "max": 79
+        }
+      }
+    },
+    {
+      "task": "rel",
+      "training_seed": 0,
+      "training_window": 256,
+      "tokenizer_sha256": "7ec1b1f68d430d4c30f1e7904c231eb7c8841218273c3ea088a064cbc32a1d0c",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 66,
+          "max": 66
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 129,
+          "max": 143
+        }
+      }
+    },
+    {
+      "task": "rel",
+      "training_seed": 1,
+      "training_window": 256,
+      "tokenizer_sha256": "7ec1b1f68d430d4c30f1e7904c231eb7c8841218273c3ea088a064cbc32a1d0c",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 66,
+          "max": 66
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 129,
+          "max": 143
+        }
+      }
+    },
+    {
+      "task": "rel",
+      "training_seed": 2,
+      "training_window": 256,
+      "tokenizer_sha256": "7ec1b1f68d430d4c30f1e7904c231eb7c8841218273c3ea088a064cbc32a1d0c",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 66,
+          "max": 66
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 129,
+          "max": 143
+        }
+      }
+    },
+    {
+      "task": "hier",
+      "training_seed": 0,
+      "training_window": 256,
+      "tokenizer_sha256": "61cc3b8987409dd361787ffa84593d572d6f43fdbc2e80dd047da65cb333f69f",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 124,
+          "min": 80,
+          "max": 308
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 5,
+          "min": 154,
+          "max": 1720
+        }
+      }
+    },
+    {
+      "task": "hier",
+      "training_seed": 1,
+      "training_window": 256,
+      "tokenizer_sha256": "61cc3b8987409dd361787ffa84593d572d6f43fdbc2e80dd047da65cb333f69f",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 124,
+          "min": 80,
+          "max": 308
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 5,
+          "min": 154,
+          "max": 1720
+        }
+      }
+    },
+    {
+      "task": "hier",
+      "training_seed": 2,
+      "training_window": 256,
+      "tokenizer_sha256": "61cc3b8987409dd361787ffa84593d572d6f43fdbc2e80dd047da65cb333f69f",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 124,
+          "min": 80,
+          "max": 308
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 5,
+          "min": 154,
+          "max": 1720
+        }
+      }
+    }
+  ]
+}

@@ -53,6 +53,19 @@ On the original Linux golden host, the 12 attention models reproduced all
 default to disabled. The fixture metadata now records those defaults, and the
 test still compares the entire config and all 50 losses for each model.
 
+On November 22, a systemd timer launched the canonical Linux DSR profile
+from clean `8ce6cde`. All eleven checks passed. Fast pytest passed 836
+tests with two skips and 93 deselections. Full pytest passed 928 with three
+skips. The seven end-to-end scenarios included paired greedy sampling for all
+13 mechanisms, including octonion. The public runner completed all 13 demos.
+The CPU certificate recorded 72 passes, and a separate clean checkout selected
+it for all 13 mechanisms. Lean reported 13 axiom lists without `sorryAx`.
+The installed wheel validated both registries and ran finite forward and
+backward passes on all 13 mechanisms. A replay matched every lane log to
+the hash in the receipt. This run exercised a one-shot timer on CPU.
+[Canonical receipt](../artifacts/regressions/jida40/scheduled-8ce6cde.json)
+· [Logs, timer journal and fresh-certificate check](../artifacts/regressions/jida40/scheduled-8ce6cde-logs.zip)
+
 The first prospectively scored transfer proposal reached its registered
 feasibility stop. Across the three unseen Python modules, every one of 43
 eligible queries had the answer `fn`. Only three inputs fit the 256-token

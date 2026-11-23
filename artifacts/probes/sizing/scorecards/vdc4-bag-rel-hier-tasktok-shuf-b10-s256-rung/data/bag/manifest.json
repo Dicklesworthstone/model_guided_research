@@ -1,0 +1,30 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "f8acecd1276cae576ffa5e9646d6742343be3339d567d6457dcb1d4e1f09aeb4",
+    "train_000.parquet": "42d46bc89e0e9108845b3d775156c881018c29c0a25b34ce420a6afce952d02b",
+    "val_000.parquet": "b883dd660269c77246fb169775b73958b59a65c3f11cdf04684913f127918231"
+  },
+  "dials": {
+    "distractor_frac": 0.3,
+    "n_ops": 12
+  },
+  "generator_version": 1,
+  "hypothesis": "conserved-charge channels maintain multiset counts across distractor spans",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "b6619242355941c757ef7666f9e8b918fc67d7921b1f3592b4a36dc3b2b4b436",
+    "train_000.parquet": "d40a5f7b66b4456b883b2bc23b8cd8fd4d6c8e11a15530350d2ea26fc474e351",
+    "val_000.parquet": "cab6156bef548e60bd9cd9553099bbc520c3138b05325346e6438d0d8643b700"
+  },
+  "size": 100000,
+  "split_sizes": {
+    "test": 10000,
+    "train": 80000,
+    "val": 10000
+  },
+  "target_mechanisms": [
+    "gauge",
+    "reversible"
+  ],
+  "task": "bag"
+}

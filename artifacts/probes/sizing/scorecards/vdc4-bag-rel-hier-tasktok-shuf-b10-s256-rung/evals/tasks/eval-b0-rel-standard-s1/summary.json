@@ -1,0 +1,223 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 10003415040000,
+        "flops_per_step_est": 6291456000,
+        "max_steps": 1590,
+        "target_flops": 10000000000000.0
+      },
+      "dir": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/research/artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/runs/budget_0/rel/standard/seed_1/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "seed_1"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 1,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "control_zero_attention": false,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "fractal_ifs": false,
+        "init_from_profile": null,
+        "n_embd": 128,
+        "n_head": 8,
+        "n_kv_head": 4,
+        "n_layer": 4,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 256,
+        "simplicial_random_triangles": false,
+        "simplicial_triplet": false,
+        "simplicial_window": 8,
+        "standard_record_attn_entropy": false,
+        "surreal_freeze_scale": false,
+        "surreal_scaling_axis": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "tropical_structured_support": false,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "ultrametric_record_routes": false,
+        "ultrametric_tie_margin": 1.0,
+        "use_flex_attention": false,
+        "vocab_size": 320
+      },
+      "n_params": 802816,
+      "step": 1589
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-11-23T03:14:15Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "a5abe77",
+      "commit_full": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+      "dirty": false
+    },
+    "perturbation": {
+      "perturb_eps": [],
+      "perturb_seed": 0,
+      "spec": "nanochat.diagnostics_data.apply_embedding_perturbation"
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-rel-standard-s1",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 304
+    }
+  },
+  "provenance": {
+    "config_hash": "00028686233409483c0ee916e7655e800fc83a033cba990bac562b89c5a4f572",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v5",
+  "tasks": {
+    "rel": {
+      "answer_prior": {
+        "held_out": {
+          "majority_answer": "e9",
+          "mean": 0.14583333333333334,
+          "per_seed": [
+            0.125,
+            0.16666666666666666,
+            0.14583333333333334
+          ]
+        },
+        "in_range": {
+          "majority_answer": "e0",
+          "mean": 0.1736111111111111,
+          "per_seed": [
+            0.16666666666666666,
+            0.16666666666666666,
+            0.1875
+          ]
+        }
+      },
+      "curve": {
+        "accuracy": [
+          0.05555555555555555,
+          0.09027777777777778
+        ],
+        "buckets": [
+          8.0,
+          16.0
+        ],
+        "counts": [
+          144,
+          144
+        ]
+      },
+      "difficulty_axis": "fact_count",
+      "exact_match": {
+        "greedy": {
+          "held_out": {
+            "ci95": [
+              0.007484621115385337,
+              0.17307093444017022
+            ],
+            "mean": 0.09027777777777778,
+            "per_seed": [
+              0.08333333333333333,
+              0.16666666666666666,
+              0.020833333333333332
+            ]
+          },
+          "in_range": {
+            "ci95": [
+              -0.012500000000000011,
+              0.12361111111111112
+            ],
+            "mean": 0.05555555555555555,
+            "per_seed": [
+              0.020833333333333332,
+              0.020833333333333332,
+              0.125
+            ]
+          }
+        }
+      },
+      "in_range_max": 8.0,
+      "length_slope": {
+        "all": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.003176219279672262,
+            0.011856774835227818
+          ],
+          "intercept": 0.020833333333333336,
+          "n_docs": 288,
+          "slope": 0.004340277777777778
+        },
+        "held_out": null
+      },
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 13.731232315301895,
+        "in_range": 2.4119140853484473
+      },
+      "robustness": {
+        "ladder": {},
+        "perturb_seed": 0
+      },
+      "skipped_too_long": 0,
+      "tropical_margins": null
+    }
+  },
+  "train_provenance": {
+    "config_hash": "88b88047cc11e205d66240ba844025fcf094e0c2e136e92d50aef4372bbd9d08",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}
