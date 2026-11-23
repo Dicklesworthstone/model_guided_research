@@ -1,0 +1,151 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 30002997362688,
+        "flops_per_step_est": 6341787648,
+        "max_steps": 4731,
+        "target_flops": 30000000000000.0
+      },
+      "dir": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/research/artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/runs/budget_0/placebo/standard/seed_0/checkpoints",
+      "lineage": {
+        "parent_run_ids": [
+          "seed_0"
+        ],
+        "run_id": "seed_0"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 0,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "control_zero_attention": false,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "fractal_ifs": false,
+        "init_from_profile": null,
+        "n_embd": 128,
+        "n_head": 8,
+        "n_kv_head": 4,
+        "n_layer": 4,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 256,
+        "simplicial_random_triangles": false,
+        "simplicial_triplet": false,
+        "simplicial_window": 8,
+        "standard_record_attn_entropy": false,
+        "surreal_freeze_scale": false,
+        "surreal_scaling_axis": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "tropical_structured_support": false,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "ultrametric_record_routes": false,
+        "ultrametric_tie_margin": 1.0,
+        "use_flex_attention": false,
+        "vocab_size": 384
+      },
+      "n_params": 819200,
+      "step": 4730
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-11-23T02:57:53Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "a5abe77",
+      "commit_full": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+      "dirty": false
+    },
+    "perturbation": {
+      "perturb_eps": [],
+      "perturb_seed": 0,
+      "spec": "nanochat.diagnostics_data.apply_embedding_perturbation"
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-placebo-standard-s0",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 380
+    }
+  },
+  "provenance": {
+    "config_hash": "66f7bebc07db42258778ee53c3a5cebc6ac3488a2e4af1ac42941c7b10ff5e87",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v5",
+  "tasks": {
+    "placebo": {
+      "answer_prior": null,
+      "curve": null,
+      "difficulty_axis": null,
+      "exact_match": null,
+      "in_range_max": null,
+      "length_slope": null,
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 92.37005407280392,
+        "in_range": 4.2034571915864944
+      },
+      "robustness": null,
+      "skipped_too_long": 0,
+      "tropical_margins": null
+    }
+  },
+  "train_provenance": {
+    "config_hash": "d87b0a664c858b4956913fff804e012d3d245e3f9f890c4e2a589ad340a4776d",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}

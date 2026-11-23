@@ -1,4 +1,4 @@
-# CI-lite — fast local pre-push gate
+# Running the research checks with DSR
 
 The repository's DSR manifest runs lint, formatting, the locked type environment,
 fast and full tests, registry validation, CPU certificates, seven pipeline
@@ -12,21 +12,22 @@ DSR_REPOS_FILE="$PWD/dsr.yaml" dsr quality --tool model_guided_research --work-d
 DSR writes the receipts, wheel, certificates, and scenario reports under its
 quality log directory. Its exit status includes each configured check.
 
-**Bead:** `model_guided_research-c6v`
-**Script:** `scripts/ci_lite.sh` (uv-only, venv-respecting, no pip)
+## Smaller checks during development
 
-A one-command gate that mirrors the AGENTS.md constraints so you can check work
-before `git push` without waiting on a full CI run. No GitHub Actions required.
+For a quick pre-push check, configure the existing
+[`scripts/ci_lite.sh`](../scripts/ci_lite.sh) as a check in a local DSR profile.
+For example, this profile runs the staged-file lint checks, type check and
+selected tests from the working checkout.
 
-## Usage
-
-```bash
-scripts/ci_lite.sh            # changed files (working tree vs HEAD) — default
-scripts/ci_lite.sh --staged   # staged files only (run right before commit)
-scripts/ci_lite.sh --all      # whole repo: full ruff + full pytest
-scripts/ci_lite.sh --no-tests # lint/format/ubs only (skip pytest)
-scripts/ci_lite.sh --help
+```yaml
+tools:
+  mgr-staged:
+    checks:
+      - bash scripts/ci_lite.sh --staged
 ```
+
+Set `DSR_REPOS_FILE` to the path where you saved the profile. Then run
+`dsr quality --tool mgr-staged --work-dir "$PWD"` from the checkout.
 
 ## What it runs
 
@@ -56,20 +57,7 @@ the hypotheses/theorem registries. The slow suites
   uncommitted edits. Use `--staged` to scope strictly to what you are about to
   commit.
 
-## Recommended flow
-
-```bash
-# while iterating
-scripts/ci_lite.sh --no-tests        # fast lint/format/bug pass on your edits
-# before committing
-git add <your files>
-scripts/ci_lite.sh --staged          # lint + bugs scoped to staged files
-# before pushing a larger change
-scripts/ci_lite.sh                   # changed files + fast tests
-# occasionally / before a release
-scripts/ci_lite.sh --all             # full ruff + full pytest
-```
-
-Note: this is a convenience gate, not a replacement for the full suite or the
-research-loop provenance checks (`scripts/e2e_pipeline.py`, `mgr adjudicate`).
-</content>
+The script also accepts `--no-tests` to omit pytest, `--typecheck` for the
+repository type check and workflow YAML syntax, and `--all` for all Python
+files and the full pytest suite. The canonical DSR profile at the top of
+this page also exercises the complete research pipeline and the installed wheel.

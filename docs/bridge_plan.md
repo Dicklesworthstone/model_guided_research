@@ -63,10 +63,11 @@ counts. Zero models were trained for this comparison.
 | Standard-only sizing probe | Held-out exact match by training seed | Recorded prior | Decision |
 |---|---|---|---|
 | [Needle, 4 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | All held-out sequences exceeded the training window. The larger rotary cache allowed every example to be scored. |
-| [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored at four layers and width 128. The ladder continues at 30 trillion FLOPs. |
+| [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 8/144 | Four layers and width 128 yielded zero correct held-out answers at this budget. |
 | [Needle, 30 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b30-s256-rung/report.md) | 0/144, 0/144, 0/144 | 8/144 | All six training cells, including the three placebo cells, completed. The 100-trillion-FLOP rung remains unmeasured. |
 | [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
 | [Group, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b10-s256-rung/report.md) | 6/144, 1/144, 10/144 | 14/144 | All three seeds fell below the prior. All 432 held-out examples were scored. |
+| [Group, 30 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/report.md) | 4/144, 5/144, 4/144 | 14/144 | In-range exact match reached 139/144, 133/144 and 139/144. All three seeds fell below the prior on the longer held-out words. The 100-trillion-FLOP rung remains unmeasured. [Generated answers](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/generations.zip) |
 | [Bag, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 35/144, 41/144, 28/144 | 54/144 | All three seeds fell below the prior. The scorecard shared its three placebo cells with relation. |
 | [Relation, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 12/144, 9/144, 9/144 | 21/144 | All three seeds fell below the prior. All 432 held-out outcomes were scored. |
 
@@ -77,6 +78,13 @@ the first generated word was the bare prefix `v` on 1,286 of 1,296 held-out
 generations. The other ten produced a valid but incorrect value. Even
 in range, the checkpoints answered only one or two of 144 queries correctly.
 [Per-checkpoint lengths and output counts](../artifacts/probes/sizing/needle-window-audit/classification.json)
+
+At 30 trillion FLOPs the group task also failed to generalize to longer
+inputs. All 144 held-out cases fit the training window for every checkpoint.
+They ranged from 42 to 138 tokens, including BOS and the expected completion.
+The in-range cases used 14–26 tokens. This rules out exceeding the 256-token
+window as an explanation for this group's held-out result.
+[Tokenizer replay](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/window-lengths.json)
 
 ## November 2026 assessment
 

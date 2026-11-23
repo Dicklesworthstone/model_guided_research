@@ -1,0 +1,66 @@
+{
+  "scorecard": "vdc4-group-tasktok-shuf-b30-s256-rung",
+  "length_definition": "BOS + prompt + expected completion",
+  "rows": [
+    {
+      "task": "group",
+      "training_seed": 0,
+      "training_window": 256,
+      "tokenizer_sha256": "5bf0f87ece28ab70e0cea0b6836c11c438d7a6bace730209d0e8815f5c9cf853",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 14,
+          "max": 26
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 42,
+          "max": 138
+        }
+      }
+    },
+    {
+      "task": "group",
+      "training_seed": 1,
+      "training_window": 256,
+      "tokenizer_sha256": "5bf0f87ece28ab70e0cea0b6836c11c438d7a6bace730209d0e8815f5c9cf853",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 14,
+          "max": 26
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 42,
+          "max": 138
+        }
+      }
+    },
+    {
+      "task": "group",
+      "training_seed": 2,
+      "training_window": 256,
+      "tokenizer_sha256": "5bf0f87ece28ab70e0cea0b6836c11c438d7a6bace730209d0e8815f5c9cf853",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 14,
+          "max": 26
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 42,
+          "max": 138
+        }
+      }
+    }
+  ]
+}
