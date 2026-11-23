@@ -1,0 +1,578 @@
+{
+  "catalog_size": 57,
+  "checked_edges": 12960,
+  "checked_words": 6912,
+  "decision": false,
+  "family_queries": [
+    7,
+    9,
+    9,
+    5,
+    7,
+    6
+  ],
+  "per_case": [
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 1950,
+          "cache_equal": 51,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1772,
+          "oracle_equal": 68,
+          "paid": 1840,
+          "paid_new": 1415
+        },
+        "congruence": {
+          "cache_different": 1728,
+          "new": 119,
+          "oracle_different": 1602,
+          "oracle_equal": 60,
+          "paid": 1662,
+          "paid_new": 1415,
+          "rewrite_steps": 71,
+          "rewritten": 61
+        }
+      },
+      "group": "s5",
+      "index": 0
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 1724,
+          "cache_equal": 73,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1529,
+          "oracle_equal": 46,
+          "paid": 1575,
+          "paid_new": 974
+        },
+        "congruence": {
+          "cache_different": 1220,
+          "new": 119,
+          "oracle_different": 1086,
+          "oracle_equal": 24,
+          "paid": 1110,
+          "paid_new": 974,
+          "rewrite_steps": 125,
+          "rewritten": 97
+        }
+      },
+      "group": "s5",
+      "index": 1
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 1845,
+          "cache_equal": 49,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1694,
+          "oracle_equal": 70,
+          "paid": 1764,
+          "paid_new": 1342
+        },
+        "congruence": {
+          "cache_different": 1607,
+          "new": 119,
+          "oracle_different": 1478,
+          "oracle_equal": 46,
+          "paid": 1524,
+          "paid_new": 1342,
+          "rewrite_steps": 99,
+          "rewritten": 75
+        }
+      },
+      "group": "s5",
+      "index": 2
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 2045,
+          "cache_equal": 49,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1897,
+          "oracle_equal": 70,
+          "paid": 1967,
+          "paid_new": 1411
+        },
+        "congruence": {
+          "cache_different": 1843,
+          "new": 119,
+          "oracle_different": 1734,
+          "oracle_equal": 62,
+          "paid": 1796,
+          "paid_new": 1411,
+          "rewrite_steps": 67,
+          "rewritten": 59
+        }
+      },
+      "group": "s5",
+      "index": 3
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 2035,
+          "cache_equal": 49,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1976,
+          "oracle_equal": 70,
+          "paid": 2046,
+          "paid_new": 1487
+        },
+        "congruence": {
+          "cache_different": 1819,
+          "new": 119,
+          "oracle_different": 1772,
+          "oracle_equal": 60,
+          "paid": 1832,
+          "paid_new": 1487,
+          "rewrite_steps": 71,
+          "rewritten": 61
+        }
+      },
+      "group": "s5",
+      "index": 4
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 1788,
+          "cache_equal": 67,
+          "forced": 2,
+          "new": 119,
+          "oracle_different": 1541,
+          "oracle_equal": 52,
+          "paid": 1593,
+          "paid_new": 1071
+        },
+        "congruence": {
+          "cache_different": 1430,
+          "new": 119,
+          "oracle_different": 1262,
+          "oracle_equal": 33,
+          "paid": 1295,
+          "paid_new": 1071,
+          "rewrite_steps": 113,
+          "rewritten": 88
+        }
+      },
+      "group": "s5",
+      "index": 5
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 14968,
+          "cache_equal": 203,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 13849,
+          "oracle_equal": 156,
+          "paid": 14005,
+          "paid_new": 9134
+        },
+        "congruence": {
+          "cache_different": 11187,
+          "new": 359,
+          "oracle_different": 10476,
+          "oracle_equal": 103,
+          "paid": 10579,
+          "paid_new": 9134,
+          "rewrite_steps": 323,
+          "rewritten": 258
+        }
+      },
+      "group": "a6",
+      "index": 6
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 16338,
+          "cache_equal": 191,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 16039,
+          "oracle_equal": 168,
+          "paid": 16207,
+          "paid_new": 10791
+        },
+        "congruence": {
+          "cache_different": 13478,
+          "new": 359,
+          "oracle_different": 13065,
+          "oracle_equal": 131,
+          "paid": 13196,
+          "paid_new": 10791,
+          "rewrite_steps": 268,
+          "rewritten": 230
+        }
+      },
+      "group": "a6",
+      "index": 7
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 15526,
+          "cache_equal": 220,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 13280,
+          "oracle_equal": 139,
+          "paid": 13419,
+          "paid_new": 9019
+        },
+        "congruence": {
+          "cache_different": 12143,
+          "new": 359,
+          "oracle_different": 10433,
+          "oracle_equal": 100,
+          "paid": 10533,
+          "paid_new": 9019,
+          "rewrite_steps": 305,
+          "rewritten": 261
+        }
+      },
+      "group": "a6",
+      "index": 8
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 9221,
+          "cache_equal": 259,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 8143,
+          "oracle_equal": 100,
+          "paid": 8243,
+          "paid_new": 6432
+        },
+        "congruence": {
+          "cache_different": 7948,
+          "new": 359,
+          "oracle_different": 7033,
+          "oracle_equal": 76,
+          "paid": 7109,
+          "paid_new": 6432,
+          "rewrite_steps": 311,
+          "rewritten": 285
+        }
+      },
+      "group": "a6",
+      "index": 9
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 12500,
+          "cache_equal": 244,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 12131,
+          "oracle_equal": 115,
+          "paid": 12246,
+          "paid_new": 8494
+        },
+        "congruence": {
+          "cache_different": 9902,
+          "new": 359,
+          "oracle_different": 9499,
+          "oracle_equal": 81,
+          "paid": 9580,
+          "paid_new": 8494,
+          "rewrite_steps": 315,
+          "rewritten": 280
+        }
+      },
+      "group": "a6",
+      "index": 10
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 12231,
+          "cache_equal": 246,
+          "forced": 2,
+          "new": 359,
+          "oracle_different": 11899,
+          "oracle_equal": 113,
+          "paid": 12012,
+          "paid_new": 8327
+        },
+        "congruence": {
+          "cache_different": 9408,
+          "new": 359,
+          "oracle_different": 9118,
+          "oracle_equal": 64,
+          "paid": 9182,
+          "paid_new": 8327,
+          "rewrite_steps": 349,
+          "rewritten": 297
+        }
+      },
+      "group": "a6",
+      "index": 11
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 133,
+          "cache_equal": 53,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 110,
+          "oracle_equal": 6,
+          "paid": 116,
+          "paid_new": 96
+        },
+        "congruence": {
+          "cache_different": 110,
+          "new": 59,
+          "oracle_different": 99,
+          "oracle_equal": 3,
+          "paid": 102,
+          "paid_new": 96,
+          "rewrite_steps": 62,
+          "rewritten": 58
+        }
+      },
+      "group": "z60",
+      "index": 12
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 232,
+          "cache_equal": 35,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 129,
+          "oracle_equal": 24,
+          "paid": 153,
+          "paid_new": 107
+        },
+        "congruence": {
+          "cache_different": 220,
+          "new": 59,
+          "oracle_different": 110,
+          "oracle_equal": 4,
+          "paid": 114,
+          "paid_new": 107,
+          "rewrite_steps": 78,
+          "rewritten": 57
+        }
+      },
+      "group": "z60",
+      "index": 13
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 156,
+          "cache_equal": 51,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 104,
+          "oracle_equal": 8,
+          "paid": 112,
+          "paid_new": 101
+        },
+        "congruence": {
+          "cache_different": 154,
+          "new": 59,
+          "oracle_different": 102,
+          "oracle_equal": 3,
+          "paid": 105,
+          "paid_new": 101,
+          "rewrite_steps": 64,
+          "rewritten": 58
+        }
+      },
+      "group": "z60",
+      "index": 14
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 58,
+          "cache_equal": 56,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 117,
+          "oracle_equal": 3,
+          "paid": 120,
+          "paid_new": 117
+        },
+        "congruence": {
+          "cache_different": 2,
+          "forced": 1,
+          "new": 59,
+          "oracle_different": 117,
+          "oracle_equal": 3,
+          "paid": 120,
+          "paid_new": 117,
+          "rewrite_steps": 57,
+          "rewritten": 57
+        }
+      },
+      "group": "z60",
+      "index": 15
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 172,
+          "cache_equal": 51,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 109,
+          "oracle_equal": 8,
+          "paid": 117,
+          "paid_new": 103
+        },
+        "congruence": {
+          "cache_different": 158,
+          "new": 59,
+          "oracle_different": 105,
+          "oracle_equal": 4,
+          "paid": 109,
+          "paid_new": 103,
+          "rewrite_steps": 62,
+          "rewritten": 57
+        }
+      },
+      "group": "z60",
+      "index": 16
+    },
+    {
+      "counts": {
+        "cancelled": {
+          "cache_different": 274,
+          "cache_equal": 39,
+          "forced": 2,
+          "new": 59,
+          "oracle_different": 128,
+          "oracle_equal": 20,
+          "paid": 148,
+          "paid_new": 110
+        },
+        "congruence": {
+          "cache_different": 259,
+          "new": 59,
+          "oracle_different": 116,
+          "oracle_equal": 4,
+          "paid": 120,
+          "paid_new": 110,
+          "rewrite_steps": 74,
+          "rewritten": 57
+        }
+      },
+      "group": "z60",
+      "index": 17
+    }
+  ],
+  "primary": {
+    "cancelled": {
+      "cache_different": 92171,
+      "cache_equal": 1701,
+      "forced": 24,
+      "new": 2868,
+      "oracle_different": 85750,
+      "oracle_equal": 1167,
+      "paid": 86917,
+      "paid_new": 59897
+    },
+    "congruence": {
+      "cache_different": 73713,
+      "new": 2868,
+      "oracle_different": 68558,
+      "oracle_equal": 840,
+      "paid": 69398,
+      "paid_new": 59897,
+      "rewrite_steps": 2417,
+      "rewritten": 2052
+    }
+  },
+  "tamper_rewrite": true,
+  "tamper_trials": true,
+  "totals": {
+    "a6": {
+      "cancelled": {
+        "cache_different": 80784,
+        "cache_equal": 1363,
+        "forced": 12,
+        "new": 2154,
+        "oracle_different": 75341,
+        "oracle_equal": 791,
+        "paid": 76132,
+        "paid_new": 52197
+      },
+      "congruence": {
+        "cache_different": 64066,
+        "new": 2154,
+        "oracle_different": 59624,
+        "oracle_equal": 555,
+        "paid": 60179,
+        "paid_new": 52197,
+        "rewrite_steps": 1871,
+        "rewritten": 1611
+      }
+    },
+    "s5": {
+      "cancelled": {
+        "cache_different": 11387,
+        "cache_equal": 338,
+        "forced": 12,
+        "new": 714,
+        "oracle_different": 10409,
+        "oracle_equal": 376,
+        "paid": 10785,
+        "paid_new": 7700
+      },
+      "congruence": {
+        "cache_different": 9647,
+        "new": 714,
+        "oracle_different": 8934,
+        "oracle_equal": 285,
+        "paid": 9219,
+        "paid_new": 7700,
+        "rewrite_steps": 546,
+        "rewritten": 441
+      }
+    },
+    "z60": {
+      "cancelled": {
+        "cache_different": 1025,
+        "cache_equal": 285,
+        "forced": 12,
+        "new": 354,
+        "oracle_different": 697,
+        "oracle_equal": 69,
+        "paid": 766,
+        "paid_new": 634
+      },
+      "congruence": {
+        "cache_different": 903,
+        "forced": 1,
+        "new": 354,
+        "oracle_different": 649,
+        "oracle_equal": 21,
+        "paid": 670,
+        "paid_new": 634,
+        "rewrite_steps": 397,
+        "rewritten": 344
+      }
+    }
+  }
+}
