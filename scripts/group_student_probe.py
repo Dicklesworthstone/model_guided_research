@@ -11,6 +11,7 @@ from collections import Counter
 from collections.abc import Callable
 from itertools import permutations, product
 from pathlib import Path
+from zipfile import ZipFile
 
 import torch
 from scipy import stats
@@ -27,6 +28,7 @@ PAD, BOS, ZERO, ONE, OUT = range(120, 125)
 VOCAB = 128
 TRAIN_WIDTH = 25
 OLD_PANEL = Path("artifacts/probes/sizing/group-query-completion/panel.json")
+EQUALITY_ARCHIVE = Path("artifacts/probes/sizing/group-equality/verification.zip")
 EQUALITY_VIEWS = (("", ""), ("0", ""), ("1", ""), ("", "0"), ("", "1"), ("0", "1"), ("1", "0"))
 EQUALITY_POLICIES = ("breadth_first", "symbol_counts", "one_view", "seven_views", "training_cache")
 
@@ -592,19 +594,42 @@ def fresh_marked_actions(group: str, elements, exclusions: set[str], rng: random
     raise ValueError(f"Found only {len(retained)} eligible marked actions for {group}")
 
 
-def relator_panel(data: Path, output: Path) -> None:
-    exclusions = {
+def marked_exclusions(data: Path) -> set[str]:
+    return {
         *[case["graph_digest"] for case in json.loads(OLD_PANEL.read_bytes())["cases"]],
         *[json.loads((data / f"{i:02}.json").read_bytes())["graph_sha"] for i in range(24)],
         *(graph_digest(rooted_graph(g, tuple(gens))) for g, gens in _GROUP_GENERATORS.items()),
     }
+
+
+def panel_families():
+    a6 = [p for p in permutations(range(6)) if sum(x > y for i, x in enumerate(p) for y in p[i + 1 :]) % 2 == 0]
+    return (("s5", _group_elements("s5")), ("a6", a6), ("z60", _group_elements("z60")))
+
+
+def congruence_coverage(data: Path, output: Path) -> None:
+    exclusions = marked_exclusions(data)
+    with ZipFile(EQUALITY_ARCHIVE) as archive:
+        previous = json.loads(archive.read("relators.json"))
+    exclusions.update(previous["excluded_incomplete_s5"])
+    exclusions.update(case["graph_sha"] for case in previous["results"])
+    spent = sorted(exclusions)
+    rng = random.Random(2026112311)
+    presentations = [
+        dict(group=group, generators=generators, size=len(graph), graph_sha=fingerprint)
+        for group, elements in panel_families()
+        for generators, graph, fingerprint in fresh_marked_actions(group, elements, exclusions, rng)
+    ]
+    save(
+        output, dict(seed=2026112311, spent=spent, presentations=presentations, archive_sha256=digest(EQUALITY_ARCHIVE))
+    )
+
+
+def relator_panel(data: Path, output: Path) -> None:
+    exclusions = marked_exclusions(data)
     leaked_s5 = fresh_marked_actions("s5", _group_elements("s5"), exclusions, random.Random(2026112303))
     rng = random.Random(2026112307)
-    a6 = [p for p in permutations(range(6)) if sum(x > y for i, x in enumerate(p) for y in p[i + 1 :]) % 2 == 0]
-    fresh = {
-        group: fresh_marked_actions(group, elements, exclusions, rng)
-        for group, elements in (("s5", _group_elements("s5")), ("a6", a6), ("z60", _group_elements("z60")))
-    }
+    fresh = {group: fresh_marked_actions(group, elements, exclusions, rng) for group, elements in panel_families()}
     results = []
     for group, cases in fresh.items():
         for generators, graph, fingerprint in cases:
@@ -631,7 +656,7 @@ def relator_panel(data: Path, output: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("prepare", "train", "score", "equality", "relator"))
+    parser.add_argument("phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover"))
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--output", type=Path)
@@ -651,6 +676,10 @@ if __name__ == "__main__":
         if args.output is None:
             parser.error("--output is required for the relator panel")
         relator_panel(args.data, args.output)
+    elif args.phase == "congruence-cover":
+        if args.output is None:
+            parser.error("--output is required for the congruence coverage check")
+        congruence_coverage(args.data, args.output)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
