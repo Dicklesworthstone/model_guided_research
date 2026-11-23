@@ -8,6 +8,20 @@ tracked summaries, seven prior rulings became blocked and the placebo
 prediction moved from inconclusive to supported. Four owner holds still
 apply. The historical ledger retains its original policy stamps. [Replay and transition matrix](research_loop.md#november-2026-historical-replay)
 
+On November 23, three new R-matrix trainings tested charge dissociation at
+one trillion model FLOPs. Their mean ratio was 0.278, with a 95% interval
+of 0.039–0.517 against the registered minimum of 2.0. Refitting a single
+checkpoint three times had previously counted as three observations. The
+current adjudicator groups shared training seeds, run identities and weight
+hashes. All three archived checkpoints reproduced their probe scores.
+The clean checkout at `b90260a` returned 11 supported, two refuted, six
+inconclusive and 57 blocked across 76 predictions. Five historical rulings
+still cite unavailable measurements, including three p-adic curves and two
+symplectic depth comparisons. The June charge artifacts also remain missing.
+[Verdict](../artifacts/adjudications/rmatrix-charge-1e12-20261123/report.md)
+· [Repeated-checkpoint control](../artifacts/adjudications/charge-training-units/v10-repeated-checkpoint.json)
+· [Clean checkout status and replay receipts](../artifacts/adjudications/charge-training-units/dsr-receipts.zip)
+
 The route observatory now records whole-route survival counts, uses discrete
 decisions for clustering, reports a prompt-only comparator and identifies the
 exact training weights. Five small CPU training runs yielded fifteen saved
@@ -88,6 +102,19 @@ counts. Zero models were trained for this comparison.
 | [Hierarchy, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 1/144, 1/144, 1/144 | 8/144 | Each seed answered one held-out query correctly. |
 | [Rotation, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-rot-tasktok-shuf-b4-rung/report.md) | 6/144, 7/144, 5/144 | 15/144 | All 144 held-out examples fit in 23–43 tokens. Each training seed fell below the prior. |
 | [Copy operations, 2 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b2-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | Held-out examples fit in 25–41 tokens. On 426 of 432 generations the model emitted fewer words than the target. The registered threshold is the prior plus 0.10. |
+| [Copy operations, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | In-range exact matches reached 83, 85 and 95 of 144. All held-out examples fit. Even appending perfect suffixes could recover at most 0, 0 and 1 complete answers, against the required 18 per seed. |
+
+The four-trillion-FLOP copy models learned some input-position dependence
+at the training lengths. For each prompt we changed the source letter that
+determines the first output, then separately changed a neighboring letter.
+Counting cases where the first answer was correct on the original and both
+edits gave 129, 109 and 109 of 144 in range. On the longer sequences the
+same models managed 50, 24 and 31 of 144. Eleven in-range documents occurred
+in the training corpus. All 144 held-out documents were absent. The saved
+weights and evaluator reproduced the original first word on every example.
+[Paired edits](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/first-letter-edits.json)
+· [Word and corpus-overlap counts](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/word-results.json)
+· [Suffix upper bound](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/completion-bound.json)
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint

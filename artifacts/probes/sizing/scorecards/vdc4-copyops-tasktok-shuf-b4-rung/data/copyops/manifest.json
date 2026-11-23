@@ -1,0 +1,29 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "4ed28fee150098bda6cd035d0e7128ba70c55603491710e0777e19ecfefa67c7",
+    "train_000.parquet": "fb78a6ffc39aa374484307766347128f5f88fe5a1379087406723ac6396b1e58",
+    "val_000.parquet": "47f39aebe7f039ad65c917f92c438d22be6d58f3408edd27d7d14da9e728dd33"
+  },
+  "dials": {
+    "length": 8
+  },
+  "generator_version": 1,
+  "hypothesis": "explicit permutation/inversion structure extrapolates length-indexed bijections",
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "b475a1d4d3991e2106c1b401110dec2c48898134703e173aba132747b3c35925",
+    "train_000.parquet": "dcfa944653b32c2b2ba122d1bd4ab927c63300c43665afdd33ac8ba296a4b824",
+    "val_000.parquet": "307c88d165f41686c771c32138bdb86252994d2d3066917aa0723c94bf1e3e10"
+  },
+  "size": 160000,
+  "split_sizes": {
+    "test": 16000,
+    "train": 128000,
+    "val": 16000
+  },
+  "target_mechanisms": [
+    "braid",
+    "reversible"
+  ],
+  "task": "copyops"
+}

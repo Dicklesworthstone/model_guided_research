@@ -1,0 +1,36 @@
+{
+  "scorecard": "vdc4-copyops-tasktok-shuf-b4-rung",
+  "scope": "Only appending words after the observed output is allowed.",
+  "rows": [
+    {
+      "training_seed": 0,
+      "cases": 144,
+      "correct": 0,
+      "short": 141,
+      "strict_prefix_of_answer": 0,
+      "upper_bound_correct": 0,
+      "needed_to_clear": 18,
+      "can_clear_by_appending": false
+    },
+    {
+      "training_seed": 1,
+      "cases": 144,
+      "correct": 0,
+      "short": 126,
+      "strict_prefix_of_answer": 0,
+      "upper_bound_correct": 0,
+      "needed_to_clear": 18,
+      "can_clear_by_appending": false
+    },
+    {
+      "training_seed": 2,
+      "cases": 144,
+      "correct": 0,
+      "short": 142,
+      "strict_prefix_of_answer": 1,
+      "upper_bound_correct": 1,
+      "needed_to_clear": 18,
+      "can_clear_by_appending": false
+    }
+  ]
+}

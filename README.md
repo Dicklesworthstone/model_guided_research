@@ -998,6 +998,12 @@ retain their original dispositions.
 [Eligibility replay](artifacts/adjudications/jida36-eligibility-replay/eligibility-audit.json)
 · [Replay with the current selection rules](artifacts/adjudications/charge-training-units/historical-replay.json)
 
+- Three independently trained R-matrix models at one trillion model FLOPs
+  gave charge-dissociation ratios of 0.333, 0.167 and 0.333. The registered
+  minimum was 2.0. The verdict was REFUTED at this budget. Each model saw
+  the same 240 probe prompts. The archived weights reproduce the category scores.
+  [Verdict](artifacts/adjudications/rmatrix-charge-1e12-20261123/report.md) · [Archived checkpoints](artifacts/adjudications/charge-training-units/checkpoints.zip)
+
 - In the eight-seed-per-arm Dyck depth-extrapolation campaign, standard
   beat braid at the higher budget. Braid minus standard was −0.245 in
   held-out exact match (95% CI −0.326 to −0.164). The directional braid
