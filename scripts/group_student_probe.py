@@ -189,7 +189,7 @@ def state_digest(model: GPT) -> str:
     return h.hexdigest()
 
 
-def train_case(case_path: Path, output: Path, device: torch.device) -> None:
+def train_case(case_path: Path, output: Path, device: torch.device, *, cuda_graph: bool = False) -> None:
     case = json.loads(case_path.read_bytes())
     case_out = output / case_path.stem
     case_out.mkdir(parents=True, exist_ok=True)
@@ -215,20 +215,43 @@ def train_case(case_path: Path, output: Path, device: torch.device) -> None:
         train_losses = []
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        for step, batch in enumerate(batches):
-            optim.param_groups[0]["lr"] = schedule(step)
-            optim.zero_grad(set_to_none=True)
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                loss = model(x[batch], targets=labels[batch])
-            loss.backward()
-            optim.step()
-            if step % 100 == 0 or step == STEPS - 1:
-                loss_value = float(loss.detach())
-                if not math.isfinite(loss_value):
-                    raise ValueError(f"Nonfinite training loss for {case['index']} {arm}")
-                train_losses.append([step + 1, loss_value])
-        end.record()
+        stream = torch.cuda.Stream() if cuda_graph else torch.cuda.current_stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        graph = torch.cuda.CUDAGraph() if cuda_graph else None
+        if graph is not None:
+            static_x = torch.empty_like(x[:BATCH])
+            static_labels = torch.empty_like(labels[:BATCH])
+        with torch.cuda.stream(stream):
+            start.record()
+            for step, batch in enumerate(batches):
+                optim.param_groups[0]["lr"] = schedule(step)
+                if graph is None or step < 3:
+                    optim.zero_grad(set_to_none=True)
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        loss = model(x[batch], targets=labels[batch])
+                    loss.backward()
+                else:
+                    static_x.copy_(x[batch])
+                    static_labels.copy_(labels[batch])
+                    if step == 3:
+                        # Keep the eager optimizer and scheduler, including all
+                        # warmup updates. Only dispatch forward and backward as
+                        # one graph. Its private gradient buffers are overwritten.
+                        del loss
+                        optim.zero_grad(set_to_none=True)
+                        with torch.cuda.graph(graph, stream=stream):
+                            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                                graph_loss = model(static_x, targets=static_labels)
+                            graph_loss.backward()
+                    graph.replay()
+                    loss = graph_loss
+                optim.step()
+                if step % 100 == 0 or step == STEPS - 1:
+                    loss_value = float(loss.detach())
+                    if not math.isfinite(loss_value):
+                        raise ValueError(f"Nonfinite training loss for {case['index']} {arm}")
+                    train_losses.append([step + 1, loss_value])
+            end.record()
         end.synchronize()
         weights = case_out / f"{arm}-{time.time_ns()}.pt"
         torch.save(model.state_dict(), weights)
@@ -245,6 +268,7 @@ def train_case(case_path: Path, output: Path, device: torch.device) -> None:
                 dense_positions=STEPS * BATCH * TRAIN_WIDTH,
                 n_params=sum(p.numel() for p in model.parameters()),
                 cuda_ms=start.elapsed_time(end),
+                backward_mode="cuda_graph" if cuda_graph else "eager",
                 losses=train_losses,
             ),
         )
@@ -339,6 +363,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--first", type=int, default=0)
     parser.add_argument("--last", type=int, default=24)
+    parser.add_argument("--cuda-graph", action="store_true", help="Capture forward and backward during training")
     args = parser.parse_args()
     if args.phase == "prepare":
         prepare(args.data)
@@ -357,7 +382,7 @@ if __name__ == "__main__":
         )
         if args.phase == "train":
             for index in range(args.first, args.last):
-                train_case(args.data / f"{index:02}.json", args.runs, device)
+                train_case(args.data / f"{index:02}.json", args.runs, device, cuda_graph=args.cuda_graph)
         else:
             if args.output is None:
                 parser.error("--output is required for scoring")
