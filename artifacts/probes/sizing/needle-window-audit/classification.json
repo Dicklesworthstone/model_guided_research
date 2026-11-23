@@ -1,0 +1,321 @@
+{
+  "scope": "Sizing-probe greedy held-out generations, 48 examples x 3 evaluation seeds for each trained standard checkpoint. Identical evaluation prompts are reused across checkpoints.",
+  "rows": [
+    {
+      "rung": "b4",
+      "cell": "eval-b0-needle-standard-s0",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "76e30ce0a8e8379ade8a3713d6ff85124af843685f126f08999ad0525db22bb2"
+    },
+    {
+      "rung": "b4",
+      "cell": "eval-b0-needle-standard-s1",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "7b3a78db65a07605de0f149402030173aaef87574c57f7c1a2374cc47154b6eb"
+    },
+    {
+      "rung": "b4",
+      "cell": "eval-b0-needle-standard-s2",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "24941015b5c39de2ca33cf94d4bcee2d82d43f2c7b32f3ed107a92f631083bb6"
+    },
+    {
+      "rung": "b10",
+      "cell": "eval-b0-needle-standard-s0",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 2
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "df086b11de4b6417f44f80df3332da978de2b8790557acd9557ccf0db357540d"
+    },
+    {
+      "rung": "b10",
+      "cell": "eval-b0-needle-standard-s1",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "a809dc9c74cdc01ea2a30954e0abc642ebdd7e2e2e25ddc4030da7de755e45de"
+    },
+    {
+      "rung": "b10",
+      "cell": "eval-b0-needle-standard-s2",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 136,
+        "wrong_valid_value": 8
+      },
+      "distinct_first_predictions": 2,
+      "top_predictions": [
+        [
+          "v",
+          136
+        ],
+        [
+          "v54",
+          8
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "1acc9f274709b0cd5b54f4f7c73c671fd9ce6aa1e2ac4a661fdbd6039e83b7f4"
+    },
+    {
+      "rung": "b30",
+      "cell": "eval-b0-needle-standard-s0",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "9b15800f3d71cd10ee8cb45fa42207e26fba6382e682028fd2ca5f65451bed03"
+    },
+    {
+      "rung": "b30",
+      "cell": "eval-b0-needle-standard-s1",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 144
+      },
+      "distinct_first_predictions": 1,
+      "top_predictions": [
+        [
+          "v",
+          144
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "442d8516674e1a239e1601918740732cfd5a6d80c2e8ef3f79b04dbc4679b1d6"
+    },
+    {
+      "rung": "b30",
+      "cell": "eval-b0-needle-standard-s2",
+      "records": 144,
+      "training_window": 256,
+      "regions": {
+        "in_range": {
+          "min": 153,
+          "max": 153,
+          "fit_training_window": 144,
+          "scored": 144,
+          "exact": 1
+        },
+        "held_out": {
+          "min": 608,
+          "max": 620,
+          "fit_training_window": 0,
+          "scored": 144,
+          "exact": 0
+        }
+      },
+      "categories": {
+        "other": 142,
+        "wrong_valid_value": 2
+      },
+      "distinct_first_predictions": 2,
+      "top_predictions": [
+        [
+          "v",
+          142
+        ],
+        [
+          "v79",
+          2
+        ]
+      ],
+      "distinct_answers": 73,
+      "raw_sha256": "d0aedbace99b850c7b4a62d81d980c42c3b102761d8f7396628a58ccf9b8f421"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "registry_and_corpus": "4db6657e80d6cd657d8ca85ef86ca01380c2e9c0",
+  "artifact_tree": "bd97f6eeb731d2a070e84535883754e46f90d010",
+  "adjudicator_commit": "65454109dbf056bb0a3bb5f6f894e4578203871b",
+  "policy_version": "ci-v9",
+  "hypotheses": 75,
+  "verdicts": {
+    "blocked": 57,
+    "inconclusive": 6,
+    "refuted": 1,
+    "supported": 11
+  },
+  "changed_verdicts": [],
+  "changed_refusal_reasons": [
+    {
+      "id": "hyp-ordinal-regime-recovery",
+      "prior": "metric_missing",
+      "current": "no_candidate_artifacts"
+    },
+    {
+      "id": "hyp-hoss-regime-curvature",
+      "prior": "metric_missing",
+      "current": "no_candidate_artifacts"
+    }
+  ],
+  "owner_holds": [
+    "hyp-braid-dyck-depth-extrapolation",
+    "hyp-symplectic-nonorm-depth-tied",
+    "hyp-symplectic-nonorm-depth-untied",
+    "hyp-braid-dyck-directional"
+  ]
+}

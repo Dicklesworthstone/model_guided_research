@@ -62,10 +62,18 @@ counts. Zero models were trained for this comparison.
 
 | Standard-only sizing probe | Held-out exact match by training seed | Recorded prior | Decision |
 |---|---|---|---|
-| [Needle, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored on all three seeds. No examples exceeded the context window. The registered next rung uses 10 trillion FLOPs and four layers at width 128. |
+| [Needle, 4 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | All held-out sequences exceeded the training window. The larger rotary cache allowed every example to be scored. |
 | [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored at four layers and width 128. The ladder continues at 30 trillion FLOPs. |
 | [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
 | [Group, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b10-s256-rung/report.md) | 6/144, 1/144, 10/144 | 14/144 | All three seeds fell below the prior. All 432 held-out examples were scored. |
+
+Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
+same 144 held-out examples measured 608–620 tokens with the checkpoint
+tokenizers. All in-range examples fit in 153 tokens. Across nine checkpoints
+the first generated word was the bare prefix `v` on 1,286 of 1,296 held-out
+generations. The other ten produced a valid but incorrect value. Even
+in range, the checkpoints answered only one or two of 144 queries correctly.
+[Per-checkpoint lengths and output counts](../artifacts/probes/sizing/needle-window-audit/classification.json)
 
 ## November 2026 assessment
 

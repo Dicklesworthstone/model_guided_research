@@ -230,6 +230,17 @@ has no new ruling in this replay. The prior audit found that 18 of its 50
 cited evaluations predated registration. A later replication needs its own
 evidence and an explicit owner decision on the held report.
 
+On November 22 the owner chose to retain the historical ledger and all four
+holds, and to cite the corrected replay for current eligibility. The ci-v9
+reader reproduced all 75 corrected verdict categories on the original registry
+and artifact tree. Two blocked regime hypotheses now identify the absence
+of a checkpoint with the required training metadata. On a separate 12-cell
+control, ci-v9 found the six regime evaluations and refused to equate HOSS
+and AdamW compute. The remaining six measurements were placebo controls.
+[Historical comparison](../artifacts/adjudications/ns1b-optimizer-eligibility/historical-comparison.json)
+· [Control result](../artifacts/adjudications/ns1b-optimizer-eligibility/ci-v9-mixed-cost.json)
+· [Frozen scorecard inputs](../artifacts/adjudications/ns1b-optimizer-eligibility/scorecard-control.zip)
+
 ### 7. Beliefs update → next proposals
 
 `mgr report --artifacts <dir>` rolls a campaign into arm tables (clean,

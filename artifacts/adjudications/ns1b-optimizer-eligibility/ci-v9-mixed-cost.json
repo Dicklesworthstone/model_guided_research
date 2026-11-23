@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-22",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 0,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v9",
+  "verdicts": [
+    {
+      "excluded_evidence": [],
+      "id": "hyp-hoss-regime-curvature",
+      "mechanism": "hoss",
+      "reason": "The model FLOP budget excludes the optimizer's Hessian-vector products. These artifacts cannot establish equal total training compute for HOSS versus a first-order optimizer.",
+      "reason_code": "optimizer_compute_unmeasured",
+      "registration_commit": "5a402f2392d3f2b8ff5221bab835aaac4d23c42f",
+      "verdict": "blocked"
+    }
+  ]
+}
