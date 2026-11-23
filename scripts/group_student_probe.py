@@ -66,8 +66,7 @@ def make_case(index: int, group: str, graph, names: list[str]) -> dict:
     initial_words = ("".join(letters) for n in range(2, 9) for letters in product("01", repeat=n))
     initial = {word: teacher(word) for word in initial_words}
     vocabulary = set(names)
-    active_table, active_queries = teach_panel_case(initial, vocabulary, teacher, squares=True)
-    active_paid = [(w, target) for w, _, target in active_queries]
+    active_table, active_paid = teach_panel_case(initial, vocabulary, teacher, squares=True)
     if any(len(word) > 23 for word, _ in active_paid):
         raise ValueError("Active query exceeded the registered training context")
 
