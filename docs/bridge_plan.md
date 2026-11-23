@@ -96,6 +96,27 @@ build and the isolated wheel installation. Both failures are recorded.
 [Run receipt](../artifacts/regressions/jida40/scheduled-8d51a4d.json)
 · [All eleven logs](../artifacts/regressions/jida40/scheduled-8d51a4d-logs.zip)
 
+A one-shot timer then ran the same eleven checks at `bc470ab` on a worker
+with enough space. All eleven passed. The fast suite passed 827 tests with
+14 skips and 93 deselections. The full suite passed 919 with 15 skips.
+Twelve trajectory tests and one evaluator test have machine-specific
+fixtures. Each passed separately on its recorded host at the same revision.
+The run also completed all seven end-to-end scenarios and all 13 demos,
+checked 13 Lean declarations, and exercised all 13 installed-wheel
+mechanisms. A clean checkout selected the new CPU certificate for all 13.
+[Canonical receipt](../artifacts/regressions/jida40/scheduled-bc470ab.json)
+· [Logs, pinned-host tests and digest checks](../artifacts/regressions/jida40/scheduled-bc470ab-logs.zip)
+
+On an RTX 4090, the public FP32 certificate at `bc470ab` passed 67 of 72
+checks. All five errors came from the Clifford geometric product moving its
+blade table to the input dtype but leaving it on CPU. At `95e8d47` the table
+follows the operand device. CPU and CUDA each passed all 72 checks with the
+same seed, comparators and tolerances. The independent Clifford oracle also
+reproduced all 64 basis products on each device.
+[CUDA certificate](../artifacts/certs/nanochat/20261123_020005/summary.json)
+· [CPU certificate](../artifacts/certs/nanochat/20261123_020139/summary.json)
+· [Original failure, hardware identity and comparison](../artifacts/regressions/jida20/clifford-device-proof.zip)
+
 The first prospectively scored transfer proposal reached its registered
 feasibility stop. Across the three unseen Python modules, every one of 43
 eligible queries had the answer `fn`. Only three inputs fit the 256-token
