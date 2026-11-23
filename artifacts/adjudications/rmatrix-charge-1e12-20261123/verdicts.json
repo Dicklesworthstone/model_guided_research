@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-23",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 1,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v10",
+  "verdicts": [
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            0.03874151530256556,
+            0.5168140443922015
+          ],
+          "effect": 0.2777777798473835,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 2,
+          "p_value": 0.9994805193312841,
+          "power": 1.0,
+          "refutation_margin": 7.204857486507908,
+          "single_arm": true,
+          "verdict": "refuted"
+        }
+      },
+      "artifacts": [
+        "artifacts/probes/charges/charge-1e12-train3-fit0/summary.json",
+        "artifacts/probes/charges/charge-1e12-train4-fit0/summary.json",
+        "artifacts/probes/charges/charge-1e12-train5-fit0/summary.json"
+      ],
+      "excluded_evidence": [],
+      "id": "hyp-rmatrix-charge-decodability",
+      "p_value": 0.9994805193312841,
+      "policy_version": "ci-v10",
+      "q_value": 0.9994805193312841,
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79",
+      "tainted_artifacts_seen": false,
+      "verdict": "refuted"
+    }
+  ]
+}
