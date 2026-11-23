@@ -265,4 +265,3 @@ class HOSS(Optimizer):
                 offset += numel
 
         return loss
-

@@ -905,9 +905,7 @@ def apply_geometry_init_to_model(
                 assert mod.ifs_raw_radii is not None
                 m_branches = int(mod.m)
                 r_max = float(mod.r_max)
-                probs = torch.arange(1, m_branches + 1, dtype=torch.float32, device=mod.ifs_raw_radii.device).pow(
-                    -zeta
-                )
+                probs = torch.arange(1, m_branches + 1, dtype=torch.float32, device=mod.ifs_raw_radii.device).pow(-zeta)
                 probs = probs / probs.sum()
                 target_r = optimal_ifs_radii(probs, target_moran_dim=s_star, r_max=r_max)
                 ratio = (target_r / r_max).clamp(1e-4, 1.0 - 1e-4)
@@ -1049,4 +1047,3 @@ def compute_structural_param_distance(model: Any, init_snapshot: dict[str, Any])
         "total_l2": math.sqrt(sq_sum),
         "per_parameter_l2": per_param,
     }
-

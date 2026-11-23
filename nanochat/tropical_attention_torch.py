@@ -571,9 +571,7 @@ class TropicalCausalSelfAttention(AttentionCore):
             persistent=False,
         )
 
-    def _apply_structured_support(
-        self, q: torch.Tensor, k: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _apply_structured_support(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply weight-row spherical equalization + cyclic-polytope monomial support (bead oeno).
 
         Because row-norm equalization, head-staggered cyclic coordinate pairing
@@ -591,16 +589,12 @@ class TropicalCausalSelfAttention(AttentionCore):
 
         q_w = cq_w.view(self.n_head, self.head_dim, -1)
         q_norms = q_w.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-        q_eq = (q_norms.mean(dim=1, keepdim=True) / q_norms).view(
-            1, self.n_head, 1, self.head_dim
-        ).to(dtype=q.dtype)
+        q_eq = (q_norms.mean(dim=1, keepdim=True) / q_norms).view(1, self.n_head, 1, self.head_dim).to(dtype=q.dtype)
         q_unit = q * q_eq
 
         k_w = ck_w.view(self.n_kv_head, self.head_dim, -1)
         k_norms = k_w.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-        k_eq = (k_norms.mean(dim=1, keepdim=True) / k_norms).view(
-            1, self.n_kv_head, 1, self.head_dim
-        ).to(dtype=k.dtype)
+        k_eq = (k_norms.mean(dim=1, keepdim=True) / k_norms).view(1, self.n_kv_head, 1, self.head_dim).to(dtype=k.dtype)
         if k.size(1) != self.n_kv_head:
             rep = k.size(1) // self.n_kv_head
             k_eq = k_eq.repeat_interleave(rep, dim=1)
@@ -614,12 +608,8 @@ class TropicalCausalSelfAttention(AttentionCore):
         perm_idx = ((e_idx + h_idx) % D).view(1, H_k, 1, D).expand_as(k_unit)
         k_paired = torch.gather(k_unit, dim=-1, index=perm_idx)
 
-        scale_q, lift_q = cyclic_polytope_support_lift(
-            q.size(1), self.head_dim, device=q.device, dtype=q.dtype
-        )
-        scale_k, lift_k = cyclic_polytope_support_lift(
-            k.size(1), self.head_dim, device=k.device, dtype=k.dtype
-        )
+        scale_q, lift_q = cyclic_polytope_support_lift(q.size(1), self.head_dim, device=q.device, dtype=q.dtype)
+        scale_k, lift_k = cyclic_polytope_support_lift(k.size(1), self.head_dim, device=k.device, dtype=k.dtype)
         q_out = q_unit * scale_q + 0.5 * lift_q
         k_out = k_paired * scale_k + 0.5 * lift_k
         return q_out, k_out
@@ -714,9 +704,7 @@ def count_tropical_realized_regions(
     prop1_bound = int(T * D)
     prop2_bound = int((T * D) ** H)
 
-    q, k, v = attn.project_qkv(
-        x_samples, cos_sin=cos_sin, kv_cache=None, apply_qk_norm=(cos_sin is not None)
-    )
+    q, k, v = attn.project_qkv(x_samples, cos_sin=cos_sin, kv_cache=None, apply_qk_norm=(cos_sin is not None))
     if attn.tropical_structured_support:
         q, k = attn._apply_structured_support(q, k)
     evt_shift = exact_expected_max(D) if attn.parameterization == "nsa" else None
@@ -734,9 +722,7 @@ def count_tropical_realized_regions(
     single_head_routes = last_compound[:, head_idx].detach().cpu().tolist()
     realized_single = len(set(int(r) for r in single_head_routes))
 
-    per_head_realized = [
-        len(set(int(r) for r in last_compound[:, h].detach().cpu().tolist())) for h in range(H)
-    ]
+    per_head_realized = [len(set(int(r) for r in last_compound[:, h].detach().cpu().tolist())) for h in range(H)]
     joint_tuples = [tuple(int(x) for x in row) for row in last_compound.detach().cpu().tolist()]
     realized_multi = len(set(joint_tuples))
 
@@ -776,9 +762,7 @@ def count_tropical_realized_regions(
         attn.c_k.weight,
         attn.c_v.weight,
     ]
-    total_qkv_params = max(
-        1, sum(int(p.numel()) for p in qkv_weights if isinstance(p, torch.Tensor))
-    )
+    total_qkv_params = max(1, sum(int(p.numel()) for p in qkv_weights if isinstance(p, torch.Tensor)))
 
     out: dict[str, Any] = {
         "n_samples": N,
@@ -816,4 +800,3 @@ def count_tropical_realized_regions(
         out["regions_per_param_relu_mlp"] = float(realized_mlp / mlp_params)
 
     return out
-

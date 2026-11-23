@@ -172,7 +172,9 @@ class SimplicialCausalSelfAttention(AttentionCore):
         with torch.no_grad():
             if bool(has_any_tri.any()) and num_tri > 1:
                 p_valid = alpha2[:, :, has_any_tri, :].clamp_min(1e-12)
-                ent = -(p_valid * torch.log(p_valid)).sum(dim=-1).mean() / float(torch.log(torch.tensor(float(num_tri))))
+                ent = -(p_valid * torch.log(p_valid)).sum(dim=-1).mean() / float(
+                    torch.log(torch.tensor(float(num_tri)))
+                )
                 tri_ent = float(ent.item())
             else:
                 tri_ent = 0.0
@@ -221,4 +223,3 @@ class SimplicialCausalSelfAttention(AttentionCore):
             y2 = weights @ y1_all
 
         return self.mix_1 * y1 + self.mix_2 * y2
-

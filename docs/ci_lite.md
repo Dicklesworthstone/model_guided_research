@@ -2,7 +2,7 @@
 
 The repository's DSR manifest runs lint, formatting, the locked type environment,
 fast and full tests, registry validation, CPU certificates, seven pipeline
-scenarios, the Lean axiom audit and an installed-wheel check. Invoke it from a
+scenarios, all 13 seeded demos, the Lean axiom audit and an installed-wheel check. Invoke it from a
 clean checkout on a host with Python 3.13, uv and the pinned Lean toolchain.
 
 ```bash

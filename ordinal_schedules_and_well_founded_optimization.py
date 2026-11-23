@@ -613,7 +613,9 @@ def main(argv: Sequence[str] = ()):
         print("=== Ordinal Scheduler vs. Cosine/Linear Baselines ===")
         print(f"runs={summ['runs']} steps={args.steps} dim={args.dim} seed={args.seed}")
         print(f"median MSE: ord={summ['median_ord']:.6f}  cos={summ['median_cos']:.6f}  lin={summ['median_lin']:.6f}")
-        print(f"comparison={summ['status']} finite={summ['finite_runs']}/{summ['runs']} minimum_20_runs={summ['enough_runs']}")
+        print(
+            f"comparison={summ['status']} finite={summ['finite_runs']}/{summ['runs']} minimum_20_runs={summ['enough_runs']}"
+        )
         print(f"per-run dominance (ord <= 0.95 * best(baselines)): {summ['dominance_count']}/{summ['runs']}")
         print(f"pass_median={summ['pass_median']}  pass_dominance={summ['pass_dominance']}  PASSED={summ['passed']}")
         print("\nExample replicate details (first run):")

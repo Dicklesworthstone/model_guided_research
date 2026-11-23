@@ -307,7 +307,9 @@ class TestOrdinalSchedules:
             cur_rank = sched.ordinal_rank_tuple()
             if sched.A == prev_a and sched.B == prev_b and sched.C > prev_c:
                 saw_patience_reset_on_record = True
-                require(sched.C == sched.P_init, f"step {step_idx}: C should reset to P_init={sched.P_init}, got {sched.C}")
+                require(
+                    sched.C == sched.P_init, f"step {step_idx}: C should reset to P_init={sched.P_init}, got {sched.C}"
+                )
             require(
                 cur_rank < prev_rank,
                 f"step {step_idx}: CNF rank must strictly decrease lexicographically: {prev_rank} -> {cur_rank}",
@@ -346,7 +348,6 @@ class TestOrdinalSchedules:
             torch.allclose(state_after["exp_avg_sq"], exp_avg_sq_before),
             "restart must preserve AdamW exp_avg_sq preconditioning",
         )
-
 
 
 class TestMatrixExponentialGauge:
@@ -2355,7 +2356,9 @@ class TestHossTorchParity:
         opt2 = HOSS([p2], lr=0.25, lanczos_rank=2, noise_scale=1.0, isotropic_noise_var=0.0, gradient_norm_clip=None)
         opt2.step(self._quadratic_closure(p2, H))
 
-        require(torch.equal(p1.detach(), p2.detach()), "isotropic_noise_var=0.0 must be 100% deterministic (zero jitter)")
+        require(
+            torch.equal(p1.detach(), p2.detach()), "isotropic_noise_var=0.0 must be 100% deterministic (zero jitter)"
+        )
 
         # Non-convex indefinite T with large negative eigenvalue must not explode when min_curvature is set
         T_indef = torch.diag(torch.tensor([-500.0, 2.0], dtype=torch.float32))
@@ -2363,7 +2366,9 @@ class TestHossTorchParity:
         C_clamped = _lyapunov_integral_from_eigh(T_indef, S_hat, 0.5, min_curvature=1e-6)
         require(bool(torch.isfinite(C_clamped).all()), "clamped Lyapunov integral must stay finite on indefinite T")
         eigvals = torch.linalg.eigvalsh(C_clamped)
-        require(float(eigvals.min()) >= -1e-12, f"clamped Lyapunov covariance must be PSD, min eig={float(eigvals.min())}")
+        require(
+            float(eigvals.min()) >= -1e-12, f"clamped Lyapunov covariance must be PSD, min eig={float(eigvals.min())}"
+        )
 
     def test_hoss_exact_reduction_to_sgd_at_zero_curvature(self):
         """jida.34: On a zero-curvature (linear) objective with min_curvature=0.0
@@ -2449,7 +2454,6 @@ class TestHossTorchParity:
             last_loss < first_loss * 0.8,
             f"HOSS failed to train tiny nanochat GPT: first_loss={first_loss:.4f}, last_loss={last_loss:.4f}",
         )
-
 
 
 class TestHyperbolicLorentz:
@@ -2711,7 +2715,10 @@ class TestTheoremRegistryNumericalChecks:
         require(abs(slope - s_moran) < 0.01, f"empirical capacity exponent {slope:.4f} != Moran s={s_moran:.4f}")
         # Kill witness: naive geometric-mean-radius exponent log(2)/log(1/sqrt(r1*r2)) = 2/3 != log2(phi)
         s_geom_naive = math.log(len(radii)) / math.log(1.0 / math.sqrt(radii[0] * radii[1]))
-        require(abs(slope - s_geom_naive) > 0.02, "kill witness: Moran exponent must separate from geometric-mean radius exponent")
+        require(
+            abs(slope - s_geom_naive) > 0.02,
+            "kill witness: Moran exponent must separate from geometric-mean radius exponent",
+        )
 
     def test_thm_cylinder_zero_interference(self):
         """thm-cylinder-zero-interference: writes restricted to disjoint address cylinders
@@ -2788,7 +2795,9 @@ class TestTheoremRegistryNumericalChecks:
         # Kill witness: adding a horizontal shortcut edge between leaves (0,0,0) and (2,2,2) breaks Gromov=LCP
         shortcut_dist = 1
         gromov_shortcut = 0.5 * (depth + depth - shortcut_dist)
-        require(gromov_shortcut != float(lcp_len(leaves[0], leaves[-1])), "kill witness: non-tree shortcut must break LCP")
+        require(
+            gromov_shortcut != float(lcp_len(leaves[0], leaves[-1])), "kill witness: non-tree shortcut must break LCP"
+        )
 
     def test_thm_hyperbolic_score_decomposition(self):
         """thm-hyperbolic-score-decomposition: -d_H(q, k) = 2(q|k)_o - d_H(q, o) - d_H(k, o)
@@ -2819,8 +2828,6 @@ class TestTheoremRegistryNumericalChecks:
         # Kill witness: omitting the radial specificity terms -d(q,o)-d(k,o) changes the score by > 1.0
         err_kill = float(jnp.max(jnp.abs(lhs - 2.0 * gromov_qk)))
         require(err_kill > 1.0, f"kill witness: radial terms must be non-negligible, got {err_kill:.2e}")
-
-
 
     def test_thm_newton_polytope_region_bound(self):
         """thm-newton-polytope-region-bound: linear regions of p(x) = max_i (a_i . x + c_i)
@@ -2912,6 +2919,7 @@ class TestTheoremRegistryNumericalChecks:
     def test_thm_ordinal_program_composition(self):
         """thm-ordinal-program-composition: sequential composition adds ordinal budgets
         and nested composition multiplies ordinal budgets, with non-commutativity witness."""
+
         # RepresentCNF ordinals sum_k omega^{e_k} * c_k in descending exponent order (e_k, c_k)
         def cnf_add(a: list[tuple[int, int]], b: list[tuple[int, int]]) -> list[tuple[int, int]]:
             if not b:
@@ -2940,4 +2948,3 @@ class TestTheoremRegistryNumericalChecks:
         inner = [(2, 1), (0, 3)]
         nested = cnf_mul_omega_pow(inner, 1)
         require(nested == [(3, 1)], f"nested ordinal rank must be omega^3, got {nested}")
-

@@ -109,9 +109,7 @@ class FractalCausalSelfAttention(AttentionCore):
             self.ifs_skew_params = nn.Parameter(
                 torch.zeros(self.m, self.head_dim, self.head_dim, device=device, dtype=torch.float32)
             )
-            self.ifs_translations = nn.Parameter(
-                torch.zeros(self.m, self.head_dim, device=device, dtype=dtype)
-            )
+            self.ifs_translations = nn.Parameter(torch.zeros(self.m, self.head_dim, device=device, dtype=dtype))
             self.ifs_prefix_weight = nn.Parameter(torch.tensor(1.0, device=device, dtype=torch.float32))
             self.ifs_gate = nn.Parameter(torch.tensor(1.0, device=device, dtype=torch.float32))
 
@@ -210,4 +208,3 @@ class FractalCausalSelfAttention(AttentionCore):
             }
 
         return out
-

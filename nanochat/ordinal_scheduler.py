@@ -214,4 +214,3 @@ class OrdinalLRScheduler:
         self.reset_mode = str(state.get("reset_mode", self.reset_mode))
         self.base_lrs = [float(b) for b in state["base_lrs"]]
         self._apply_lr()
-

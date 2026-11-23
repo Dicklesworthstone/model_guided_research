@@ -483,7 +483,7 @@ class HOSS:
             for i in range(d):
                 e = np.zeros_like(w_np)
                 e[i] = eps
-                g[i] = ( float(loss_fn(w_np + e)) - float(loss_fn(w_np - e)) ) / (2.0 * eps)
+                g[i] = (float(loss_fn(w_np + e)) - float(loss_fn(w_np - e))) / (2.0 * eps)
             return g
 
         g0 = fd_grad(x_arr)
@@ -502,7 +502,6 @@ class HOSS:
 
         w_next = shadow_step(grad_fn, hvp_fn, jnp.asarray(x_arr, dtype=jnp.float32), float(delta), rank)
         return np.asarray(w_next, dtype=float)
-
 
 
 # --- Minimal hyperreal API for tests ---

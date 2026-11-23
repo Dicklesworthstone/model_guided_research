@@ -30,6 +30,23 @@ for all 13 standalone mechanisms. Both registries and all 13 demo descriptions
 resolved outside the checkout. Governance operations require an explicit
 research checkout. [Installed CLI usage](../README.md)
 
+Both the bare and seeded demo commands completed all 13 demos on CPU. A
+deliberate failure in the second child returned exit 1 through DSR, with one
+success, one failure and eleven skips. For the ultrametric reference trie,
+geometric growth preserved all 960 comparison predictions. Full seeded Task A
+training took 523.226 s before the change and 26.333 s after it. The smaller
+warmed Task B comparison slowed from 3.60 s to 3.92 s. The ordinal seed-7 demo
+reported zero finite comparisons across five repetitions.
+
+On the original Linux golden host, the 12 attention models reproduced all
+600 historical losses bit-for-bit. Two config fields added since capture
+default to disabled. The fixture metadata now records those defaults, and the
+test still compares the entire config and all 50 losses for each model.
+
+| Standard-only sizing probe | Held-out exact match by training seed | Recorded prior | Decision |
+|---|---|---|---|
+| [Needle, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored on all three seeds. No examples exceeded the context window. The registered next rung uses 10 trillion FLOPs and four layers at width 128. |
+
 ## November 2026 assessment
 
 **Audited November 22 at `e6fcf5131543cb69bdecf70a51b5138efbb29e40`.** The project can train mathematical transformers, test their algebra, compare them with standard attention, and record a loss against a favored idea. The evidence does not yet say which replacement a user should choose on a new task. Two parts of the measurement system can produce apparent confirmation from information the protocol intended to exclude. Repairing those parts has higher scientific value than filling more cells with their current outputs.

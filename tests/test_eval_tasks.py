@@ -710,12 +710,18 @@ def test_route_controls_do_not_recover_labels_or_construct_a_margin_correlation(
     traces = []
     for i, doc in enumerate(docs):
         label, features = cli._extract_doc_latent_label_and_trace_features(spec, doc, {"decisions": [0]})
-        traces.append({
-            "decisions": [0], "latent_label": label, "trace_cluster_features": features,
-            "prompt_control_features": cli._route_prompt_control(spec, doc),
-            "attention_entropy_vector": [0.0], "min_margin": i,
-            "scored_draws": len(docs), "surviving_draws": i,
-        })
+        traces.append(
+            {
+                "decisions": [0],
+                "latent_label": label,
+                "trace_cluster_features": features,
+                "prompt_control_features": cli._route_prompt_control(spec, doc),
+                "attention_entropy_vector": [0.0],
+                "min_margin": i,
+                "scored_draws": len(docs),
+                "surviving_draws": i,
+            }
+        )
     store = {"schema_version": cli.ROUTE_STORE_SCHEMA_VERSION, "traces": traces, "meta": {"seed": 42}}
     results = cli.analyze_route_trace_store(store)["results"]
     cl = results["clustering"]
@@ -893,16 +899,50 @@ def test_routes_early_checkpoint_uses_saved_training_init_and_replays_parquet(tm
 
     dataset = tmp_path / "data"
     generate_task("hier", out_dir=dataset, size=96, seed=99)
-    train(build_parser().parse_args([
-        "--device", "cpu", "--tokenizer", "task", "--data-dir", str(dataset / "hier"),
-        "--attention-type", "tropical", "--batch-size", "2", "--sequence-len", "32",
-        "--n-layer", "1", "--n-head", "2", "--n-kv-head", "2", "--n-embd", "16",
-        "--max-steps", "6", "--warmup-steps", "0", "--seed", "11", "--run-id", "native-routes",
-        "--checkpoint-interval", "2", "--save-initial-weights", "--artifacts-dir", str(tmp_path),
-    ]))
+    train(
+        build_parser().parse_args(
+            [
+                "--device",
+                "cpu",
+                "--tokenizer",
+                "task",
+                "--data-dir",
+                str(dataset / "hier"),
+                "--attention-type",
+                "tropical",
+                "--batch-size",
+                "2",
+                "--sequence-len",
+                "32",
+                "--n-layer",
+                "1",
+                "--n-head",
+                "2",
+                "--n-kv-head",
+                "2",
+                "--n-embd",
+                "16",
+                "--max-steps",
+                "6",
+                "--warmup-steps",
+                "0",
+                "--seed",
+                "11",
+                "--run-id",
+                "native-routes",
+                "--checkpoint-interval",
+                "2",
+                "--save-initial-weights",
+                "--artifacts-dir",
+                str(tmp_path),
+            ]
+        )
+    )
     checkpoints = tmp_path / "baseline" / "nanochat" / "native-routes" / "checkpoints"
     assert sorted(p.name for p in checkpoints.glob("meta_*.json")) == [
-        "meta_000001.json", "meta_000003.json", "meta_000005.json",
+        "meta_000001.json",
+        "meta_000003.json",
+        "meta_000005.json",
     ]
 
     def digest(path):
@@ -911,16 +951,33 @@ def test_routes_early_checkpoint_uses_saved_training_init_and_replays_parquet(tm
 
     output = tmp_path / "early"
     runner = CliRunner()
-    result = runner.invoke(cli.app, [
-        "routes", "--checkpoint", str(checkpoints), "--step", "1", "--task", "hier",
-        "--sample", "4", "--seed", "42", "--no-region-count", "--out", str(output),
-    ])
+    result = runner.invoke(
+        cli.app,
+        [
+            "routes",
+            "--checkpoint",
+            str(checkpoints),
+            "--step",
+            "1",
+            "--task",
+            "hier",
+            "--sample",
+            "4",
+            "--seed",
+            "42",
+            "--no-region-count",
+            "--out",
+            str(output),
+        ],
+    )
     assert result.exit_code == 0, result.output
     summary = json.loads((output / "summary.json").read_text())
     assert summary["meta"]["training_seed"] == 11
     assert summary["meta"]["lineage"]["run_id"] == "native-routes"
     assert hmac.compare_digest(summary["meta"]["weights_sha256"], digest(checkpoints / "model_000001.pt"))
-    assert hmac.compare_digest(summary["meta"]["initial_weights_sha256"], digest(checkpoints / "initial" / "model_000000.pt"))
+    assert hmac.compare_digest(
+        summary["meta"]["initial_weights_sha256"], digest(checkpoints / "initial" / "model_000000.pt")
+    )
     assert [row["step"] for row in summary["results"]["reuse"]["checkpoint_curve"]] == [-1, 1]
     store = json.loads((output / "traces.json").read_text())
     stability = summary["results"]["stability"]
@@ -932,14 +989,14 @@ def test_routes_early_checkpoint_uses_saved_training_init_and_replays_parquet(tm
     assert (replay / "summary.json").read_bytes() == (output / "summary.json").read_bytes()
     assert (replay / "report.md").read_bytes() == (output / "report.md").read_bytes()
     # A store replay must enforce the same selected endpoint as extraction.
-    store["checkpoint_series"].append({
-        **store["checkpoint_series"][-1],
-        "step": 3,
-        "weights_sha256": digest(checkpoints / "model_000003.pt"),
-    })
+    store["checkpoint_series"].append(
+        {
+            **store["checkpoint_series"][-1],
+            "step": 3,
+            "weights_sha256": digest(checkpoints / "model_000003.pt"),
+        }
+    )
     future = tmp_path / "future.json"
     future.write_text(json.dumps(store))
     result = runner.invoke(cli.app, ["routes", "--from-store", str(future), "--out", str(tmp_path / "invalid")])
     assert result.exit_code != 0
-
-

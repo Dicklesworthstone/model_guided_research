@@ -12,6 +12,16 @@ tools:
       - JAX_PLATFORMS=cpu uv run --locked mgr certify --device cpu --dtype fp32 --seed 42 --artifacts-dir "$DSR_QUALITY_RUN_DIR/certificates"
       - uv run --locked python scripts/e2e_pipeline.py --scenario all --workdir "$DSR_QUALITY_RUN_DIR/e2e" --resume-kill-seed 1337 --keep
       - |
+        checkout="$PWD" &&
+        mkdir -p "$DSR_QUALITY_RUN_DIR/demos" &&
+        cd "$DSR_QUALITY_RUN_DIR/demos" &&
+        NO_COLOR=1 JAX_PLATFORMS=cpu MPLBACKEND=Agg uv run --locked --project "$checkout" mgr run-all --delay 0 --seed 7 > stdout.log 2> stderr.log &&
+        grep -Fx 'Successful: 13' stdout.log &&
+        grep -Fx 'Failed: 0' stdout.log &&
+        grep -Fx 'Attempted: 13' stdout.log &&
+        grep -Fx 'Skipped: 0' stdout.log &&
+        grep -Fx 'Total: 13' stdout.log
+      - |
         cd proofs && lake build &&
         lake env lean AxiomCheck.lean > "$DSR_QUALITY_RUN_DIR/axioms.txt" 2>&1 &&
         cat "$DSR_QUALITY_RUN_DIR/axioms.txt" &&
@@ -20,8 +30,9 @@ tools:
         ! grep -F sorryAx "$DSR_QUALITY_RUN_DIR/axioms.txt"
       - |
         uv build --wheel --out-dir "$DSR_QUALITY_RUN_DIR/dist" &&
+        uv export --locked --no-dev --no-emit-project --no-hashes --output-file "$DSR_QUALITY_RUN_DIR/wheel-runtime.txt" > /dev/null &&
         cd "$DSR_QUALITY_RUN_DIR" &&
-        uv run --isolated --no-project --python 3.13 --with "$PWD"/dist/*.whl python -I - <<'PY'
+        uv run --isolated --no-project --python 3.13 --with-requirements "$PWD/wheel-runtime.txt" --with "$PWD"/dist/*.whl python -I - <<'PY'
         from pathlib import Path
         import subprocess
         import sys

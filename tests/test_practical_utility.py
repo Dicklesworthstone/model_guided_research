@@ -688,7 +688,6 @@ class TestSimplicialComplexUtility:
         assert res.proposed_metric > res.baseline_metric
 
 
-
 class TestUltrametricUtility:
     """Test if ultrametric attention really scales better"""
 
@@ -780,7 +779,9 @@ class TestUltrametricUtility:
     def test_attention_complexity(self) -> None:
         res = self.evaluate()
         assert np.isfinite(res.proposed_metric) and np.isfinite(res.baseline_metric)
-        assert res.proposed_metric < 1.6, f"Expected sub-quadratic ultrametric scaling exponent, got {res.proposed_metric:.2f}"
+        assert res.proposed_metric < 1.6, (
+            f"Expected sub-quadratic ultrametric scaling exponent, got {res.proposed_metric:.2f}"
+        )
 
 
 class TestOctonionUtility:
@@ -1192,7 +1193,6 @@ class TestHyperrealUtility:
         assert res.proposed_metric < res.baseline_metric / 100.0
 
 
-
 def run_all_utility_tests():
     """Run all practical utility tests"""
     console.print(
@@ -1225,7 +1225,6 @@ def run_all_utility_tests():
         try:
             result = test_func()
             results.append(result)
-
 
             # Print result
             color = "green" if result.is_better else "red"

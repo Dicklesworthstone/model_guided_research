@@ -177,7 +177,11 @@ class Runner:
         try:
             proc = subprocess.run(
                 [sys.executable, str(REPO / "cli.py"), "doctor", "--json"],
-                capture_output=True, text=True, timeout=120, cwd=REPO, env=self._env(),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=REPO,
+                env=self._env(),
             )
             return proc.stdout[-1500:] or proc.stderr[-500:]
         except Exception as exc:  # noqa: BLE001 - probe is best-effort by design
@@ -809,19 +813,29 @@ def scenario_symplectic(work: Path) -> bool:
         ]
         r.assert_true(
             "energy-telemetry-present",
-            [rec["step"] for rec in recs] == list(range(24)) and all(rec["symplectic_layers_recorded"] == 8 for rec in recs),
-            f"{len(recs)}/24 training forwards, expected exactly eight layers in each"
+            [rec["step"] for rec in recs] == list(range(24))
+            and all(rec["symplectic_layers_recorded"] == 8 for rec in recs),
+            f"{len(recs)}/24 training forwards, expected exactly eight layers in each",
         )
         finite = all(
-            math.isfinite(rec[key]) for rec in recs
-            for key in ("symplectic_shadow_energy_mean", "symplectic_x_norm_mean", "symplectic_energy_band_layers",
-                        "symplectic_energy_min", "symplectic_energy_max", "symplectic_lambda_mean")
+            math.isfinite(rec[key])
+            for rec in recs
+            for key in (
+                "symplectic_shadow_energy_mean",
+                "symplectic_x_norm_mean",
+                "symplectic_energy_band_layers",
+                "symplectic_energy_min",
+                "symplectic_energy_max",
+                "symplectic_lambda_mean",
+            )
         )
         r.assert_true("energy-telemetry-finite", finite, "all shadow-energy/norm readings finite")
         # conservation-across-depth: the per-step across-layer band stays small
         # relative to the energy scale (loose: training moves the potentials
         # BETWEEN steps; the theorem speaks within each forward)
-        bands = [rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"])) for rec in recs]
+        bands = [
+            rec["symplectic_energy_band_layers"] / (1.0 + abs(rec["symplectic_shadow_energy_mean"])) for rec in recs
+        ]
         first_failure = next((rec["step"] for rec, band in zip(recs, bands, strict=True) if not band <= 0.10), None)
         worst = max(bands, default=math.inf)
         r.assert_true(

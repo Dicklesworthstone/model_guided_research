@@ -390,9 +390,7 @@ def test_train_variant_selector_resolves_dataset_task(tmp_path):
     v = _adj_score_cohort(_hyp(spec, mechanisms=["hyperbolic"]), _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["hyperbolic"]["n_candidate"] == 3  # the three placebo runs are not in the arm
-    pooled = _adj_score_cohort(
-        _hyp({**spec, "candidate_variant": None}, mechanisms=["hyperbolic"]), _index(tmp_path)
-    )
+    pooled = _adj_score_cohort(_hyp({**spec, "candidate_variant": None}, mechanisms=["hyperbolic"]), _index(tmp_path))
     assert pooled["arms"]["hyperbolic"]["n_candidate"] == 6  # without the selector they would pool
 
 
@@ -514,8 +512,19 @@ def test_lineage_dedupe_re_evals_never_double_count(tmp_path):
 def _commit_fixture_registration(registry, monkeypatch, provenance=None):
     def git(*args):
         return subprocess.check_output(
-            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-             "-c", "commit.gpgsign=false", "-C", str(registry.parent), *args], text=True
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-C",
+                str(registry.parent),
+                *args,
+            ],
+            text=True,
         ).strip()
 
     git("init", "-q")

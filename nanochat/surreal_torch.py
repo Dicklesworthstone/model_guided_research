@@ -72,9 +72,7 @@ class SurrealCausalSelfAttention(AttentionCore):
 
         if self.surreal_scaling_axis:
             self.beta_omega = nn.Parameter(torch.tensor(1.0))
-            self.scale_axis_vec = nn.Parameter(
-                torch.ones(self.n_head, self.head_dim) * (1.0 / (self.head_dim**0.5))
-            )
+            self.scale_axis_vec = nn.Parameter(torch.ones(self.n_head, self.head_dim) * (1.0 / (self.head_dim**0.5)))
         else:
             self.beta_omega = None
             self.scale_axis_vec = None
@@ -83,8 +81,7 @@ class SurrealCausalSelfAttention(AttentionCore):
         if self.beta_omega is None or self.scale_axis_vec is None:
             self.beta_omega = nn.Parameter(torch.tensor(1.0, device=device, dtype=torch.float32))
             self.scale_axis_vec = nn.Parameter(
-                torch.ones(self.n_head, self.head_dim, device=device, dtype=dtype)
-                * (1.0 / (self.head_dim**0.5))
+                torch.ones(self.n_head, self.head_dim, device=device, dtype=dtype) * (1.0 / (self.head_dim**0.5))
             )
 
     def collect_scale_summary(self) -> dict[str, Any]:
@@ -161,4 +158,3 @@ class SurrealCausalSelfAttention(AttentionCore):
             self.last_surreal_stats = stats
 
         return out
-

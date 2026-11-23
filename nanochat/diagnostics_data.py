@@ -1275,4 +1275,3 @@ def apply_embedding_perturbation(x, eps: float, generator) -> Any:
         return x
     delta = (torch.rand(x.shape, generator=generator, dtype=torch.float32, device=x.device) * 2.0 - 1.0) * eps
     return x + delta.to(x.dtype)
-

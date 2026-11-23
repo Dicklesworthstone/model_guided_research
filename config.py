@@ -429,9 +429,7 @@ def get_flag(name: str, default: Any = None) -> Any:
             return True
         if low in ("0", "false", "no", "off"):
             return False
-        raise ValueError(
-            f"Invalid value for boolean flag {name}={raw!r}: expected '0' or '1' (or true/false)"
-        )
+        raise ValueError(f"Invalid value for boolean flag {name}={raw!r}: expected '0' or '1' (or true/false)")
 
     if spec.type == "int":
         if s == "":
@@ -458,9 +456,7 @@ def get_flag(name: str, default: Any = None) -> Any:
             return fallback
         if spec.choices is not None and s not in spec.choices:
             choices_str = ", ".join(repr(c) for c in spec.choices)
-            raise ValueError(
-                f"Invalid value for enum flag {name}={raw!r}: expected one of ({choices_str})"
-            )
+            raise ValueError(f"Invalid value for enum flag {name}={raw!r}: expected one of ({choices_str})")
         return s
 
     if spec.type == "str":
@@ -533,4 +529,3 @@ def validate_demo_flags(demo: str | None = None) -> list[str]:
             get_flag(flag_name)
 
     return warning_messages
-

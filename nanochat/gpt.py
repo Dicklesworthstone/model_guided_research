@@ -354,7 +354,6 @@ class GPTConfig:
     init_from_profile: str | None = None
 
 
-
 class CausalSelfAttention(AttentionCore):
     # GQA is handled inside SDPA/flex via enable_gqa; no materialized repeat.
     gqa_via_repeat = False

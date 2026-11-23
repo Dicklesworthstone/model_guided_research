@@ -367,9 +367,16 @@ def test_registered_coordcheck_hypotheses_adjudicate_from_coord_curve_artifacts(
     def git(*args):
         return subprocess.check_output(
             [
-                "git", "-C", str(tmp_path),
-                "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-                "-c", "commit.gpgSign=false", *args,
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "-c",
+                "commit.gpgSign=false",
+                *args,
             ],
             text=True,
         ).strip()

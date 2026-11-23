@@ -611,7 +611,9 @@ def flags(
         )
 
     console.print(table)
-    console.print(f"\n[dim]{len(rows_data)} registered flag(s). Set via environment: e.g. ULTRA_PACKED=1 mgr run ultrametric[/dim]")
+    console.print(
+        f"\n[dim]{len(rows_data)} registered flag(s). Set via environment: e.g. ULTRA_PACKED=1 mgr run ultrametric[/dim]"
+    )
 
 
 @app.command()
@@ -12379,8 +12381,11 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         rm = data.get("meta") or {}
         scope = (data.get("mechanism"), rm.get("task"))
-        identities = [(scope, "seed", rm.get("training_seed")), (scope, "run", (rm.get("lineage") or {}).get("run_id")),
-                      (scope, "weights", rm.get("weights_sha256"))]
+        identities = [
+            (scope, "seed", rm.get("training_seed")),
+            (scope, "run", (rm.get("lineage") or {}).get("run_id")),
+            (scope, "weights", rm.get("weights_sha256")),
+        ]
         for identity in identities:
             route_parents.setdefault(identity, identity)
         for identity in identities[1:]:
@@ -12399,9 +12404,14 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if a["data"].get("schema_version") == ROUTE_BENCH_SCHEMA_VERSION:
                 # Re-probing a training seed at another analysis seed, device or step is a repeated measure.
                 # Prefer the latest selected checkpoint, then the lowest analysis seed, independently of outcome.
-                route_key = ("routes", root(((a["data"].get("mechanism"), meta.get("task")), "seed", meta.get("training_seed"))))
+                route_key = (
+                    "routes",
+                    root(((a["data"].get("mechanism"), meta.get("task")), "seed", meta.get("training_seed"))),
+                )
                 route_rank = (
-                    int(meta.get("checkpoint_step") or 0), -int(meta.get("seed") or 0), str(a["path"]),
+                    int(meta.get("checkpoint_step") or 0),
+                    -int(meta.get("seed") or 0),
+                    str(a["path"]),
                 )
                 previous = best.get(route_key)
                 if previous is None or route_rank > previous[0]:
@@ -12803,20 +12813,34 @@ def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) 
         counts = results.get("support_arm_bound_violations")
         curve = results.get("curve_by_T")
         lengths = (data.get("meta") or {}).get("seq_lengths") or []
-        if (type(results.get("total_bound_violations")) is not int or results["total_bound_violations"] != 0
-                or results.get("all_bruteforce_verified") is not True
-                or not isinstance(counts, dict) or set(counts) != {"dense", "structured"}
-                or any(type(n) is not int or n != 0 for n in counts.values())
-                or not isinstance(curve, dict) or not curve or set(curve) != {str(length) for length in lengths}
-                or any(not isinstance(row, dict) or type(row.get("bound_violations")) is not int
-                       or row["bound_violations"] != 0 or row.get("bruteforce_verified") is not True for row in curve.values())):
+        if (
+            type(results.get("total_bound_violations")) is not int
+            or results["total_bound_violations"] != 0
+            or results.get("all_bruteforce_verified") is not True
+            or not isinstance(counts, dict)
+            or set(counts) != {"dense", "structured"}
+            or any(type(n) is not int or n != 0 for n in counts.values())
+            or not isinstance(curve, dict)
+            or not curve
+            or set(curve) != {str(length) for length in lengths}
+            or any(
+                not isinstance(row, dict)
+                or type(row.get("bound_violations")) is not int
+                or row["bound_violations"] != 0
+                or row.get("bruteforce_verified") is not True
+                for row in curve.values()
+            )
+        ):
             return "region_bound_or_oracle_failure"
         if (data.get("meta") or {}).get("curve_weight_source") != "generated":
             # The registered structural comparison uses generated projection seeds.
             return "checkpoint_curve_requires_separate_cohort"
     if data.get("schema_version") in {
-        "mgr.bench.precision_curves.v1", "mgr.bench.depth_curves.v1", "mgr.bench.scaling_fit.v1",
-        "mgr.bench.routes.v1", "mgr.bench.tropical_regions.v1",
+        "mgr.bench.precision_curves.v1",
+        "mgr.bench.depth_curves.v1",
+        "mgr.bench.scaling_fit.v1",
+        "mgr.bench.routes.v1",
+        "mgr.bench.tropical_regions.v1",
     }:
         # A freshly computed statistic cannot establish when its inputs were produced.
         return "missing_input_lineage"
@@ -12843,10 +12867,12 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
         entry = None
     if future or not entry or entry[0] != _adj_definition(hyp) or not root or not head:
         return {
-            "id": hyp.get("id"), "verdict": "blocked",
+            "id": hyp.get("id"),
+            "verdict": "blocked",
             "reason_code": "registration_in_future" if future else "registration_unverified",
             "reason": "A prospective verdict requires this exact operational definition in committed registry history.",
-            "registration_commit": None, "excluded_evidence": [],
+            "registration_commit": None,
+            "excluded_evidence": [],
         }
     anchor = entry[1]
     schema, _, metric = str(pred.get("metric_path", "")).partition(":")
@@ -12934,9 +12960,7 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
     for mech in hyp.get("mechanisms") or []:
         eff_base_mech = mech if baseline_mech == "same" else baseline_mech
         cand_all = [a for a in pool if _adj_artifact_matches_arm(a, mech, cand_variant)]
-        base_all = (
-            [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, eff_base_mech, base_variant)]
-        )
+        base_all = [] if single_arm else [a for a in pool if _adj_artifact_matches_arm(a, eff_base_mech, base_variant)]
         saw_tainted = saw_tainted or any(a["tainted"] for a in cand_all + base_all)
         cand = _adj_dedupe_evaltasks([a for a in cand_all if not a["tainted"]])
         base = _adj_dedupe_evaltasks([a for a in base_all if not a["tainted"]])
@@ -14734,9 +14758,7 @@ def extract_route_trace(
         for layer_idx, block in enumerate(blocks):
             attn = getattr(block, "attn", None)
             layer_mech = (
-                _detect_module_mechanism(attn, cfg_attn_type)
-                if mechanism == "auto"
-                else str(mechanism).strip().lower()
+                _detect_module_mechanism(attn, cfg_attn_type) if mechanism == "auto" else str(mechanism).strip().lower()
             )
             trace_spec = ROUTE_MECHANISM_TRACEABILITY.get(
                 layer_mech,
@@ -14845,18 +14867,11 @@ def extract_route_trace(
                         # Canonical per-head discrete program signature over the tail query window
                         tail_w = min(4, T)
                         tail_margins = [
-                            float(min(float(gam[h][p]), float(s_mar[h][p])))
-                            for p in range(max(1, T - tail_w), T)
+                            float(min(float(gam[h][p]), float(s_mar[h][p]))) for p in range(max(1, T - tail_w), T)
                         ]
-                        mean_tail_margin = (
-                            sum(tail_margins) / len(tail_margins) if tail_margins else 0.0
-                        )
+                        mean_tail_margin = sum(tail_margins) / len(tail_margins) if tail_margins else 0.0
                         c_proj_w = getattr(getattr(attn, "c_proj", None), "weight", None)
-                        c_proj_norm = (
-                            float(c_proj_w.norm().item())
-                            if isinstance(c_proj_w, torch.Tensor)
-                            else 0.0
-                        )
+                        c_proj_norm = float(c_proj_w.norm().item()) if isinstance(c_proj_w, torch.Tensor) else 0.0
                         prog_sig = head_seq[-tail_w:]
                         head_programs.append(
                             {
@@ -14895,9 +14910,9 @@ def extract_route_trace(
                     # First mismatch index along K
                     any_mismatch = neq.any(dim=-1)
                     first_mis = torch.argmax(neq, dim=-1)
-                    lcp_depth = torch.where(
-                        any_mismatch, first_mis, torch.full_like(first_mis, K_digits)
-                    ).to(torch.float32)
+                    lcp_depth = torch.where(any_mismatch, first_mis, torch.full_like(first_mis, K_digits)).to(
+                        torch.float32
+                    )
                     # Causal mask (exclude self j == t when t >= 1 so routing reflects predecessor trie lookup)
                     c_mask = torch.tril(torch.ones((T, T), device=device, dtype=torch.bool))
                     if T >= 2:
@@ -15244,9 +15259,7 @@ def _deterministic_kmedoids_cosine_or_l2(
         for c in range(k):
             members = [features[i] for i in range(n) if assign[i] == c]
             if members:
-                centers[c] = [
-                    sum(m[d] for m in members) / len(members) for d in range(dim)
-                ]
+                centers[c] = [sum(m[d] for m in members) / len(members) for d in range(dim)]
     return assign
 
 
@@ -15310,16 +15323,23 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
     if checkpoint_series:
         steps = [entry.get("step") for entry in checkpoint_series]
         selected = meta.get("checkpoint_step")
-        if (type(selected) is not int or any(type(s) is not int or s < -1 or s > selected for s in steps)
-                or steps != sorted(set(steps)) or steps[-1] != selected):
+        if (
+            type(selected) is not int
+            or any(type(s) is not int or s < -1 or s > selected for s in steps)
+            or steps != sorted(set(steps))
+            or steps[-1] != selected
+        ):
             raise ValueError("Checkpoint series must end at the selected step in strictly increasing order.")
         if checkpoint_series[-1].get("traces") != traces:
             raise ValueError("Selected checkpoint series and primary route traces disagree.")
         for entry in checkpoint_series:
             digest = entry.get("weights_sha256")
-            if (entry.get("lineage") != meta.get("lineage") or not re.fullmatch(r"[0-9a-f]{64}", str(digest))
-                    or (entry["step"] == -1 and digest != meta.get("initial_weights_sha256"))
-                    or (entry["step"] == selected and digest != meta.get("weights_sha256"))):
+            if (
+                entry.get("lineage") != meta.get("lineage")
+                or not re.fullmatch(r"[0-9a-f]{64}", str(digest))
+                or (entry["step"] == -1 and digest != meta.get("initial_weights_sha256"))
+                or (entry["step"] == selected and digest != meta.get("weights_sha256"))
+            ):
                 raise ValueError("Checkpoint series contains an unbound model or a different training lineage.")
 
     # (1) Route reuse & checkpoint consolidation curve
@@ -15371,12 +15391,15 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
 
     margin_stability_rho = (
         _spearman_rank_corr(margins_list, stabilities_list)
-        if len(set(margins_list)) > 1 and len(set(stabilities_list)) > 1 else None
+        if len(set(margins_list)) > 1 and len(set(stabilities_list)) > 1
+        else None
     )
 
     # (3) Unsupervised clustering: discrete trace features vs attention-entropy baseline
     paired_traces = [
-        tr for tr in traces if tr.get("decisions") and tr.get("attention_entropy_vector") and tr.get("latent_label") is not None
+        tr
+        for tr in traces
+        if tr.get("decisions") and tr.get("attention_entropy_vector") and tr.get("latent_label") is not None
     ]
     latent_labels = [tr["latent_label"] for tr in paired_traces]
     unique_labels = sorted({str(lbl) for lbl in latent_labels})
@@ -15404,12 +15427,8 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
                 out_m[r][c] = (mat[r][c] - mu) / sd
         return out_m
 
-    trace_clusters = _deterministic_kmedoids_cosine_or_l2(
-        _standardize(trace_features), n_clusters, seed=seed
-    )
-    entropy_clusters = _deterministic_kmedoids_cosine_or_l2(
-        _standardize(entropy_features), n_clusters, seed=seed
-    )
+    trace_clusters = _deterministic_kmedoids_cosine_or_l2(_standardize(trace_features), n_clusters, seed=seed)
+    entropy_clusters = _deterministic_kmedoids_cosine_or_l2(_standardize(entropy_features), n_clusters, seed=seed)
     informative = 1 < n_clusters < len(paired_traces)
     ari_trace = compute_adjusted_rand_index(latent_labels, trace_clusters) if informative else None
     ari_entropy = compute_adjusted_rand_index(latent_labels, entropy_clusters) if informative else None
@@ -15448,14 +15467,10 @@ def analyze_route_trace_store(store_payload: dict[str, Any]) -> dict[str, Any]:
                 float(sum(stabilities_list) / len(stabilities_list)) if stabilities_list else None
             ),
             "mean_edit_distance_default_eps": (
-                float(sum(edit_distances_default) / len(edit_distances_default))
-                if edit_distances_default
-                else None
+                float(sum(edit_distances_default) / len(edit_distances_default)) if edit_distances_default else None
             ),
             "mean_paraphrase_stability": (
-                float(sum(paraphrase_stabilities) / len(paraphrase_stabilities))
-                if paraphrase_stabilities
-                else None
+                float(sum(paraphrase_stabilities) / len(paraphrase_stabilities)) if paraphrase_stabilities else None
             ),
             "n_scored": len(margins_list),
             "n_excluded": len(traces) - len(margins_list),
@@ -15500,7 +15515,8 @@ def _route_decision_features(decisions: list[int]) -> list[float]:
     counts = Counter(decisions)
     n = len(decisions)
     return [
-        statistics.mean(decisions), statistics.pstdev(decisions),
+        statistics.mean(decisions),
+        statistics.pstdev(decisions),
         sum((count / n) ** 2 for count in counts.values()),
         sum(a != b for a, b in zip(decisions, decisions[1:], strict=False)) / max(1, n - 1),
     ]
@@ -15659,31 +15675,15 @@ def run_tropical_region_count_protocol(
                 w_t = mod_proj.weight
                 if isinstance(w_t, torch.Tensor):
                     # Shared head template + small per-head perturbation + log-normal row-norm dispersion
-                    shared_head = torch.randn(
-                        (1, head_dim, d_model), generator=gen_w, device=device
-                    )
-                    head_noise = (
-                        torch.randn(
-                            (n_head, head_dim, d_model), generator=gen_w, device=device
-                        )
-                        * 0.15
-                    )
+                    shared_head = torch.randn((1, head_dim, d_model), generator=gen_w, device=device)
+                    head_noise = torch.randn((n_head, head_dim, d_model), generator=gen_w, device=device) * 0.15
                     raw_w = shared_head + head_noise
-                    row_mult = torch.exp(
-                        torch.randn((1, head_dim, 1), generator=gen_w, device=device) * 0.95
-                    )
+                    row_mult = torch.exp(torch.randn((1, head_dim, 1), generator=gen_w, device=device) * 0.95)
                     w_t.copy_((raw_w * row_mult * 0.5).reshape_as(w_t))
             v_w = base_attn.c_v.weight
             if isinstance(v_w, torch.Tensor):
-                shared_v = torch.randn(
-                    (1, head_dim, d_model), generator=gen_w, device=device
-                )
-                noise_v = (
-                    torch.randn(
-                        (n_head, head_dim, d_model), generator=gen_w, device=device
-                    )
-                    * 0.15
-                )
+                shared_v = torch.randn((1, head_dim, d_model), generator=gen_w, device=device)
+                noise_v = torch.randn((n_head, head_dim, d_model), generator=gen_w, device=device) * 0.15
                 v_t.copy_((shared_v + noise_v).reshape_as(v_w) * 0.5) if (v_t := v_w) is not None else None
 
     # Parameter-matched ReLU MLP: single-head tropical attention has 3 * d_model * head_dim params.
@@ -15781,7 +15781,9 @@ def run_tropical_region_count_protocol(
     dense_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
     probe_attn.tropical_structured_support = True
     struct_probe = count_tropical_realized_regions(probe_attn, x_probe, cos_sin=None)
-    arm_violations = {name: int(arm["bound_violations"]) for name, arm in (("dense", dense_probe), ("structured", struct_probe))}
+    arm_violations = {
+        name: int(arm["bound_violations"]) for name, arm in (("dense", dense_probe), ("structured", struct_probe))
+    }
     total_bound_violations += sum(arm_violations.values())
     all_bf_ok = all_bf_ok and all(arm["bruteforce_verified"] for arm in (dense_probe, struct_probe))
 
@@ -15911,13 +15913,19 @@ def routes_command(
         typer.Option("--checkpoint", help="Checkpoint directory (rz8.1 layout); omit when using --from-store"),
     ] = None,
     step: Annotated[int | None, typer.Option("--step", help="Checkpoint step (default: latest in directory)")] = None,
-    task: Annotated[str, typer.Option("--task", "-t", help="Diagnostic task name (from nanochat.diagnostics_data)")] = "hier",
+    task: Annotated[
+        str, typer.Option("--task", "-t", help="Diagnostic task name (from nanochat.diagnostics_data)")
+    ] = "hier",
     mechanism: Annotated[
         str,
-        typer.Option("--mechanism", "-m", help="Mechanism backend (auto | tropical | ultrametric | braid | fractal | mom)"),
+        typer.Option(
+            "--mechanism", "-m", help="Mechanism backend (auto | tropical | ultrametric | braid | fractal | mom)"
+        ),
     ] = "auto",
     sample: Annotated[int, typer.Option("--sample", "-n", min=1, help="Number of task inputs to trace")] = 32,
-    seed: Annotated[int, typer.Option("--seed", "-s", help="Deterministic seed for sampling and perturbation probe")] = 42,
+    seed: Annotated[
+        int, typer.Option("--seed", "-s", help="Deterministic seed for sampling and perturbation probe")
+    ] = 42,
     device_str: Annotated[str, typer.Option("--device", help="cpu | cuda")] = "cpu",
     out: Annotated[Path, typer.Option("--out", help="Output directory for trace store and analysis report")] = Path(
         "artifacts/routes/latest"
@@ -16016,12 +16024,8 @@ def routes_command(
     # Extract traces + stability under vdc.1 perturbation probe
     traces_list: list[dict[str, Any]] = []
     for doc_idx, doc, t_ids in encoded_docs:
-        base_trace = extract_route_trace(
-            model, t_ids, mechanism=mechanism, verify_bruteforce=True
-        )
-        latent_label, cluster_feats = _extract_doc_latent_label_and_trace_features(
-            spec, doc, base_trace
-        )
+        base_trace = extract_route_trace(model, t_ids, mechanism=mechanism, verify_bruteforce=True)
+        latent_label, cluster_feats = _extract_doc_latent_label_and_trace_features(spec, doc, base_trace)
         base_decs = list(base_trace.get("decisions") or [])
         min_m = base_trace.get("min_margin")
 
@@ -16057,9 +16061,7 @@ def routes_command(
                         shift = abs(float(pert_min_m) - float(min_m)) / max(eps_val, 1e-6)
                         emp_lipschitz_shifts.append(max(shift, 0.1))
 
-        mean_ed_default = (
-            sum(edit_dists_default) / len(edit_dists_default) if edit_dists_default else None
-        )
+        mean_ed_default = sum(edit_dists_default) / len(edit_dists_default) if edit_dists_default else None
         pert_stability = surviving_draws / scored_draws if scored_draws else None
         if isinstance(min_m, int | float) and emp_lipschitz_shifts:
             base_trace["margin_sensitivity_control"] = min_m / (
@@ -16072,9 +16074,7 @@ def routes_command(
         para_stab = None
         if base_decs and len(para_ids) == t_ids.size(1) and para_ids != t_ids[0].tolist():
             para_tensor = torch.tensor([para_ids], dtype=torch.long, device=device)
-            para_trace = extract_route_trace(
-                model, para_tensor, mechanism=mechanism, verify_bruteforce=False
-            )
+            para_trace = extract_route_trace(model, para_tensor, mechanism=mechanism, verify_bruteforce=False)
             para_decs = list(para_trace.get("decisions") or [])
             if para_decs:
                 matched, total = _route_agreement(base_decs, para_decs)
@@ -16094,9 +16094,7 @@ def routes_command(
     # Training labels step 0 AFTER its first update. A pristine init is a distinct snapshot.
     checkpoint_series: list[dict[str, Any]] = []
     avail_steps = sorted(
-        int(p.stem.split("_")[-1])
-        for p in Path(checkpoint).glob("meta_*.json")
-        if p.stem.split("_")[-1].isdigit()
+        int(p.stem.split("_")[-1]) for p in Path(checkpoint).glob("meta_*.json") if p.stem.split("_")[-1].isdigit()
     )
     cfg_dict = dict(ckpt_meta.get("model_config") or {})
     with (checkpoint / f"model_{resolved_step:06d}.pt").open("rb") as weights:
@@ -16116,11 +16114,20 @@ def routes_command(
             extract_route_trace(init_model, t_ids, mechanism=mechanism, verify_bruteforce=False)
             for _, _, t_ids in encoded_docs
         ]
-        checkpoint_series.append({"step": -1, "weights_sha256": initial_digest, "lineage": init_meta["lineage"], "traces": init_traces})
+        checkpoint_series.append(
+            {"step": -1, "weights_sha256": initial_digest, "lineage": init_meta["lineage"], "traces": init_traces}
+        )
 
     for st_val in avail_steps:
         if st_val == resolved_step:
-            checkpoint_series.append({"step": int(st_val), "weights_sha256": selected_digest, "lineage": ckpt_meta.get("lineage"), "traces": traces_list})
+            checkpoint_series.append(
+                {
+                    "step": int(st_val),
+                    "weights_sha256": selected_digest,
+                    "lineage": ckpt_meta.get("lineage"),
+                    "traces": traces_list,
+                }
+            )
         elif st_val < resolved_step:
             st_model, st_meta, _ = _load_eval_checkpoint(checkpoint, int(st_val), device)
             if st_meta.get("lineage") != ckpt_meta.get("lineage"):
@@ -16131,7 +16138,14 @@ def routes_command(
             ]
             with (checkpoint / f"model_{st_val:06d}.pt").open("rb") as weights:
                 st_digest = hashlib.file_digest(weights, "sha256").hexdigest()
-            checkpoint_series.append({"step": int(st_val), "weights_sha256": st_digest, "lineage": st_meta.get("lineage"), "traces": st_traces})
+            checkpoint_series.append(
+                {
+                    "step": int(st_val),
+                    "weights_sha256": st_digest,
+                    "lineage": st_meta.get("lineage"),
+                    "traces": st_traces,
+                }
+            )
 
     resolved_mech = traces_list[0]["mechanism"] if traces_list else str(cfg_dict.get("attention_type", "standard"))
     region_payload: dict[str, Any] | None = None
@@ -16235,7 +16249,10 @@ def routes_command(
     tbl = Table(title=f"Route Observatory — {resolved_mech} on {task} (step {resolved_step})", box=box.ROUNDED)
     tbl.add_column("Metric", style="bold cyan")
     tbl.add_column("Value", style="white")
-    tbl.add_row("Traceable / Skipped layers", f"{traces_list[0]['traceable_layers']} / {traces_list[0]['skipped_layers']}" if traces_list else "0 / 0")
+    tbl.add_row(
+        "Traceable / Skipped layers",
+        f"{traces_list[0]['traceable_layers']} / {traces_list[0]['skipped_layers']}" if traces_list else "0 / 0",
+    )
     tbl.add_row("Brute-force cross-check", str(res["bruteforce_verified"]))
     tbl.add_row(
         "Route entropy (first -> last)",

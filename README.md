@@ -1284,8 +1284,8 @@ class CustomTropicalBlock(nn.Module):
         self.attn = TropicalCausalSelfAttention.from_dims(
             n_embd=n_embd,
             n_head=n_head,
-            semiring_beta=2.0,          # Maslov dequantization inverse temperature (None = hard max-plus)
-            tropical_gauge_fix=True,    # Enforce 1-Lipschitz row-max normalization + post-c_proj centering
+            semiring_beta=2.0,  # Maslov dequantization inverse temperature (None = hard max-plus)
+            tropical_gauge_fix=True,  # Enforce 1-Lipschitz row-max normalization + post-c_proj centering
         )
         self.ffn = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd, bias=False),
@@ -1294,7 +1294,7 @@ class CustomTropicalBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(norm(x))      # cos_sin and kv_cache are optional for standalone use
+        x = x + self.attn(norm(x))  # cos_sin and kv_cache are optional for standalone use
         x = x + self.ffn(norm(x))
         return x
 

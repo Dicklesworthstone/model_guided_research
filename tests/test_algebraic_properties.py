@@ -1119,4 +1119,3 @@ def test_surreal_scaling_axis_reduction_valuation_dominance_and_placebo():
         attn.surreal_freeze_scale = True
         out_frozen = attn.attend(q, k, v, kv_cache=None, pos0=None)
         assert float((out_frozen - ref).abs().max()) < 2e-5
-

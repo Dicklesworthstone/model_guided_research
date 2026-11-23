@@ -171,6 +171,8 @@ class MetricsStream:
         self._json = json_mod
         self._flush_every = max(1, int(flush_every))
         self._buffer: list[str] = []
+        header = {"type": "resume_header" if append else "header", **provenance}
+        header_line = self._json.dumps(header, sort_keys=True) + "\n"
         if append and resume_from_step is not None and os_mod.path.exists(path):
             # If the prior process flushed records past the last saved checkpoint
             # before dying (e.g. SIGKILL mid-step), trim any step/val record with
@@ -189,7 +191,11 @@ class MetricsStream:
                         trimmed = True
                         continue
                     rec_step = rec_obj.get("step") if isinstance(rec_obj, dict) else None
-                    if isinstance(rec_step, int) and not isinstance(rec_step, bool) and rec_step >= int(resume_from_step):
+                    if (
+                        isinstance(rec_step, int)
+                        and not isinstance(rec_step, bool)
+                        and rec_step >= int(resume_from_step)
+                    ):
                         trimmed = True
                         continue
                     kept_lines.append(raw_line)
@@ -201,9 +207,12 @@ class MetricsStream:
                 pass
         mode = "a" if append else "w"
         self._fh = open(path, mode, encoding="utf-8")  # noqa: SIM115 - lifetime managed by close()
-        header = {"type": "resume_header" if append else "header", **provenance}
-        self._fh.write(self._json.dumps(header, sort_keys=True) + "\n")
-        self._fh.flush()
+        try:
+            self._fh.write(header_line)
+            self._fh.flush()
+        except BaseException:
+            self._fh.close()
+            raise
 
     def write(self, record: dict[str, Any]) -> None:
         self._buffer.append(self._json.dumps(record, sort_keys=True))
@@ -220,8 +229,10 @@ class MetricsStream:
 
     def close(self) -> None:
         if not self._fh.closed:
-            self.flush()
-            self._fh.close()
+            try:
+                self.flush()
+            finally:
+                self._fh.close()
 
 
 def read_metrics_jsonl(path: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[str]]:

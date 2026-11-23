@@ -633,11 +633,7 @@ def _collect_surreal_stats(model: torch.nn.Module) -> dict[str, Any] | None:
             hists.append([float(x) for x in hist])
     if not stds and not hists:
         return None
-    mean_hist = (
-        [sum(col) / len(col) for col in zip(*hists, strict=True)]
-        if hists
-        else [0.0, 0.0, 0.0, 0.0, 0.0]
-    )
+    mean_hist = [sum(col) / len(col) for col in zip(*hists, strict=True)] if hists else [0.0, 0.0, 0.0, 0.0, 0.0]
     return {
         "scale_std": sum(stds) / len(stds) if stds else 0.0,
         "scale_histogram": mean_hist,
@@ -821,9 +817,7 @@ def _collect_certify_telemetry(
                     if isinstance(to_ang_w, torch.Tensor):
                         res += float(to_ang_w.detach().float().norm().item() / math.sqrt(max(1, wf.size(1))))
                     ortho_residuals.append(res)
-            certs["orthogonality_residual"] = (
-                sum(ortho_residuals) / len(ortho_residuals) if ortho_residuals else 0.0
-            )
+            certs["orthogonality_residual"] = sum(ortho_residuals) / len(ortho_residuals) if ortho_residuals else 0.0
 
             if "reversible" in attention_schedule:
                 rt_errs: list[float] = []
@@ -2182,9 +2176,18 @@ def train(args) -> None:
     if getattr(args, "save_initial_weights", False) and resume_meta is None and ddp_rank == 0:
         initial_dir = Path(checkpoint_dir) / "initial"
         save_checkpoint(
-            str(initial_dir), 0, raw_model.state_dict(), None,
-            {"step": 0, "batches_consumed": 0, "model_config": asdict(config), "model_type": model_type,
-             "seed": int(args.seed), "lineage": {"run_id": resolved_run_id, "parent_run_ids": []}},
+            str(initial_dir),
+            0,
+            raw_model.state_dict(),
+            None,
+            {
+                "step": 0,
+                "batches_consumed": 0,
+                "model_config": asdict(config),
+                "model_type": model_type,
+                "seed": int(args.seed),
+                "lineage": {"run_id": resolved_run_id, "parent_run_ids": []},
+            },
         )
         with (initial_dir / "model_000000.pt").open("rb") as weights:
             initial_weights_sha256 = hashlib.file_digest(weights, "sha256").hexdigest()
@@ -2273,13 +2276,12 @@ def train(args) -> None:
     if certify_interval > 0 and isinstance(raw_model, GPT):
         probe_T = min(8, int(config.sequence_len))
         probe_gen = torch.Generator(device="cpu").manual_seed(int(args.seed) + 7919)
-        cert_x_probe = torch.randn(
+        cert_x_probe = torch.randn((2, probe_T, int(config.n_embd)), generator=probe_gen, dtype=torch.float32).to(
+            device=device
+        )
+        cert_x_probe_delta = 1e-3 * torch.randn(
             (2, probe_T, int(config.n_embd)), generator=probe_gen, dtype=torch.float32
         ).to(device=device)
-        cert_x_probe_delta = (
-            1e-3
-            * torch.randn((2, probe_T, int(config.n_embd)), generator=probe_gen, dtype=torch.float32).to(device=device)
-        )
         cert_cos_sin_probe = (raw_model.cos[:, :probe_T], raw_model.sin[:, :probe_T])
         if resume_train_state is not None:
             saved_ch = resume_train_state.get("cert_history")
@@ -2460,7 +2462,9 @@ def train(args) -> None:
     symplectic_energy_first: float | None = None
     from nanochat.reversible_block_torch import ReversibleBlock
 
-    energy_modules = [module for module in raw_model.modules() if isinstance(module, ReversibleBlock) and module.record_energy]
+    energy_modules = [
+        module for module in raw_model.modules() if isinstance(module, ReversibleBlock) and module.record_energy
+    ]
     sym_stats: dict[str, Any] | None = None
 
     def training_loss(inputs, targets):
@@ -2473,6 +2477,7 @@ def train(args) -> None:
         if energy_modules:
             sym_stats = _collect_symplectic_energy_stats(raw_model)
         return loss
+
     symplectic_energy_last: float | None = None
     symplectic_x_norm_last: float | None = None
     # Live semiring beta at the most recent step (bead y2h9): recorded into
@@ -2759,9 +2764,7 @@ def train(args) -> None:
                 and cert_x_probe_delta is not None
                 and cert_cos_sin_probe is not None
             )
-            should_log_step = (
-                step % args.log_interval == 0 or step == max_steps - 1 or should_certify_step
-            )
+            should_log_step = step % args.log_interval == 0 or step == max_steps - 1 or should_certify_step
 
             if ddp_rank == 0 and should_log_step:
                 dt = step_t1 - last_log_time
@@ -2963,7 +2966,12 @@ def train(args) -> None:
                             record["surreal_scale_std"] = sur_stats["scale_std"]
                             record["surreal_scale_histogram"] = sur_stats["scale_histogram"]
                             record["surreal_valuation_gap"] = sur_stats["valuation_gap"]
-                    if should_certify_step and cert_x_probe is not None and cert_x_probe_delta is not None and cert_cos_sin_probe is not None:
+                    if (
+                        should_certify_step
+                        and cert_x_probe is not None
+                        and cert_x_probe_delta is not None
+                        and cert_cos_sin_probe is not None
+                    ):
                         certs_reading = _collect_certify_telemetry(
                             raw_model,
                             cert_x_probe,
@@ -2991,8 +2999,7 @@ def train(args) -> None:
                                 from rich.panel import Panel
 
                                 drift_summary = ", ".join(
-                                    f"{k}={certs_reading[k]:.4g} (init={cert_history[k][0]:.4g})"
-                                    for k in drifted_keys
+                                    f"{k}={certs_reading[k]:.4g} (init={cert_history[k][0]:.4g})" for k in drifted_keys
                                 )
                                 border = "red" if certify_action == "halt" else "yellow"
                                 action_label = "HALT" if certify_action == "halt" else "WARN"
@@ -4097,7 +4104,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # Checkpoint/resume (bead rz8.1).
     parser.add_argument(
-        "--save-initial-weights", action="store_true",
+        "--save-initial-weights",
+        action="store_true",
         help="Save the actual pre-update model under checkpoints/initial and bind its digest to training checkpoints.",
     )
     parser.add_argument(

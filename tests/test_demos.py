@@ -75,7 +75,8 @@ def test_aggregate_demo_failure_and_isolation(tmp_path, policy, executed, succes
     # Exercise real interpreters, the public commands, and their exit codes
     # with a small catalogue covering success, an exception, and a missing entry.
     launcher = tmp_path / "fixture_cli.py"
-    launcher.write_text(dedent("""\
+    launcher.write_text(
+        dedent("""\
         import json
         import os
         import random
@@ -104,19 +105,31 @@ def test_aggregate_demo_failure_and_isolation(tmp_path, policy, executed, succes
         }
         cli.__file__ = __file__
         cli.app()
-        """), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
     env = os.environ.copy()
     env.pop("MGR_TEST_PRIOR_DEMO", None)
     env["PYTHONPATH"] = str(Path(cli.__file__).resolve().parent)
     result = subprocess.run(
         [sys.executable, str(launcher), "run-all", "--seed", "7", "--delay", "0", policy],
-        cwd=tmp_path, env=env, text=True, capture_output=True, check=False, timeout=120,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=120,
     )
     require(result.returncode == 1, result.stdout + result.stderr)
     require("deliberate demo failure" in result.stdout, result.stdout)
     require("fixture writes to stderr" in result.stderr, result.stderr)
-    for label, value in {"Successful": successful, "Failed": failed, "Attempted": 4 - skipped,
-                         "Skipped": skipped, "Total": 4}.items():
+    for label, value in {
+        "Successful": successful,
+        "Failed": failed,
+        "Attempted": 4 - skipped,
+        "Skipped": skipped,
+        "Total": 4,
+    }.items():
         require(f"{label}: {value}" in result.stdout.splitlines(), result.stdout)
     missing_reported = "has no demo function 'missing'" in result.stdout
     require(missing_reported == (policy == "--skip-errors"), result.stdout)
@@ -2079,7 +2092,9 @@ def test_github_workflows_are_valid_yaml():
             for step in steps:
                 assert isinstance(step, dict), f"{wf.name}:{job_name} step is not a mapping"
                 if "name" in step:
-                    assert isinstance(step["name"], str) and bool(step["name"].strip()), f"{wf.name}:{job_name} invalid step name"
+                    assert isinstance(step["name"], str) and bool(step["name"].strip()), (
+                        f"{wf.name}:{job_name} invalid step name"
+                    )
 
 
 def test_demo_flag_registry_has_all_29_flags_and_defaults(monkeypatch):
@@ -2284,5 +2299,3 @@ def test_nanochat_imports_without_jax():
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     require(proc.returncode == 0, f"nanochat leaked JAX/Flax import: {proc.stderr}")
-
-

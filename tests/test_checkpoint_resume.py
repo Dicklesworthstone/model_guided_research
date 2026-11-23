@@ -212,7 +212,7 @@ def test_resume_with_ordinal_scheduler_round_trips_counters(monkeypatch, tmp_pat
     """
     summary_a = _run_train(monkeypatch, tmp_path, "sched-uninterrupted", scheduler_type="ordinal")
     summary_b1 = _run_train(monkeypatch, tmp_path, "sched-parent", scheduler_type="ordinal", checkpoint_interval=6)
-    state = torch.load(_ckpt_dir(tmp_path, "sched-parent") / "optim_000005_rank0.pt", weights_only=False)
+    state = torch.load(_ckpt_dir(tmp_path, "sched-parent") / "optim_000005_rank0.pt", weights_only=True)
     assert len(state["schedulers"]) == len(state["optimizers"]) > 0
     sched_state = state["schedulers"][0]
     assert sched_state["ema_loss"] is not None, "scheduler was never stepped - the orphan bug is back"
@@ -616,6 +616,16 @@ def test_ordinal_scheduler_state_dict_round_trip():
     assert restored.best_loss == ref.best_loss and restored.ema_loss == ref.ema_loss
 
 
+def test_invalid_metrics_header_preserves_existing_file(tmp_path):
+    from nanochat.report import MetricsStream
+
+    path = tmp_path / "metrics.jsonl"
+    path.write_text("previous run\n", encoding="utf-8")
+    with pytest.raises(TypeError):
+        MetricsStream(path, provenance={"invalid": object()})
+    assert path.read_text(encoding="utf-8") == "previous run\n"
+
+
 def test_metrics_stream_append_preserves_history_across_resume(tmp_path):
     """A resumed run must APPEND to metrics.jsonl, never truncate it: a resume
     previously erased the parent process's entire step history (found by the
@@ -934,7 +944,7 @@ def test_coverage_beta_mode_resumes_bitwise(monkeypatch, tmp_path):
     betas_a = beta_series("cov-uninterrupted")
     assert len(set(betas_a.values())) > 1, "fake coverage must move beta or this test is vacuous"
 
-    state = torch.load(_ckpt_dir(tmp_path, "cov-parent") / "optim_000005_rank0.pt", weights_only=False)
+    state = torch.load(_ckpt_dir(tmp_path, "cov-parent") / "optim_000005_rank0.pt", weights_only=True)
     assert "beta" in state["semiring_controller"]
     assert "semiring_pending_coverage" in state
 
@@ -1709,7 +1719,9 @@ def test_certify_probe_determinism_across_runs_and_checkpoint_resume(monkeypatch
         for line in (splice_dir / "metrics.jsonl").read_text().splitlines()
         if json.loads(line).get("type") == "step"
     ]
-    assert [r["step"] for r in splice_steps] == list(range(10)), "splice metrics.jsonl must have 0..9 with no duplicates"
+    assert [r["step"] for r in splice_steps] == list(range(10)), (
+        "splice metrics.jsonl must have 0..9 with no duplicates"
+    )
 
     for r_ref, r_sp in zip(ref_steps, splice_steps, strict=True):
         assert r_ref["step"] == r_sp["step"]
@@ -1717,4 +1729,3 @@ def test_certify_probe_determinism_across_runs_and_checkpoint_resume(monkeypatch
             assert r_ref["certs"] == pytest.approx(r_sp["certs"], rel=1e-6, abs=1e-7)
         else:
             assert "certs" not in r_sp
-

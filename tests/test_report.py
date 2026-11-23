@@ -324,7 +324,6 @@ def test_status_selects_newest_certificate_by_git_commit_not_checkout_mtime(tmp_
     assert certs["tropical"]["stale"] is False
 
 
-
 def _hyp_status():
     return {
         "id": "hyp-status-ok",
