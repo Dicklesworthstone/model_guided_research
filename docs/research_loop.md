@@ -197,6 +197,17 @@ measured checkpoint represents that training. Both the verdict and the arm repor
 record the prefix convention. Historical task evaluations identify trainings by
 their recorded run IDs. Relabeling a legacy run can obscure that identity.
 
+For example, we evaluated saved steps 999, 1999 and 2999 of one copy model.
+The previous report counted three models. The corrected report counts one
+and selects step 2999. Two planted comparisons passed under the previous
+policy, one from repeated steps and one from mixing prompt conventions.
+Both now receive `insufficient_seeds`. The independent three-run control
+still passes. On the 75 frozen historical predictions, this change preserved
+every verdict, refusal reason, selected artifact and effect estimate.
+[Real-checkpoint report](../artifacts/adjudications/evaluator-cohorts/saved-steps-report.json)
+· [Historical replay](../artifacts/adjudications/evaluator-cohorts/historical-replay.json)
+· [Control inputs, archived weights and receipts](../artifacts/adjudications/evaluator-cohorts/controls.zip)
+
 Under ci-v10, charge-decoding measurements that share a training seed, run
 or weights digest count once within each candidate budget cohort. Repeated
 probe fits and intermediate checkpoints measure the same training. The

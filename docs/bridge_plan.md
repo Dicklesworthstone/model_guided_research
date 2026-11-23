@@ -22,6 +22,15 @@ symplectic depth comparisons. The June charge artifacts also remain missing.
 · [Repeated-checkpoint control](../artifacts/adjudications/charge-training-units/v10-repeated-checkpoint.json)
 · [Clean checkout status and replay receipts](../artifacts/adjudications/charge-training-units/dsr-receipts.zip)
 
+The ci-v11 task evaluator also counts a training run once per arm and scores
+each prompt convention separately. On three saved steps from one copy model,
+the public report now selects the last step and counts one model. A frozen
+replay reproduced all 75 prior eligibility decisions and effect estimates.
+The ten standard baselines each have three independent trainings evaluated
+with the shuffled loader and the BOS-prefixed v4 protocol.
+[Checkpoint control and replay](research_loop.md#november-2026-historical-replay)
+· [Baseline inventory](../artifacts/adjudications/evaluator-cohorts/shuffled-baselines.json)
+
 The route observatory now records whole-route survival counts, uses discrete
 decisions for clustering, reports a prompt-only comparator and identifies the
 exact training weights. Five small CPU training runs yielded fifteen saved
@@ -79,6 +88,13 @@ backward passes on all 13 mechanisms. A replay matched every lane log to
 the hash in the receipt. This run exercised a one-shot timer on CPU.
 [Canonical receipt](../artifacts/regressions/jida40/scheduled-8ce6cde.json)
 · [Logs, timer journal and fresh-certificate check](../artifacts/regressions/jida40/scheduled-8ce6cde-logs.zip)
+
+The next Linux run at `8d51a4d` passed nine of eleven checks, including
+929 full-suite tests, the 72 CPU certificate checks, seven end-to-end
+scenarios and all 13 demos. The worker exhausted its disk during the Lean
+build and the isolated wheel installation. Both failures are recorded.
+[Run receipt](../artifacts/regressions/jida40/scheduled-8d51a4d.json)
+· [All eleven logs](../artifacts/regressions/jida40/scheduled-8d51a4d-logs.zip)
 
 The first prospectively scored transfer proposal reached its registered
 feasibility stop. Across the three unseen Python modules, every one of 43

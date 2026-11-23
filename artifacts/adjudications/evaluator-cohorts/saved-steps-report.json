@@ -1,0 +1,47 @@
+{
+  "counts": {
+    "evaltasks": {
+      "tainted": 0,
+      "total": 3
+    }
+  },
+  "eval_groups": [
+    {
+      "answer_prior": "0.125",
+      "bos_prefixed": true,
+      "em_held_out": "0",
+      "mechanism": "standard",
+      "n_models": 1,
+      "target_flops": 1000000000000.0,
+      "task": "copyops"
+    }
+  ],
+  "eval_rows": [
+    {
+      "answer_prior": 0.125,
+      "bos_prefixed": true,
+      "em_held_out": 0.0,
+      "mechanism": "standard",
+      "run_id": "lr4x-s0",
+      "step": 2999,
+      "tainted": false,
+      "target_flops": 1000000000000.0,
+      "task": "copyops"
+    }
+  ],
+  "eval_tainted_excluded": 0,
+  "generated_at": "2026-11-23T06:10:47Z",
+  "git": {
+    "branch": "HEAD",
+    "commit": "bc470ab",
+    "commit_full": "bc470ab5b476ba2cf5bfe19e5a7ae9797da4a527",
+    "dirty": false
+  },
+  "kind": "report",
+  "roots": [
+    "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/actual-saved-step-evals"
+  ],
+  "schema_version": "mgr.report.v1",
+  "train_groups": [],
+  "train_runs": []
+}

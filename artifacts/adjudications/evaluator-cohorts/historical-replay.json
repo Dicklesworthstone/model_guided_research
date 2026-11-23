@@ -1,0 +1,706 @@
+{
+  "frozen_source": "4db6657e80d6cd657d8ca85ef86ca01380c2e9c0",
+  "producer": "bc470ab5b476ba2cf5bfe19e5a7ae9797da4a527",
+  "previous_policy": "ci-v10",
+  "policy": "ci-v11",
+  "historical": {
+    "blocked": 57,
+    "inconclusive": 6,
+    "refuted": 1,
+    "supported": 11
+  },
+  "live": {
+    "blocked": 57,
+    "inconclusive": 6,
+    "refuted": 2,
+    "supported": 11
+  },
+  "historic_count": 75,
+  "changed_verdicts": 0,
+  "changed_reasons": 0,
+  "changed_selected_paths": 0,
+  "changed_estimates": 0,
+  "live_owner_holds": [
+    "hyp-braid-dyck-depth-extrapolation",
+    "hyp-braid-dyck-directional",
+    "hyp-symplectic-nonorm-depth-tied",
+    "hyp-symplectic-nonorm-depth-untied"
+  ],
+  "rows": [
+    {
+      "id": "hyp-ultrametric-hier-heldout-depth",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-fractal-hier-heldout-depth",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ultrametric-needle-long-context",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ultrametric-trie-decode-speedup",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-braid-dyck-depth-extrapolation",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "manual_hold",
+      "current_reason": "manual_hold",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-braid-length-generalization",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-reversible-activation-memory",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-reversible-gradient-stability",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-symplectic-nonorm-depth-tied",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "manual_hold",
+      "current_reason": "manual_hold",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-symplectic-nonorm-depth-untied",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "manual_hold",
+      "current_reason": "manual_hold",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-needle-no-dilution",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-certified-robustness",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-quaternion-rotation-composition",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-octonion-rotation-composition",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-octonion-norm-stability",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-simplicial-two-hop-composition",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-surreal-wide-dynamic-range",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-surreal-scaling-axis-prediction",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ordinal-regime-shift-recovery",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hoss-stiff-lr-robustness",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-gauge-gradient-stability",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-gauge-bag-conservation",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-group-nonsolvable-barrier",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-placebo-no-winner",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ordinal-cosine-parity-simple",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-gauge-grad-stability-demo",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-maslov-anneal-loss-retention",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-braid-dyck-directional",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "manual_hold",
+      "current_reason": "manual_hold",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-surreal-optimization-rate",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "insufficient_seeds",
+      "current_reason": "insufficient_seeds",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-balltree-valued-attention-speedup",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tie-locus-density-decreases",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-rmatrix-s5-length-slope",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-rmatrix-solvable-control-specificity",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-rmatrix-charge-drift-separation",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-rmatrix-charge-decodability",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-padic-truncation-graceful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-padic-truncation-graceful-k16",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hensel-curriculum-parity",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-padic-truncation-depth-independent",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-coordcheck-clt-flat",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-evt-miscoupling",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-post-cproj-gauge-flattens",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-length-evt-signature",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hyperbolic-hierarchy-retrieval",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hyperbolic-placebo-specificity",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hyperbolic-curvature-readout",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "prediction_not_operationalized",
+      "current_reason": "prediction_not_operationalized",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-reversible-copyops-inversion",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-gauge-group-state-tracking",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ultrametric-realhier-wild",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-fractal-realhier-wild",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-ordinal-regime-recovery",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hoss-regime-curvature",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-robustness-perturbation",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-control-no-context-planted-effect",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hyperbolic-curvature-readout-hier",
+      "previous": "refuted",
+      "current": "refuted",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-hyperbolic-curvature-readout-placebo",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tie-locus-density-decreases-tropical",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "metric_missing",
+      "current_reason": "metric_missing",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-coordcheck-isometry-flat",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-coordcheck-branching-radial-flat",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-coordcheck-clt-assumed-flat",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-fractal-hier-heldout-depth-faithful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-fractal-realhier-wild-faithful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-simplicial-two-hop-composition-faithful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-surreal-wide-dynamic-range-faithful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-surreal-optimization-rate-faithful",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "ineligible_evidence",
+      "current_reason": "ineligible_evidence",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tie-locus-density-decreases-ultrametric",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-geo-init-early-advantage",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-geo-init-less-distance-traveled",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-geo-init-mismatched-safety",
+      "previous": "supported",
+      "current": "supported",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-cert-telemetry-leads-divergence",
+      "previous": "inconclusive",
+      "current": "inconclusive",
+      "previous_reason": null,
+      "current_reason": null,
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-routes-reuse-increases-with-training",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-routes-margin-rank-correlates-stability",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-routes-clusters-beat-entropy-ari",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-region-count-grows-with-t",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    },
+    {
+      "id": "hyp-tropical-structured-support-beats-dense",
+      "previous": "blocked",
+      "current": "blocked",
+      "previous_reason": "no_candidate_artifacts",
+      "current_reason": "no_candidate_artifacts",
+      "paths_changed": false,
+      "estimates_changed": false
+    }
+  ]
+}
