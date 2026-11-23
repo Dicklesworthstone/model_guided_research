@@ -2730,13 +2730,17 @@ hypotheses:
       kind: model
       provenance: "Bead ho58 specifies the presentation sampler, ablation and stopping rule. The original four presentations are spent."
     date_registered: "2026-11-23"
-    prediction: null
-    operationalization_note: >-
-      The experimental units are marked finite groups with a blind vocabulary and
-      exhaustive edge certificates. The registered comparison counts endpoint
-      labels, and its denominator is the twelve fixed non-solvable presentations.
-      The existing adjudication collectors measure model runs and do not implement
-      this finite-panel decision. Keep the formal verdict open pending a matching collector.
+    prediction:
+      metric_path: "groupcompletion:non_solvable.query_ratio"
+      comparator: "<="
+      threshold_kind: ratio
+      threshold: 0.5
+      baseline: {mechanism: group_completion, equal_query_protocol: true}
+      min_seeds: 12
+      scale_caveats: >-
+        Bead ho58 and b313900 set the complete protocol before evidence. The
+        existing result was public before this collector. Only an exact replay
+        with all twenty transition certificates can adjudicate this fixed panel.
     status: open
     evidence: []
     verdict_history: []

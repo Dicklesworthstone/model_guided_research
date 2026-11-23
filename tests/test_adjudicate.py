@@ -2101,3 +2101,30 @@ def test_status_flags_verdicts_whose_cited_artifacts_are_absent(tmp_path):
     assert [row["id"] for row in flagged] == ["hyp-lost"]
     assert flagged[0]["missing"] == ["artifacts/bench/gone/summary.json"]
     assert flagged[0]["cited"] == 2 and flagged[0]["verdict"] == "supported"
+
+
+def test_exact_group_panel_collector_refuses_tampering_and_recounts(tmp_path, monkeypatch):
+    trusted_panel = REPO_ROOT / "artifacts/probes/sizing/group-query-completion/panel.json"
+    panel = json.loads(trusted_panel.read_bytes())
+    hyp = {"id": "hyp-group-completion-trusted-queries", "prediction": {"threshold": 0.5}}
+    summary = tmp_path / "summary.json"
+    base = {"schema_version": "mgr.group_completion.v1", "provenance": CLEAN_PROV, "panel": panel}
+    summary.write_text(json.dumps(base))
+    monkeypatch.setattr(cli, "_adj_lineage_error", lambda *_args: None)
+
+    def score():
+        return cli._adj_score_group_panel(hyp, cli._adj_collect_artifacts([tmp_path]), tmp_path, "anchor", "head")
+
+    result = score()
+    arm = result["arms"]["group_completion"]
+    assert result["verdict"] == "supported"
+    assert arm["effect"] == 89 / 360
+    assert arm["verified_cases"] == 20 and arm["verified_right_edges_per_arm"] == 2904
+    assert arm["ci95"] is None and "p_value" not in result
+    summary.write_text(json.dumps({**base, "provenance": TAINTED_PROV}))
+    assert score()["excluded_evidence"][0]["reason_code"] == "tainted_evidence"
+    panel["cases"].pop()
+    summary.write_text(json.dumps(base))
+    result = score()
+    assert result["verdict"] == "blocked"
+    assert result["excluded_evidence"][0]["reason_code"] == "group_panel_transcript_mismatch"

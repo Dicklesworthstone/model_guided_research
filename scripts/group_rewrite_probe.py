@@ -30,6 +30,7 @@ from nanochat.diagnostics_data import (
     _perm_mul,
     content_sha256,
 )
+from nanochat.report import build_provenance
 from nanochat.tokenizer import checkpoint_tokenizer
 
 SUITE = "vdc4-group-tasktok-shuf-b30-s256-rung"
@@ -377,7 +378,7 @@ def rooted_graph(group: str, generators: tuple) -> tuple[tuple[int, int], ...]:
     return tuple(edges)
 
 
-def panel_study(output: Path) -> None:
+def panel_study(output: Path, *, formal: bool = False) -> None:
     rng = random.Random(2026112301)
     cases = []
     for group, count in (("s5", 6), ("a5", 6), ("s3", 2), ("z60", 6)):
@@ -437,7 +438,18 @@ def panel_study(output: Path) -> None:
                     "right": {letter: actions.maps["R" + letter] for letter in SYMBOLS},
                 }
             cases.append(case)
-    save(output, {"seed": 2026112301, "cases": cases})
+    panel = {"seed": 2026112301, "cases": cases}
+    if formal:
+        save(
+            output,
+            {
+                "schema_version": "mgr.group_completion.v1",
+                "provenance": build_provenance({"panel_seed": panel["seed"], "protocol": "ho58"}),
+                "panel": panel,
+            },
+        )
+    else:
+        save(output, panel)
 
 
 def run(inputs: Path, reference: Path, output: Path) -> None:
@@ -553,12 +565,13 @@ if __name__ == "__main__":
     action.add_argument(
         "--query-panel", action="store_true", help="Run the blind presentation study registered in ho58"
     )
+    action.add_argument("--formal-panel", action="store_true", help="Replay ho58 with adjudication provenance")
     parser.add_argument("--reference", type=Path, default=Path("artifacts/probes/sizing/scorecards") / SUITE)
     parser.add_argument(
         "--output", type=Path, required=True, help="New results directory, or new JSON file for the panel"
     )
     args = parser.parse_args()
-    if args.query_panel:
-        panel_study(args.output)
+    if args.query_panel or args.formal_panel:
+        panel_study(args.output, formal=args.formal_panel)
     else:
         run(args.inputs, args.reference, args.output)

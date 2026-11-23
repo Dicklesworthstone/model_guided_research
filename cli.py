@@ -11229,7 +11229,12 @@ _HYP_MECHANISMS = frozenset(
         "group_completion",  # symbolic endpoint-query reference, not a trainable attention type
     }
 )
-_HYP_METRIC_SCHEMAS = ("evaltasks", "train", "certify", "bench", "chargeprobe")
+_HYP_METRIC_SCHEMAS = ("evaltasks", "train", "certify", "bench", "chargeprobe", "groupcompletion")
+_GROUP_PANEL_METRIC = "groupcompletion:non_solvable.query_ratio"
+_GROUP_PANEL_SCHEMA = "mgr.group_completion.v1"
+# Canonical transcript of the precommitted deterministic ho58 panel. It includes
+# every generating pair, opaque name, query and recovered transition in both arms.
+_GROUP_PANEL_SHA256 = "ce479b50cc86a80eaee8749ef3ef151d88d041dd3347c6d424ab6dd1fb50c26a"
 # evaltasks metric families that only exist for tasks with an answer marker
 # (LM-only tasks report perplexity alone)
 _HYP_ANSWER_METRIC_FAMILIES = frozenset({"exact_match", "answer_prior", "length_slope", "curve"})
@@ -11347,7 +11352,16 @@ def _validate_hypothesis_prediction(pred: Any, where: str, errors: list[str], wa
                 errors.append(f"{where}: {label}[{k!r}] must be a scalar (matched by equality), got {type(v).__name__}")
 
     baseline = pred.get("baseline")
-    if baseline is None and "baseline" in pred:
+    if isinstance(metric_path, str) and metric_path.startswith("groupcompletion:"):
+        if (
+            metric_path != _GROUP_PANEL_METRIC
+            or baseline != {"mechanism": "group_completion", "equal_query_protocol": True}
+            or pred.get("comparator") != "<="
+            or pred.get("threshold_kind") != "ratio"
+            or pred.get("min_seeds") != 12
+        ):
+            errors.append(f"{where}: groupcompletion requires the registered ho58 fixed-panel comparison")
+    elif baseline is None and "baseline" in pred:
         # ci-v3 single-arm prediction: an explicit `baseline: null` makes the
         # claim a threshold on the candidate arm alone - absolute thresholds
         # only (a ratio without a denominator arm is meaningless).
@@ -12243,6 +12257,8 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
                 schema = "train"
             elif sv in ("mgr.chargeprobe.v1", "mgr.chargeprobe.v2"):
                 schema = "chargeprobe"
+            elif sv == _GROUP_PANEL_SCHEMA:
+                schema = "groupcompletion"
             elif sv in (
                 "mgr.bench.ultrametric_paths.v1",
                 "mgr.bench.precision_curves.v1",
@@ -12929,6 +12945,8 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
         }
     anchor = entry[1]
     schema, _, metric = str(pred.get("metric_path", "")).partition(":")
+    if pred.get("metric_path") == _GROUP_PANEL_METRIC:
+        return _adj_score_group_panel(hyp, artifacts, root, anchor, head)
     selectors = [(m, pred.get("candidate_variant")) for m in hyp.get("mechanisms") or []]
     baseline = pred.get("baseline")
     if isinstance(baseline, dict):
@@ -12952,6 +12970,63 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
         result.update(reason_code="ineligible_evidence", reason="No qualifying arm remains after provenance checks.")
     result.update(registration_commit=anchor, excluded_evidence=excluded)
     return result
+
+
+def _adj_score_group_panel(
+    hyp: dict[str, Any], artifacts: list[dict[str, Any]], root: Path, anchor: str, head: str
+) -> dict[str, Any]:
+    """Apply the ho58 rule to a deterministic transcript, without a population CI."""
+    result: dict[str, Any] = dict(id=hyp["id"], registration_commit=anchor, excluded_evidence=[])
+    eligible = []
+    for artifact in sorted(artifacts, key=lambda a: str(a["path"])):
+        if artifact["schema"] != "groupcompletion":
+            continue
+        panel = artifact["data"].get("panel")
+        serialized = json.dumps(panel, sort_keys=True, separators=(",", ":")) + "\n"
+        fingerprint = hashlib.sha256(serialized.encode()).hexdigest()
+        reason = _adj_lineage_error(artifact, root, anchor, head)
+        if artifact["tainted"]:
+            reason = "tainted_evidence"
+        if not reason and not hmac.compare_digest(fingerprint, _GROUP_PANEL_SHA256):
+            reason = "group_panel_transcript_mismatch"
+        if reason:
+            result["excluded_evidence"].append({"path": artifact["path"], "reason_code": reason})
+        else:
+            eligible.append(artifact)
+    if not eligible:
+        return {
+            **result,
+            "verdict": "blocked",
+            "reason_code": "no_verified_group_panel",
+            "reason": "A verified replay of the exact registered panel is required.",
+        }
+    artifact = eligible[0]
+    cases = artifact["data"]["panel"]["cases"]
+    primary = [case for case in cases if case["group"] in ("s5", "a5")]
+    paid = sum(len(case["arms"]["commuting"]["queries"]) for case in primary)
+    ablation = sum(len(case["arms"]["ablation"]["queries"]) for case in primary)
+    threshold = float(hyp["prediction"]["threshold"])
+    effect = paid / ablation
+    return {
+        **result,
+        "verdict": "supported" if effect <= threshold else "refuted",
+        "evidence_design": "verified_fixed_panel",
+        "artifacts": [artifact["path"]],
+        "arms": {
+            "group_completion": {
+                "effect": effect,
+                "threshold": threshold,
+                "candidate_queries": paid,
+                "baseline_queries": ablation,
+                "lower_bound": sum(case["lower_bound"] for case in primary),
+                "n_candidate": len(primary),
+                "n_baseline": len(primary),
+                "verified_cases": len(cases),
+                "verified_right_edges_per_arm": sum(case["arms"]["commuting"]["verified_edges"] for case in cases),
+                "ci95": None,
+            },
+        },
+    }
 
 
 def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -13924,7 +13999,8 @@ def adjudicate(
         qmap = _adj_bh_qvalues({str(v["id"]): float(v["p_value"]) for v in family})
         for v in family:
             v["q_value"] = qmap[str(v["id"])]
-    n_supported = sum(1 for v in verdicts if v["verdict"] == "supported")
+    fixed_panel_ids = [str(v["id"]) for v in verdicts if v.get("evidence_design") == "verified_fixed_panel"]
+    n_supported = sum(1 for v in verdicts if v["verdict"] == "supported" and v["id"] not in fixed_panel_ids)
     fdr_survivors = sorted(str(v["id"]) for v in family if v["verdict"] == "supported" and v["q_value"] <= _ADJ_FDR_Q)
     # flag families aggregating heterogeneous statistical machinery: the
     # ledger's latest recorded verdicts may predate this policy version
@@ -13984,6 +14060,7 @@ def adjudicate(
         "policy_version": _ADJ_POLICY_VERSION,
         "date": today,
         "verdicts": verdicts,
+        **({"fixed_panel_verdicts": fixed_panel_ids} if fixed_panel_ids else {}),
         "fdr": {
             "q_level": _ADJ_FDR_Q,
             "family_size": len(family),
@@ -14013,6 +14090,13 @@ def adjudicate(
         q_txt = f"{v['q_value']:.3g}" if v.get("q_value") is not None else ""
         if st == "blocked":
             detail = f"{v['reason_code']}" + (f" [{v.get('mechanism')}]" if v.get("mechanism") else "")
+        elif v.get("evidence_design") == "verified_fixed_panel":
+            panel = v["arms"]["group_completion"]
+            detail = (
+                f"{panel['candidate_queries']}/{panel['baseline_queries']} paid queries "
+                f"(ratio {panel['effect']:.4g}, {panel['n_candidate']} primary cases, "
+                f"{panel['verified_cases']} verified, fixed panel)"
+            )
         else:
             detail = "; ".join(
                 f"{m}: effect={a['effect']:.4g} ci95=[{a['ci95'][0]:.4g},{a['ci95'][1]:.4g}] "
@@ -14051,6 +14135,8 @@ def adjudicate(
         f"{n_supported} supported, of which {len(fdr_survivors)} survive FDR at q={_ADJ_FDR_Q:g} "
         f"(family: {len(family)} adjudicated" + ("" if adjudicate_all else " - PARTIAL run, not the whole ledger") + ")"
     )
+    if fixed_panel_ids:
+        fdr_line += f". Exact fixed-panel verdicts outside the statistical family: {len(fixed_panel_ids)}."
     policy_note = (
         f"ledger note: latest recorded verdicts span policies {ledger_policies}; q-values here "
         f"are computed fresh under {_ADJ_POLICY_VERSION} for this run's family only."
