@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v11`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v12`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -158,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v11`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v12`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -207,6 +207,29 @@ every verdict, refusal reason, selected artifact and effect estimate.
 [Real-checkpoint report](../artifacts/adjudications/evaluator-cohorts/saved-steps-report.json)
 · [Historical replay](../artifacts/adjudications/evaluator-cohorts/historical-replay.json)
 · [Control inputs, archived weights and receipts](../artifacts/adjudications/evaluator-cohorts/controls.zip)
+
+**Precision and depth curves.** The v2 `precision-curve` and `depth-curve`
+outputs name every anchor and sweep evaluation by run ID and SHA-256. Keep
+the entire artifact layout when moving or archiving a cohort, including
+`evals/tasks/<run-id>/summary.json` alongside `bench/` in the same root.
+The adjudicator reopens the evaluations, verifies clean evaluation and
+training ancestry, and recomputes the AUCs and derived ratios. The arms must
+use the same scored documents and token streams, matched planned training
+budgets, and one checkpoint per sweep. The only model override permitted
+at a sweep point is its precision knob.
+
+Preregister the planned design with `candidate_variant: {curve_cohort: "<sha256>"}`.
+The hash is SHA-256 of `curve_design` serialized as UTF-8 JSON with sorted
+keys and compact separators and without a trailing newline. The design
+records the task, evaluation settings, upper window bound, each arm’s
+model configuration and planned FLOPs, and the sweep values. The
+per-training initialization seed and the precision knob are represented
+separately from the arm’s model configuration. A quarantined sizing run
+can verify the planned design before collecting qualifying evidence.
+All paired observations must have the same tokenized split. Shared seeds,
+training runs, or loaded weight digests count once even if the curves
+have different names. Historical curve claims with prose-only coordinates
+and v1 summaries keep their historical rulings and eligibility behavior.
 
 Under ci-v10, charge-decoding measurements that share a training seed, run
 or weights digest count once within each candidate budget cohort. Repeated

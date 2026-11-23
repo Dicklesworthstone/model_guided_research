@@ -680,7 +680,9 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
     data["meta"]["sizing_input"] = True
     save_json(sizing_point, data)
     produce(sizing, "precision", 10, "quarantined")
-    assert adjudicate("precision", sizing, "copied-sizing")["excluded_evidence"][0]["reason_code"] == "quarantined_input"
+    assert (
+        adjudicate("precision", sizing, "copied-sizing")["excluded_evidence"][0]["reason_code"] == "quarantined_input"
+    )
 
     missing = tmp_path / "without-evaluations"
     shutil.copytree(portable / "bench", missing / "bench")
@@ -695,6 +697,11 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
     save_json(legacy, data)
     assert adjudicate("precision", tmp_path / "legacy", "older-schema")["excluded_evidence"][0]["reason_code"] == (
         "missing_input_lineage"
+    )
+    data["schema_version"] = "mgr.bench.coord_curves.v1"
+    save_json(legacy, data)
+    assert adjudicate("precision", tmp_path / "legacy", "other-schema")["excluded_evidence"][0]["reason_code"] == (
+        "curve_schema_required"
     )
 
     invalid = tmp_path / "invalid"

@@ -9716,6 +9716,13 @@ def probe_charges(
 _PRECISION_CURVE_SCHEMA = "mgr.bench.precision_curves.v2"
 _DEPTH_CURVE_SCHEMA = "mgr.bench.depth_curves.v2"
 _CURVE_SCHEMAS = {_PRECISION_CURVE_SCHEMA, _DEPTH_CURVE_SCHEMA}
+_PRECISION_CURVE_SCHEMAS = {"mgr.bench.precision_curves.v1", _PRECISION_CURVE_SCHEMA}
+_DEPTH_CURVE_SCHEMAS = {"mgr.bench.depth_curves.v1", _DEPTH_CURVE_SCHEMA}
+_CURVE_METRIC_SCHEMAS = {
+    "results.auc_ratio": _PRECISION_CURVE_SCHEMAS,
+    "results.auc_ratio_deepwindow": _PRECISION_CURVE_SCHEMAS,
+    "results.digit_depth_auc_absdev": _DEPTH_CURVE_SCHEMAS,
+}
 _DIGIT_KNOB = "ultrametric_digits_k"
 _FLOAT_KNOB = "eval_weight_quant_bits"
 
@@ -10005,7 +10012,8 @@ def _curve_identity(meta: dict[str, Any], groups: _CurveGroups, sources: _CurveS
             value = model.pop(knob, None)
             overrides = checkpoint.get("model_overrides")
             if run_id == anchor:
-                if overrides != {} or value is not None:
+                full_values = (None, full) if knob == _DIGIT_KNOB else (None,)
+                if overrides != {} or value not in full_values:
                     raise ValueError(f"{run_id}: the anchor must use the unmodified checkpoint")
             else:
                 if type(value) is not int or overrides != {knob: value} or not 0 < value < full:
@@ -13074,7 +13082,9 @@ def _adj_curve_lineage_error(art: dict[str, Any], root: Path, anchor: str, head:
         return "missing_input_lineage"
     recorded = meta["eval_sha256"]
     if set(recorded) != set(sources) or any(
-        not isinstance(recorded[rid], str) or not hmac.compare_digest(recorded[rid], sha)
+        not isinstance(recorded[rid], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", recorded[rid])
+        or not hmac.compare_digest(recorded[rid], sha)
         for rid, (_, _, sha) in sources.items()
     ):
         return "curve_input_digest_mismatch"
@@ -13090,7 +13100,7 @@ def _adj_curve_lineage_error(art: dict[str, Any], root: Path, anchor: str, head:
     for source_path, evaluation, _ in sources.values():
         if _is_sizing_path(source_path) or evaluation["meta"].get("sizing_input") is True:
             return "quarantined_input"
-        if not isinstance(evaluation.get("provenance"), dict):
+        if evaluation["meta"].get("sizing_input") is not False or not isinstance(evaluation.get("provenance"), dict):
             return "missing_input_lineage"
         error = _adj_lineage_error({"schema": "evaltasks", "data": evaluation, "path": source_path}, root, anchor, head)
         if error:
@@ -13234,6 +13244,13 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
     if isinstance(baseline, dict):
         bm = baseline.get("mechanism", "standard")
         selectors.extend((m if bm == "same" else bm, baseline.get("variant")) for m in hyp.get("mechanisms") or [])
+    curve_schemas = _CURVE_METRIC_SCHEMAS.get(metric) if schema == "bench" else None
+    if (
+        schema == "bench"
+        and curve_schemas is None
+        and any(isinstance(variant, dict) and "curve_cohort" in variant for _, variant in selectors)
+    ):
+        curve_schemas = _PRECISION_CURVE_SCHEMAS | _DEPTH_CURVE_SCHEMAS
     eligible = []
     excluded = []
     for art in artifacts:
@@ -13242,7 +13259,10 @@ def _adjudicate_hypothesis(hyp: dict[str, Any], artifacts: list[dict[str, Any]])
         if art["tainted"] or not _adj_observations(art, metric):
             eligible.append(art)  # retain the statistics engine's specific taint / missing-metric refusals
             continue
-        error = _adj_lineage_error(art, root, anchor, head)
+        if curve_schemas and art["data"].get("schema_version") not in curve_schemas:
+            error = "curve_schema_required"
+        else:
+            error = _adj_lineage_error(art, root, anchor, head)
         if error is None and art["data"].get("schema_version") in _CURVE_SCHEMAS:
             # Legacy curve claims describe their coordinates in prose. A new
             # prospectively registered selector must identify this exact design.
