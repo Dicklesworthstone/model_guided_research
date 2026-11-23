@@ -86,6 +86,8 @@ counts. Zero models were trained for this comparison.
 | [Bag, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 31/144, 34/144, 36/144 | 54/144 | All three seeds fell below the prior. |
 | [Relation, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 12/144, 13/144, 12/144 | 21/144 | All three seeds fell below the prior. |
 | [Hierarchy, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 1/144, 1/144, 1/144 | 8/144 | Each seed answered one held-out query correctly. |
+| [Rotation, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-rot-tasktok-shuf-b4-rung/report.md) | 6/144, 7/144, 5/144 | 15/144 | All 144 held-out examples fit in 23–43 tokens. Each training seed fell below the prior. |
+| [Copy operations, 2 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b2-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | Held-out examples fit in 25–41 tokens. On 426 of 432 generations the model emitted fewer words than the target. The registered threshold is the prior plus 0.10. |
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint

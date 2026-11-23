@@ -1,0 +1,134 @@
+{
+  "categories": {
+    "a5": {
+      "chance": 0.016666666666666666,
+      "decodable_at_2x_chance": true,
+      "floor_used": 0.125,
+      "linear": {
+        "test_acc": 0.25,
+        "train_acc": 0.5714285969734192
+      },
+      "majority_floor": 0.125,
+      "mlp": {
+        "test_acc": 0.375,
+        "train_acc": 1.0
+      },
+      "n_classes_observed": 27,
+      "n_docs": 43
+    },
+    "s3": {
+      "chance": 0.16666666666666666,
+      "decodable_at_2x_chance": false,
+      "floor_used": 0.2,
+      "linear": {
+        "test_acc": 0.20000000298023224,
+        "train_acc": 0.39534884691238403
+      },
+      "majority_floor": 0.2,
+      "mlp": {
+        "test_acc": 0.20000000298023224,
+        "train_acc": 0.8604651093482971
+      },
+      "n_classes_observed": 6,
+      "n_docs": 53
+    },
+    "s5": {
+      "chance": 0.008333333333333333,
+      "decodable_at_2x_chance": false,
+      "floor_used": 0.3,
+      "linear": {
+        "test_acc": 0.0,
+        "train_acc": 0.2954545319080353
+      },
+      "majority_floor": 0.3,
+      "mlp": {
+        "test_acc": 0.5,
+        "train_acc": 1.0
+      },
+      "n_classes_observed": 28,
+      "n_docs": 54
+    },
+    "z60": {
+      "chance": 0.016666666666666666,
+      "decodable_at_2x_chance": false,
+      "floor_used": 0.2222222222222222,
+      "linear": {
+        "test_acc": 0.2222222238779068,
+        "train_acc": 0.5
+      },
+      "majority_floor": 0.2222222222222222,
+      "mlp": {
+        "test_acc": 0.2222222238779068,
+        "train_acc": 0.9736841917037964
+      },
+      "n_classes_observed": 21,
+      "n_docs": 47
+    }
+  },
+  "dissociation": {
+    "abelian_over_chance": 1.0000000074505806,
+    "basis": "max(linear, mlp) test_acc / floor_used, where floor_used = max(1/|G|, best-constant accuracy on the probe's test split); ratio denominator clamped at 1.0",
+    "nonsolvable_over_chance": 3.0,
+    "ratio": 0.3333333358168602
+  },
+  "kind": "probe-charges",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "braid",
+      "braid_crossing_law": "rmatrix",
+      "budget": {
+        "flops_consumed_est": 1000200499200,
+        "flops_per_step_est": 209203200,
+        "flops_scope": "model_forward_backward",
+        "max_steps": 4781,
+        "target_flops": 1000000000000.0
+      },
+      "dir": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-measurement/artifacts/campaigns/charges-group-1e12/rmatrix-s5/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "rmatrix-s5"
+      },
+      "n_params": 144392,
+      "optimizer_type": "adamw",
+      "scheduler_type": "none",
+      "step": 4780
+    },
+    "dials": null,
+    "examples": 240,
+    "feature_basis": "per-head <v, t(theta_k) v>/<v, v> at the final braid layer",
+    "generated_at": "2026-11-23T05:27:29Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "8d51a4d",
+      "commit_full": "8d51a4d275af1e1b33c9adb21dc8f6da53a50407",
+      "dirty": false
+    },
+    "run_id": "charge-1e12-train5-fit0",
+    "seed": 0,
+    "task": "group",
+    "theta_offsets": [
+      0.7,
+      1.6
+    ],
+    "training_seed": 5,
+    "weights_sha256": "a2a437560a21b02b9ef644e91e5eb2005d4405f6b69b9178554a67b8ce49ee0a"
+  },
+  "provenance": {
+    "config_hash": "0af982b210658053e3939f36bfcedfce0884d47adb65bf396bbad6f762474c25",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "8d51a4d275af1e1b33c9adb21dc8f6da53a50407",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.chargeprobe.v2",
+  "skipped_too_long": 19,
+  "train_provenance": {
+    "config_hash": "1259bb7000adc06ebef4344af5d1df435b46bef61ecddb073169682f3b5fb2f8",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "2ed420a814b0acc7826139c1efeca46d6f486f3d",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}

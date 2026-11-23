@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-23",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 0,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v10",
+  "verdicts": [
+    {
+      "excluded_evidence": [],
+      "id": "hyp-rmatrix-charge-decodability",
+      "mechanism": "braid",
+      "reason": "no equal-FLOPs cohort gives both arms at least min_seeds (>= 2) training runs - mgr hypotheses power computes the seed count the registered effect actually needs",
+      "reason_code": "insufficient_seeds",
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79",
+      "verdict": "blocked"
+    }
+  ]
+}

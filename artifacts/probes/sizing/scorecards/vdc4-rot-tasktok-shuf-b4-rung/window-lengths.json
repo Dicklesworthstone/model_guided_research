@@ -1,0 +1,66 @@
+{
+  "scorecard": "vdc4-rot-tasktok-shuf-b4-rung",
+  "length_definition": "BOS + prompt + expected completion",
+  "rows": [
+    {
+      "task": "rot",
+      "training_seed": 0,
+      "training_window": 64,
+      "tokenizer_sha256": "7ada4c7452cf48d7d306de98e682251ef877194f9ac9f46b13227b29c3c49985",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 11,
+          "max": 25
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 23,
+          "max": 43
+        }
+      }
+    },
+    {
+      "task": "rot",
+      "training_seed": 1,
+      "training_window": 64,
+      "tokenizer_sha256": "7ada4c7452cf48d7d306de98e682251ef877194f9ac9f46b13227b29c3c49985",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 11,
+          "max": 25
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 23,
+          "max": 43
+        }
+      }
+    },
+    {
+      "task": "rot",
+      "training_seed": 2,
+      "training_window": 64,
+      "tokenizer_sha256": "7ada4c7452cf48d7d306de98e682251ef877194f9ac9f46b13227b29c3c49985",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 11,
+          "max": 25
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 23,
+          "max": 43
+        }
+      }
+    }
+  ]
+}

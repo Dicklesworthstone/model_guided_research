@@ -1,0 +1,54 @@
+{
+  "date": "2026-11-23",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 1,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 1,
+    "supported_fdr_survivors": [
+      "hyp-rmatrix-charge-decodability"
+    ]
+  },
+  "policy_version": "ci-v9",
+  "verdicts": [
+    {
+      "arms": {
+        "braid": {
+          "budget_flops": 1000000000000.0,
+          "ci95": [
+            4.0,
+            4.0
+          ],
+          "effect": 4.0,
+          "n_baseline": 0,
+          "n_candidate": 3,
+          "n_for_80pct": 3,
+          "p_value": 0.0,
+          "power": 1.0,
+          "single_arm": true,
+          "verdict": "supported"
+        }
+      },
+      "artifacts": [
+        "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-0/summary.json",
+        "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-1/summary.json",
+        "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-2/summary.json"
+      ],
+      "excluded_evidence": [],
+      "id": "hyp-rmatrix-charge-decodability",
+      "p_value": 0.0,
+      "policy_version": "ci-v9",
+      "q_value": 0.0,
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79",
+      "tainted_artifacts_seen": false,
+      "verdict": "supported"
+    }
+  ]
+}

@@ -1,0 +1,905 @@
+{
+  "scorecard": "vdc4-copyops-tasktok-shuf-b2-rung",
+  "training_documents_unique": 63050,
+  "training_sample_sha256": "d6520e266c7662c0fb05bd20804f9fd8e26b58468812724dcfb0b7a056d09c9f",
+  "evaluation_examples_present_in_training": {
+    "in_range": 5,
+    "held_out": 0
+  },
+  "rows": [
+    {
+      "training_seed": 0,
+      "step": 10254,
+      "splits": {
+        "in_range": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 50,
+              "words": 144
+            },
+            "2": {
+              "correct": 39,
+              "words": 144
+            },
+            "3": {
+              "correct": 36,
+              "words": 144
+            },
+            "4": {
+              "correct": 11,
+              "words": 111
+            },
+            "5": {
+              "correct": 15,
+              "words": 92
+            },
+            "6": {
+              "correct": 16,
+              "words": 74
+            },
+            "7": {
+              "correct": 6,
+              "words": 52
+            },
+            "8": {
+              "correct": 7,
+              "words": 26
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 94,
+            "3": 7,
+            "1": 34,
+            "2": 9
+          },
+          "output_word_count": {
+            "equal": 127,
+            "long": 12,
+            "short": 5
+          },
+          "operations": {
+            "ROT": {
+              "exact": 1,
+              "cases": 49
+            },
+            "REV": {
+              "exact": 1,
+              "cases": 41
+            },
+            "COPY": {
+              "exact": 0,
+              "cases": 54
+            }
+          },
+          "word_matches": 180,
+          "target_words": 787
+        },
+        "held_out": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 45,
+              "words": 144
+            },
+            "2": {
+              "correct": 18,
+              "words": 144
+            },
+            "3": {
+              "correct": 18,
+              "words": 144
+            },
+            "4": {
+              "correct": 26,
+              "words": 144
+            },
+            "5": {
+              "correct": 18,
+              "words": 144
+            },
+            "6": {
+              "correct": 12,
+              "words": 144
+            },
+            "7": {
+              "correct": 4,
+              "words": 144
+            },
+            "8": {
+              "correct": 3,
+              "words": 144
+            },
+            "9": {
+              "correct": 0,
+              "words": 144
+            },
+            "10": {
+              "correct": 0,
+              "words": 121
+            },
+            "11": {
+              "correct": 0,
+              "words": 104
+            },
+            "12": {
+              "correct": 0,
+              "words": 88
+            },
+            "13": {
+              "correct": 0,
+              "words": 69
+            },
+            "14": {
+              "correct": 0,
+              "words": 55
+            },
+            "15": {
+              "correct": 0,
+              "words": 33
+            },
+            "16": {
+              "correct": 0,
+              "words": 14
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 99,
+            "1": 43,
+            "2": 2
+          },
+          "output_word_count": {
+            "short": 143,
+            "long": 1
+          },
+          "operations": {
+            "ROT": {
+              "exact": 0,
+              "cases": 46
+            },
+            "COPY": {
+              "exact": 0,
+              "cases": 48
+            },
+            "REV": {
+              "exact": 0,
+              "cases": 50
+            }
+          },
+          "word_matches": 144,
+          "target_words": 1780
+        },
+        "training_corpus": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 54,
+              "words": 144
+            },
+            "2": {
+              "correct": 40,
+              "words": 144
+            },
+            "3": {
+              "correct": 40,
+              "words": 144
+            },
+            "4": {
+              "correct": 25,
+              "words": 125
+            },
+            "5": {
+              "correct": 17,
+              "words": 98
+            },
+            "6": {
+              "correct": 10,
+              "words": 70
+            },
+            "7": {
+              "correct": 8,
+              "words": 45
+            },
+            "8": {
+              "correct": 1,
+              "words": 23
+            }
+          },
+          "correct_prefix_histogram": {
+            "2": 14,
+            "1": 34,
+            "0": 90,
+            "3": 4,
+            "5": 2
+          },
+          "output_word_count": {
+            "equal": 132,
+            "long": 8,
+            "short": 4
+          },
+          "operations": {
+            "ROT": {
+              "exact": 0,
+              "cases": 53
+            },
+            "REV": {
+              "exact": 2,
+              "cases": 50
+            },
+            "COPY": {
+              "exact": 0,
+              "cases": 41
+            }
+          },
+          "word_matches": 195,
+          "target_words": 793
+        }
+      },
+      "in_range_absent_from_training": {
+        "cases": 139,
+        "positions": {
+          "1": {
+            "correct": 48,
+            "words": 139
+          },
+          "2": {
+            "correct": 39,
+            "words": 139
+          },
+          "3": {
+            "correct": 36,
+            "words": 139
+          },
+          "4": {
+            "correct": 11,
+            "words": 111
+          },
+          "5": {
+            "correct": 15,
+            "words": 92
+          },
+          "6": {
+            "correct": 16,
+            "words": 74
+          },
+          "7": {
+            "correct": 6,
+            "words": 52
+          },
+          "8": {
+            "correct": 7,
+            "words": 26
+          }
+        },
+        "correct_prefix_histogram": {
+          "0": 91,
+          "3": 7,
+          "1": 32,
+          "2": 9
+        },
+        "output_word_count": {
+          "equal": 123,
+          "long": 11,
+          "short": 5
+        },
+        "operations": {
+          "ROT": {
+            "exact": 1,
+            "cases": 48
+          },
+          "REV": {
+            "exact": 1,
+            "cases": 40
+          },
+          "COPY": {
+            "exact": 0,
+            "cases": 51
+          }
+        },
+        "word_matches": 178,
+        "target_words": 772
+      }
+    },
+    {
+      "training_seed": 1,
+      "step": 10254,
+      "splits": {
+        "in_range": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 85,
+              "words": 144
+            },
+            "2": {
+              "correct": 60,
+              "words": 144
+            },
+            "3": {
+              "correct": 56,
+              "words": 144
+            },
+            "4": {
+              "correct": 33,
+              "words": 111
+            },
+            "5": {
+              "correct": 21,
+              "words": 92
+            },
+            "6": {
+              "correct": 12,
+              "words": 74
+            },
+            "7": {
+              "correct": 5,
+              "words": 52
+            },
+            "8": {
+              "correct": 5,
+              "words": 26
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 59,
+            "1": 31,
+            "2": 11,
+            "3": 25,
+            "4": 13,
+            "6": 3,
+            "5": 2
+          },
+          "output_word_count": {
+            "equal": 143,
+            "long": 1
+          },
+          "operations": {
+            "ROT": {
+              "exact": 3,
+              "cases": 49
+            },
+            "REV": {
+              "exact": 6,
+              "cases": 41
+            },
+            "COPY": {
+              "exact": 24,
+              "cases": 54
+            }
+          },
+          "word_matches": 277,
+          "target_words": 787
+        },
+        "held_out": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 46,
+              "words": 144
+            },
+            "2": {
+              "correct": 34,
+              "words": 144
+            },
+            "3": {
+              "correct": 16,
+              "words": 144
+            },
+            "4": {
+              "correct": 14,
+              "words": 144
+            },
+            "5": {
+              "correct": 14,
+              "words": 144
+            },
+            "6": {
+              "correct": 10,
+              "words": 144
+            },
+            "7": {
+              "correct": 12,
+              "words": 144
+            },
+            "8": {
+              "correct": 7,
+              "words": 144
+            },
+            "9": {
+              "correct": 1,
+              "words": 144
+            },
+            "10": {
+              "correct": 0,
+              "words": 121
+            },
+            "11": {
+              "correct": 0,
+              "words": 104
+            },
+            "12": {
+              "correct": 0,
+              "words": 88
+            },
+            "13": {
+              "correct": 0,
+              "words": 69
+            },
+            "14": {
+              "correct": 0,
+              "words": 55
+            },
+            "15": {
+              "correct": 0,
+              "words": 33
+            },
+            "16": {
+              "correct": 0,
+              "words": 14
+            }
+          },
+          "correct_prefix_histogram": {
+            "2": 16,
+            "0": 98,
+            "1": 27,
+            "3": 3
+          },
+          "output_word_count": {
+            "short": 139,
+            "equal": 5
+          },
+          "operations": {
+            "ROT": {
+              "exact": 0,
+              "cases": 46
+            },
+            "COPY": {
+              "exact": 0,
+              "cases": 48
+            },
+            "REV": {
+              "exact": 0,
+              "cases": 50
+            }
+          },
+          "word_matches": 154,
+          "target_words": 1780
+        },
+        "training_corpus": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 69,
+              "words": 144
+            },
+            "2": {
+              "correct": 49,
+              "words": 144
+            },
+            "3": {
+              "correct": 47,
+              "words": 144
+            },
+            "4": {
+              "correct": 36,
+              "words": 125
+            },
+            "5": {
+              "correct": 17,
+              "words": 98
+            },
+            "6": {
+              "correct": 14,
+              "words": 70
+            },
+            "7": {
+              "correct": 6,
+              "words": 45
+            },
+            "8": {
+              "correct": 1,
+              "words": 23
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 75,
+            "1": 27,
+            "4": 13,
+            "6": 2,
+            "3": 11,
+            "5": 5,
+            "2": 10,
+            "7": 1
+          },
+          "output_word_count": {
+            "equal": 141,
+            "short": 3
+          },
+          "operations": {
+            "ROT": {
+              "exact": 1,
+              "cases": 53
+            },
+            "REV": {
+              "exact": 5,
+              "cases": 50
+            },
+            "COPY": {
+              "exact": 15,
+              "cases": 41
+            }
+          },
+          "word_matches": 239,
+          "target_words": 793
+        }
+      },
+      "in_range_absent_from_training": {
+        "cases": 139,
+        "positions": {
+          "1": {
+            "correct": 80,
+            "words": 139
+          },
+          "2": {
+            "correct": 56,
+            "words": 139
+          },
+          "3": {
+            "correct": 52,
+            "words": 139
+          },
+          "4": {
+            "correct": 33,
+            "words": 111
+          },
+          "5": {
+            "correct": 21,
+            "words": 92
+          },
+          "6": {
+            "correct": 12,
+            "words": 74
+          },
+          "7": {
+            "correct": 5,
+            "words": 52
+          },
+          "8": {
+            "correct": 5,
+            "words": 26
+          }
+        },
+        "correct_prefix_histogram": {
+          "0": 59,
+          "1": 30,
+          "2": 11,
+          "4": 13,
+          "3": 21,
+          "6": 3,
+          "5": 2
+        },
+        "output_word_count": {
+          "equal": 138,
+          "long": 1
+        },
+        "operations": {
+          "ROT": {
+            "exact": 3,
+            "cases": 48
+          },
+          "REV": {
+            "exact": 5,
+            "cases": 40
+          },
+          "COPY": {
+            "exact": 21,
+            "cases": 51
+          }
+        },
+        "word_matches": 264,
+        "target_words": 772
+      }
+    },
+    {
+      "training_seed": 2,
+      "step": 10254,
+      "splits": {
+        "in_range": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 81,
+              "words": 144
+            },
+            "2": {
+              "correct": 64,
+              "words": 144
+            },
+            "3": {
+              "correct": 48,
+              "words": 144
+            },
+            "4": {
+              "correct": 28,
+              "words": 111
+            },
+            "5": {
+              "correct": 16,
+              "words": 92
+            },
+            "6": {
+              "correct": 23,
+              "words": 74
+            },
+            "7": {
+              "correct": 11,
+              "words": 52
+            },
+            "8": {
+              "correct": 6,
+              "words": 26
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 63,
+            "1": 33,
+            "2": 16,
+            "3": 24,
+            "4": 5,
+            "6": 2,
+            "5": 1
+          },
+          "output_word_count": {
+            "equal": 140,
+            "short": 3,
+            "long": 1
+          },
+          "operations": {
+            "ROT": {
+              "exact": 2,
+              "cases": 49
+            },
+            "REV": {
+              "exact": 8,
+              "cases": 41
+            },
+            "COPY": {
+              "exact": 13,
+              "cases": 54
+            }
+          },
+          "word_matches": 277,
+          "target_words": 787
+        },
+        "held_out": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 49,
+              "words": 144
+            },
+            "2": {
+              "correct": 19,
+              "words": 144
+            },
+            "3": {
+              "correct": 13,
+              "words": 144
+            },
+            "4": {
+              "correct": 20,
+              "words": 144
+            },
+            "5": {
+              "correct": 12,
+              "words": 144
+            },
+            "6": {
+              "correct": 19,
+              "words": 144
+            },
+            "7": {
+              "correct": 15,
+              "words": 144
+            },
+            "8": {
+              "correct": 11,
+              "words": 144
+            },
+            "9": {
+              "correct": 0,
+              "words": 144
+            },
+            "10": {
+              "correct": 0,
+              "words": 121
+            },
+            "11": {
+              "correct": 0,
+              "words": 104
+            },
+            "12": {
+              "correct": 0,
+              "words": 88
+            },
+            "13": {
+              "correct": 0,
+              "words": 69
+            },
+            "14": {
+              "correct": 0,
+              "words": 55
+            },
+            "15": {
+              "correct": 0,
+              "words": 33
+            },
+            "16": {
+              "correct": 0,
+              "words": 14
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 95,
+            "3": 3,
+            "1": 42,
+            "2": 4
+          },
+          "output_word_count": {
+            "short": 144
+          },
+          "operations": {
+            "ROT": {
+              "exact": 0,
+              "cases": 46
+            },
+            "COPY": {
+              "exact": 0,
+              "cases": 48
+            },
+            "REV": {
+              "exact": 0,
+              "cases": 50
+            }
+          },
+          "word_matches": 158,
+          "target_words": 1780
+        },
+        "training_corpus": {
+          "cases": 144,
+          "positions": {
+            "1": {
+              "correct": 85,
+              "words": 144
+            },
+            "2": {
+              "correct": 62,
+              "words": 144
+            },
+            "3": {
+              "correct": 45,
+              "words": 144
+            },
+            "4": {
+              "correct": 35,
+              "words": 125
+            },
+            "5": {
+              "correct": 27,
+              "words": 98
+            },
+            "6": {
+              "correct": 17,
+              "words": 70
+            },
+            "7": {
+              "correct": 8,
+              "words": 45
+            },
+            "8": {
+              "correct": 0,
+              "words": 23
+            }
+          },
+          "correct_prefix_histogram": {
+            "0": 59,
+            "1": 34,
+            "3": 19,
+            "5": 6,
+            "2": 17,
+            "4": 7,
+            "7": 1,
+            "6": 1
+          },
+          "output_word_count": {
+            "equal": 139,
+            "short": 5
+          },
+          "operations": {
+            "ROT": {
+              "exact": 0,
+              "cases": 53
+            },
+            "REV": {
+              "exact": 9,
+              "cases": 50
+            },
+            "COPY": {
+              "exact": 10,
+              "cases": 41
+            }
+          },
+          "word_matches": 279,
+          "target_words": 793
+        }
+      },
+      "in_range_absent_from_training": {
+        "cases": 139,
+        "positions": {
+          "1": {
+            "correct": 76,
+            "words": 139
+          },
+          "2": {
+            "correct": 60,
+            "words": 139
+          },
+          "3": {
+            "correct": 45,
+            "words": 139
+          },
+          "4": {
+            "correct": 28,
+            "words": 111
+          },
+          "5": {
+            "correct": 16,
+            "words": 92
+          },
+          "6": {
+            "correct": 23,
+            "words": 74
+          },
+          "7": {
+            "correct": 11,
+            "words": 52
+          },
+          "8": {
+            "correct": 6,
+            "words": 26
+          }
+        },
+        "correct_prefix_histogram": {
+          "0": 63,
+          "1": 32,
+          "2": 15,
+          "3": 21,
+          "4": 5,
+          "6": 2,
+          "5": 1
+        },
+        "output_word_count": {
+          "equal": 135,
+          "short": 3,
+          "long": 1
+        },
+        "operations": {
+          "ROT": {
+            "exact": 2,
+            "cases": 48
+          },
+          "REV": {
+            "exact": 7,
+            "cases": 40
+          },
+          "COPY": {
+            "exact": 11,
+            "cases": 51
+          }
+        },
+        "word_matches": 265,
+        "target_words": 772
+      }
+    }
+  ]
+}

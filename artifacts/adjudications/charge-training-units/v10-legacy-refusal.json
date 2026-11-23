@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-23",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 0,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v10",
+  "verdicts": [
+    {
+      "excluded_evidence": [
+        {
+          "path": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-0/summary.json",
+          "reason_code": "missing_checkpoint_identity"
+        },
+        {
+          "path": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-1/summary.json",
+          "reason_code": "missing_checkpoint_identity"
+        },
+        {
+          "path": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/charge-control-input/probes/charges/same-rmatrix-different-probe-2/summary.json",
+          "reason_code": "missing_checkpoint_identity"
+        }
+      ],
+      "id": "hyp-rmatrix-charge-decodability",
+      "mechanism": "braid",
+      "reason": "No qualifying arm remains after provenance checks.",
+      "reason_code": "ineligible_evidence",
+      "registration_commit": "d74847af370363604b835a0416efaaf6ad706c79",
+      "verdict": "blocked"
+    }
+  ]
+}
