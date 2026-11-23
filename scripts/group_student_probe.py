@@ -360,11 +360,64 @@ def decision(results: list[dict]) -> dict:
     return dict(verdict=verdict, delta=contrast, baseline_above_floor=floor)
 
 
+class ShortlexRelations:
+    """Streaming, proof-producing rewriting from certified action edges."""
+
+    def __init__(self) -> None:
+        self.rules: dict[str, str] = {}
+        self.widths: tuple[int, ...] = ()
+        self.known = {""}
+        self.normal_forms: dict[str, tuple[str, tuple[tuple[int, str, str], ...]]] = {}
+
+    def record(self, word: str, representative: str) -> None:
+        self.known.add(representative)
+        if word == representative:
+            return
+        if (len(word), word) <= (len(representative), representative):
+            raise ValueError("An action equality does not orient by shortlex decrease")
+        if self.rules.setdefault(word, representative) != representative:
+            raise ValueError("Conflicting certified representatives")
+        self.widths = tuple(sorted({len(side) for side in self.rules}, reverse=True))
+        self.normal_forms.clear()
+
+    def normalize(self, word: str) -> tuple[str, tuple[tuple[int, str, str], ...]]:
+        if word not in self.normal_forms:
+            current = word
+            proof = []
+            while True:
+                match = next(
+                    (
+                        (start, lhs, self.rules[lhs])
+                        for start in range(len(current))
+                        for width in self.widths
+                        if start + width <= len(current) and (lhs := current[start : start + width]) in self.rules
+                    ),
+                    None,
+                )
+                if match is None:
+                    break
+                start, lhs, rhs = match
+                proof.append(match)
+                current = current[:start] + rhs + current[start + len(lhs) :]
+            self.normal_forms[word] = (current, tuple(proof))
+        return self.normal_forms[word]
+
+    def comparison_key(self, word: str, ref: str) -> tuple[str, ...]:
+        current = cancelled_key(word, ref)
+        while True:
+            reduced = cancelled_key(*(self.normalize(side)[0] for side in current))
+            if reduced == current:
+                return current
+            current = reduced
+
+
 def acquire_equalities(
     size: int,
     equal: Callable[[str, str], bool],
     rank: Callable[[str, str], float],
     cached: Callable[[str, str], bool | None] | None = None,
+    *,
+    relations: ShortlexRelations | None = None,
 ) -> dict:
     """Recover a rooted action using only equality and the size and bijection promises.
 
@@ -372,6 +425,7 @@ def acquire_equalities(
     alter the candidate set. New representatives keep breadth-first order.
     """
     representatives = [""]
+    indices = {"": 0}
     edges = []
     used: tuple[set[int], set[int]] = (set(), set())
     trace = []
@@ -383,7 +437,16 @@ def acquire_equalities(
             word = source + generator
             candidates = [i for i in range(len(representatives)) if i not in used[index]]
             trials = []
-            if len(representatives) == size and len(candidates) == 1:
+            event: dict = dict(word=word, trials=trials)
+            normal, steps = relations.normalize(word) if relations is not None else (word, ())
+            if relations is not None and normal in indices:
+                target = indices[normal]
+                if target not in candidates:
+                    raise ValueError("A normal form conflicts with generator bijectivity")
+                event["normal_form"] = normal
+                event["substitutions"] = steps
+                counts["rewritten"] += 1
+            elif len(representatives) == size and len(candidates) == 1:
                 target = candidates[0]
                 counts["forced"] += 1
             else:
@@ -407,10 +470,14 @@ def acquire_equalities(
                         raise ValueError("Equality oracle is inconsistent with the advertised action size")
                     target = len(representatives)
                     representatives.append(word)
+                    indices[word] = target
                     counts["new"] += 1
             used[index].add(target)
             row.append(target)
-            trace.append(dict(word=word, target=target, trials=trials))
+            event["target"] = target
+            trace.append(event)
+            if relations is not None:
+                relations.record(word, representatives[target])
         edges.append(row)
     if len(representatives) != size:
         raise ValueError("The advertised states are not all reachable")
@@ -563,7 +630,13 @@ def relator_key(a: str, b: str) -> tuple[int, ...]:
     return min((word[i:] + word[:i] for word in (cyclic, inverse) for i in range(len(word))), default=())
 
 
-def acquire_with_memo(size: int, equal: Callable[[str, str], bool], key: Callable[[str, str], tuple]) -> dict:
+def acquire_with_memo(
+    size: int,
+    equal: Callable[[str, str], bool],
+    key: Callable[[str, str], tuple],
+    *,
+    relations: ShortlexRelations | None = None,
+) -> dict:
     memo = {key("", ""): True}
 
     def ask(word: str, ref: str) -> bool:
@@ -571,11 +644,25 @@ def acquire_with_memo(size: int, equal: Callable[[str, str], bool], key: Callabl
         memo[key(word, ref)] = result
         return result
 
+    def cached(word: str, ref: str) -> bool | None:
+        normalized = key(word, ref)
+        if relations is not None:
+            a, b = normalized
+            if a == b:
+                return True
+            if a in relations.known and b in relations.known:
+                return False
+        return memo.get(normalized)
+
     started = time.perf_counter()
-    acquired = acquire_equalities(size, ask, symbol_count_rank, cached=lambda a, b: memo.get(key(a, b)))
+    acquired = acquire_equalities(size, ask, symbol_count_rank, cached=cached, relations=relations)
     acquired["seconds"] = time.perf_counter() - started
     acquired["memo_entries"] = len(memo)
     acquired["memo_symbols"] = sum(len(k) if not k or isinstance(k[0], int) else sum(map(len, k)) for k in memo)
+    if relations is not None:
+        acquired["rule_count"] = len(relations.rules)
+        acquired["rule_symbols"] = sum(len(a) + len(b) for a, b in relations.rules.items())
+        acquired["cached_normal_forms"] = len(relations.normal_forms)
     return acquired
 
 
@@ -654,9 +741,138 @@ def relator_panel(data: Path, output: Path) -> None:
     save(output, {"seed": 2026112307, "excluded_incomplete_s5": [row[2] for row in leaked_s5], "results": results})
 
 
+def s5_catalog():
+    elements = _group_elements("s5")
+    graphs = {}
+    for pair in product(elements, repeat=2):
+        graph = rooted_graph("s5", pair)
+        if len(graph) == len(elements):
+            graphs[graph_digest(graph)] = graph
+    return dict(sorted(graphs.items()))
+
+
+def graph_equations(graph) -> list[tuple[str, ...]]:
+    """Return transition equations of a canonical BFS-numbered action."""
+    reps: list[str | None] = [None] * len(graph)
+    reps[0] = ""
+    for source, row in enumerate(graph):
+        prefix = reps[source]
+        if prefix is None:
+            raise ValueError("Graph is not in reachable BFS order")
+        for digit, dest in enumerate(row):
+            if reps[dest] is None:
+                reps[dest] = prefix + str(digit)
+    words = [word for word in reps if word is not None]
+    if len(words) != len(graph):
+        raise ValueError("Graph contains a state without a representative")
+    return sorted(
+        {
+            pair_key(words[source] + str(digit), words[dest])
+            for source, row in enumerate(graph)
+            for digit, dest in enumerate(row)
+            if words[source] + str(digit) != words[dest]
+        }
+    )
+
+
+def identify_known_family(catalog, equal: Callable[[str, str], bool]) -> dict:
+    survivors = list(catalog)
+    trace = []
+    while len(survivors) > 1:
+        size = len(survivors)
+        best = None
+        for question in graph_equations(catalog[survivors[0]]):
+            left, right = question
+            yes = [g for g in survivors if walk_action(left, catalog[g]) == walk_action(right, catalog[g])]
+            if 0 < len(yes) < size:
+                proposal = (abs(2 * len(yes) - size), question, yes)
+                if best is None or proposal[:2] < best[:2]:
+                    best = proposal
+        if best is None:
+            raise ValueError("Distinct action tables failed to yield a separating question")
+        _, (left, right), matched = best
+        answer = equal(left, right)
+        positive = set(matched)
+        survivors = [g for g in survivors if (g in positive) == answer]
+        trace.append(dict(pair=[left, right], candidates=size, predicted_yes=len(positive), answer=answer))
+    return dict(marked_class=survivors[0], queries=trace)
+
+
+def congruence_panel(coverage: Path, output: Path) -> None:
+    manifest = json.loads(coverage.read_bytes())
+    if manifest["seed"] != 2026112311 or not hmac.compare_digest(manifest["archive_sha256"], digest(EQUALITY_ARCHIVE)):
+        raise ValueError("The coverage manifest does not name the frozen source population")
+    presentations = manifest["presentations"]
+    if Counter(row["group"] for row in presentations) != {"s5": 6, "a6": 6, "z60": 6}:
+        raise ValueError("The coverage manifest has an incomplete family")
+    catalog_start = time.perf_counter()
+    catalog = s5_catalog()
+    catalog_seconds = time.perf_counter() - catalog_start
+    results = []
+    excluded = set(manifest["spent"])
+    for i, row in enumerate(presentations):
+        group = row["group"]
+        graph = rooted_graph(group, tuple(tuple(g) for g in row["generators"]))
+        fingerprint = graph_digest(graph)
+        if fingerprint in excluded or fingerprint != row["graph_sha"] or len(graph) != row["size"]:
+            raise ValueError("The manifest contains an ineligible graph")
+        excluded.add(fingerprint)
+        rng = random.Random(97510 + i)
+        seen: set[str] = set()
+        samples = [
+            (word, walk_action(word, graph)) for n in (16, 32, 64, 128) for word in distinct_words(rng, seen, 48, n)
+        ]
+        oracle_seconds = 0.0
+
+        def oracle(left: str, right: str) -> bool:
+            nonlocal oracle_seconds
+            start = time.perf_counter()
+            same = walk_action(left, graph) == walk_action(right, graph)
+            oracle_seconds += time.perf_counter() - start
+            return same
+
+        strategies = {}
+        relations = ShortlexRelations()
+        for name, key, rules in (
+            ("cancelled", cancelled_key, None),
+            ("congruence", relations.comparison_key, relations),
+        ):
+            oracle_seconds = 0.0
+            table = acquire_with_memo(len(graph), oracle, key, relations=rules)
+            table["oracle_seconds"] = oracle_seconds
+            if table["edges"] != [list(r) for r in graph]:
+                raise ValueError("An arm produced the wrong canonical action")
+            if any(walk_action(word, table["edges"]) != answer for word, answer in samples):
+                raise ValueError("The acquired action changed a fresh held-out answer")
+            strategies[name] = table
+        family = None
+        if group == "s5":
+            oracle_seconds = 0.0
+            start = time.perf_counter()
+            family = identify_known_family(catalog, oracle)
+            family.update(seconds=time.perf_counter() - start, oracle_seconds=oracle_seconds)
+            if family["marked_class"] != fingerprint:
+                raise ValueError("The known-family search chose the wrong marked group")
+        results.append(
+            dict(index=i, graph_sha=fingerprint, group=group, samples=samples, arms=strategies, family=family)
+        )
+        print(group, i, {k: table["counts"] for k, table in strategies.items()}, flush=True)
+    save(
+        output,
+        dict(
+            coverage_sha256=digest(coverage),
+            catalog_size=len(catalog),
+            catalog_seconds=catalog_seconds,
+            results=results,
+        ),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover"))
+    parser.add_argument(
+        "phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover", "congruence")
+    )
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--output", type=Path)
@@ -664,6 +880,7 @@ if __name__ == "__main__":
     parser.add_argument("--last", type=int, default=24)
     parser.add_argument("--cuda-graph", action="store_true", help="Capture forward and backward during training")
     parser.add_argument("--equality-device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--coverage", type=Path)
     args = parser.parse_args()
     if args.phase == "prepare":
         prepare(args.data)
@@ -680,6 +897,10 @@ if __name__ == "__main__":
         if args.output is None:
             parser.error("--output is required for the congruence coverage check")
         congruence_coverage(args.data, args.output)
+    elif args.phase == "congruence":
+        if args.coverage is None or args.output is None:
+            parser.error("--coverage and --output are required for the congruence panel")
+        congruence_panel(args.coverage, args.output)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")

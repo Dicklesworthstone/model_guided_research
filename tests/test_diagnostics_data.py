@@ -670,3 +670,40 @@ def test_equivalence_cache_keys_use_only_group_identities():
     raw, cancelled, cyclic = [acquire_with_memo(6, equal, key) for key in (pair_key, cancelled_key, relator_key)]
     assert raw["edges"] == cancelled["edges"] == cyclic["edges"]
     assert cyclic["counts"]["cache_different"] > 0
+
+
+def test_congruence_combines_shortlex_rules_and_preserves_the_action():
+    from scripts.group_student_probe import ShortlexRelations, acquire_with_memo, cancelled_key
+
+    rules = ShortlexRelations()
+    assert rules.normalize("1000") == ("1000", ())
+    rules.record("000", "1")
+    rules.record("11", "")
+    assert rules.normalize("1000") == ("", ((1, "000", "1"), (0, "11", "")))
+    with pytest.raises(ValueError, match="shortlex"):
+        rules.record("0", "000")
+
+    def equality(a, b):
+        def exponent(word):
+            return (word.count("0") + 3 * word.count("1")) % 6
+
+        return exponent(a) == exponent(b)
+
+    baseline = acquire_with_memo(6, equality, cancelled_key)
+    learned = ShortlexRelations()
+    treatment = acquire_with_memo(6, equality, learned.comparison_key, relations=learned)
+    assert treatment["edges"] == baseline["edges"]
+    assert treatment["counts"]["rewritten"] > 0
+
+
+def test_known_family_uses_a_balanced_separating_query():
+    from scripts.group_student_probe import identify_known_family, walk_action
+
+    target = ((1, 0), (2, 1), (0, 2))
+    alternate = ((0, 1), (1, 2), (2, 0))
+    result = identify_known_family(
+        {"first": alternate, "second": target}, lambda a, b: walk_action(a, target) == walk_action(b, target)
+    )
+    assert result["marked_class"] == "second"
+    (question,) = result["queries"]
+    assert question["candidates"] == 2 and question["predicted_yes"] == 1
