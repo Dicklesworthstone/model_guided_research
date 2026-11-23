@@ -2294,8 +2294,12 @@ def test_nanochat_imports_without_jax():
         "        return None\n"
         "sys.meta_path.insert(0, _BlockJax())\n"
         "import nanochat\n"
+        "import nanochat.execution\n"
+        "assert 'torch' not in sys.modules\n"
+        "assert set(nanochat.__all__).issubset(dir(nanochat))\n"
         "for name in nanochat.__all__:\n"
         "    getattr(nanochat, name)\n"
+        "assert nanochat.MECHANISM_CLASSES['standard'] is nanochat.CausalSelfAttention\n"
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     require(proc.returncode == 0, f"nanochat leaked JAX/Flax import: {proc.stderr}")
