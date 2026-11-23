@@ -70,6 +70,9 @@ counts. Zero models were trained for this comparison.
 | [Group, 30 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/report.md) | 4/144, 5/144, 4/144 | 14/144 | In-range exact match reached 139/144, 133/144 and 139/144. All three seeds fell below the prior on the longer held-out words. The 100-trillion-FLOP rung remains unmeasured. [Generated answers](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/generations.zip) |
 | [Bag, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 35/144, 41/144, 28/144 | 54/144 | All three seeds fell below the prior. The scorecard shared its three placebo cells with relation. |
 | [Relation, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 12/144, 9/144, 9/144 | 21/144 | All three seeds fell below the prior. All 432 held-out outcomes were scored. |
+| [Bag, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 31/144, 34/144, 36/144 | 54/144 | All three seeds fell below the prior. |
+| [Relation, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 12/144, 13/144, 12/144 | 21/144 | All three seeds fell below the prior. |
+| [Hierarchy, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 1/144, 1/144, 1/144 | 8/144 | Each seed answered one held-out query correctly. |
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint
@@ -85,6 +88,15 @@ They ranged from 42 to 138 tokens, including BOS and the expected completion.
 The in-range cases used 14–26 tokens. This rules out exceeding the 256-token
 window as an explanation for this group's held-out result.
 [Tokenizer replay](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b30-s256-rung/window-lengths.json)
+
+The 10-trillion-FLOP bag, relation and hierarchy scorecard used the same
+three placebo cells. Every held-out bag example used 79 tokens. The relation
+examples used 129–143. On hierarchy, only five of 144 held-out examples fit
+the 256-token training window, with lengths from 154 to 1,720. The scorecard
+scored all 144. Each model's one correct answer therefore measures a split
+dominated by examples longer than its training context.
+[Per-checkpoint lengths](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/window-lengths.json)
+· [Generated answers and replay programs](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/generations.zip)
 
 ## November 2026 assessment
 
