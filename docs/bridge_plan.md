@@ -18,6 +18,16 @@ Spearman correlation from +1 to −1. JSON and Parquet replay agreed byte for
 byte. The five trained models qualified the measurement code. The existing
 route hypotheses still require their registered scientific campaigns.
 
+An independent checkout then replayed both formats for 11 observations from
+real training checkpoints. Both selected the same five post-registration
+trainings. The observed routes survived 46 of 704 perturbations. A second
+extraction reproduced the joined result byte-for-byte. To reproduce it,
+extract the fixture into an empty directory, set `J44_REPO` to a local clone
+containing commit `7115611`, and run `bash reproduce.sh joined` there.
+[Fixture archive](../artifacts/regressions/jida44/jida44-consumer-7115611.tgz)
+· [Joined result](../artifacts/regressions/jida44/joined-result.json)
+· [Relocation receipt](../artifacts/regressions/jida44/relocation-receipt.json)
+
 The depth-eight symplectic check now captures the eight layer calls from each
 training forward. In the original seed and 24-step scenario the worst band
 fell from 2.0276 to 0.010479 against the existing 0.10 limit. In a separate
@@ -46,6 +56,8 @@ test still compares the entire config and all 50 losses for each model.
 | Standard-only sizing probe | Held-out exact match by training seed | Recorded prior | Decision |
 |---|---|---|---|
 | [Needle, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored on all three seeds. No examples exceeded the context window. The registered next rung uses 10 trillion FLOPs and four layers at width 128. |
+| [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored at four layers and width 128. The ladder continues at 30 trillion FLOPs. |
+| [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
 
 ## November 2026 assessment
 

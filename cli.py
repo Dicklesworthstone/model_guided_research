@@ -12005,7 +12005,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v7"
+_ADJ_POLICY_VERSION = "ci-v8"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12162,6 +12162,7 @@ _ADJ_BLOCK_REASONS = {
     "tainted_evidence": "only tainted artifacts available (dirty tree / missing provenance) - evidence not attributable to a committed code state",
     "insufficient_seeds": "no equal-FLOPs cohort gives both arms at least min_seeds (>= 2) training runs - mgr hypotheses power computes the seed count the registered effect actually needs",
     "budget_mismatch": "no equal-FLOPs cohort (5% tolerance) contains both arms, or an artifact cannot prove its planned budget",
+    "optimizer_compute_unmeasured": "The model FLOP budget excludes the optimizer's Hessian-vector products. These artifacts cannot establish equal total training compute for HOSS versus a first-order optimizer.",
     "metric_missing": "qualifying artifact lacks the metric at the registered path",
     "manual_hold": "hypothesis is on manual hold - a human froze the verdict; the engine refuses to re-stamp it mechanically. Release with `mgr hypotheses release <id>` before adjudicating.",
 }
@@ -12986,6 +12987,14 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
         # honest: an arith-trained model's eval cannot witness a hier claim)
         cand_m = [a for a in cand if _adj_observations(a, dotted)]
         base_m = [a for a in base if _adj_observations(a, dotted)]
+        if cand_m and base_m and schema in {"train", "evaltasks"} and ((mech == "hoss") != (eff_base_mech == "hoss")):
+            return {
+                "id": hid,
+                "verdict": "blocked",
+                "reason_code": "optimizer_compute_unmeasured",
+                "mechanism": mech,
+                "reason": _ADJ_BLOCK_REASONS["optimizer_compute_unmeasured"],
+            }
         if not cand_m or (not base_m and not single_arm):
             return {
                 "id": hid,

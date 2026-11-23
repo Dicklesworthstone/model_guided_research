@@ -1,0 +1,356 @@
+{
+  "schema_version": "mgr.scorecard.v3",
+  "kind": "scorecard",
+  "generated_at": "2026-11-23T01:27:45Z",
+  "runtime_seconds": 567.3633440420017,
+  "off_floor": {
+    "10000000000000.0": {
+      "needle": {
+        "qualified": false,
+        "reason": "at least one standard training seed did not clear its artifact-recorded prior",
+        "observations": [
+          {
+            "seed": 0,
+            "score": 0.0,
+            "answer_prior": 0.05555555555555555
+          },
+          {
+            "seed": 1,
+            "score": 0.0,
+            "answer_prior": 0.05555555555555555
+          },
+          {
+            "seed": 2,
+            "score": 0.0,
+            "answer_prior": 0.05555555555555555
+          }
+        ],
+        "mean": 0.0,
+        "ci95_half_width": 0.0,
+        "lower_ci95": 0.0,
+        "maximum_answer_prior": 0.05555555555555555
+      }
+    }
+  },
+  "manifest": {
+    "schema_version": "mgr.scorecard.v3",
+    "kind": "scorecard-manifest",
+    "run_id": "vdc4-needle-tasktok-shuf-b10-s256-rung",
+    "created_command": "cli.py scorecard --budget 1e13 --cell standard:needle --seeds 3 --eval-seeds 0,1,2 --examples 48 --dataset-size 100000 --dataset-seed 42 --device cpu --batch-size 4 --sequence-len 256 --n-layer 4 --n-head 8 --n-kv-head 4 --n-embd 128 --learning-rate 6e-4 --optimizer-type adamw --tokenizer task --warmup-steps 0 --log-interval 1 --val-interval 0 --checkpoint-interval 1000 --min-evidence-steps 10 --timeout-s 36000 --artifacts-dir /Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/research/artifacts/probes/sizing --run-id vdc4-needle-tasktok-shuf-b10-s256-rung --fresh",
+    "resume_history": [],
+    "created_at": "2026-11-23T01:18:09Z",
+    "updated_at": "2026-11-23T01:27:45Z",
+    "git": {
+      "commit": "a5abe77",
+      "commit_full": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+      "branch": "HEAD",
+      "dirty": false
+    },
+    "config": {
+      "budgets": [
+        10000000000000.0
+      ],
+      "mechanisms": [
+        "standard"
+      ],
+      "tasks": [
+        "needle",
+        "placebo"
+      ],
+      "matrix": [
+        {
+          "mechanism": "standard",
+          "task": "needle"
+        },
+        {
+          "mechanism": "standard",
+          "task": "placebo"
+        }
+      ],
+      "hypothesis_ids": [],
+      "hypothesis_snapshot": [],
+      "governance_registry": null,
+      "adjudication_policy": "ci-v7",
+      "training_seeds": [
+        0,
+        1,
+        2
+      ],
+      "eval_seeds": "0,1,2",
+      "examples": 48,
+      "dataset_size": 100000,
+      "dataset_seed": 42,
+      "device": "cpu",
+      "batch_size": 4,
+      "sequence_len": 256,
+      "n_layer": 4,
+      "n_head": 8,
+      "n_kv_head": 4,
+      "resolved_campaign_n_kv_head": 4,
+      "n_embd": 128,
+      "learning_rate": 0.0006,
+      "optimizer_type": "adamw",
+      "tokenizer": "task",
+      "warmup_steps": 0,
+      "log_interval": 1,
+      "val_interval": 0,
+      "val_batches": 10,
+      "scaling_axis": false,
+      "checkpoint_interval": 1000,
+      "min_evidence_steps": 10,
+      "flops_per_step_est": {
+        "standard": 6442450944
+      }
+    },
+    "mechanism_arms": {
+      "standard": {
+        "mechanism": "standard",
+        "extras": {}
+      }
+    },
+    "cells": [
+      {
+        "id": "b0-needle-standard-s0",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "needle",
+        "seed": 0,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": false,
+        "evidence_qualified": false,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 112.59,
+        "metrics": {
+          "final_loss": 2.9510483741760254,
+          "val_ce_final": null,
+          "tokens_per_second": 16607.0097004185,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10003666698240
+        },
+        "train_summary_path": "runs/budget_0/needle/standard/seed_0/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-needle-standard-s0/summary.json",
+        "stdout_path": "logs/b0-needle-standard-s0.eval.stdout.txt",
+        "stderr_path": "logs/b0-needle-standard-s0.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      },
+      {
+        "id": "b0-needle-standard-s1",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "needle",
+        "seed": 1,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": false,
+        "evidence_qualified": false,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 100.41,
+        "metrics": {
+          "final_loss": 2.9356839656829834,
+          "val_ce_final": null,
+          "tokens_per_second": 18664.295004582866,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10003666698240
+        },
+        "train_summary_path": "runs/budget_0/needle/standard/seed_1/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-needle-standard-s1/summary.json",
+        "stdout_path": "logs/b0-needle-standard-s1.eval.stdout.txt",
+        "stderr_path": "logs/b0-needle-standard-s1.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      },
+      {
+        "id": "b0-needle-standard-s2",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "needle",
+        "seed": 2,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": false,
+        "evidence_qualified": false,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 89.92,
+        "metrics": {
+          "final_loss": 2.9471192359924316,
+          "val_ce_final": null,
+          "tokens_per_second": 21281.322168089348,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10003666698240
+        },
+        "train_summary_path": "runs/budget_0/needle/standard/seed_2/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-needle-standard-s2/summary.json",
+        "stdout_path": "logs/b0-needle-standard-s2.eval.stdout.txt",
+        "stderr_path": "logs/b0-needle-standard-s2.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      },
+      {
+        "id": "b0-placebo-standard-s0",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "placebo",
+        "seed": 0,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": true,
+        "evidence_qualified": true,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 94.96,
+        "metrics": {
+          "final_loss": 1.4747282266616821,
+          "val_ce_final": null,
+          "tokens_per_second": 18369.23166859838,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10000999120896
+        },
+        "train_summary_path": "runs/budget_0/placebo/standard/seed_0/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-placebo-standard-s0/summary.json",
+        "stdout_path": "logs/b0-placebo-standard-s0.eval.stdout.txt",
+        "stderr_path": "logs/b0-placebo-standard-s0.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      },
+      {
+        "id": "b0-placebo-standard-s1",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "placebo",
+        "seed": 1,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": true,
+        "evidence_qualified": true,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 87.7,
+        "metrics": {
+          "final_loss": 1.4429783821105957,
+          "val_ce_final": null,
+          "tokens_per_second": 19841.27341467341,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10000999120896
+        },
+        "train_summary_path": "runs/budget_0/placebo/standard/seed_1/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-placebo-standard-s1/summary.json",
+        "stdout_path": "logs/b0-placebo-standard-s1.eval.stdout.txt",
+        "stderr_path": "logs/b0-placebo-standard-s1.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      },
+      {
+        "id": "b0-placebo-standard-s2",
+        "budget_index": 0,
+        "budget_flops": 10000000000000.0,
+        "mechanism": "standard",
+        "mechanism_base": "standard",
+        "mechanism_extras": {},
+        "task": "placebo",
+        "seed": 2,
+        "resolved_n_kv_head": 4,
+        "flops_per_step_est": 6442450944,
+        "planned_steps": 1553,
+        "planned_flops_est": 10005126316032,
+        "step_qualified": true,
+        "off_floor_qualified": true,
+        "evidence_qualified": true,
+        "status": "done",
+        "stage": "complete",
+        "attempts": 1,
+        "wall_seconds": 81.77,
+        "metrics": {
+          "final_loss": 1.4677375555038452,
+          "val_ce_final": null,
+          "tokens_per_second": 21366.338944205334,
+          "peak_memory_allocated_gb": null,
+          "planned_total_flops_est": 10000999120896
+        },
+        "train_summary_path": "runs/budget_0/placebo/standard/seed_2/summary.json",
+        "eval_summary_path": "evals/tasks/eval-b0-placebo-standard-s2/summary.json",
+        "stdout_path": "logs/b0-placebo-standard-s2.eval.stdout.txt",
+        "stderr_path": "logs/b0-placebo-standard-s2.eval.stderr.txt",
+        "returncode": 0,
+        "error": null,
+        "resumed_from_step": null
+      }
+    ]
+  },
+  "adjudications": {
+    "policy_version": "ci-v7",
+    "artifact_count": 0,
+    "quarantined_artifact_count": 0,
+    "governance_error": null,
+    "verdicts": [],
+    "fdr": {
+      "q_level": 0.1,
+      "family_size": 0,
+      "supported": 0,
+      "supported_fdr_survivors": []
+    },
+    "by_budget": {
+      "10000000000000.0": []
+    },
+    "by_budget_fdr": {
+      "10000000000000.0": {
+        "q_level": 0.1,
+        "family_size": 0,
+        "supported": 0,
+        "supported_fdr_survivors": []
+      }
+    },
+    "verdict_flips": [],
+    "placebo": {
+      "rows": [],
+      "publication_blocked": true,
+      "blockers": [
+        "hyp-placebo-no-winner: universal placebo guard has not been supported"
+      ]
+    }
+  }
+}

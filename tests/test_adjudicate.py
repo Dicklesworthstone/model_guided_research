@@ -137,7 +137,7 @@ def test_supported_when_ci_clears_threshold(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v7"
+    assert v["policy_version"] == "ci-v8"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v7"
+    assert v["policy_version"] == "ci-v8"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
@@ -351,6 +351,15 @@ def test_train_schema_arm_detection(tmp_path):
     v = _adj_score_cohort(hyp, _index(tmp_path))
     assert v["verdict"] == "supported", v
     assert v["arms"]["ordinal"]["n_candidate"] == 3
+
+    for i, ce in enumerate([1.20, 1.22, 1.21]):
+        train_artifact(f"hoss{i}", optimizer="hoss", val_ce=ce)
+    hyp["mechanisms"] = ["hoss"]
+    blocked = _adj_score_cohort(hyp, _index(tmp_path))
+    assert (blocked["verdict"], blocked["reason_code"]) == ("blocked", "optimizer_compute_unmeasured")
+    hyp["mechanisms"] = ["standard"]
+    hyp["prediction"]["baseline"]["mechanism"] = "hoss"
+    assert _adj_score_cohort(hyp, _index(tmp_path))["reason_code"] == "optimizer_compute_unmeasured"
 
 
 def test_train_variant_selector_resolves_dataset_task(tmp_path):
@@ -624,8 +633,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v7"
-    assert first["policy_version"] == "ci-v7" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v8"
+    assert first["policy_version"] == "ci-v8" and first["artifacts"]
     assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
@@ -912,7 +921,7 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v7"
+    assert v["policy_version"] == "ci-v8"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -1035,7 +1044,7 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v7"
+    assert v["policy_version"] == "ci-v8"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):

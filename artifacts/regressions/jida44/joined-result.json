@@ -1,0 +1,136 @@
+{
+  "anchor": "bff1af85d1b810f9ed79a3d575d5f6574c625834",
+  "controls": {
+    "constant": 0.0,
+    "future_exit": 2,
+    "shuffled": -0.033333333333333305,
+    "signal": 1.0
+  },
+  "draws_scored": 704,
+  "draws_survived": 46,
+  "input_stores": 11,
+  "joined": {
+    "json": {
+      "anchor": "bff1af85d1b810f9ed79a3d575d5f6574c625834",
+      "excluded": {
+        "pre_registration": 2
+      },
+      "reason": null,
+      "selected": 5,
+      "units": {
+        "tropical": 5
+      },
+      "verdict": "refuted"
+    },
+    "parquet": {
+      "anchor": "bff1af85d1b810f9ed79a3d575d5f6574c625834",
+      "excluded": {
+        "pre_registration": 2
+      },
+      "reason": null,
+      "selected": 5,
+      "units": {
+        "tropical": 5
+      },
+      "verdict": "refuted"
+    }
+  },
+  "missing": {
+    "anchor": "bff1af85d1b810f9ed79a3d575d5f6574c625834",
+    "excluded": {
+      "missing_training_lineage": 1
+    },
+    "reason": "ineligible_evidence",
+    "selected": 0,
+    "units": {},
+    "verdict": "blocked"
+  },
+  "raw_per_observation": {
+    "post-native-11-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 1,
+      "unique": 13
+    },
+    "post-native-11-43-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 0,
+      "unique": 10
+    },
+    "post-native-11-44-3": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 2,
+      "unique": 12
+    },
+    "post-native-11-45-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 3,
+      "unique": 12
+    },
+    "post-native-11-46-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 1,
+      "unique": 14
+    },
+    "post-native-19-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 3,
+      "unique": 10
+    },
+    "post-native-23-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 13,
+      "unique": 11
+    },
+    "post-native-29-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 20,
+      "unique": 12
+    },
+    "post-native-31-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 2,
+      "unique": 9
+    },
+    "pre-native-41-42-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 0,
+      "unique": 12
+    },
+    "reevaluated-pre-native-41-43-1": {
+      "draws": 64,
+      "programs": 16,
+      "prompts": 8,
+      "survivors": 1,
+      "unique": 12
+    }
+  },
+  "single_model_five_analysis_seeds": {
+    "anchor": "bff1af85d1b810f9ed79a3d575d5f6574c625834",
+    "excluded": {},
+    "reason": "insufficient_seeds",
+    "selected": 0,
+    "units": {},
+    "verdict": "blocked"
+  },
+  "source": "711561125aa154a1404ad9a98d8ebb118655cda3"
+}

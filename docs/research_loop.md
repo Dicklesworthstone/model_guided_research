@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v7`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v8`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -158,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v7`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v8`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -177,6 +177,16 @@ headline is always "N supported, of which M survive FDR at q=0.10".
 Prefer `-H <id>` over `--all` unless you intend a full-ledger re-adjudication:
 `--all` recomputes *every* hypothesis against the grown evidence pool, which
 can move verdicts you weren't looking at.
+
+Training budgets count model forward and backward work. In a paired CPU step
+at width 32 and depth 2, AdamW and HOSS both received an estimate of 11,796,480
+FLOPs and started at loss 4.8520303. PyTorch counted 39 matrix multiplies and
+12 batched matrix multiplies for AdamW, versus 825 and 252 for HOSS. The extra
+work comes from differentiating gradients during the optimizer step. These
+operator counts measure this particular configuration. Policy `ci-v8` refuses
+mixed HOSS and first-order comparisons from training or task-eval summaries
+with `optimizer_compute_unmeasured` when both arms carry the registered
+metric. Bead `sequ` tracks calibration across ranks and architectures.
 
 #### November 2026 historical replay
 

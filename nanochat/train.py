@@ -2366,6 +2366,7 @@ def train(args) -> None:
                 "max_steps": max_steps,
                 "target_flops": args.target_flops,
                 "flops_per_step_est": flops_per_step,
+                "flops_scope": "model_forward_backward",
                 "flops_consumed_est": (step + 1) * flops_per_step,
             },
             "lineage": {"run_id": resolved_run_id, "parent_run_ids": parent_run_ids},
@@ -3206,6 +3207,7 @@ def train(args) -> None:
         "flops_per_token_est": flops_per_token,
         "tokens_per_step_global": tokens_per_step,
         "flops_per_step_est": flops_per_step,
+        "flops_scope": "model_forward_backward",
         "planned_total_flops_est": max_steps * flops_per_step,
     }
     checkpointing: dict[str, Any] = {

@@ -32,13 +32,26 @@ tools:
         uv build --wheel --out-dir "$DSR_QUALITY_RUN_DIR/dist" &&
         uv export --locked --no-dev --no-emit-project --no-hashes --output-file "$DSR_QUALITY_RUN_DIR/wheel-runtime.txt" > /dev/null &&
         cd "$DSR_QUALITY_RUN_DIR" &&
-        uv run --isolated --no-project --python 3.13 --with-requirements "$PWD/wheel-runtime.txt" --with "$PWD"/dist/*.whl python -I - <<'PY'
+        export UV_TOOL_DIR="$PWD/tools" UV_TOOL_BIN_DIR="$PWD/bin" &&
+        uv tool install --python 3.13 --constraints "$PWD/wheel-runtime.txt" "$PWD"/dist/*.whl &&
+        "$UV_TOOL_DIR/model-guided-research/bin/python" -I - <<'PY'
+        import json
+        from importlib.metadata import distribution
         from pathlib import Path
         import subprocess
         import sys
+        from zipfile import ZipFile
+
         import torch
         import nanochat
-        assert Path(nanochat.__file__).resolve().is_relative_to(Path(sys.prefix))
+
+        wheel, = Path("dist").glob("*.whl")
+        origin = json.loads(distribution("model-guided-research").read_text("direct_url.json"))
+        assert origin["url"] == wheel.resolve().as_uri(), origin
+        module = Path(nanochat.__file__)
+        assert module.is_relative_to(Path(sys.prefix)), module
+        with ZipFile(wheel) as archive:
+            assert module.read_bytes() == archive.read("nanochat/__init__.py")
         for name, cls in nanochat.MECHANISM_CLASSES.items():
             model = cls.from_dims(n_embd=32, n_head=4)
             x = torch.randn(2, 8, 32, requires_grad=True)

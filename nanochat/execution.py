@@ -31,6 +31,7 @@ import runpy
 import signal
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 # -----------------------------------------------------------------------------
 
@@ -223,17 +224,11 @@ def reliability_guard(maximum_memory_bytes: int | None = None):
         module_registry[module_name] = None
 
 
-def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None, result_dict):
+def _unsafe_execute(program: Path, timeout: float, maximum_memory_bytes: int | None, result_dict):
     """Execute code in a subprocess with safety guards. Results are written to result_dict."""
-    with create_tempdir():
-        # These system calls are needed when cleaning up tempdir.
-        import os
-        import shutil
-
-        rmtree = shutil.rmtree
-        rmdir = os.rmdir
-        chdir = os.chdir
-        unlink = os.unlink
+    with chdir(program.parent):
+        # The worker restores its cwd. The parent owns the directory lifetime.
+        restore_cwd = os.chdir
 
         # Disable functionalities that can make destructive changes to the test.
         reliability_guard(maximum_memory_bytes=maximum_memory_bytes)
@@ -250,13 +245,8 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
             }
         )
 
-        tmp_path = None
         try:
             try:
-                with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tmp:
-                    tmp_path = tmp.name
-                    tmp.write(code)
-
                 with capture_io() as (stdout_capture, stderr_capture):
                     with time_limit(timeout):
                         # WARNING
@@ -267,7 +257,7 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
                         # Users are strongly encouraged to sandbox this evaluation suite so that it
                         # does not perform destructive actions on their host or network. For more
                         # information on how OpenAI sandboxes its code, see the accompanying paper.
-                        runpy.run_path(tmp_path, run_name="__main__")
+                        runpy.run_path(str(program), run_name="__main__")
 
                 result_dict.update(
                     {
@@ -301,18 +291,7 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: int | None,
                 )
 
         finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    unlink(tmp_path)
-                except Exception:
-                    # Best-effort cleanup; leave the temp file for inspection if unlink fails.
-                    pass
-
-            # Needed for cleaning up tempdir/chdir after reliability_guard().
-            shutil.rmtree = rmtree
-            os.rmdir = rmdir
-            os.chdir = chdir
-            os.unlink = unlink
+            os.chdir = restore_cwd
 
 
 def execute_code(
@@ -341,16 +320,19 @@ def execute_code(
 
     # NOTE: Use spawn to avoid deadlocks with multithreaded runtimes (e.g. JAX).
     ctx = multiprocessing.get_context("spawn")
-    manager = ctx.Manager()
-    result_dict = manager.dict()
-
-    p = ctx.Process(target=_unsafe_execute, args=(code, timeout, maximum_memory_bytes, result_dict))
-    try:
+    # Cleanup must also work when the worker exhausts its address-space limit
+    # or is killed before reaching its finally block.
+    with tempfile.TemporaryDirectory() as work_dir, ctx.Manager() as manager:
+        program = Path(work_dir).resolve() / "program.py"
+        program.write_text(code, encoding="utf-8")
+        result_dict = manager.dict()
+        p = ctx.Process(target=_unsafe_execute, args=(program, timeout, maximum_memory_bytes, result_dict))
         p.start()
         p.join(timeout=timeout + 1)
 
         if p.is_alive():
             p.kill()
+            p.join()
             return ExecutionResult(
                 success=False,
                 stdout="",
@@ -397,5 +379,3 @@ def execute_code(
             timeout=result_dict["timeout"],
             memory_exceeded=result_dict["memory_exceeded"],
         )
-    finally:
-        manager.shutdown()
