@@ -10107,10 +10107,12 @@ def precision_curve(
 
     Reads per-point eval artifacts (the knob - ultrametric_digits_k or
     eval_weight_quant_bits - is taken from each artifact's recorded
-    meta.checkpoint.model_config), normalizes both arms onto a shared
-    memory-fraction axis (digits: k/K of the digit path; float: bits/32 of
-    the weights), computes quality = ppl_full / ppl_point per point, and the
-    trapezoid AUC per arm anchored at (1.0, 1.0). The headline scalar is
+    meta.checkpoint.model_config), normalizes each knob to its full precision
+    (digits: k/K of the routing channels; float: bits/32 of the weight
+    quantization grid), and integrates quality = ppl_full / ppl_point over
+    their shared fraction interval. These fractions measure different
+    components and do not measure storage or peak memory. Each trapezoid AUC
+    is anchored at (1.0, 1.0). The headline scalar is
     results.auc_ratio = AUC_digit / AUC_float - the preregistered
     graceful-vs-cliff observable of hyp-padic-truncation-graceful (and, over
     the registered deep window via --window-hi, of its K=16 successor). One
@@ -10134,7 +10136,7 @@ def precision_curve(
     ratio = results["auc_ratio" if window_hi == 1.0 else "auc_ratio_deepwindow"]
 
     table = Table(title=f"precision curves — {task} (seed pairing {seed})", box=box.SIMPLE_HEAVY)
-    for col in ("arm", "points", "AUC (quality x memory-fraction)"):
+    for col in ("arm", "points", "AUC (normalized precision)"):
         table.add_column(col, justify="right")
     table.add_row("digit truncation", str(len(digit_run)), f"{auc_digit:.4f}")
     table.add_row("float quantization", str(len(float_run)), f"{auc_float:.4f}")
@@ -10155,9 +10157,10 @@ def precision_curve(
             **proof,
             "device": "cpu",
             "normalization": (
-                "digits: k/K of the digit path; float: bits/32 of weights; quality = ppl_full/ppl_point; "
-                f"both AUCs integrate over the COMMON fraction window [max(arm minima), {window_hi}] "
-                "(matched memory), anchored at (1,1), normalized by the window span"
+                "digits: k/K of routing channels; float: bits/32 of the weight quantization grid; "
+                f"quality = ppl_full/ppl_point over [max(arm minima), {window_hi}], "
+                "anchored at (1,1) and normalized by the window span. "
+                "The axis is normalized precision and does not measure storage or peak memory."
             ),
             "git": _get_git_info(),
         },
@@ -10171,7 +10174,7 @@ def precision_curve(
         f"- task {task} · seed pairing {seed}",
         f"- AUC digit {auc_digit:.4f} vs float {auc_float:.4f} -> ratio {ratio:.3f}",
         "",
-        "| arm | fraction | quality |",
+        "| arm | normalized precision | quality |",
         "|---|---|---|",
     ]
     for name, curve in (("digit", curve_digit), ("float", curve_float)):

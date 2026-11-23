@@ -218,6 +218,13 @@ use the same scored documents and token streams, matched planned training
 budgets, and one checkpoint per sweep. The only model override permitted
 at a sweep point is its precision knob.
 
+The common interval compares **normalized precision**. The digit arm keeps
+`k/K` of the routing channels after projection. The standard arm rounds
+linear and embedding weights in place on a `b`-bit grid and uses `b/32` as
+its coordinate. These sweeps leave the checkpoint layout intact and do not
+measure equal storage or peak memory. A byte-matched comparison would need
+explicit representations and a common byte budget.
+
 Preregister the planned design with `candidate_variant: {curve_cohort: "<sha256>"}`.
 The hash is SHA-256 of `curve_design` serialized as UTF-8 JSON with sorted
 keys and compact separators and without a trailing newline. The design
@@ -359,7 +366,7 @@ feed the next round:
 - **REFUTED, powered** → retire, or register a *revised successor* under a
   new id when the refutation exposed a protocol artifact rather than a dead
   mechanism (precedent: `hyp-padic-truncation-graceful` REFUTED on a
-  matched-memory window that structurally could not see the float cliff →
+  normalized-precision window that excluded the float cliff →
   successor `hyp-padic-truncation-graceful-k16` registered fresh,
   pre-evidence, with the asymmetric knowledge disclosed — then SUPPORTED).
   Never morph the refuted entry; the ledger keeps both.

@@ -619,7 +619,10 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
 
     for kind, _, _ in claims:
         for seed in (10, 11):
-            produce(artifacts, kind, seed, f"{kind}-{seed}")
+            result = produce(artifacts, kind, seed, f"{kind}-{seed}")
+            if kind == "precision":
+                assert "normalized precision" in read_json(result)["meta"]["normalization"]
+                assert "normalized precision" in (result.parent / "run.md").read_text()
     portable = tmp_path / "relocated"
     shutil.copytree(artifacts, portable)
 
