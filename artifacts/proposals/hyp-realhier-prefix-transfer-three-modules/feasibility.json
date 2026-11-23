@@ -1,0 +1,133 @@
+{
+  "content_sha256": {
+    "heldout/test_000.parquet": "8455021bef69b6b7c166d38662e88e4aa21a19170bb95dc9a767aad27ad8b4d5",
+    "train_000.parquet": "8f73d9a8452705adeecdc6c2372b565f27a526d67cc75e2997ab1aab221c285d",
+    "val_000.parquet": "6c984c4bf0bf1fca8571831166e318ab73aca46a1459cf994ff8daf4139d53e2"
+  },
+  "dials": {},
+  "generator_version": 2,
+  "hypothesis": "does hierarchical geometry exist in the wild (stdlib ASTs) at exploitable strength?",
+  "preflight": {
+    "context_tokens": 256,
+    "macro_exact_match": null,
+    "modules": {
+      "contextlib": {
+        "answer_counts": {
+          "fn": 15
+        },
+        "coverage": 0.0,
+        "eligible": 15,
+        "exact_match": null,
+        "fits": 0,
+        "majority_fraction": 1.0,
+        "max_tokens": 843,
+        "min_tokens": 813,
+        "presented": 0,
+        "source_sha256": "c1e0d67b2007de11ae93cd36cf6faf38d9ab32656a832d592a49325eec579f96",
+        "tree_sha256": "bebfe6c2a9275d750e5e9f21a8a26add7473af58b4128a2fd2c4b1d8d36dea97"
+      },
+      "enum": {
+        "answer_counts": {
+          "fn": 25
+        },
+        "coverage": 0.0,
+        "eligible": 25,
+        "exact_match": null,
+        "fits": 0,
+        "majority_fraction": 1.0,
+        "max_tokens": 1097,
+        "min_tokens": 1086,
+        "presented": 0,
+        "source_sha256": "7a218fc499a8ccaab34253f01a7d2da68e9433545d48f0edd2c003027d9893b3",
+        "tree_sha256": "3b68bbdf85370c109229b10a0f98737706dea3e748cb88a0ec0296b1900c6404"
+      },
+      "textwrap": {
+        "answer_counts": {
+          "fn": 3
+        },
+        "coverage": 1.0,
+        "eligible": 3,
+        "exact_match": null,
+        "fits": 3,
+        "majority_fraction": 1.0,
+        "max_tokens": 158,
+        "min_tokens": 152,
+        "presented": 0,
+        "source_sha256": "26836f5c17cdb4ffdeaff1a5146ed61a262aa410bdf3ad204e2bd0792f010d5e",
+        "tree_sha256": "22976e58f70083bfdd7f19232f0d25dc2689d20debf52c80987369141ac03ffa"
+      }
+    },
+    "tokenizer_train_content_sha256": "8f73d9a8452705adeecdc6c2372b565f27a526d67cc75e2997ab1aab221c285d",
+    "tokenizer_vocab_size": 512
+  },
+  "provenance": {
+    "byte_identity": "conditional on python version (synthetic tasks carry the unconditional guarantee)",
+    "module_source_sha256": {
+      "argparse": "67267741eccb30cfa2a03e76b0c2e3f70641c944b0240ee600cca22cd6ef0a34",
+      "ast": "3483a6af8b86927c5c98c99de724fef77da5c544f82227ec0eab4f8981783852",
+      "configparser": "ece1abea1ec68cae85b2532ade9a2156ce9b20ff38738ac4147744509f65490b",
+      "contextlib": "c1e0d67b2007de11ae93cd36cf6faf38d9ab32656a832d592a49325eec579f96",
+      "dataclasses": "806e302b9e83516f7be2c247b87d5a613ad3fbc93503a391c1025bd73bc97439",
+      "enum": "7a218fc499a8ccaab34253f01a7d2da68e9433545d48f0edd2c003027d9893b3",
+      "fractions": "58f7750133f2e23999ba3f634d1b14edfec6dc48bf8bb00a9911262cd7198f63",
+      "json": "d5d41e2c29049515d295d81a6d40b4890fbec8d8482cfb401630f8ef2f77e4d5",
+      "logging": "8a0c633a1396c81d99d932e84fba2feb30e58e5f6aabb45bfb8ccda06995d03d",
+      "statistics": "0f618d7c13e99f5289d5e2a20ba8b7340be27ab424f2bffb739ab3be291fe261",
+      "textwrap": "26836f5c17cdb4ffdeaff1a5146ed61a262aa410bdf3ad204e2bd0792f010d5e",
+      "unittest.case": "ce2499ee6f34a9e6e24f11ae1e2f02e71a3529cca03d5488f0bdcfea8d5d8481"
+    },
+    "module_splits": {
+      "test": [
+        "contextlib",
+        "enum",
+        "textwrap"
+      ],
+      "train": [
+        "json",
+        "ast",
+        "dataclasses",
+        "argparse",
+        "logging",
+        "unittest.case"
+      ],
+      "val": [
+        "fractions",
+        "configparser",
+        "statistics"
+      ]
+    },
+    "module_tree_sha256": {
+      "argparse": "d4f4ae8db672f5abbc53f2de2d2e7a156ed4bb50dd4aaeb4537dc9450cf9a028",
+      "ast": "652bee438f2db41e5fcf6108b0c28d01db6fc82e9375baeb5d03af42ee04b649",
+      "configparser": "54c4f2a26af89234a7e6c662f6fdee68cd263beac4bdef29f0c24d81d8eaafcb",
+      "contextlib": "bebfe6c2a9275d750e5e9f21a8a26add7473af58b4128a2fd2c4b1d8d36dea97",
+      "dataclasses": "81ae87d73b2b9d8a68228929d6744e7016b2d64da1fe1b812d7c5745f06a042f",
+      "enum": "3b68bbdf85370c109229b10a0f98737706dea3e748cb88a0ec0296b1900c6404",
+      "fractions": "52180da047b75604caa5dc3600ed9faac2b530a344989b7bdf70a5a7a49147a6",
+      "json": "ecc3af0a5732b2e013f119d34f85fa8230b941f566f7f782c7b3a17f1ab34456",
+      "logging": "654d81748efec829fe21c5f16745793a54daa7074d64bb7109e249a8b133d44c",
+      "statistics": "9becba00d10f655dfa22857a426f0800905816b1dfa9c0ba76eff39f446294d5",
+      "textwrap": "22976e58f70083bfdd7f19232f0d25dc2689d20debf52c80987369141ac03ffa",
+      "unittest.case": "c7b605c2cb765d09398a1f6c220dde290b78859decaf746f28132eaaaaab89ed"
+    },
+    "python_version": "3.13.0 (main, Oct 16 2024, 08:05:40) [Clang 18.1.8 ]",
+    "source": "python stdlib AST structure (PSF license)"
+  },
+  "seed": 42,
+  "sha256": {
+    "heldout/test_000.parquet": "bde53f448f2569fb74c800d43fff8f3c92179b6819531067b90d817a0d9f0fef",
+    "train_000.parquet": "ab51cb76a9bd2417c82b5f5a4193aae8cc92a35bb155f9540e4f8eb3566aa6eb",
+    "val_000.parquet": "02e41030e11e295a45f5291509cc6021aaedd73cb9427a5a6edc5fe2f2522f69"
+  },
+  "size": 1200,
+  "split_sizes": {
+    "test": 43,
+    "train": 960,
+    "val": 120
+  },
+  "target_mechanisms": [
+    "ultrametric",
+    "fractal"
+  ],
+  "task": "realhier"
+}

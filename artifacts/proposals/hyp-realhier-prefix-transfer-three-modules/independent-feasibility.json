@@ -1,0 +1,175 @@
+{
+  "context_tokens": 256,
+  "development_power": "not_run",
+  "document_format": "TASK hier TREE <serialization> PATH <space-separated path> OUT <answer>",
+  "held_out": {
+    "contextlib": {
+      "coverage": 0.0,
+      "coverage_pass": false,
+      "eligible": 15,
+      "labels": {
+        "fn": 15
+      },
+      "majority_count": 15,
+      "majority_fraction": 1.0,
+      "majority_pass": false,
+      "tokens_max": 843,
+      "tokens_min": 813,
+      "within_256": 0
+    },
+    "enum": {
+      "coverage": 0.0,
+      "coverage_pass": false,
+      "eligible": 25,
+      "labels": {
+        "fn": 25
+      },
+      "majority_count": 25,
+      "majority_fraction": 1.0,
+      "majority_pass": false,
+      "tokens_max": 1097,
+      "tokens_min": 1086,
+      "within_256": 0
+    },
+    "textwrap": {
+      "coverage": 1.0,
+      "coverage_pass": true,
+      "eligible": 3,
+      "labels": {
+        "fn": 3
+      },
+      "majority_count": 3,
+      "majority_fraction": 1.0,
+      "majority_pass": false,
+      "tokens_max": 158,
+      "tokens_min": 152,
+      "within_256": 3
+    }
+  },
+  "maximum_majority": 0.9,
+  "minimum_coverage": 0.8,
+  "model_predictions": 0,
+  "modules": {
+    "argparse": {
+      "all_leaf_paths": 135,
+      "source_sha256": "67267741eccb30cfa2a03e76b0c2e3f70641c944b0240ee600cca22cd6ef0a34",
+      "stdlib_path": "argparse.py",
+      "tree_sha256": "d4f4ae8db672f5abbc53f2de2d2e7a156ed4bb50dd4aaeb4537dc9450cf9a028"
+    },
+    "ast": {
+      "all_leaf_paths": 144,
+      "source_sha256": "3483a6af8b86927c5c98c99de724fef77da5c544f82227ec0eab4f8981783852",
+      "stdlib_path": "ast.py",
+      "tree_sha256": "652bee438f2db41e5fcf6108b0c28d01db6fc82e9375baeb5d03af42ee04b649"
+    },
+    "configparser": {
+      "all_leaf_paths": 98,
+      "source_sha256": "ece1abea1ec68cae85b2532ade9a2156ce9b20ff38738ac4147744509f65490b",
+      "stdlib_path": "configparser.py",
+      "tree_sha256": "54c4f2a26af89234a7e6c662f6fdee68cd263beac4bdef29f0c24d81d8eaafcb"
+    },
+    "contextlib": {
+      "all_leaf_paths": 61,
+      "source_sha256": "c1e0d67b2007de11ae93cd36cf6faf38d9ab32656a832d592a49325eec579f96",
+      "stdlib_path": "contextlib.py",
+      "tree_sha256": "bebfe6c2a9275d750e5e9f21a8a26add7473af58b4128a2fd2c4b1d8d36dea97"
+    },
+    "dataclasses": {
+      "all_leaf_paths": 50,
+      "source_sha256": "806e302b9e83516f7be2c247b87d5a613ad3fbc93503a391c1025bd73bc97439",
+      "stdlib_path": "dataclasses.py",
+      "tree_sha256": "81ae87d73b2b9d8a68228929d6744e7016b2d64da1fe1b812d7c5745f06a042f"
+    },
+    "enum": {
+      "all_leaf_paths": 102,
+      "source_sha256": "7a218fc499a8ccaab34253f01a7d2da68e9433545d48f0edd2c003027d9893b3",
+      "stdlib_path": "enum.py",
+      "tree_sha256": "3b68bbdf85370c109229b10a0f98737706dea3e748cb88a0ec0296b1900c6404"
+    },
+    "fractions": {
+      "all_leaf_paths": 47,
+      "source_sha256": "58f7750133f2e23999ba3f634d1b14edfec6dc48bf8bb00a9911262cd7198f63",
+      "stdlib_path": "fractions.py",
+      "tree_sha256": "52180da047b75604caa5dc3600ed9faac2b530a344989b7bdf70a5a7a49147a6"
+    },
+    "json": {
+      "all_leaf_paths": 5,
+      "source_sha256": "d5d41e2c29049515d295d81a6d40b4890fbec8d8482cfb401630f8ef2f77e4d5",
+      "stdlib_path": "json/__init__.py",
+      "tree_sha256": "ecc3af0a5732b2e013f119d34f85fa8230b941f566f7f782c7b3a17f1ab34456"
+    },
+    "logging": {
+      "all_leaf_paths": 149,
+      "source_sha256": "8a0c633a1396c81d99d932e84fba2feb30e58e5f6aabb45bfb8ccda06995d03d",
+      "stdlib_path": "logging/__init__.py",
+      "tree_sha256": "654d81748efec829fe21c5f16745793a54daa7074d64bb7109e249a8b133d44c"
+    },
+    "statistics": {
+      "all_leaf_paths": 64,
+      "source_sha256": "0f618d7c13e99f5289d5e2a20ba8b7340be27ab424f2bffb739ab3be291fe261",
+      "stdlib_path": "statistics.py",
+      "tree_sha256": "9becba00d10f655dfa22857a426f0800905816b1dfa9c0ba76eff39f446294d5"
+    },
+    "textwrap": {
+      "all_leaf_paths": 14,
+      "source_sha256": "26836f5c17cdb4ffdeaff1a5146ed61a262aa410bdf3ad204e2bd0792f010d5e",
+      "stdlib_path": "textwrap.py",
+      "tree_sha256": "22976e58f70083bfdd7f19232f0d25dc2689d20debf52c80987369141ac03ffa"
+    },
+    "unittest.case": {
+      "all_leaf_paths": 115,
+      "source_sha256": "ce2499ee6f34a9e6e24f11ae1e2f02e71a3529cca03d5488f0bdcfea8d5d8481",
+      "stdlib_path": "unittest/case.py",
+      "tree_sha256": "c7b605c2cb765d09398a1f6c220dde290b78859decaf746f28132eaaaaab89ed"
+    }
+  },
+  "outcome": "stop_before_model_inference",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.13.0",
+  "revision": "e063ee21147049a1a6baf373aca30cf1d4d100cb",
+  "script_sha256": "02b85ac7092efbed75b0c3cdd0c1222e8586f5ac806859a8db9e7a83c88f54e5",
+  "source_pin_file_sha256": "418c7cf4daba32adcc007f0f4382c89c51ea73460358ab931f0cf6d79cfc5808",
+  "source_pin_matches": 12,
+  "splits": {
+    "development": [
+      "fractions",
+      "configparser",
+      "statistics"
+    ],
+    "held_out": [
+      "contextlib",
+      "enum",
+      "textwrap"
+    ],
+    "train": [
+      "json",
+      "ast",
+      "dataclasses",
+      "argparse",
+      "logging",
+      "unittest.case"
+    ]
+  },
+  "training": {
+    "bos_id": 0,
+    "dataset_seed": 42,
+    "module_counts": {
+      "argparse": 154,
+      "ast": 160,
+      "dataclasses": 164,
+      "json": 170,
+      "logging": 152,
+      "unittest.case": 160
+    },
+    "newline_delimited_texts_sha256": "22d22f63ddf0bdf22ff342094db706365689cb309a136687c4999949b5bdf246",
+    "requested_documents": 1200,
+    "tokenizer_implementation": "nanochat.tokenizer.HuggingFaceTokenizer.train_from_iterator",
+    "tokenizer_json_sha256": "110d429943007cec84383c7212abb7621014ada7eb81d47e38f76b77467b271e",
+    "tokenizer_training_documents": 960,
+    "tokenizers_version": "0.23.1",
+    "vocabulary": 512
+  },
+  "training_runs": 0,
+  "unique_source_digests": 12,
+  "unique_tree_digests": 12
+}

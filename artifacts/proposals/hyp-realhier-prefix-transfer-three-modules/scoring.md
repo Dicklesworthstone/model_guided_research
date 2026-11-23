@@ -77,3 +77,30 @@ gain of +0.10. Otherwise run the twelve confirmation pairs 3–14 once.
 There is no sample extension or alternative holdout. Report a directional
 result only if the paired interval and the registered verdict engine agree.
 A failed preflight is a feasibility result and supplies zero model outcomes.
+
+## Outcome at the registered input gate
+
+Registration `e063ee2` preceded measurement. The public generator at
+`edc4bf9` matched all 12 pinned source hashes, and the independent
+implementation at the registration revision found the same 12 distinct
+trees. Both trained the 512-token vocabulary exclusively on the 960
+training documents. Both obtained the following counts.
+
+| Held-out module | Distinct queries | Full inputs within 256 | Full sequence in tokens | Constant `fn` predictions correct |
+|---|---:|---:|---:|---:|
+| contextlib | 15 | 0 | 813–843 | 15 |
+| enum | 25 | 0 | 1,086–1,097 | 25 |
+| textwrap | 3 | 3 | 152–158 | 3 |
+
+All three modules exceeded the registered 90% majority ceiling. Two also
+missed the 80% input-coverage minimum. The constant answer already reaches
+100% on every module before context restrictions, so this data cannot test a
+five-point structural advantage over that control. The study stopped before
+the development pilot, with zero training runs, zero model predictions and
+no estimate of paired variability or power. The public adjudicator returned
+`blocked / metric_missing`. The registered model prediction stays untested.
+
+The [generator manifest](feasibility.json) and [independent measurement](independent-feasibility.json)
+record the complete per-module counts. The [producer receipt](producer-dsr.json),
+[independent receipt](independent-dsr.json) and [adjudicator response](refusal.json)
+identify the revisions, commands and disposition.

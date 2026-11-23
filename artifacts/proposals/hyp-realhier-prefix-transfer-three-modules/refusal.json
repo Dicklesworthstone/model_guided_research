@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-22",
+  "fdr": {
+    "family_is_full_ledger": false,
+    "family_size": 0,
+    "ledger_policy_versions": [
+      "ci-v2",
+      "ci-v3",
+      "ci-v4",
+      "ci-v5",
+      "ci-v6"
+    ],
+    "q_level": 0.1,
+    "supported": 0,
+    "supported_fdr_survivors": []
+  },
+  "policy_version": "ci-v8",
+  "verdicts": [
+    {
+      "excluded_evidence": [],
+      "id": "hyp-realhier-prefix-transfer-three-modules",
+      "mechanism": "ultrametric",
+      "reason": "qualifying artifact lacks the metric at the registered path",
+      "reason_code": "metric_missing",
+      "registration_commit": "e063ee21147049a1a6baf373aca30cf1d4d100cb",
+      "verdict": "blocked"
+    }
+  ]
+}

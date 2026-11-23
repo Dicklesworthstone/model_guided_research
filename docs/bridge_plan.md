@@ -53,11 +53,19 @@ On the original Linux golden host, the 12 attention models reproduced all
 default to disabled. The fixture metadata now records those defaults, and the
 test still compares the entire config and all 50 losses for each model.
 
+The first prospectively scored transfer proposal reached its registered
+feasibility stop. Across the three unseen Python modules, every one of 43
+eligible queries had the answer `fn`. Only three inputs fit the 256-token
+window. Independent extraction on the registration revision reproduced the
+counts. Zero models were trained for this comparison.
+[Protocol, measurements and refusal](../artifacts/proposals/hyp-realhier-prefix-transfer-three-modules/scoring.md)
+
 | Standard-only sizing probe | Held-out exact match by training seed | Recorded prior | Decision |
 |---|---|---|---|
 | [Needle, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored on all three seeds. No examples exceeded the context window. The registered next rung uses 10 trillion FLOPs and four layers at width 128. |
 | [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored at four layers and width 128. The ladder continues at 30 trillion FLOPs. |
 | [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
+| [Group, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b10-s256-rung/report.md) | 6/144, 1/144, 10/144 | 14/144 | All three seeds fell below the prior. All 432 held-out examples were scored. |
 
 ## November 2026 assessment
 
