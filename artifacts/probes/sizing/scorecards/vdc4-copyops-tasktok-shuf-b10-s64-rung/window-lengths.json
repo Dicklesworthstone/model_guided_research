@@ -1,0 +1,66 @@
+{
+  "scorecard": "vdc4-copyops-tasktok-shuf-b10-s64-rung",
+  "length_definition": "BOS + prompt + expected completion",
+  "rows": [
+    {
+      "task": "copyops",
+      "training_seed": 0,
+      "training_window": 64,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 13,
+          "max": 24
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 25,
+          "max": 41
+        }
+      }
+    },
+    {
+      "task": "copyops",
+      "training_seed": 1,
+      "training_window": 64,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 13,
+          "max": 24
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 25,
+          "max": 41
+        }
+      }
+    },
+    {
+      "task": "copyops",
+      "training_seed": 2,
+      "training_window": 64,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "regions": {
+        "in_range": {
+          "scored": 144,
+          "fit": 144,
+          "min": 13,
+          "max": 24
+        },
+        "held_out": {
+          "scored": 144,
+          "fit": 144,
+          "min": 25,
+          "max": 41
+        }
+      }
+    }
+  ]
+}

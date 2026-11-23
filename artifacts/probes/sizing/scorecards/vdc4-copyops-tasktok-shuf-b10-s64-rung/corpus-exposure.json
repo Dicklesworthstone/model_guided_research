@@ -1,0 +1,124 @@
+{
+  "rows": [
+    {
+      "budget": "1T",
+      "seed": 0,
+      "documents": 32000,
+      "train_tokens_including_bos": 585994,
+      "training_tokens": 1312768,
+      "corpus_equivalents": 2.2402413676590545,
+      "tokenizer_sha256": "de02b033b8d83495cb3b20e8e6f742afd166081c24e4f649a1239ca71ce6f636",
+      "tokenizer_source": "retrained on the hash-verified original 1T corpus"
+    },
+    {
+      "budget": "1T",
+      "seed": 1,
+      "documents": 32000,
+      "train_tokens_including_bos": 585994,
+      "training_tokens": 1312768,
+      "corpus_equivalents": 2.2402413676590545,
+      "tokenizer_sha256": "de02b033b8d83495cb3b20e8e6f742afd166081c24e4f649a1239ca71ce6f636",
+      "tokenizer_source": "retrained on the hash-verified original 1T corpus"
+    },
+    {
+      "budget": "1T",
+      "seed": 2,
+      "documents": 32000,
+      "train_tokens_including_bos": 585994,
+      "training_tokens": 1312768,
+      "corpus_equivalents": 2.2402413676590545,
+      "tokenizer_sha256": "de02b033b8d83495cb3b20e8e6f742afd166081c24e4f649a1239ca71ce6f636",
+      "tokenizer_source": "retrained on the hash-verified original 1T corpus"
+    },
+    {
+      "budget": "2T",
+      "seed": 0,
+      "documents": 64000,
+      "train_tokens_including_bos": 1171940,
+      "training_tokens": 2625280,
+      "corpus_equivalents": 2.2401146816389916,
+      "tokenizer_sha256": "0eb252c1cb675a905b7ed08d6a60104504270088c736cf821f056f3f378ff32b",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "2T",
+      "seed": 1,
+      "documents": 64000,
+      "train_tokens_including_bos": 1171940,
+      "training_tokens": 2625280,
+      "corpus_equivalents": 2.2401146816389916,
+      "tokenizer_sha256": "0eb252c1cb675a905b7ed08d6a60104504270088c736cf821f056f3f378ff32b",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "2T",
+      "seed": 2,
+      "documents": 64000,
+      "train_tokens_including_bos": 1171940,
+      "training_tokens": 2625280,
+      "corpus_equivalents": 2.2401146816389916,
+      "tokenizer_sha256": "0eb252c1cb675a905b7ed08d6a60104504270088c736cf821f056f3f378ff32b",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "4T",
+      "seed": 0,
+      "documents": 128000,
+      "train_tokens_including_bos": 2344875,
+      "training_tokens": 5250560,
+      "corpus_equivalents": 2.23916413454875,
+      "tokenizer_sha256": "230a52e84cca31586d9b644d7d0c1a2526532ce4ac038a16d43f5273ab0edc66",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "4T",
+      "seed": 1,
+      "documents": 128000,
+      "train_tokens_including_bos": 2344875,
+      "training_tokens": 5250560,
+      "corpus_equivalents": 2.23916413454875,
+      "tokenizer_sha256": "230a52e84cca31586d9b644d7d0c1a2526532ce4ac038a16d43f5273ab0edc66",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "4T",
+      "seed": 2,
+      "documents": 128000,
+      "train_tokens_including_bos": 2344875,
+      "training_tokens": 5250560,
+      "corpus_equivalents": 2.23916413454875,
+      "tokenizer_sha256": "230a52e84cca31586d9b644d7d0c1a2526532ce4ac038a16d43f5273ab0edc66",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "10T",
+      "seed": 0,
+      "documents": 80000,
+      "train_tokens_including_bos": 1464968,
+      "training_tokens": 2014464,
+      "corpus_equivalents": 1.3750907869659952,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "10T",
+      "seed": 1,
+      "documents": 80000,
+      "train_tokens_including_bos": 1464968,
+      "training_tokens": 2014464,
+      "corpus_equivalents": 1.3750907869659952,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "tokenizer_source": "original checkpoint"
+    },
+    {
+      "budget": "10T",
+      "seed": 2,
+      "documents": 80000,
+      "train_tokens_including_bos": 1464968,
+      "training_tokens": 2014464,
+      "corpus_equivalents": 1.3750907869659952,
+      "tokenizer_sha256": "f8c31f3f70dc1b3fc27cda0cef129ef660355139bf0b93f067a967b68d61664d",
+      "tokenizer_source": "original checkpoint"
+    }
+  ]
+}

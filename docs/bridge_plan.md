@@ -104,6 +104,7 @@ counts. Zero models were trained for this comparison.
 | [Rotation, 10 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-rot-tasktok-shuf-b10-s64-rung/report.md) | 2/144, 4/144, 4/144 | 15/144 | The wider four-layer model scored 12, 8 and 8 of 144 in range. The 30-trillion-FLOP budget is the next registered rung. |
 | [Copy operations, 2 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b2-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | Held-out examples fit in 25–41 tokens. On 426 of 432 generations the model emitted fewer words than the target. The registered threshold is the prior plus 0.10. |
 | [Copy operations, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | In-range exact matches reached 83, 85 and 95 of 144. All held-out examples fit. Even appending perfect suffixes could recover at most 0, 0 and 1 complete answers, against the required 18 per seed. |
+| [Copy operations, 10 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b10-s64-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | The wider model scored 118, 0 and 19 of 144 in range. Each model processed 1.375 training corpora by token count. All 144 held-out examples still fit in 25–41 tokens. |
 
 The four-trillion-FLOP copy models learned some input-position dependence
 at the training lengths. For each prompt we changed the source letter that
@@ -124,6 +125,13 @@ on both splits with the original 40,000-document corpus. None reached
 the held-out threshold of 18/144 required to advance to fresh seeds.
 [Screen and per-variant settings](../artifacts/probes/sizing/copyops-lrprobe/screen.json)
 · [Recount and DSR logs](../artifacts/probes/sizing/copyops-lrprobe/replay.zip)
+
+Counting the actual shuffled training tokens revised the original exposure
+estimate. The d64 copy models processed 2.240 and 2.239 corpus equivalents at
+two and four trillion FLOPs. Each count includes one beginning-of-sequence
+token per training document, as in the loader. The one-trillion estimate
+of 2.240 uses a tokenizer regenerated on the original hash-verified corpus.
+[Corpus sizes, token counts and tokenizer hashes](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b10-s64-rung/corpus-exposure.json)
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint
