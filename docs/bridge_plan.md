@@ -101,6 +101,7 @@ counts. Zero models were trained for this comparison.
 | [Relation, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 12/144, 13/144, 12/144 | 21/144 | All three seeds fell below the prior. |
 | [Hierarchy, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-hier-tasktok-shuf-b10-s256-rung/report.md) | 1/144, 1/144, 1/144 | 8/144 | Each seed answered one held-out query correctly. |
 | [Rotation, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-rot-tasktok-shuf-b4-rung/report.md) | 6/144, 7/144, 5/144 | 15/144 | All 144 held-out examples fit in 23–43 tokens. Each training seed fell below the prior. |
+| [Rotation, 10 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-rot-tasktok-shuf-b10-s64-rung/report.md) | 2/144, 4/144, 4/144 | 15/144 | The wider four-layer model scored 12, 8 and 8 of 144 in range. The 30-trillion-FLOP budget is the next registered rung. |
 | [Copy operations, 2 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b2-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | Held-out examples fit in 25–41 tokens. On 426 of 432 generations the model emitted fewer words than the target. The registered threshold is the prior plus 0.10. |
 | [Copy operations, 4 trillion FLOPs, context 64](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/report.md) | 0/144, 0/144, 0/144 | 3/144 | In-range exact matches reached 83, 85 and 95 of 144. All held-out examples fit. Even appending perfect suffixes could recover at most 0, 0 and 1 complete answers, against the required 18 per seed. |
 
@@ -115,6 +116,14 @@ weights and evaluator reproduced the original first word on every example.
 [Paired edits](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/first-letter-edits.json)
 · [Word and corpus-overlap counts](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/word-results.json)
 · [Suffix upper bound](../artifacts/probes/sizing/scorecards/vdc4-copyops-tasktok-shuf-b4-rung/completion-bound.json)
+
+The preregistered one-trillion-FLOP copy screen varied the learning rate
+fourfold in each direction, increased model width and depth together, or
+increased batch size fourfold. Each of the four seed-0 runs scored 0/144
+on both splits with the original 40,000-document corpus. None reached
+the held-out threshold of 18/144 required to advance to fresh seeds.
+[Screen and per-variant settings](../artifacts/probes/sizing/copyops-lrprobe/screen.json)
+· [Recount and DSR logs](../artifacts/probes/sizing/copyops-lrprobe/replay.zip)
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint
