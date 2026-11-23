@@ -292,6 +292,27 @@ and AdamW compute. The remaining six measurements were placebo controls.
 · [Control result](../artifacts/adjudications/ns1b-optimizer-eligibility/ci-v9-mixed-cost.json)
 · [Frozen scorecard inputs](../artifacts/adjudications/ns1b-optimizer-eligibility/scorecard-control.zip)
 
+#### Exact fixed panels
+
+The ho58 group-completion experiment froze twelve S5/A5 presentations and
+eight controls before any query counts were measured. Its formal collector
+accepts the canonical deterministic replay and checks the producer revision
+against the operational definition in Git. It recomputes the pooled query
+ratio from the two transcripts. All twenty exact action certificates are
+required by the transcript fingerprint. A copied replay contributes one
+panel. The verdict records exact counts and has no population interval or
+FDR entry.
+
+Use the following checks from a clean checkout descended from the
+operationalization commit `ec8dd11`. The published transcript originally
+came from the preregistration at `b313900`. Adding this collector after the
+outcome was public records the original fixed comparison through the ledger.
+
+```sh
+uv run --locked python -m scripts.group_rewrite_probe --formal-panel --output "$PANEL_DIR/summary.json"
+uv run --locked mgr adjudicate -H hyp-group-completion-trusted-queries --artifacts "$PANEL_DIR" --dry-run
+```
+
 ### 7. Beliefs update → next proposals
 
 `mgr report --artifacts <dir>` rolls a campaign into arm tables (clean,
