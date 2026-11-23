@@ -64,6 +64,7 @@ counts. Zero models were trained for this comparison.
 |---|---|---|---|
 | [Needle, 4 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b4-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | All held-out sequences exceeded the training window. The larger rotary cache allowed every example to be scored. |
 | [Needle, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b10-s256-rung/report.md) | 0/144, 0/144, 0/144 | 5.56% | Floored at four layers and width 128. The ladder continues at 30 trillion FLOPs. |
+| [Needle, 30 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b30-s256-rung/report.md) | 0/144, 0/144, 0/144 | 8/144 | All six training cells, including the three placebo cells, completed. The 100-trillion-FLOP rung remains unmeasured. |
 | [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
 | [Group, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b10-s256-rung/report.md) | 6/144, 1/144, 10/144 | 14/144 | All three seeds fell below the prior. All 432 held-out examples were scored. |
 
