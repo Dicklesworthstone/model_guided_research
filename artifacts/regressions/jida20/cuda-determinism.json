@@ -1,0 +1,108 @@
+{
+  "source": "95e8d4741890dd8dab3fa451064b2f9d1926bcdd",
+  "device": "cuda",
+  "mechanisms": [
+    {
+      "mechanism": "standard",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "tropical",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "ultrametric",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "simplicial",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "quaternion",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "braid",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "fractal",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "octonion",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "surreal",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "reversible",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "gauge",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "clifford",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    },
+    {
+      "mechanism": "hyperbolic",
+      "training_steps": 12,
+      "checkpoint_step": 11,
+      "tokens_per_sample": 8,
+      "utf8_sha256": "960541191da22cd22bfae5c4ddf5b6db9fe48b8c36756b514687087489887e7b"
+    }
+  ],
+  "matched_text_pairs": 13,
+  "stages_passed": 79,
+  "dsr_gate_exit_codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

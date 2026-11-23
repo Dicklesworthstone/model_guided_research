@@ -107,6 +107,18 @@ mechanisms. A clean checkout selected the new CPU certificate for all 13.
 [Canonical receipt](../artifacts/regressions/jida40/scheduled-bc470ab.json)
 · [Logs, pinned-host tests and digest checks](../artifacts/regressions/jida40/scheduled-bc470ab-logs.zip)
 
+The repaired Clifford revision `95e8d47` subsequently passed the full
+eleven-gate Linux profile. Fast pytest passed 827 tests with 15 skips and
+93 deselections. Full pytest passed 919 with 16 skips. The added CPU-host
+skip is the CUDA Clifford oracle, which passed on the RTX 4090. The twelve
+trajectory fixtures and the evaluator fixture passed on their pinned hosts
+at this revision. An earlier attempt at the same source invoked system
+Python 3.14 after a temporary launcher path expired. Reinstalling the
+locked pytest into a dedicated Python 3.13.0 environment fixed both
+collection failures. The archive includes both attempts.
+[Final Linux receipt](../artifacts/regressions/jida40/scheduled-95e8d47.json)
+· [Checks, pinned-host results and environment repair](../artifacts/regressions/jida40/scheduled-95e8d47-logs.zip)
+
 On an RTX 4090, the public FP32 certificate at `bc470ab` passed 67 of 72
 checks. All five errors came from the Clifford geometric product moving its
 blade table to the input dtype but leaving it on CPU. At `95e8d47` the table
@@ -116,6 +128,18 @@ reproduced all 64 basis products on each device.
 [CUDA certificate](../artifacts/certs/nanochat/20261123_020005/summary.json)
 · [CPU certificate](../artifacts/certs/nanochat/20261123_020139/summary.json)
 · [Original failure, hardware identity and comparison](../artifacts/regressions/jida20/clifford-device-proof.zip)
+
+The end-to-end runner now accepts `--determinism-device cuda`. All 13
+mechanisms trained for 12 updates on the RTX 4090. Each checkpoint produced
+the same eight-token continuation in two separate greedy sampling processes.
+The 79 stages included checks of the device and generated length. On the
+same card, a second process reproduced all 600 losses from the twelve
+50-step trajectory fixtures exactly. The compiled FP16 synaptic
+FlexAttention smoke test also passed its forward and backward checks.
+These runs measure numerical behavior at a small training coordinate.
+[Paired outputs](../artifacts/regressions/jida20/cuda-determinism.json)
+· [Raw training summaries, samples and DSR logs](../artifacts/regressions/jida20/cuda-product-95e8d47.zip)
+· [RTX 4090 fixtures](../tests/fixtures/attention_goldens/cuda)
 
 The first prospectively scored transfer proposal reached its registered
 feasibility stop. Across the three unseen Python modules, every one of 43
