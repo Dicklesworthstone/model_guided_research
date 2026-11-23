@@ -619,3 +619,29 @@ def test_prepend_append_rectangle_and_its_inverse():
     actions.bind("L1", "b", "d")
     actions.close(squares=True)
     assert "c" not in actions.maps["L0"]
+
+
+def test_equality_only_action_recovers_every_edge_with_a_wrong_ranker():
+    from scripts.group_student_probe import acquire_equalities, cached_equality
+
+    def action(word):
+        # The second generator jumps two states and the first jumps one.
+        return (word.count("0") + 2 * word.count("1")) % 5
+
+    def equal(a, b):
+        return action(a) == action(b)
+
+    ordinary = acquire_equalities(5, equal, lambda *_: 0.0)
+    misleading = acquire_equalities(5, equal, lambda a, b: float(not equal(a, b)))
+    assert ordinary["representatives"] == misleading["representatives"]
+    reps = misleading["representatives"]
+    assert len(reps) == len({action(w) for w in reps}) == 5
+    assert misleading["edges"] == [[reps.index(next(r for r in reps if equal(w + g, r))) for g in "01"] for w in reps]
+    assert misleading["counts"]["oracle_different"] >= ordinary["counts"]["oracle_different"]
+    for size in (4, 6):
+        with pytest.raises(ValueError, match="size|reachable"):
+            acquire_equalities(size, equal, lambda *_: 0.0)
+    short = {"00": "c", "000": "d", "001": "e"}
+    assert cached_equality(short, "", "0") is False
+    assert cached_equality(short, "00", "00") is True
+    assert cached_equality(short, "00", "1111") is None

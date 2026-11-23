@@ -8,6 +8,7 @@ import math
 import random
 import time
 from collections import Counter
+from collections.abc import Callable
 from itertools import product
 from pathlib import Path
 
@@ -26,6 +27,8 @@ PAD, BOS, ZERO, ONE, OUT = range(120, 125)
 VOCAB = 128
 TRAIN_WIDTH = 25
 OLD_PANEL = Path("artifacts/probes/sizing/group-query-completion/panel.json")
+EQUALITY_VIEWS = (("", ""), ("0", ""), ("1", ""), ("", "0"), ("", "1"), ("0", "1"), ("1", "0"))
+EQUALITY_POLICIES = ("breadth_first", "symbol_counts", "one_view", "seven_views", "training_cache")
 
 
 def config() -> GPTConfig:
@@ -355,18 +358,191 @@ def decision(results: list[dict]) -> dict:
     return dict(verdict=verdict, delta=contrast, baseline_above_floor=floor)
 
 
+def acquire_equalities(
+    size: int,
+    equal: Callable[[str, str], bool],
+    rank: Callable[[str, str], float],
+    cached: Callable[[str, str], bool | None] | None = None,
+) -> dict:
+    """Recover a rooted action using only equality and the size and bijection promises.
+
+    The ranker can change the order of queries. It cannot decide a merge or
+    alter the candidate set. New representatives keep breadth-first order.
+    """
+    representatives = [""]
+    edges = []
+    used: tuple[set[int], set[int]] = (set(), set())
+    trace = []
+    counts: Counter = Counter()
+    demanded = set()
+    for source in representatives:
+        row = []
+        for index, generator in enumerate("01"):
+            word = source + generator
+            candidates = [i for i in range(len(representatives)) if i not in used[index]]
+            trials = []
+            if len(representatives) == size and len(candidates) == 1:
+                target = candidates[0]
+                counts["forced"] += 1
+            else:
+                if candidates:
+                    demanded.add(word)
+                    demanded.update(representatives[i] for i in candidates)
+                ordered = sorted(candidates, key=lambda i: (-rank(word, representatives[i]), i))
+                for target in ordered:
+                    ref = representatives[target]
+                    result = cached(word, ref) if cached else None
+                    method = "cache"
+                    if result is None:
+                        result = equal(word, ref)
+                        method = "oracle"
+                    counts[f"{method}_{'equal' if result else 'different'}"] += 1
+                    trials.append((target, method, result))
+                    if result:
+                        break
+                else:
+                    if len(representatives) == size:
+                        raise ValueError("Equality oracle is inconsistent with the advertised action size")
+                    target = len(representatives)
+                    representatives.append(word)
+                    counts["new"] += 1
+            used[index].add(target)
+            row.append(target)
+            trace.append(dict(word=word, target=target, trials=trials))
+        edges.append(row)
+    if len(representatives) != size:
+        raise ValueError("The advertised states are not all reachable")
+    return dict(
+        representatives=representatives, edges=edges, counts=dict(counts), trace=trace, ranked_words=sorted(demanded)
+    )
+
+
+def symbol_count_rank(word: str, ref: str) -> float:
+    changes = [abs(word.count(g) - ref.count(g)) for g in "01"]
+    parity = sum(change % 2 for change in changes)
+    # The full domain uses words shorter than the model's context of 72.
+    return -float(144 * parity + sum(changes))
+
+
+def cached_equality(short: dict[str, str], word: str, ref: str) -> bool | None:
+    # A common prefix is cancellable. This admits the one-letter and empty
+    # canonical representatives when the padded pair fits the retained data.
+    prefix = "0" * max(0, 2 - min(len(word), len(ref)))
+    lhs, rhs = short.get(prefix + word), short.get(prefix + ref)
+    return lhs == rhs if lhs is not None and rhs is not None else None
+
+
+@torch.inference_mode()
+def equality_views(model: GPT, words: list[str], size: int, device: torch.device):
+    padded = sorted({left + word + right for word in words for left, right in EQUALITY_VIEWS})
+    width = max(map(len, padded)) + 2
+    vectors = {}
+    for start in range(0, len(padded), BATCH):
+        batch = padded[start : start + BATCH]
+        ids, positions, _ = encode([(word, "0") for word in batch], width, device)
+        logits = model(ids)[torch.arange(len(ids), device=device), positions, :size]
+        roots = logits.float().softmax(dim=-1).sqrt().cpu().numpy()
+        vectors.update(zip(batch, roots, strict=True))
+    profiles = {word: [vectors[left + word + right] for left, right in EQUALITY_VIEWS] for word in words}
+    return profiles, len(padded)
+
+
+def equality_case(case_path: Path, run: Path, device: torch.device) -> dict:
+    case = json.loads(case_path.read_bytes())
+    known_count = case["label_count"]
+    graph = rooted_graph(case["group"], tuple(tuple(p) for p in case["generator_pair"]))
+    if graph_digest(graph) != case["graph_sha"]:
+        raise ValueError("The loaded presentation differs from the frozen group")
+
+    def walk(word: str, edges) -> int:
+        state = 0
+        for symbol in word:
+            state = edges[state][int(symbol)]
+        return state
+
+    def equal(word: str, ref: str) -> bool:
+        return walk(word, graph) == walk(ref, graph)
+
+    strategies = {"breadth_first": acquire_equalities(known_count, equal, lambda *_: 0.0)}
+    strategies["symbol_counts"] = acquire_equalities(known_count, equal, symbol_count_rank)
+    short = dict(case["arms"]["short_only"]["rows"][:508])
+    strategies["training_cache"] = acquire_equalities(
+        known_count, equal, symbol_count_rank, cached=lambda a, b: cached_equality(short, a, b)
+    )
+    words = strategies["breadth_first"]["ranked_words"]
+    receipt = json.loads((run / "short_only.json").read_bytes())
+    path = run / receipt["weights"]
+    if not hmac.compare_digest(receipt["weights_sha"], digest(path)) or not hmac.compare_digest(
+        receipt["data_sha"], digest(case_path)
+    ):
+        raise ValueError("Frozen checkpoint or training data fingerprint differs")
+    model = GPT(config()).to(device)
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    model.eval()
+    started = time.perf_counter()
+    profiles, forward_prompts = equality_views(model, words, known_count, device)
+    forward_seconds = time.perf_counter() - started
+
+    def rank(word: str, ref: str, views: int) -> float:
+        from math import fsum
+
+        return fsum(float(a @ b) for a, b in zip(profiles[word][:views], profiles[ref][:views], strict=True)) / views
+
+    strategies["one_view"] = acquire_equalities(known_count, equal, lambda a, b: rank(a, b, 1))
+    strategies["seven_views"] = acquire_equalities(known_count, equal, lambda a, b: rank(a, b, len(EQUALITY_VIEWS)))
+    for strategy in strategies.values():
+        if strategy["edges"] != [list(row) for row in graph]:
+            raise ValueError("An acquisition policy changed the canonical action")
+        primary = case["primary"]
+        if any(case["opaque_names"][walk(word, strategy["edges"])] != label for word, label, _ in primary):
+            raise ValueError("A reconstructed table disagrees on a held-out word")
+        strategy["verified_words"] = len(primary)
+    return dict(
+        index=case["index"],
+        group=case["group"],
+        graph_sha=case["graph_sha"],
+        checkpoint=receipt["weights_sha"],
+        forward_prompts=forward_prompts,
+        forward_seconds=forward_seconds,
+        strategies=strategies,
+    )
+
+
+def equality_panel(data: Path, runs: Path, output: Path, device: torch.device) -> None:
+    results = []
+    totals = {group: dict.fromkeys(EQUALITY_POLICIES, 0) for group in ("s5", "a5")}
+    for index in range(24):
+        case = equality_case(data / f"{index:02}.json", runs / f"{index:02}", device)
+        for name, strategy in case["strategies"].items():
+            counts = strategy["counts"]
+            totals[case["group"]][name] += counts.get("oracle_equal", 0) + counts.get("oracle_different", 0)
+        results.append(case)
+        print(case["group"], index, totals[case["group"]], flush=True)
+    pooled = {name: sum(row[name] for row in totals.values()) for name in EQUALITY_POLICIES}
+    success = all(
+        10 * pooled["seven_views"] <= 9 * pooled[control] for control in ("breadth_first", "symbol_counts", "one_view")
+    ) and all(row["seven_views"] <= row["one_view"] for row in totals.values())
+    save(output, dict(totals=totals, pooled=pooled, continuation_gate=success, results=results))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("prepare", "train", "score"))
+    parser.add_argument("phase", choices=("prepare", "train", "score", "equality"))
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--first", type=int, default=0)
     parser.add_argument("--last", type=int, default=24)
     parser.add_argument("--cuda-graph", action="store_true", help="Capture forward and backward during training")
+    parser.add_argument("--equality-device", choices=("cpu", "cuda"), default="cpu")
     args = parser.parse_args()
     if args.phase == "prepare":
         prepare(args.data)
+    elif args.phase == "equality":
+        if args.runs is None or args.output is None:
+            parser.error("--runs and --output are required for the equality pilot")
+        torch.set_num_threads(2)
+        equality_panel(args.data, args.runs, args.output, torch.device(args.equality_device))
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
