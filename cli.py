@@ -7371,7 +7371,7 @@ def eval_tasks(
             model_overrides[key.strip()] = value  # bare strings pass through
 
     model, ckpt_meta, resolved_step = _load_eval_checkpoint(
-        checkpoint, step, device, model_overrides=model_overrides or None
+        checkpoint, step, device, model_overrides=model_overrides or None, fingerprint_weights=True
     )
     tok = checkpoint_tokenizer(str(checkpoint), ckpt_meta)
     n_params = sum(p.numel() for p in model.parameters())
@@ -7760,6 +7760,9 @@ def eval_tasks(
             "checkpoint": {
                 "dir": str(checkpoint),
                 "step": resolved_step,
+                "training_seed": ckpt_meta.get("seed"),
+                "weights_sha256": ckpt_meta["weights_sha256"],
+                "model_overrides": model_overrides,
                 "attention_type": ckpt_meta.get("model_config", {}).get("attention_type"),
                 "optimizer_type": ckpt_meta.get("optimizer_type"),
                 "scheduler_type": ckpt_meta.get("scheduler_type"),

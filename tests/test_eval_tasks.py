@@ -14,6 +14,8 @@
   floors + generations.jsonl receipts included).
 """
 
+import hashlib
+import hmac
 import json
 import os
 import platform
@@ -386,7 +388,12 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     # tree state the tiny train ran under - assert shape, not state)
     assert isinstance(summary["train_provenance"], dict)
     assert isinstance(summary["train_provenance"]["tainted"], bool)
-    assert summary["meta"]["checkpoint"]["attention_type"] == attention_type
+    checkpoint = summary["meta"]["checkpoint"]
+    assert checkpoint["attention_type"] == attention_type
+    assert checkpoint["training_seed"] == 7 and checkpoint["model_overrides"] == {}
+    weights = ckpt / f"model_{checkpoint['step']:06d}.pt"
+    with weights.open("rb") as handle:
+        assert hmac.compare_digest(checkpoint["weights_sha256"], hashlib.file_digest(handle, "sha256").hexdigest())
     assert summary["meta"]["receipts"] == "generations.jsonl"
     rec = summary["tasks"]["arith"]
     assert 0.0 <= rec["exact_match"]["greedy"]["in_range"]["mean"] <= 1.0
@@ -402,6 +409,34 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
     assert {"task", "mode", "region", "eval_seed", "doc_index", "expected", "got", "correct"} <= set(receipts[0])
     assert all(r["task"] == "arith" and isinstance(r["correct"], bool) for r in receipts)
     assert (run_dir / "run.md").exists()
+
+    if attention_type == "standard":
+        rounded = runner.invoke(
+            mgr_cli.app,
+            [
+                "eval-tasks",
+                "--checkpoint",
+                str(ckpt),
+                "--task",
+                "arith",
+                "--examples",
+                "1",
+                "--seeds",
+                "0",
+                "--model-override",
+                "eval_weight_quant_bits=4",
+                "--artifacts-dir",
+                str(tmp_path / "artifacts"),
+                "--run-id",
+                "eval-rounded",
+            ],
+        )
+        assert rounded.exit_code == 0, rounded.output
+        rounded_path = run_dir.parent / "eval-rounded" / "summary.json"
+        rounded_checkpoint = json.loads(rounded_path.read_text())["meta"]["checkpoint"]
+        assert hmac.compare_digest(rounded_checkpoint["weights_sha256"], checkpoint["weights_sha256"])
+        assert rounded_checkpoint["training_seed"] == checkpoint["training_seed"]
+        assert rounded_checkpoint["model_overrides"] == {"eval_weight_quant_bits": 4}
 
 
 @pytest.mark.slow
