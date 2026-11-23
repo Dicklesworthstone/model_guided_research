@@ -185,7 +185,7 @@ def state_digest(model: GPT) -> str:
     h = hashlib.sha256()
     for name, value in model.state_dict().items():
         h.update(name.encode())
-        h.update(value.detach().cpu().contiguous().numpy().tobytes())
+        h.update(value.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes())
     return h.hexdigest()
 
 
@@ -202,8 +202,11 @@ def train_case(case_path: Path, output: Path, device: torch.device) -> None:
         if result.exists():
             continue
         torch.manual_seed(case["train_seed"])
-        model = GPT(config()).to(device)
+        model = GPT(config())
         model.init_weights()
+        # Initialize on CPU so the repo's CUDA initializer cannot cast the
+        # embedding weights before the registered FP32-master training run.
+        model.to(device)
         initial = state_digest(model)
         x, where, y = encode(case["arms"][arm]["rows"], TRAIN_WIDTH, device)
         labels = torch.full_like(x, -1)
