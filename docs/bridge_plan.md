@@ -67,6 +67,8 @@ counts. Zero models were trained for this comparison.
 | [Needle, 30 trillion FLOPs, training context 256](../artifacts/probes/sizing/scorecards/vdc4-needle-tasktok-shuf-b30-s256-rung/report.md) | 0/144, 0/144, 0/144 | 8/144 | All six training cells, including the three placebo cells, completed. The 100-trillion-FLOP rung remains unmeasured. |
 | [Group, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b4-s256-rung/report.md) | 4/144, 7/144, 4/144 | 9.72% | Each seed fell below the prior on the held-out length split. The R-matrix comparison still needs an off-floor baseline. |
 | [Group, 10 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-group-tasktok-shuf-b10-s256-rung/report.md) | 6/144, 1/144, 10/144 | 14/144 | All three seeds fell below the prior. All 432 held-out examples were scored. |
+| [Bag, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 35/144, 41/144, 28/144 | 54/144 | All three seeds fell below the prior. The scorecard shared its three placebo cells with relation. |
+| [Relation, 4 trillion FLOPs, context 256](../artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/report.md) | 12/144, 9/144, 9/144 | 21/144 | All three seeds fell below the prior. All 432 held-out outcomes were scored. |
 
 Across the three needle budgets (4, 10 and 30 trillion model FLOPs), the
 same 144 held-out examples measured 608–620 tokens with the checkpoint

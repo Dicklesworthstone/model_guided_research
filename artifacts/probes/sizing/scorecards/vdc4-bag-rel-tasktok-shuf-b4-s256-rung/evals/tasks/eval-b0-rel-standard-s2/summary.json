@@ -1,0 +1,223 @@
+{
+  "kind": "eval-tasks",
+  "meta": {
+    "checkpoint": {
+      "attention_type": "standard",
+      "budget": {
+        "flops_consumed_est": 4000636207104,
+        "flops_per_step_est": 1082130432,
+        "max_steps": 3697,
+        "target_flops": 4000000000000.0
+      },
+      "dir": "/Volumes/SANDISK_SSD/scratch/mgr-fixes-20261122.E905R8/research/artifacts/probes/sizing/scorecards/vdc4-bag-rel-tasktok-shuf-b4-s256-rung/runs/budget_0/rel/standard/seed_2/checkpoints",
+      "lineage": {
+        "parent_run_ids": [],
+        "run_id": "seed_2"
+      },
+      "model_config": {
+        "activation_ckpt": "none",
+        "activation_ckpt_every_k": 1,
+        "attention_type": "standard",
+        "braid_crossing_law": "restricted",
+        "braid_mode": "soft",
+        "braid_record_schedule": false,
+        "braid_rmatrix_probes": 0,
+        "braid_tau": 0.0,
+        "braid_verify": false,
+        "ca_init_alpha": 1.0,
+        "ca_init_rule": null,
+        "ca_init_seed": 2,
+        "compile_backend": "inductor",
+        "compile_dynamic": null,
+        "compile_flex_attention": false,
+        "compile_fullgraph": false,
+        "compile_mode": null,
+        "control_zero_attention": false,
+        "disable_block_norms": false,
+        "eval_weight_quant_bits": null,
+        "ffn_beta": null,
+        "ffn_type": "standard",
+        "fractal_ifs": false,
+        "init_from_profile": null,
+        "n_embd": 64,
+        "n_head": 4,
+        "n_kv_head": 2,
+        "n_layer": 2,
+        "optimizer_type": "adamw",
+        "parameterization": "current",
+        "reversible_lambda_min": 0.05,
+        "reversible_mode": "additive",
+        "reversible_record_energy": false,
+        "reversible_tied": false,
+        "semiring_beta": null,
+        "sequence_len": 256,
+        "simplicial_random_triangles": false,
+        "simplicial_triplet": false,
+        "simplicial_window": 8,
+        "standard_record_attn_entropy": false,
+        "surreal_freeze_scale": false,
+        "surreal_scaling_axis": false,
+        "tropical_gauge_fix": true,
+        "tropical_record_margins": false,
+        "tropical_score_center": true,
+        "tropical_structured_support": false,
+        "ultrametric_K": 8,
+        "ultrametric_alpha": 2.0,
+        "ultrametric_digits_k": null,
+        "ultrametric_hard_digits": false,
+        "ultrametric_lcp_beta": 32.0,
+        "ultrametric_mode": "kernel",
+        "ultrametric_p": 2,
+        "ultrametric_record_routes": false,
+        "ultrametric_tie_margin": 1.0,
+        "use_flex_attention": false,
+        "vocab_size": 320
+      },
+      "n_params": 131072,
+      "step": 3696
+    },
+    "decode_modes": [
+      "greedy"
+    ],
+    "device": "cpu",
+    "dials": null,
+    "evaluator": {
+      "bos_prefixed": true
+    },
+    "examples_per_seed": 48,
+    "generated_at": "2026-11-23T02:43:38Z",
+    "git": {
+      "branch": "HEAD",
+      "commit": "a5abe77",
+      "commit_full": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+      "dirty": false
+    },
+    "perturbation": {
+      "perturb_eps": [],
+      "perturb_seed": 0,
+      "spec": "nanochat.diagnostics_data.apply_embedding_perturbation"
+    },
+    "receipts": "generations.jsonl",
+    "run_id": "eval-b0-rel-standard-s2",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "tokenizer": {
+      "dir": "tokenizer",
+      "kind": "task",
+      "requested_vocab_size": 512,
+      "vocab_size": 304
+    }
+  },
+  "provenance": {
+    "config_hash": "2c920d9bbf64ce78c868097cb3bc9117445c81cdacadaf7c467e146dbeed8cff",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  },
+  "schema_version": "mgr.evaltasks.v5",
+  "tasks": {
+    "rel": {
+      "answer_prior": {
+        "held_out": {
+          "majority_answer": "e9",
+          "mean": 0.14583333333333334,
+          "per_seed": [
+            0.125,
+            0.16666666666666666,
+            0.14583333333333334
+          ]
+        },
+        "in_range": {
+          "majority_answer": "e0",
+          "mean": 0.1736111111111111,
+          "per_seed": [
+            0.16666666666666666,
+            0.16666666666666666,
+            0.1875
+          ]
+        }
+      },
+      "curve": {
+        "accuracy": [
+          0.09722222222222222,
+          0.0625
+        ],
+        "buckets": [
+          8.0,
+          16.0
+        ],
+        "counts": [
+          144,
+          144
+        ]
+      },
+      "difficulty_axis": "fact_count",
+      "exact_match": {
+        "greedy": {
+          "held_out": {
+            "ci95": [
+              0.03892486400809028,
+              0.08607513599190972
+            ],
+            "mean": 0.0625,
+            "per_seed": [
+              0.08333333333333333,
+              0.041666666666666664,
+              0.0625
+            ]
+          },
+          "in_range": {
+            "ci95": [
+              0.007968197863667204,
+              0.18647624658077724
+            ],
+            "mean": 0.09722222222222222,
+            "per_seed": [
+              0.041666666666666664,
+              0.0625,
+              0.1875
+            ]
+          }
+        }
+      },
+      "in_range_max": 8.0,
+      "length_slope": {
+        "all": {
+          "basis": "doc-level OLS of greedy exact-match on the difficulty axis",
+          "ci95": [
+            -0.0121784521580377,
+            0.0034978966024821444
+          ],
+          "intercept": 0.13194444444444445,
+          "n_docs": 288,
+          "slope": -0.004340277777777778
+        },
+        "held_out": null
+      },
+      "n_examples_per_seed": 48,
+      "perplexity": {
+        "held_out": 11.12670306695832,
+        "in_range": 2.40693896677759
+      },
+      "robustness": {
+        "ladder": {},
+        "perturb_seed": 0
+      },
+      "skipped_too_long": 0,
+      "tropical_margins": null
+    }
+  },
+  "train_provenance": {
+    "config_hash": "712e76e2b19e318163bd3490fc1c8699f40196a97678924a2c64a8bf549c834e",
+    "data_snapshot_hash": null,
+    "git_dirty": false,
+    "git_sha": "a5abe773b4b5ce1073d63eafe499ef809dc071f3",
+    "schema_version": "mgr.metrics.v1",
+    "tainted": false
+  }
+}
