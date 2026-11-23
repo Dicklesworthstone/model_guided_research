@@ -2690,3 +2690,30 @@ hypotheses:
     status: open
     evidence: []
     verdict_history: []
+
+  - id: hyp-realhier-prefix-transfer-three-modules
+    statement: >-
+      Ultrametric attention improves the equal-module mean held-out greedy exact
+      match by at least 0.05 over standard attention on source-disjoint Python
+      AST retrieval for contextlib, enum and textwrap.
+    mechanisms: [ultrametric]
+    source:
+      kind: model
+      provenance: artifacts/proposals/hyp-realhier-prefix-transfer-three-modules/scoring.md
+    date_registered: "2026-11-22"
+    prediction:
+      metric_path: "evaltasks:tasks.realhier.module_macro.greedy.held_out.mean"
+      comparator: ">="
+      threshold_kind: absolute_delta
+      threshold: 0.05
+      baseline: {mechanism: standard, equal_flops: true}
+      min_seeds: 12
+      scale_caveats: >-
+        Conditional on the pinned CPython 3.13.0 source hashes, 256-token coverage,
+        answer-prior, development baseline and power gates in the proposal. Final
+        checkpoint at 2e12 model FLOPs. One paired difference per independent
+        training seed pair 3 through 14; corroborate the engine outcome with its
+        paired 95% interval. A preflight refusal yields no model verdict.
+    status: open
+    evidence: []
+    verdict_history: []
