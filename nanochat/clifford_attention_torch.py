@@ -80,7 +80,7 @@ def _blade_product(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[tuple[int, .
 
 
 def _build_structure_tensor() -> torch.Tensor:
-    m = torch.zeros(8, 8, 8)
+    m = torch.zeros(8, 8, 8, device="cpu")
     for i, ba in enumerate(_BLADES):
         for j, bb in enumerate(_BLADES):
             blade, sign = _blade_product(ba, bb)
@@ -89,13 +89,15 @@ def _build_structure_tensor() -> torch.Tensor:
 
 
 _STRUCTURE: torch.Tensor = _build_structure_tensor()
-_REVERSION_SIGNS: torch.Tensor = torch.tensor([1.0 if (g * (g - 1) // 2) % 2 == 0 else -1.0 for g in _GRADES])
+_REVERSION_SIGNS: torch.Tensor = torch.tensor(
+    [1.0 if (g * (g - 1) // 2) % 2 == 0 else -1.0 for g in _GRADES], device="cpu"
+)
 
 
 def cgp(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Geometric product of multivectors (..., 8) via the derived table."""
 
-    return torch.einsum("...i,...j,ijk->...k", a, b, _STRUCTURE.to(a.dtype))
+    return torch.einsum("...i,...j,ijk->...k", a, b, _STRUCTURE.to(a))
 
 
 def creverse(m: torch.Tensor) -> torch.Tensor:

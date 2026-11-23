@@ -337,21 +337,25 @@ def test_octonion_blade_sign_table_is_a_valid_multiplication_table():
             assert got == want, f"table e{i}*e{j}: {(k, s)} vs oracle {want}"
 
 
-def test_clifford_torch_table_matches_independent_oracle():
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_clifford_torch_table_matches_independent_oracle(device: str):
     """mnn.3: the PRODUCTION Cl(3,0) structure tensor must agree with an
     independent Cayley-Dickson-style oracle (the demo's tuple recursion) for
     every unit-blade pair - exact +-1/0 arithmetic."""
     import numpy as np
 
     import clifford_algebra_and_geometric_attention as demo
-    from nanochat.clifford_attention_torch import _STRUCTURE, cgp, creverse
+    from nanochat.clifford_attention_torch import cgp, creverse
 
-    assert np.allclose(_STRUCTURE.numpy(), demo.STRUCTURE), "production and demo blade tables diverge"
-    e = torch.eye(8, dtype=torch.float64)
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA device required for the Clifford GPU oracle")
+    e = torch.eye(8, dtype=torch.float64, device=device)
+    products = cgp(e[:, None, :], e[None, :, :])
+    assert torch.equal(products, torch.as_tensor(demo.STRUCTURE, dtype=e.dtype, device=device))
     rng = np.random.default_rng(5)
-    x = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
-    y = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
-    z = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64)
+    x = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64, device=device)
+    y = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64, device=device)
+    z = torch.tensor(rng.normal(size=(32, 8)), dtype=torch.float64, device=device)
     # Associativity: Cl(3,0) is associative (contrast: octonions are not).
     assert float((cgp(cgp(x, y), z) - cgp(x, cgp(y, z))).abs().max()) <= 1e-12
     # Reversion is an anti-automorphism.
