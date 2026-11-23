@@ -645,3 +645,28 @@ def test_equality_only_action_recovers_every_edge_with_a_wrong_ranker():
     assert cached_equality(short, "", "0") is False
     assert cached_equality(short, "00", "00") is True
     assert cached_equality(short, "00", "1111") is None
+
+
+def test_equivalence_cache_keys_use_only_group_identities():
+    from scripts.group_student_probe import acquire_with_memo, cancelled_key, pair_key, relator_key
+
+    assert cancelled_key("0100", "0110") == ("0", "1")
+    assert cancelled_key("001", "") != cancelled_key("010", "")
+    assert relator_key("001", "") == relator_key("010", "")
+    assert relator_key("0100", "0110") == relator_key("1", "0")
+    assert relator_key("0011", "") != relator_key("0101", "")
+    assert relator_key("010", "010") == ()
+
+    def equal(a, b):
+        def eval_word(word):
+            p = (0, 1, 2)
+            generators = ((1, 0, 2), (1, 2, 0))
+            for g in word:
+                p = tuple(generators[int(g)][i] for i in p)
+            return p
+
+        return eval_word(a) == eval_word(b)
+
+    raw, cancelled, cyclic = [acquire_with_memo(6, equal, key) for key in (pair_key, cancelled_key, relator_key)]
+    assert raw["edges"] == cancelled["edges"] == cyclic["edges"]
+    assert cyclic["counts"]["cache_different"] > 0

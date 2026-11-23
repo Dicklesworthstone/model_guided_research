@@ -432,6 +432,13 @@ def cached_equality(short: dict[str, str], word: str, ref: str) -> bool | None:
     return lhs == rhs if lhs is not None and rhs is not None else None
 
 
+def walk_action(word: str, edges) -> int:
+    state = 0
+    for symbol in word:
+        state = edges[state][int(symbol)]
+    return state
+
+
 @torch.inference_mode()
 def equality_views(model: GPT, words: list[str], size: int, device: torch.device):
     padded = sorted({left + word + right for word in words for left, right in EQUALITY_VIEWS})
@@ -454,14 +461,8 @@ def equality_case(case_path: Path, run: Path, device: torch.device) -> dict:
     if graph_digest(graph) != case["graph_sha"]:
         raise ValueError("The loaded presentation differs from the frozen group")
 
-    def walk(word: str, edges) -> int:
-        state = 0
-        for symbol in word:
-            state = edges[state][int(symbol)]
-        return state
-
     def equal(word: str, ref: str) -> bool:
-        return walk(word, graph) == walk(ref, graph)
+        return walk_action(word, graph) == walk_action(ref, graph)
 
     strategies = {"breadth_first": acquire_equalities(known_count, equal, lambda *_: 0.0)}
     strategies["symbol_counts"] = acquire_equalities(known_count, equal, symbol_count_rank)
@@ -494,7 +495,7 @@ def equality_case(case_path: Path, run: Path, device: torch.device) -> dict:
         if strategy["edges"] != [list(row) for row in graph]:
             raise ValueError("An acquisition policy changed the canonical action")
         primary = case["primary"]
-        if any(case["opaque_names"][walk(word, strategy["edges"])] != label for word, label, _ in primary):
+        if any(case["opaque_names"][walk_action(word, strategy["edges"])] != label for word, label, _ in primary):
             raise ValueError("A reconstructed table disagrees on a held-out word")
         strategy["verified_words"] = len(primary)
     return dict(
@@ -525,9 +526,102 @@ def equality_panel(data: Path, runs: Path, output: Path, device: torch.device) -
     save(output, dict(totals=totals, pooled=pooled, continuation_gate=success, results=results))
 
 
+def pair_key(a: str, b: str) -> tuple[str, ...]:
+    return tuple(sorted((a, b)))
+
+
+def cancelled_key(a: str, b: str) -> tuple[str, ...]:
+    start = 0
+    while start < min(len(a), len(b)) and a[start] == b[start]:
+        start += 1
+    a, b = a[start:], b[start:]
+    suffix = 0
+    while suffix < min(len(a), len(b)) and a[-suffix - 1] == b[-suffix - 1]:
+        suffix += 1
+    if suffix:
+        a, b = a[:-suffix], b[:-suffix]
+    return pair_key(a, b)
+
+
+def relator_key(a: str, b: str) -> tuple[int, ...]:
+    """Canonical free-group conjugacy class of a b^-1 or its inverse."""
+    signed = [int(s) + 1 for s in a] + [-int(s) - 1 for s in reversed(b)]
+    reduced: list[int] = []
+    for letter in signed:
+        if reduced and reduced[-1] == -letter:
+            reduced.pop()
+        else:
+            reduced.append(letter)
+    start, stop = 0, len(reduced)
+    while stop - start > 1 and reduced[start] == -reduced[stop - 1]:
+        start += 1
+        stop -= 1
+    cyclic = tuple(reduced[start:stop])
+    inverse = tuple(-letter for letter in reversed(cyclic))
+    return min((word[i:] + word[:i] for word in (cyclic, inverse) for i in range(len(word))), default=())
+
+
+def acquire_with_memo(size: int, equal: Callable[[str, str], bool], key: Callable[[str, str], tuple]) -> dict:
+    memo = {key("", ""): True}
+
+    def ask(word: str, ref: str) -> bool:
+        result = equal(word, ref)
+        memo[key(word, ref)] = result
+        return result
+
+    started = time.perf_counter()
+    acquired = acquire_equalities(size, ask, symbol_count_rank, cached=lambda a, b: memo.get(key(a, b)))
+    acquired["seconds"] = time.perf_counter() - started
+    acquired["memo_entries"] = len(memo)
+    acquired["memo_symbols"] = sum(len(k) if not k or isinstance(k[0], int) else sum(map(len, k)) for k in memo)
+    return acquired
+
+
+def relator_panel(data: Path, output: Path) -> None:
+    rng = random.Random(2026112303)
+    exclusions = {
+        *[case["graph_digest"] for case in json.loads(OLD_PANEL.read_bytes())["cases"]],
+        *[json.loads((data / f"{i:02}.json").read_bytes())["graph_sha"] for i in range(24)],
+        *(graph_digest(rooted_graph(g, tuple(gens))) for g, gens in _GROUP_GENERATORS.items()),
+    }
+    results = []
+    for group in ("s5", "a5", "z60"):
+        elements = _group_elements(group)
+        retained = 0
+        while retained < 6:
+            generators = (rng.choice(elements), rng.choice(elements))
+            graph = rooted_graph(group, generators)
+            fingerprint = graph_digest(graph)
+            if len(graph) != len(elements) or fingerprint in exclusions:
+                continue
+            exclusions.add(fingerprint)
+            case_index = len(results)
+            eval_rng = random.Random(93700 + case_index)
+            visited: set[str] = set()
+            samples = [
+                (w, walk_action(w, graph)) for n in (16, 32, 64, 128) for w in distinct_words(eval_rng, visited, 48, n)
+            ]
+            strategies = {}
+            for name, key in (("raw", pair_key), ("cancelled", cancelled_key), ("relator", relator_key)):
+                table = acquire_with_memo(
+                    len(elements), lambda a, b: walk_action(a, graph) == walk_action(b, graph), key
+                )
+                if table["edges"] != [list(row) for row in graph]:
+                    raise ValueError("An algebraic cache changed the recovered action")
+                if any(walk_action(w, table["edges"]) != y for w, y in samples):
+                    raise ValueError("A new evaluation word changed under replay")
+                strategies[name] = table
+            results.append(
+                dict(group=group, generators=generators, graph_sha=fingerprint, samples=samples, strategies=strategies)
+            )
+            retained += 1
+            print(group, case_index, {k: t["counts"] for k, t in strategies.items()}, flush=True)
+    save(output, {"seed": 2026112303, "results": results})
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("prepare", "train", "score", "equality"))
+    parser.add_argument("phase", choices=("prepare", "train", "score", "equality", "relator"))
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--output", type=Path)
@@ -543,6 +637,10 @@ if __name__ == "__main__":
             parser.error("--runs and --output are required for the equality pilot")
         torch.set_num_threads(2)
         equality_panel(args.data, args.runs, args.output, torch.device(args.equality_device))
+    elif args.phase == "relator":
+        if args.output is None:
+            parser.error("--output is required for the relator panel")
+        relator_panel(args.data, args.output)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
