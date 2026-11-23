@@ -12047,7 +12047,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v10"
+_ADJ_POLICY_VERSION = "ci-v11"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12187,7 +12187,7 @@ _ADJ_BLOCK_REASONS = {
     "no_candidate_artifacts": "no qualifying artifact for the candidate arm",
     "no_baseline_artifacts": "no qualifying artifact for the baseline arm",
     "tainted_evidence": "only tainted artifacts available (dirty tree / missing provenance) - evidence not attributable to a committed code state",
-    "insufficient_seeds": "no equal-FLOPs cohort gives both arms at least min_seeds (>= 2) training runs - mgr hypotheses power computes the seed count the registered effect actually needs",
+    "insufficient_seeds": "no comparable cohort gives each required arm enough distinct training runs at the same budget and evaluation protocol",
     "budget_mismatch": "no equal-FLOPs cohort (5% tolerance) contains both arms, or an artifact cannot prove its planned budget",
     "optimizer_compute_unmeasured": "The model FLOP budget excludes the optimizer's Hessian-vector products. These artifacts cannot establish equal total training compute for HOSS versus a first-order optimizer.",
     "metric_missing": "qualifying artifact lacks the metric at the registered path",
@@ -12440,8 +12440,24 @@ def _adj_distinct_probe_trainings(arts: list[dict[str, Any]]) -> list[dict[str, 
     return sorted((value[1] for value in best.values()), key=lambda a: str(a["path"]))
 
 
+def _eval_bos_prefixed(art: dict[str, Any]) -> bool:
+    """v4 introduced the training-time beginning-of-sequence token for evaluation."""
+    return art["data"]["schema_version"] in {"mgr.evaltasks.v4", "mgr.evaltasks.v5"}
+
+
+def _eval_measurement_rank(art: dict[str, Any]) -> tuple[int, str, str, str]:
+    meta = art["data"].get("meta") or {}
+    step = (meta.get("checkpoint") or {}).get("step")
+    return (
+        step if type(step) is int else -1,
+        str(art["data"]["schema_version"]),
+        str(meta.get("generated_at", "")),
+        str(art["path"]),
+    )
+
+
 def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Select one evaluation per checkpoint and one route observation per training."""
+    """Select one observation per training within an already comparable evaluation group."""
     best: dict[Any, tuple[tuple[Any, ...], dict[str, Any]]] = {}
     routes = []
     out = []
@@ -12451,6 +12467,7 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out.append(a)
             continue
         meta = a["data"].get("meta") or {}
+        rank: tuple[Any, ...]
         if a["schema"] == "certify":
             # re-runs of the same certify seed are byte-replays, never extra
             # evidence; distinct seeds ARE replications and all survive
@@ -12477,12 +12494,8 @@ def _adj_dedupe_evaltasks(arts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if not isinstance(run_id, str) or not run_id:
                 out.append(a)
                 continue
-            key = (run_id, ckpt.get("step"))
-            rank = (
-                str(a["data"].get("schema_version", "")),  # "...v2" > "...v1"
-                str(meta.get("generated_at", "")),
-                str(a["path"]),
-            )
+            key = ("evaltasks", run_id)
+            rank = _eval_measurement_rank(a)
         prev = best.get(key)
         if prev is None or rank > prev[0]:
             best[key] = (rank, a)
@@ -13039,8 +13052,13 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
             task_name = dotted.split(".", 2)[1]
             cand = [a for a in cand if task_name in (a["data"].get("tasks") or {})]
             base = [a for a in base if task_name in (a["data"].get("tasks") or {})]
-        cand_m = [a for a in _adj_dedupe_evaltasks(cand) if _adj_observations(a, dotted)]
-        base_m = [a for a in _adj_dedupe_evaltasks(base) if _adj_observations(a, dotted)]
+        # The same run label can appear under multiple budgets and evaluator protocols.
+        # Choose its representative only after selecting a comparable cohort.
+        if schema != "evaltasks":
+            cand = _adj_dedupe_evaltasks(cand)
+            base = _adj_dedupe_evaltasks(base)
+        cand_m = [a for a in cand if _adj_observations(a, dotted)]
+        base_m = [a for a in base if _adj_observations(a, dotted)]
         if cand_m and base_m and schema in {"train", "evaltasks"} and ((mech == "hoss") != (eff_base_mech == "hoss")):
             return {
                 "id": hid,
@@ -13104,6 +13122,17 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
                 if not cc_try or (not bb_try and not single_arm):
                     continue
                 both_arms_seen = True
+                if schema == "evaltasks":
+                    # Prefer the BOS-consistent measurement at the same budget when both qualify.
+                    for bos_prefixed in (True, False):
+                        cc_eval = _adj_dedupe_evaltasks([a for a in cc_try if _eval_bos_prefixed(a) == bos_prefixed])
+                        bb_eval = _adj_dedupe_evaltasks([a for a in bb_try if _eval_bos_prefixed(a) == bos_prefixed])
+                        if len(cc_eval) >= need and (single_arm or len(bb_eval) >= need):
+                            chosen = (cohort_anchor, cc_eval, bb_eval)
+                            break
+                    if chosen is not None:
+                        break
+                    continue
                 n_c = sum(len(_adj_observations(a, dotted) or []) for a in cc_try)
                 n_b = sum(len(_adj_observations(a, dotted) or []) for a in bb_try)
                 if n_c >= need and (single_arm or n_b >= need):
@@ -13136,6 +13165,8 @@ def _adj_score_cohort(hyp: dict[str, Any], artifacts: list[dict[str, Any]]) -> d
             "n_baseline": len(base_obs),
             "budget_flops": anchor,
         }
+        if schema == "evaltasks":
+            arm["bos_prefixed"] = _eval_bos_prefixed(cc[0])
         if single_arm:
             arm["single_arm"] = True
         # ---- floor validity gate (ci-v2; no baseline -> no gate) ----
@@ -13316,6 +13347,7 @@ def _report_eval_rows(art: dict[str, Any]) -> list[dict[str, Any]]:
                 "step": ckpt.get("step"),
                 "task": str(task),
                 "mechanism": str(ckpt.get("attention_type") or "?"),
+                "bos_prefixed": _eval_bos_prefixed(art),
                 "target_flops": (ckpt.get("budget") or {}).get("target_flops"),
                 "em_held_out": em.get("mean"),
                 "answer_prior": prior.get("mean"),
@@ -13402,24 +13434,34 @@ def report(
         g["train_ce_final"] = _report_mean_sd(g.pop("ce"))
         train_groups.append(g)
 
-    # ---- eval evidence (clean, lineage-deduped: the ci-v2 observation set) ----
+    # A shared seed_N label can represent different tasks, mechanisms or budgets.
     evals_all = [a for a in index if a["schema"] == "evaltasks"]
-    evals_clean = _adj_dedupe_evaltasks([a for a in evals_all if not a["tainted"]])
+    latest_eval = {}
+    for art in evals_all:
+        if art["tainted"]:
+            continue
+        rank = _eval_measurement_rank(art)
+        for row in _report_eval_rows(art):
+            training = row["run_id"] if row["run_id"] != "?" else str(art["path"])
+            key = (row["task"], row["mechanism"], row["target_flops"], row["bos_prefixed"], training)
+            if key not in latest_eval or rank > latest_eval[key][0]:
+                latest_eval[key] = (rank, row)
     eval_rows = sorted(
-        (row for a in evals_clean for row in _report_eval_rows(a)),
-        key=lambda r: (r["task"], r["mechanism"], r["target_flops"] or 0.0, r["run_id"]),
+        (row for _, row in latest_eval.values()),
+        key=lambda r: (r["task"], r["mechanism"], r["target_flops"] or 0.0, r["bos_prefixed"], r["run_id"]),
     )
     n_eval_tainted = sum(1 for a in evals_all if a["tainted"])
     eval_groups: list[dict[str, Any]] = []
-    seen_eg: dict[tuple[str, str, Any], dict[str, Any]] = {}
+    seen_eg: dict[tuple[str, str, Any, bool], dict[str, Any]] = {}
     for r in eval_rows:
         g = seen_eg.setdefault(
-            (r["task"], r["mechanism"], r["target_flops"]),
+            (r["task"], r["mechanism"], r["target_flops"], r["bos_prefixed"]),
             {
                 "task": r["task"],
                 "mechanism": r["mechanism"],
                 "target_flops": r["target_flops"],
                 "n_models": 0,
+                "bos_prefixed": r["bos_prefixed"],
                 "em": [],
                 "prior": [],
             },
@@ -13429,7 +13471,7 @@ def report(
             g["em"].append(float(r["em_held_out"]))
         if isinstance(r["answer_prior"], (int, float)):
             g["prior"].append(float(r["answer_prior"]))
-    for key in sorted(seen_eg, key=_group_order):
+    for key in sorted(seen_eg, key=lambda k: (k[0], k[1], k[2] or 0.0, k[3])):
         g = seen_eg[key]
         g["em_held_out"] = _report_mean_sd(g.pop("em"))
         priors = g.pop("prior")
@@ -13461,7 +13503,7 @@ def report(
     console.print(tg_table)
 
     eg_table = Table(title="eval evidence by arm (held-out EM over clean deduped checkpoints)", box=box.SIMPLE_HEAVY)
-    for col in ("task", "mechanism", "FLOPs", "n models", "EM held-out (mean ± sd)", "answer prior"):
+    for col in ("task", "mechanism", "FLOPs", "n models", "EM held-out (mean ± sd)", "answer prior", "BOS prefix"):
         eg_table.add_column(col)
     for g in eval_groups:
         eg_table.add_row(
@@ -13471,6 +13513,7 @@ def report(
             str(g["n_models"]),
             g["em_held_out"],
             g["answer_prior"],
+            _report_fmt(g["bos_prefixed"]),
         )
     console.print(eg_table)
     if n_eval_tainted:
@@ -13514,13 +13557,13 @@ def report(
         "",
         "## Eval evidence by arm (held-out EM; clean, lineage-deduped — ci-v2 observation units)",
         "",
-        "| task | mechanism | FLOPs | n models | EM held-out (mean ± sd) | answer prior |",
-        "|---|---|---|---|---|---|",
+        "| task | mechanism | FLOPs | n models | EM held-out (mean ± sd) | answer prior | BOS prefix |",
+        "|---|---|---|---|---|---|---|",
     ]
     for g in eval_groups:
         md.append(
             f"| {g['task']} | {g['mechanism']} | {_report_fmt(g['target_flops'], '.3g')} | {g['n_models']} "
-            f"| {g['em_held_out']} | {g['answer_prior']} |"
+            f"| {g['em_held_out']} | {g['answer_prior']} | {_report_fmt(g['bos_prefixed'])} |"
         )
     if n_eval_tainted:
         md.append(f"\n{n_eval_tainted} tainted eval artifact(s) excluded from arm stats.")

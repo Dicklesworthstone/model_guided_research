@@ -67,13 +67,14 @@ def _eval_summary(
     flops: float = 3e14,
     tainted: bool = False,
     generated_at: str = "2026-06-12T00:00:00Z",
+    schema_version: str = "mgr.evaltasks.v2",
 ) -> None:
     run_dir = root / "evals" / "tasks" / name
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(
         json.dumps(
             {
-                "schema_version": "mgr.evaltasks.v2",
+                "schema_version": schema_version,
                 "kind": "eval-tasks",
                 "meta": {
                     "generated_at": generated_at,
@@ -171,6 +172,34 @@ def test_report_rolls_up_arms_with_engine_semantics(tmp_path):
     assert "| dyck | braid | 3e+14 | 2 | 0.96" in md
     assert "1 tainted eval artifact(s) excluded" in md
     assert payload["git"] is not None and payload["roots"] == [str(arts)]
+
+
+def test_report_keeps_tasks_and_prompt_protocols_distinct_at_shared_run_ids(tmp_path):
+    for name, task, step, em, version in (
+        ("old", "dyck", 10, 0.9, 3),
+        ("early", "dyck", 5, 0.1, 4),
+        ("late", "dyck", 10, 0.7, 4),
+        ("other", "arith", 10, 0.2, 4),
+    ):
+        _eval_summary(
+            tmp_path,
+            name,
+            mechanism="standard",
+            task=task,
+            em=em,
+            run_id="seed_0",
+            step=step,
+            schema_version=f"mgr.evaltasks.v{version}",
+        )
+    out = tmp_path / "out"
+    result = runner.invoke(cli.app, ["report", "--artifacts", str(tmp_path), "--out", str(out), "--run-id", "x"])
+    assert result.exit_code == 0, result.output
+    data = json.loads((out / "x/report.json").read_text())
+    assert {(g["task"], g["bos_prefixed"], g["n_models"], g["em_held_out"]) for g in data["eval_groups"]} == {
+        ("dyck", False, 1, "0.9"),
+        ("dyck", True, 1, "0.7"),
+        ("arith", True, 1, "0.2"),
+    }
 
 
 def test_report_handles_empty_tree(tmp_path):

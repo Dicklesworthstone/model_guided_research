@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v10`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v11`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -158,7 +158,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v10`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v11`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
@@ -187,6 +187,15 @@ operator counts measure this particular configuration. Since `ci-v8` the engine 
 mixed HOSS and first-order comparisons from training or task-eval summaries
 with `optimizer_compute_unmeasured` when both arms carry the registered
 metric. Bead `sequ` tracks calibration across ranks and architectures.
+
+For task evaluations, ci-v11 groups comparable budgets and prompt conventions
+before counting training runs. Evaluator versions 1–3 omitted the initial
+beginning-of-sequence token. Versions 4–5 include it. Each arm must supply its
+required runs under the same convention. When both qualify at the same budget,
+the engine selects the convention used during training. Within a run, the latest
+measured checkpoint represents that training. Both the verdict and the arm report
+record the prefix convention. Historical task evaluations identify trainings by
+their recorded run IDs. Relabeling a legacy run can obscure that identity.
 
 Under ci-v10, charge-decoding measurements that share a training seed, run
 or weights digest count once within each candidate budget cohort. Repeated

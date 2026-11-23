@@ -137,7 +137,7 @@ def test_supported_when_ci_clears_threshold(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert arm["ci95"][0] >= 0.05 and abs(arm["effect"] - 0.30) < 0.02
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3  # one obs per trained model
-    assert v["policy_version"] == "ci-v10"
+    assert v["policy_version"] == "ci-v11"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def test_decisive_refutation_is_not_underpowered_civ6(tmp_path):
     assert "underpowered" not in arm  # ...but a decisive refutation is NOT weak (ci-v6)
     assert "underpowered" not in v
     assert arm["refutation_margin"] > 1.5  # the CI sits well past the threshold
-    assert v["policy_version"] == "ci-v10"
+    assert v["policy_version"] == "ci-v11"
 
 
 def test_inconclusive_when_ci_straddles(tmp_path):
@@ -499,6 +499,30 @@ def test_budget_cohorts_largest_qualifying_wins(tmp_path):
     assert v["arms"]["ultrametric"]["budget_flops"] == pytest.approx(1e13)
 
 
+def test_eval_cohorts_require_independent_runs_with_the_same_prompt_protocol(tmp_path):
+    for mech, value in (("ultrametric", 0.8), ("standard", 0.3)):
+        for i in range(3):
+            _evaltasks_artifact(
+                tmp_path, f"{mech}-step{i}", mechanism=mech, per_seed=[value], run_id=mech, step=201 + i
+            )
+            _evaltasks_artifact(
+                tmp_path,
+                f"{mech}-bos{i}",
+                mechanism=mech,
+                per_seed=[value],
+                run_id=mech if i == 0 else f"{mech}-{i}",
+                schema_version="mgr.evaltasks.v4",
+            )
+    # Both protocols have enough rows before deduplication. Only the BOS group
+    # has three different trainings. A later legacy measurement must not steal one.
+    verdict = _adj_score_cohort(_hyp(), _index(tmp_path))
+    assert verdict["verdict"] == "supported"
+    assert verdict["arms"]["ultrametric"]["bos_prefixed"] is True
+    assert all("-bos" in path for path in verdict["artifacts"])
+    incomplete = [a for a in _index(tmp_path) if "-bos2" not in str(a["path"])]
+    assert _adj_score_cohort(_hyp(), incomplete)["reason_code"] == "insufficient_seeds"
+
+
 def test_lineage_dedupe_re_evals_never_double_count(tmp_path):
     """Re-evaluating the same checkpoints (e.g. after an eval upgrade) must
     not inflate n; the newest/richest artifact per training run wins."""
@@ -666,8 +690,8 @@ def test_ledger_append_preserves_comments_and_is_append_only(tmp_path, monkeypat
     assert entry["status"] == "supported"
     assert len(entry["verdict_history"]) == 1
     first = entry["verdict_history"][0]
-    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v10"
-    assert first["policy_version"] == "ci-v10" and first["artifacts"]
+    assert first["verdict"] == "supported" and first["adjudicator"] == "engine:ci-v11"
+    assert first["policy_version"] == "ci-v11" and first["artifacts"]
     assert first["registration_commit"] == CLEAN_PROV["git_sha"]
 
     # second adjudication APPENDS; the first entry is untouched
@@ -956,7 +980,7 @@ def test_single_arm_certify_supported_budget_exempt(tmp_path):
     assert arm["single_arm"] is True
     assert arm["budget_flops"] is None
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 0
-    assert v["policy_version"] == "ci-v10"
+    assert v["policy_version"] == "ci-v11"
 
 
 def test_single_arm_certify_refuted_and_seed_dedupe(tmp_path):
@@ -1105,7 +1129,7 @@ def test_two_arm_verdicts_unchanged_under_ci_v3(tmp_path):
     arm = v["arms"]["ultrametric"]
     assert "single_arm" not in arm
     assert arm["n_candidate"] == 3 and arm["n_baseline"] == 3
-    assert v["policy_version"] == "ci-v10"
+    assert v["policy_version"] == "ci-v11"
 
 
 def test_evaltasks_variant_selector_resolves_via_model_config(tmp_path):
