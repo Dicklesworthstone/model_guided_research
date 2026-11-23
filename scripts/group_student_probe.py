@@ -156,6 +156,7 @@ def prepare(output: Path) -> None:
             case["opaque_names"] = names
             save(output / f"{index:02}.json", case)
             print(group, index, {arm: (len(a["paid"]), a["inferred"]) for arm, a in case["arms"].items()}, flush=True)
+            retained += 1
             index += 1
 
 
