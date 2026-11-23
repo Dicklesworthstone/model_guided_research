@@ -7073,6 +7073,9 @@ def _eval_doc_perplexity(model: Any, tok: Any, doc: str, device: Any, *, input_h
 
 
 def _is_sizing_path(path: Path) -> bool:
+    parts = path.parts
+    if ("probes", "sizing") in zip(parts, parts[1:]):
+        return True
     parts = path.resolve().parts
     return ("probes", "sizing") in zip(parts, parts[1:])
 
@@ -12273,7 +12276,7 @@ def hypotheses_power(
 # evidence yields BLOCKED with a machine-readable reason, never a soft verdict.
 # =============================================================================
 
-_ADJ_POLICY_VERSION = "ci-v12"
+_ADJ_POLICY_VERSION = "ci-v13"
 # ci-v6 (bead 4b82) makes the UNDERPOWERED qualifier SIGN-AWARE. The ci-v4
 # power floor asks "could this design have CONFIRMED the registered effect?" -
 # the right adequacy lens for a SUPPORTED verdict, the WRONG one for a REFUTED
@@ -12440,15 +12443,11 @@ def _adj_collect_artifacts(roots: list[Path]) -> list[dict[str, Any]]:
         if not root.exists():
             continue
         for path in sorted(root.rglob("summary.json")):
-            parts = path.parts
-            if ("probes", "sizing") in zip(parts, parts[1:]):
-                # probes/sizing/ is the evidence-pool quarantine (bead dzor):
-                # sizing/calibration runs SELECT rungs and budgets, so
-                # admitting them as evidence is selection bias by
-                # construction. probes/charges stays evidence - chargeprobe
-                # instruments measure, they do not select.
-                continue
             try:
+                # Sizing runs select rungs and budgets. Refuse their paths
+                # even when the requested artifact root is a symlink.
+                if _is_sizing_path(path):
+                    continue
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
@@ -13120,6 +13119,9 @@ def _adj_curve_lineage_error(art: dict[str, Any], root: Path, anchor: str, head:
 
 def _adj_lineage_error(art: dict[str, Any], root: Path, anchor: str, head: str) -> str | None:
     data = art["data"]
+    meta = data.get("meta")
+    if art["schema"] == "evaltasks" and isinstance(meta, dict) and meta.get("sizing_input") is True:
+        return "quarantined_input"
     if art["schema"] == "certify":
         git = data.get("git") or {}
         revision = git.get("commit_full") or git.get("commit")

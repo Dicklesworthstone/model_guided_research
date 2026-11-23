@@ -532,6 +532,22 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
         )
         for kind, metric, coordinate in claims
     ]
+    hypotheses.append(
+        dict(
+            hypotheses[0],
+            id="hyp-curve-direct-control",
+            statement="Only ordinary evaluations may establish the direct metric",
+            mechanisms=["standard"],
+            prediction=dict(
+                metric_path="evaltasks:tasks.arith.perplexity.in_range",
+                comparator=">=",
+                threshold=-100.0,
+                threshold_kind="absolute_delta",
+                baseline=None,
+                min_seeds=2,
+            ),
+        )
+    )
     registry = workspace / "hypotheses" / "registry.yaml"
     registry.parent.mkdir()
     registry.write_text(json.dumps(dict(schema_version=1, hypotheses=hypotheses)))
@@ -597,6 +613,16 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
                     artifacts_dir=artifacts,
                     run_id=f"{role}-{seed}-{label}",
                 )
+            if role == "std":
+                cli(
+                    "eval-tasks",
+                    checkpoint=checkpoint,
+                    task="arith",
+                    examples=2,
+                    seeds=0,
+                    artifacts_dir=tmp_path / "probes" / "sizing",
+                    run_id=f"sizing-{seed}",
+                )
 
     def produce(root, kind, seed, run_id, qualified=True):
         roles = (
@@ -642,6 +668,14 @@ def test_checkpoint_sweeps_adjudicate_from_portable_bound_sources(tmp_path, monk
         verdict = adjudicate(kind, portable, kind)
         assert verdict["verdict"] == "supported" and verdict["arms"]["ultrametric"]["n_candidate"] == 2
         assert all(str(portable) in path for path in verdict["artifacts"])
+
+    ordinary = adjudicate("direct", portable, "ordinary-evaluations")
+    assert ordinary["verdict"] == "supported" and ordinary["arms"]["standard"]["n_candidate"] == 2
+    relocated_sizing = tmp_path / "relocated-sizing"
+    shutil.copytree(tmp_path / "probes" / "sizing", relocated_sizing)
+    moved = adjudicate("direct", relocated_sizing, "relocated-sizing")
+    assert moved["verdict"] == "blocked"
+    assert [row["reason_code"] for row in moved["excluded_evidence"]] == ["quarantined_input"] * 2
 
     # Copies and relabeling may change the output location, but cannot add training units.
     repeats = tmp_path / "repeats"

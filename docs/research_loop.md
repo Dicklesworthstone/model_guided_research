@@ -9,7 +9,7 @@ registry grows instead of the README accreting untracked claims.
 
 Everything below is enforced by tooling that exists today: the hypothesis
 registry (`hypotheses/registry.yaml`, append-only, validated against git
-HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v12`), the campaign
+HEAD), the verdict engine (`mgr adjudicate`, policy `ci-v13`), the campaign
 launcher (`scripts/run_campaign.py`, frozen-worktree provenance), and the
 beads tracker (`br`).
 
@@ -148,7 +148,10 @@ Rules that have each cost a session to learn:
 - **Sizing probes are not evidence.** Runs used to *choose* a rung or budget
   go under `artifacts/probes/sizing/` — the collector refuses that path by
   construction, because a run that selected the experiment cannot also
-  adjudicate it (selection bias). `artifacts/probes/charges/` stays
+  adjudicate it (selection bias). Since ci-v13 the adjudicator checks resolved
+  paths and excludes task-evaluation summaries with the producer flag
+  `meta.sizing_input: true`, including relocated copies.
+  `artifacts/probes/charges/` stays
   evidence: chargeprobe instruments measure, they don't select.
 
 ### 6. Adjudicate
@@ -158,7 +161,7 @@ uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation --dry-run  # inspect
 uv run mgr adjudicate -H hyp-braid-dyck-depth-extrapolation           # append
 ```
 
-The engine (policy `ci-v12`) is the only writer of verdicts. It refuses weak
+The engine (policy `ci-v13`) is the only writer of verdicts. It refuses weak
 evidence (BLOCKED with machine-readable reasons) rather than soft-ruling; it
 counts **one observation per trained checkpoint** (eval seeds are repeated
 measurements); it groups evidence into equal-FLOPs **budget cohorts** so
