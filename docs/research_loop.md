@@ -230,6 +230,9 @@ All paired observations must have the same tokenized split. Shared seeds,
 training runs, or loaded weight digests count once even if the curves
 have different names. Historical curve claims with prose-only coordinates
 and v1 summaries keep their historical rulings and eligibility behavior.
+The [verification archive](../artifacts/adjudications/curve-lineage/verification.zip)
+contains both historical replays, the two portable command controls and
+their refusal reports, and the DSR receipts.
 
 Under ci-v10, charge-decoding measurements that share a training seed, run
 or weights digest count once within each candidate budget cohort. Repeated
