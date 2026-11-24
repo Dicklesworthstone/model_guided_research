@@ -945,11 +945,12 @@ def test_nanochat_kv_cache_chunk_is_causal(attention_type: str):
 
 
 def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
-    """Trie-mode ultrametric decode should match the (hard-digit) kernel baseline."""
+    """Grouped-query trie decode matches the hard kernel after a prefill fork."""
     import torch
 
     from nanochat.engine import KVCache
     from nanochat.gpt import GPT, GPTConfig
+    from nanochat.ultrametric_attention_torch import UltrametricCausalSelfAttention
 
     torch.manual_seed(0)
     ids = torch.randint(0, 128, (1, 12), dtype=torch.long)
@@ -968,15 +969,33 @@ def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
             ultrametric_lcp_beta=128.0,  # make mismatches effectively 0-prob so kernel == exact LCP
         )
         model = GPT(cfg).train(False)
-        kv_cache = KVCache(
+        prefix = KVCache(
             batch_size=1,
             num_heads=cfg.n_kv_head,
             seq_len=ids.size(1),
             head_dim=cfg.n_embd // cfg.n_head,
             num_layers=cfg.n_layer,
         )
-        _ = model(ids[:, :-1], kv_cache=kv_cache)
-        return model(ids[:, -1:], kv_cache=kv_cache)[:, -1, :].float()
+        _ = model(ids[:, :-1], kv_cache=prefix)
+        decode = KVCache(
+            batch_size=2,
+            num_heads=cfg.n_kv_head,
+            seq_len=ids.size(1),
+            head_dim=cfg.n_embd // cfg.n_head,
+            num_layers=cfg.n_layer,
+        )
+        decode.prefill(prefix)
+        last_token = ids[:, -1:]
+        next_tokens = torch.cat((last_token, (last_token + 1) % cfg.vocab_size), dim=0)
+        logits = model(next_tokens, kv_cache=decode)[:, -1, :].float()
+        if mode == "trie":
+            for block in model._blocks():
+                attn = block.attn
+                assert isinstance(attn, UltrametricCausalSelfAttention)
+                state = attn._trie_cache[decode]
+                assert state.seen_Tk == ids.size(1)
+                assert [len(row) for row in state.tries] == [cfg.n_kv_head, cfg.n_kv_head]
+        return logits
 
     with torch.inference_mode():
         torch.manual_seed(0)

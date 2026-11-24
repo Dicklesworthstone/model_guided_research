@@ -24,14 +24,14 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from nanochat.model_utils import AttentionCore, causal_attn_mask
+from nanochat.model_utils import AttentionCore, causal_attn_mask, repeat_kv_heads
 
 
 @dataclass
 class _TrieCacheState:
     """Per-(kv_cache, layer) trie state, kept on CPU for fast Python-side updates."""
 
-    tries: list[list["_PackedPrefixTrie"]]  # [B][H]
+    tries: list[list["_PackedPrefixTrie"]]  # [B][H_kv]
     seen_Tk: int
 
 
@@ -159,6 +159,8 @@ class _PackedPrefixTrie:
 
 
 class UltrametricCausalSelfAttention(AttentionCore):
+    gqa_via_repeat = False
+
     # route observables (registered buffers; see __init__)
     ultrametric_route_depth_mean: torch.Tensor
     ultrametric_tie_fraction: torch.Tensor
@@ -261,6 +263,19 @@ class UltrametricCausalSelfAttention(AttentionCore):
         digits = torch.round(self._digits_soft(raw)).to(dtype=torch.int64)
         return digits.clamp_(0, self.p - 1)
 
+    def project_qkv(
+        self,
+        x: torch.Tensor,
+        cos_sin: tuple[torch.Tensor, torch.Tensor] | None = None,
+        kv_cache: object | None = None,
+        *,
+        apply_qk_norm: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Keep the query-head-aligned projections used by route tracing."""
+        q, k, v = super().project_qkv(x, cos_sin, kv_cache, apply_qk_norm=apply_qk_norm)
+        k, v = repeat_kv_heads(k, v, n_head=self.n_head)
+        return q, k, v
+
     def _get_trie_state(self, kv_cache: object, *, B: int, H: int, device: torch.device) -> _TrieCacheState:
         state = self._trie_cache.get(kv_cache)
         if state is not None:
@@ -314,9 +329,10 @@ class UltrametricCausalSelfAttention(AttentionCore):
         B = int(q.size(0))
         H = int(q.size(1))
         y = torch.empty((B, H, self.head_dim), dtype=torch.float32, device=q.device)
-        for b in range(B):
+        for b, tries in enumerate(state.tries):
+            group_size = H // len(tries)
             for h in range(H):
-                y[b, h] = state.tries[b][h].query(q_digits[b, h, 0], alpha=self.alpha)
+                y[b, h] = tries[h // group_size].query(q_digits[b, h, 0], alpha=self.alpha)
         return y.to(dtype=out_dtype).unsqueeze(2)
 
     def _balltree_attend(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -397,16 +413,17 @@ class UltrametricCausalSelfAttention(AttentionCore):
         Tq = q.size(2)
         Tk = k.size(2)
         mode = str(self.ultrametric_mode).strip().lower()
-        if mode == "balltree":
-            return self._balltree_attend(q, k, v)
         if mode == "trie" and kv_cache is not None and q.device.type == "cpu":
-            # The trie ingests new keys on EVERY cached forward (prefill
-            # chunks included) so single-token decode can read it; only the
-            # Tq == 1 read path short-circuits the kernel computation.
+            # Query heads in a group share the same key and value history.
+            # Ingest it once per KV head before expanding any dense inputs.
             state = self._get_trie_state(kv_cache, B=int(B), H=int(k.size(1)), device=q.device)
             self._update_trie_from_kv(state, k, v, pos0=pos0)
             if Tq == 1:
                 return self._trie_decode(state, q, out_dtype=v.dtype)  # (B, H, 1, D)
+        if k.size(1) != self.n_head:
+            k, v = repeat_kv_heads(k, v, n_head=self.n_head)
+        if mode == "balltree":
+            return self._balltree_attend(q, k, v)
 
         # LCP-kernel ultrametric attention (continuous relaxation).
         #
