@@ -39,7 +39,7 @@ class _PackedPrefixTrie:
     """Packed p-ary prefix trie storing subtree sums and counts.
 
     Nodes store:
-    - child indices (int32) for digits in [0, p)
+    - child indices (int16 until capacity exceeds 32768, then int32) for digits in [0, p)
     - subtree sum of values (float32)
     - subtree count (int32)
     """
@@ -62,7 +62,7 @@ class _PackedPrefixTrie:
         self._cap = 256
         # Node 0 is root.
         self._size = 1
-        self._child = torch.full((self._cap, self.p), -1, dtype=torch.int32, device=self.device)
+        self._child = torch.full((self._cap, self.p), -1, dtype=torch.int16, device=self.device)
         self._sum_v = torch.zeros((self._cap, self.head_dim), dtype=torch.float32, device=self.device)
         self._count = torch.zeros((self._cap,), dtype=torch.int32, device=self.device)
 
@@ -74,7 +74,9 @@ class _PackedPrefixTrie:
 
     def _grow(self) -> None:
         new_cap = int(self._cap) * 2
-        child = torch.full((new_cap, self.p), -1, dtype=torch.int32, device=self.device)
+        # The highest possible node index is one less than the capacity.
+        child_dtype = torch.int16 if new_cap - 1 <= torch.iinfo(torch.int16).max else torch.int32
+        child = torch.full((new_cap, self.p), -1, dtype=child_dtype, device=self.device)
         sum_v = torch.zeros((new_cap, self.head_dim), dtype=torch.float32, device=self.device)
         count = torch.zeros((new_cap,), dtype=torch.int32, device=self.device)
 

@@ -987,6 +987,34 @@ def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
     torch.testing.assert_close(out_trie, out_kernel, rtol=1e-3, atol=1e-2)
 
 
+def test_nanochat_ultrametric_trie_widens_before_index_overflow():
+    import torch
+
+    from nanochat.ultrametric_attention_torch import _PackedPrefixTrie
+
+    trie = _PackedPrefixTrie(p=2, K=1, head_dim=1, device=torch.device("cpu"))
+    last_narrow_index = torch.iinfo(torch.int16).max
+    # Reserve the earlier slots so real inserts exercise both sides of the limit.
+    for _ in range(1, last_narrow_index):
+        trie._alloc()
+
+    zero, one = torch.tensor([0]), torch.tensor([1])
+    trie.insert(zero, torch.tensor([7.0]))
+    assert trie._child.dtype == torch.int16
+    assert trie._child[0, 0].item() == last_narrow_index
+
+    trie.insert(one, torch.tensor([13.0]))
+    assert trie._child.dtype == torch.int32
+    assert trie._child[0].tolist() == [last_narrow_index, last_narrow_index + 1]
+    assert torch.equal(trie.query(zero, alpha=2.0), torch.tensor([9.0]))
+    assert torch.equal(trie.query(one, alpha=2.0), torch.tensor([11.0]))
+
+    trie.reset()
+    assert trie._child[0].tolist() == [-1, -1]
+    trie.insert(one, torch.tensor([5.0]))
+    assert torch.equal(trie.query(zero, alpha=2.0), torch.tensor([5.0]))
+
+
 def test_nanochat_ultrametric_trie_is_rebuilt_when_a_reused_cache_is_rewound():
     """A KVCache that is reset() and re-prefilled with a DIFFERENT prompt of the
     SAME length must not be served the previous prompt's subtree sums. The trie
