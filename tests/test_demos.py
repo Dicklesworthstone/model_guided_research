@@ -985,6 +985,16 @@ def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
             num_layers=cfg.n_layer,
         )
         decode.prefill(prefix)
+        if mode == "trie":
+            for attn, source in prefix.ultrametric_tries.items():
+                snapshot = decode.ultrametric_tries[attn]
+                assert snapshot.seen_Tk == prefix.pos == decode.pos
+                for original, left, right in zip(source.tries[0], *snapshot.tries, strict=True):
+                    assert torch.equal(left._sum_v, original._sum_v)
+                    assert torch.equal(right._sum_v, original._sum_v)
+                    assert len({original._sum_v.data_ptr(), left._sum_v.data_ptr(), right._sum_v.data_ptr()}) == 3
+        prefix.reset()
+        _ = model((ids[:, :-1] + 1) % cfg.vocab_size, kv_cache=prefix)
         last_token = ids[:, -1:]
         next_tokens = torch.cat((last_token, (last_token + 1) % cfg.vocab_size), dim=0)
         logits = model(next_tokens, kv_cache=decode)[:, -1, :].float()
@@ -992,7 +1002,7 @@ def test_nanochat_ultrametric_trie_decode_matches_hard_kernel():
             for block in model._blocks():
                 attn = block.attn
                 assert isinstance(attn, UltrametricCausalSelfAttention)
-                state = attn._trie_cache[decode]
+                state = decode.ultrametric_tries[attn]
                 assert state.seen_Tk == ids.size(1)
                 assert [len(row) for row in state.tries] == [cfg.n_kv_head, cfg.n_kv_head]
         return logits

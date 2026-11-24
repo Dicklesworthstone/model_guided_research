@@ -16,10 +16,15 @@ import operator as _op
 import signal
 from collections import deque
 from contextlib import contextmanager, nullcontext
+from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 from nanochat.checkpoint_manager import load_model
 from nanochat.common import autodetect_device_type, compute_init
 from nanochat.torch_imports import F, torch
+
+if TYPE_CHECKING:
+    from nanochat.ultrametric_attention_torch import _TrieCacheState
 
 
 # -----------------------------------------------------------------------------
@@ -127,9 +132,12 @@ class KVCache:
         #   forward fails loudly instead of silently double-accumulating.
         self.gauge_cum_angles: torch.Tensor | None = None
         self.gauge_angle_pos: list[int] | None = None
+        # Each attention instance owns the projection that produced its trie.
+        self.ultrametric_tries: WeakKeyDictionary[object, _TrieCacheState] = WeakKeyDictionary()
 
     def reset(self):
         self.pos = 0
+        self.ultrametric_tries.clear()
         # The gauge lane ACCUMULATES (unlike kv/simplicial lanes, which are
         # overwritten by position), so stale angles would corrupt a reused cache.
         if self.gauge_cum_angles is not None:
@@ -180,6 +188,11 @@ class KVCache:
         # 4) update the pos
         self.pos = other.pos
         # 5) Copy any extra per-cache state (e.g., synaptic presyn state)
+        self.ultrametric_tries.update(
+            (attention, state.clone_for_batch(self.kv_shape[2]))
+            for attention, state in other.ultrametric_tries.items()
+            if state.seen_Tk == other.pos and len(state.tries) == other.kv_shape[2]
+        )
         if hasattr(other, "presyn_state"):
             other_state = other.presyn_state
             if other_state is None:

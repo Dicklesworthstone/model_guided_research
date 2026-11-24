@@ -18,13 +18,17 @@ Modes (select via GPTConfig.ultrametric_mode):
 
 import math
 import os
-import weakref
+from copy import copy
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
 from nanochat.model_utils import AttentionCore, causal_attn_mask, repeat_kv_heads
+
+if TYPE_CHECKING:
+    from nanochat.engine import KVCache
 
 
 @dataclass
@@ -33,6 +37,10 @@ class _TrieCacheState:
 
     tries: list[list["_PackedPrefixTrie"]]  # [B][H_kv]
     seen_Tk: int
+
+    def clone_for_batch(self, batch_size: int) -> "_TrieCacheState":
+        rows = self.tries if len(self.tries) == batch_size else self.tries * batch_size
+        return _TrieCacheState([[trie.clone() for trie in row] for row in rows], self.seen_Tk)
 
 
 class _PackedPrefixTrie:
@@ -65,6 +73,13 @@ class _PackedPrefixTrie:
         self._child = torch.full((self._cap, self.p), -1, dtype=torch.int16, device=self.device)
         self._sum_v = torch.zeros((self._cap, self.head_dim), dtype=torch.float32, device=self.device)
         self._count = torch.zeros((self._cap,), dtype=torch.int32, device=self.device)
+
+    def clone(self) -> "_PackedPrefixTrie":
+        result = copy(self)
+        result._child = self._child.clone()
+        result._sum_v = self._sum_v.clone()
+        result._count = self._count.clone()
+        return result
 
     def reset(self) -> None:
         self._size = 1
@@ -228,8 +243,6 @@ class UltrametricCausalSelfAttention(AttentionCore):
                     f"balltree sort keys overflow int64 for p={self.p}, K={self.K}, T<={max_t}; reduce K or p"
                 )
 
-        # Trie cache keyed by KVCache object (decode-only; CPU).
-        self._trie_cache: weakref.WeakKeyDictionary[object, _TrieCacheState] = weakref.WeakKeyDictionary()
         # Digits are derived per-head, so the projection is over head_dim.
         self.to_digits_q = nn.Linear(self.head_dim, self.K, bias=False)
         self.to_digits_k = nn.Linear(self.head_dim, self.K, bias=False)
@@ -276,8 +289,8 @@ class UltrametricCausalSelfAttention(AttentionCore):
         k, v = repeat_kv_heads(k, v, n_head=self.n_head)
         return q, k, v
 
-    def _get_trie_state(self, kv_cache: object, *, B: int, H: int, device: torch.device) -> _TrieCacheState:
-        state = self._trie_cache.get(kv_cache)
+    def _get_trie_state(self, kv_cache: "KVCache", *, B: int, H: int, device: torch.device) -> _TrieCacheState:
+        state = kv_cache.ultrametric_tries.get(self)
         if state is not None:
             if len(state.tries) == B and (B == 0 or len(state.tries[0]) == H):
                 return state
@@ -286,7 +299,7 @@ class UltrametricCausalSelfAttention(AttentionCore):
             for _ in range(B)
         ]
         state = _TrieCacheState(tries=tries, seen_Tk=0)
-        self._trie_cache[kv_cache] = state
+        kv_cache.ultrametric_tries[self] = state
         return state
 
     def _reset_trie_state(self, state: _TrieCacheState) -> None:
