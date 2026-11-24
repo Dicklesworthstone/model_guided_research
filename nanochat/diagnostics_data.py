@@ -63,6 +63,7 @@ GENERATOR_VERSIONS: dict[str, int] = {
     "copyops": 1,
     "hier": 1,
     "hier_paired": 1,
+    "hier_bind": 1,
     "rel": 1,
     "rot": 1,
     "arith": 1,
@@ -117,6 +118,8 @@ class TaskSpec:
     # eval harness can fit per-category extrapolation slopes - the preregistered
     # mechanism-specificity predictions adjudicate on exactly that breakdown.
     category: Callable[[str], str | None] | None = None
+    # Consecutive documents are paired and must be sampled/scored together.
+    paired_queries: bool = False
 
     def split_prompt(self, doc: str) -> tuple[str, str] | None:
         """(prompt-including-marker, expected answer) or None for LM-only docs."""
@@ -328,27 +331,40 @@ def _hier_paths(node: Any, prefix: tuple[str, ...] = ()) -> list[tuple[tuple[str
     return out
 
 
+def _parse_hier_tree(tokens: list[str]) -> dict[str, Any] | None:
+    def parse(start: int) -> tuple[dict[str, Any], int]:
+        children: dict[str, Any] = {}
+        i = start
+        while i < len(tokens) and tokens[i] == "(":
+            key, value = tokens[i + 1], tokens[i + 2]
+            if key in children or key in ("(", ")") or value == ")":
+                raise ValueError("invalid hierarchy entry")
+            child, end = parse(i + 2) if value == "(" else (value, i + 3)
+            if tokens[end] != ")":
+                raise ValueError("unclosed hierarchy entry")
+            children[key] = child
+            i = end + 1
+        return children, i
+
+    try:
+        tree, end = parse(0)
+    except (ValueError, IndexError, RecursionError):
+        return None
+    return tree if tree and end == len(tokens) else None
+
+
 def check_hier(text: str) -> bool | None:
     parts = text.split()
     if parts[:2] != ["TASK", "hier"] or "OUT" not in parts:
         return None
-    ti, pi, oi = parts.index("TREE"), parts.index("PATH"), parts.index("OUT")
-    tree_toks, path, want = parts[ti + 1 : pi], parts[pi + 1 : oi], parts[oi + 1]
-
-    def parse(toks: list[str], i: int) -> tuple[dict, int]:
-        node: dict[str, Any] = {}
-        while i < len(toks) and toks[i] == "(":
-            key = toks[i + 1]
-            if toks[i + 2] == "(":
-                child, i2 = parse(toks, i + 2)
-                node[key] = child
-                i = i2 + 1  # closing paren of this entry
-            else:
-                node[key] = toks[i + 2]
-                i = i + 4
-        return node, i
-
-    tree, _ = parse(tree_toks, 0)
+    try:
+        ti = parts.index("TREE", 2)
+        pi = parts.index("PATH", ti + 1)
+        oi = parts.index("OUT", pi + 1)
+    except ValueError:
+        return False
+    tree = _parse_hier_tree(parts[ti + 1 : pi])
+    path, want = parts[pi + 1 : oi], parts[oi + 1]
     cur: Any = tree
     for key in path:
         if not isinstance(cur, dict) or key not in cur:
@@ -406,6 +422,125 @@ def _gen_hier_paired(size: int, seed: int, dials: dict[str, float]) -> dict[str,
         else:
             raise ValueError(f"hier_paired could not sample {pair_count} distinct trees for {split}; reduce --size")
         splits[split] = documents
+    return splits
+
+
+_HIER_BIND_KEYS = ("k0", "k1")
+_HIER_BIND_ALIASES = ("a0", "a1")
+
+
+def hier_bind_answer(prompt: str) -> str | None:
+    """Resolve a query through the binding table of each visited parent."""
+    parts = prompt.split()
+    if parts[:3] != ["TASK", "hier_bind", "TREE"] or parts[-1:] != ["OUT"]:
+        return None
+    try:
+        bind = parts.index("BIND", 3)
+        path = parts.index("PATH", bind + 1)
+    except ValueError:
+        return None
+    aliases = parts[path + 1 : -1]
+    if not 1 <= len(aliases) <= 4 or any(alias not in _HIER_BIND_ALIASES for alias in aliases):
+        return None
+    tree = _parse_hier_tree(parts[3:bind])
+    if tree is None:
+        return None
+    leaves = _hier_paths(tree)
+    if len(leaves) != 2 ** len(aliases) or any(
+        len(keys) != len(aliases) or any(key not in _HIER_BIND_KEYS for key in keys) for keys, _ in leaves
+    ):
+        return None
+    values = {value for _, value in leaves}
+    if len(values) != len(leaves) or any(
+        not value.startswith("v") or not value[1:].isascii() or not value[1:].isdigit() for value in values
+    ):
+        return None
+    scopes = {"r" + "".join(key[-1] for key in keys[:i]) for keys, _ in leaves for i in range(len(aliases))}
+    bindings: dict[str, dict[str, str]] = {}
+    for record in " ".join(parts[bind + 1 : path]).split(" ; "):
+        row = record.split()
+        if len(row) != 5:
+            return None
+        scope, first, left, second, right = row
+        if scope in bindings or {first, second} != set(_HIER_BIND_ALIASES) or {left, right} != set(_HIER_BIND_KEYS):
+            return None
+        bindings[scope] = {first: left, second: right}
+    if bindings.keys() != scopes:
+        return None
+
+    node: Any = tree
+    scope = "r"
+    for alias in aliases:
+        key = bindings[scope][alias]
+        node = node[key]
+        scope += key[-1]
+    return node if isinstance(node, str) else None
+
+
+def check_hier_bind(text: str) -> bool | None:
+    words = text.split()
+    if words[:2] != ["TASK", "hier_bind"]:
+        return None
+    return hier_bind_answer(" ".join(words[:-1])) == words[-1]
+
+
+def _gen_hier_bind(size: int, seed: int, dials: dict[str, float]) -> dict[str, list[str]]:
+    if size < 6 or size % 2:
+        raise ValueError("hier_bind requires an even document count of at least six")
+    splits: dict[str, list[str]] = {}
+    seen: set[tuple[int, ...]] = set()
+    for split, pair_count in _split_sizes(size // 2).items():
+        depth = int(dials["depth"]) + (split == "test")
+        paths = tuple(itertools.product(_HIER_BIND_KEYS, repeat=depth))
+        scopes = tuple("r" + "".join(bits) for i in range(depth) for bits in itertools.product("01", repeat=i))
+        rng = _rng("hier_bind", split, seed)
+        swap_offset = rng.randrange(depth)
+        docs: list[str] = []
+        for _ in range(100 + 4 * pair_count):
+            labels = tuple(rng.sample(range(100), len(paths)))
+            if labels in seen:
+                continue
+            seen.add(labels)
+            answers = {path: f"v{label}" for path, label in zip(paths, labels, strict=True)}
+
+            def tree_at(path: tuple[str, ...]) -> Any:
+                if len(path) == depth:
+                    return answers[path]
+                return {key: tree_at((*path, key)) for key in rng.sample(_HIER_BIND_KEYS, 2)}
+
+            text = _hier_serialize(tree_at(()))
+            bindings = {scope: rng.sample(_HIER_BIND_KEYS, 2) for scope in scopes}
+            rows = [(scope, rng.sample(range(2), 2)) for scope in rng.sample(scopes, len(scopes))]
+            query = [rng.randrange(2) for _ in range(depth)]
+            query_text = " ".join(_HIER_BIND_ALIASES[index] for index in query)
+
+            def document() -> tuple[str, list[str]]:
+                route = []
+                visited = []
+                scope = "r"
+                for index in query:
+                    visited.append(scope)
+                    key = bindings[scope][index]
+                    route.append(key)
+                    scope += key[-1]
+                table = " ; ".join(
+                    f"{parent} {_HIER_BIND_ALIASES[left]} {bindings[parent][left]} "
+                    f"{_HIER_BIND_ALIASES[right]} {bindings[parent][right]}"
+                    for parent, (left, right) in rows
+                )
+                answer = answers[tuple(route)]
+                return f"TASK hier_bind TREE {text} BIND {table} PATH {query_text} OUT {answer}", visited
+
+            first, visited = document()
+            changed = visited[(len(docs) // 2 + swap_offset) % depth]
+            bindings[changed].reverse()
+            second, _ = document()
+            docs.extend((first, second))
+            if len(docs) == 2 * pair_count:
+                break
+        else:
+            raise ValueError(f"hier_bind could not sample {pair_count} distinct trees for {split}; reduce --size")
+        splits[split] = docs
     return splits
 
 
@@ -1149,6 +1284,20 @@ TASKS: dict[str, TaskSpec] = {
             answer_marker="OUT",
             difficulty_axis="path_depth",
             difficulty=_difficulty_span("PATH", "OUT"),
+            paired_queries=True,
+        ),
+        TaskSpec(
+            name="hier_bind",
+            target_mechanisms=("ultrametric", "fractal", "hyperbolic"),
+            hypothesis="per-parent alias bindings compose along a path and transfer to one additional hop",
+            dials=(Dial("depth", 2, "path depth (train; test uses depth+1)", 1, 3),),
+            generate=_gen_hier_bind,
+            checker=check_hier_bind,
+            delimiters=("(", ")", "TREE", "BIND", ";", "PATH", "OUT"),
+            answer_marker="OUT",
+            difficulty_axis="path_depth",
+            difficulty=_difficulty_span("PATH", "OUT"),
+            paired_queries=True,
         ),
         TaskSpec(
             name="rel",
@@ -1281,8 +1430,10 @@ TASKS: dict[str, TaskSpec] = {
     ]
 }
 
-# Tasks built by `--task all`. realhier and hier_paired are opt-in.
-DEFAULT_TASKS: tuple[str, ...] = tuple(name for name in TASKS if name not in {"realhier", "hier_paired"})
+# Tasks built by `--task all`. Paired and real-data tasks are opt-in.
+DEFAULT_TASKS: tuple[str, ...] = tuple(
+    name for name, spec in TASKS.items() if not spec.paired_queries and name != "realhier"
+)
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ locally (CI without network).
 import hashlib
 import json
 import statistics
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from nanochat.diagnostics_data import (
     check_regime,
     generate_task,
     generate_texts,
+    hier_bind_answer,
     realhier_module_report,
     realhier_sources,
 )
@@ -94,6 +96,87 @@ def test_paired_hierarchy_separates_trees_and_matches_distinct_answers():
             assert check_hier(f"{tree} PATH {other_path} OUT {answer}") is False
     with pytest.raises(ValueError, match="even document count"):
         spec.generate(13, 42, dials)
+
+
+@pytest.mark.parametrize("depth", [1, 2, 3])
+def test_hierarchy_binding_pairs_change_one_visited_scope(depth):
+    spec = TASKS["hier_bind"]
+    dials = spec.resolve_dials({"depth": depth})
+    splits = spec.generate(240, 42, dials)
+    assert spec.paired_queries and "hier_bind" not in DEFAULT_TASKS
+    assert splits == spec.generate(240, 42, dials)
+    assert {split: len(docs) for split, docs in splits.items()} == {"train": 192, "val": 24, "test": 24}
+    tree_identities = set()
+    for split, docs in splits.items():
+        interventions = Counter()
+        for first, second in zip(docs[::2], docs[1::2], strict=True):
+            left, right = first.split(" OUT ")[0], second.split(" OUT ")[0]
+            base, codes = left.split(" BIND ")
+            other_base, other_codes = right.split(" BIND ")
+            table, query = codes.split(" PATH ")
+            other_table, other_query = other_codes.split(" PATH ")
+            assert base == other_base and query == other_query
+            assert Counter(left.split()) == Counter(right.split())
+            assert len(query.split()) == depth + (split == "test")
+            assert set(query.split()) <= {"a0", "a1"}
+
+            # Recover an order-independent tree identity directly from the document.
+            labels = {}
+            keys = []
+            words = iter(base.split()[3:])
+            for word in words:
+                if word == "(":
+                    keys.append(next(words))
+                elif word == ")":
+                    keys.pop()
+                else:
+                    labels[tuple(keys)] = word
+            identity = tuple(sorted(labels.items()))
+            assert identity not in tree_identities and len(set(labels.values())) == 2 ** len(query.split())
+            tree_identities.add(identity)
+
+            rows = [line.split() for line in table.split(" ; ")]
+            other_rows = [line.split() for line in other_table.split(" ; ")]
+            (changed,) = [(row, other) for row, other in zip(rows, other_rows, strict=True) if row != other]
+            row, other = changed
+            assert other == [row[0], row[1], row[4], row[3], row[2]]
+            plan = {parent: {a: k, b: l} for parent, a, k, b, l in rows}
+            scope = "r"
+            visited = []
+            for alias in query.split():
+                visited.append(scope)
+                scope += plan[scope][alias][-1]
+            interventions[visited.index(row[0])] += 1
+
+            expected = first.split(" OUT ")[1]
+            assert expected != second.split(" OUT ")[1]
+            assert hier_bind_answer(left + " OUT") == expected
+            # A prediction held fixed across the pair can get at most one right.
+            assert spec.checker(first) and spec.checker(second)
+            assert spec.checker(f"{right} OUT {expected}") is False
+        assert set(interventions) == set(range(depth + (split == "test")))
+        assert max(interventions.values()) - min(interventions.values()) <= 1
+
+
+def test_hierarchy_binding_oracle_uses_local_tables_and_rejects_malformed_inputs():
+    spec = TASKS["hier_bind"]
+    tree = "TASK hier_bind TREE ( k0 ( k0 v7 ) ( k1 v8 ) ) ( k1 ( k0 v9 ) ( k1 v10 ) )"
+    prompt = f"{tree} BIND r0 a0 k0 a1 k1 ; r a0 k1 a1 k0 ; r1 a1 k0 a0 k1 PATH a0 a0 OUT"
+    assert hier_bind_answer(prompt) == "v10"
+    assert spec.checker(f"{prompt} v10") is True
+    assert spec.checker(f"{prompt} v8") is False
+    for malformed in (
+        prompt.replace("r1 a1 k0 a0 k1", "r0 a1 k0 a0 k1"),
+        prompt.replace("r1 a1 k0 a0 k1", "r1 a1 k0 a0 k0"),
+        prompt.replace("r1 a1 k0 a0 k1", "r1 a1 k0 a1 k1"),
+        prompt.replace("v7 )", "v7"),
+        prompt.replace("PATH a0 a0", "PATH k0 a0"),
+        prompt.replace(" BIND ", " "),
+        prompt.replace(" OUT", ""),
+    ):
+        assert hier_bind_answer(malformed) is None
+        assert spec.checker(f"{malformed} v10") is False
+    assert spec.checker("TASK hier TREE") is None
 
 
 def test_realhier_separates_source_modules_and_exhausts_unique_test_paths(tmp_path):

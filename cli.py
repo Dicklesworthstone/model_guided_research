@@ -6816,8 +6816,8 @@ def gen_tasks(
         raise typer.Exit(code=2)
     if realhier_context is not None and "realhier" not in names:
         raise typer.BadParameter("--realhier-context requires --task realhier or --task all --include-real")
-    if "hier_paired" in names and (size < 6 or size % 2):
-        raise typer.BadParameter("hier_paired requires an even document count of at least six", param_hint="--size")
+    if TASKS[names[0]].paired_queries and (size < 6 or size % 2):
+        raise typer.BadParameter(f"{names[0]} requires an even document count of at least six", param_hint="--size")
 
     summary = Table(title=f"gen-tasks → {out} (seed={seed}, size={size})", box=box.SIMPLE_HEAVY)
     summary.add_column("task", style="bold")
@@ -7057,10 +7057,10 @@ def _eval_split_examples(
     return in_range, held_out, in_range_max
 
 
-def _eval_hier_pair_counts(outcomes: list[bool | None]) -> dict[str, int]:
+def _eval_pair_counts(outcomes: list[bool | None]) -> dict[str, int]:
     """Count complete greedy outcomes and preserve all requested pairs."""
     if not outcomes or len(outcomes) % 2:
-        raise ValueError("hier_paired scoring requires complete query pairs")
+        raise ValueError("paired scoring requires complete query pairs")
     counts = dict(pairs=len(outcomes) // 2, both_correct=0, one_correct=0, neither_correct=0, incomplete=0)
     for left, right in zip(outcomes[::2], outcomes[1::2], strict=True):
         if left is None or right is None:
@@ -7369,11 +7369,14 @@ def eval_tasks(
     if not seed_list:
         console.print("[bold red]--seeds must contain at least one integer.[/bold red]")
         raise typer.Exit(code=2)
-    if "hier_paired" in names:
+    paired_tasks = [name for name in names if TASKS[name].paired_queries]
+    if paired_tasks:
         if examples < 2 or examples % 2:
-            raise typer.BadParameter("hier_paired requires a positive even number of queries", param_hint="--examples")
+            raise typer.BadParameter(
+                f"{paired_tasks[0]} requires a positive even number of queries", param_hint="--examples"
+            )
         if len(seed_list) != len(set(seed_list)):
-            raise typer.BadParameter("hier_paired requires distinct evaluation seeds", param_hint="--seeds")
+            raise typer.BadParameter(f"{paired_tasks[0]} requires distinct evaluation seeds", param_hint="--seeds")
 
     dial_overrides: dict[str, float] = {}
     for pair in dial or []:
@@ -7430,7 +7433,7 @@ def eval_tasks(
     for name in names:
         spec = TASKS[name]
         pair_counts: dict[str, list[dict[str, int]]] | None = (
-            {"in_range": [], "held_out": []} if name == "hier_paired" else None
+            {"in_range": [], "held_out": []} if spec.paired_queries else None
         )
         ppl_input_hash = hashlib.sha256()
         # per_seed lists stay ALIGNED with seed_list: a seed whose docs were
@@ -7555,7 +7558,7 @@ def eval_tasks(
                         if mode == "greedy":
                             prior_counts[region].append(seed_expected)
                             if pair_counts is not None:
-                                counts = _eval_hier_pair_counts(
+                                counts = _eval_pair_counts(
                                     [clean_correct.get((region, eval_seed, i)) for i in range(len(docs))]
                                 )
                                 pair_counts[region].append({"eval_seed": eval_seed, **counts})
@@ -7907,12 +7910,12 @@ def eval_tasks(
     console.print(table)
 
     pair_lines = []
-    if paired := results.get("hier_paired"):
-        for region, rows in paired["paired_exact_match"]["counts"].items():
+    for name in paired_tasks:
+        for region, rows in results[name]["paired_exact_match"]["counts"].items():
             both = sum(row["both_correct"] for row in rows)
             pairs = sum(row["pairs"] for row in rows)
             incomplete = sum(row["incomplete"] for row in rows)
-            line = f"hier_paired {region}: both answers correct on {both}/{pairs} pairs ({incomplete} incomplete)"
+            line = f"{name} {region}: both answers correct on {both}/{pairs} pairs ({incomplete} incomplete)"
             console.print(line)
             pair_lines.append(f"- {line}\n")
 

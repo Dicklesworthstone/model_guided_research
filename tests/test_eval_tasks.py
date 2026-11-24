@@ -443,10 +443,11 @@ def test_e2e_trained_checkpoint_evaluates(attention_type, monkeypatch, tmp_path)
 
 
 @pytest.mark.slow
-def test_paired_hierarchy_counts_both_queries_and_incomplete_pairs():
-    from cli import _eval_hier_pair_counts
+@pytest.mark.parametrize("task", ["hier_paired", "hier_bind"])
+def test_paired_hierarchy_counts_both_queries_and_incomplete_pairs(task):
+    from cli import _eval_pair_counts
 
-    spec = TASKS["hier_paired"]
+    spec = TASKS[task]
     docs = spec.generate(24, 42, spec.resolve_dials(None))["train"]
     oracle = [spec.checker(doc) for doc in docs]
     # Return the first label on both queries of every tree.
@@ -455,16 +456,17 @@ def test_paired_hierarchy_counts_both_queries_and_incomplete_pairs():
         for left, right in zip(docs[::2], docs[1::2], strict=True)
         for doc in (left, right)
     ]
-    assert _eval_hier_pair_counts(oracle)["both_correct"] == len(docs) // 2
-    blind = _eval_hier_pair_counts(query_blind)
+    assert _eval_pair_counts(oracle)["both_correct"] == len(docs) // 2
+    blind = _eval_pair_counts(query_blind)
     assert blind["both_correct"] == 0 and blind["one_correct"] == len(docs) // 2
-    incomplete = _eval_hier_pair_counts([True, None, True, True])
+    incomplete = _eval_pair_counts([True, None, True, True])
     assert incomplete["pairs"] == 2 and incomplete["both_correct"] == incomplete["incomplete"] == 1
     with pytest.raises(ValueError, match="complete query pairs"):
-        _eval_hier_pair_counts([True])
+        _eval_pair_counts([True])
 
 
-def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
+@pytest.mark.parametrize("task", ["hier_paired", "hier_bind"])
+def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path, task):
     from typer.testing import CliRunner
 
     from cli import app
@@ -472,7 +474,9 @@ def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
 
     runner = CliRunner()
     corpus = tmp_path / "corpus"
-    generated = runner.invoke(app, ["gen-tasks", "--task", "hier_paired", "--size", "100", "--out", str(corpus)])
+    invalid_size = runner.invoke(app, ["gen-tasks", "--task", task, "--size", "13", "--out", str(corpus)])
+    assert invalid_size.exit_code == 2 and "even document count" in invalid_size.output
+    generated = runner.invoke(app, ["gen-tasks", "--task", task, "--size", "100", "--out", str(corpus)])
     assert generated.exit_code == 0, (generated.output, generated.exception)
     artifacts = tmp_path / "artifacts"
     options = train_mod.build_parser().parse_args(
@@ -481,7 +485,7 @@ def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
             *("--n-layer 1 --n-head 2 --n-kv-head 2 --n-embd 32").split(),
             *("--val-interval 0 --checkpoint-interval 1 --checkpoint-keep 0 --run-id paired-train").split(),
             "--data-dir",
-            str(corpus / "hier_paired"),
+            str(corpus / task),
             "--artifacts-dir",
             str(artifacts),
         ]
@@ -491,7 +495,7 @@ def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
     eval_args = [
         "eval-tasks",
         "--task",
-        "hier_paired",
+        task,
         "--checkpoint",
         str(checkpoint),
         "--artifacts-dir",
@@ -504,7 +508,7 @@ def test_paired_hierarchy_cli_recounts_real_checkpoint(tmp_path):
         response = runner.invoke(app, [*eval_args, "--examples", "4", "--run-id", run_id, *extra])
         assert response.exit_code == 0, (response.output, response.exception)
         output = artifacts / "evals" / "tasks" / run_id
-        summary = json.loads((output / "summary.json").read_bytes())["tasks"]["hier_paired"]
+        summary = json.loads((output / "summary.json").read_bytes())["tasks"][task]
         receipts = [json.loads(line) for line in (output / "generations.jsonl").read_text().splitlines()]
         for region, counts in summary["paired_exact_match"]["counts"].items():
             assert len(counts) == 2

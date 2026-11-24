@@ -178,6 +178,33 @@ to draw conclusions about a mechanism. The first sizing screen archived the
 full evaluation panel, model outputs, and receipt recounts.
 [Paired hierarchy sizing results](../artifacts/probes/sizing/jida12-paired-hier/results.zip)
 
+**Hierarchy with per-node bindings.** The opt-in `hier_bind` task gives each
+internal node a table mapping query aliases `a0` and `a1` to tree keys `k0`
+and `k1`. The `BIND` table names each parent by its physical path. `r` is
+the root, and `r01` is the node below physical keys `k0 k1`. Each query
+resolves its next alias at the parent reached by the previous step.
+
+Each pair keeps the tree, query, table row order, and word multiset fixed.
+The second document exchanges the physical keys for the two aliases at
+one visited parent, which changes the correct answer. Any predictor that
+gives the same answer to both documents has at most 50% individual exact
+match and 0% paired exact match. `hier_bind_answer` in
+`nanochat.diagnostics_data` resolves a prompt without its answer and serves
+as the symbolic control. The default train depth is two and the held-out
+depth is three, using the same aliases and tree keys.
+
+```bash
+uv run mgr gen-tasks --task hier_bind --size 1000 --out artifacts/probes/sizing/hierarchy-binding/data
+uv run mgr eval-tasks --task hier_bind --checkpoint "$CHECKPOINT" --examples 24 --seeds 0,1,2 \
+  --artifacts-dir artifacts/probes/sizing/hierarchy-binding --run-id hierarchy-binding
+```
+
+Train the checkpoint on the generated task data. Check complete document
+lengths with its tokenizer and audit semantic tree identities across
+training and evaluation seeds before sizing a learned baseline. The paired
+metric uses `tasks.hier_bind.paired_exact_match.greedy.held_out.mean` and
+keeps incomplete pairs in the denominator.
+
 ### 6. Adjudicate
 
 ```bash
