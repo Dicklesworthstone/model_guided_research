@@ -925,6 +925,34 @@ def test_optimal_policy_pays_the_exact_minimum_for_order_two():
         assert words == expected
 
 
+@pytest.mark.parametrize("free", [0, 1, 2, 3])
+def test_gbs_gain_matches_enumerating_all_named_hypotheses(free):
+    from itertools import permutations, product
+    from math import factorial
+
+    import numpy as np
+
+    from nanochat.group_acquisition import _gbs_gain
+
+    size = 4
+    named = size - free
+    replies = [*range(named), *([-1] if free else [])]
+    outcomes = list(product(replies, repeat=3))
+    completions = list(permutations(range(named, size)))
+    common_factor = factorial(max(0, free - 1))
+
+    expected = []
+    for word_replies in outcomes:
+        counts = Counter(
+            assignment[0] if reply == -1 else reply for reply in word_replies for assignment in completions
+        )
+        # Count ordered pairs of explicitly labeled hypotheses that the
+        # query separates, then cancel the same common factor.
+        total = sum(counts.values())
+        expected.append((total**2 - sum(count**2 for count in counts.values())) // common_factor**2)
+    assert _gbs_gain(np.array(outcomes), size, free).tolist() == expected
+
+
 def test_compiled_acquisition_rejects_an_impossible_equality():
     from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
 

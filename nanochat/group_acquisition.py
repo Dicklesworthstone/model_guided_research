@@ -282,11 +282,26 @@ def _bounded_difference(
     return None
 
 
-def _worst(labels: np.ndarray, size: int, free: int) -> np.ndarray:
+def _reply_counts(labels: np.ndarray, size: int) -> np.ndarray:
     stride = size + 1
     offsets = stride * np.arange(len(labels), dtype=np.intp)[:, None]
-    counts = np.bincount((labels + 1 + offsets).ravel(), minlength=len(labels) * stride).reshape(-1, stride)
+    return np.bincount((labels + 1 + offsets).ravel(), minlength=len(labels) * stride).reshape(-1, stride)
+
+
+def _worst(labels: np.ndarray, size: int, free: int) -> np.ndarray:
+    counts = _reply_counts(labels, size)
     return np.maximum(counts[:, 0], free * counts[:, 1:].max(axis=1))
+
+
+def _gbs_gain(labels: np.ndarray, size: int, free: int) -> np.ndarray:
+    counts = _reply_counts(labels, size)
+    # Each seen reply represents free! assignments per shape. Each individual
+    # unseen reply represents (free - 1)! for every shape reaching a new name.
+    # Cancel the common factorial before computing the sum of squared masses.
+    scale = max(1, free)
+    known = (counts[:, 1:] ** 2).sum(axis=1) * scale**2
+    unseen = counts[:, 0] ** 2 * free
+    return (labels.shape[1] * scale) ** 2 - known - unseen
 
 
 class _VersionSpace:
@@ -418,9 +433,45 @@ class CompiledPolicy:
 
 def compile_policy(catalogue: Catalogue, *, exhaustive_frontier: bool = False) -> CompiledPolicy:
     """Compile the shortlist or exhaustive shortest-word selector for later acquisitions."""
+    select = _VersionSpace.select_frontier if exhaustive_frontier else _VersionSpace.select
+    return _compile_policy(catalogue, select)
+
+
+def compile_gbs_policy(catalogue: Catalogue, *, read_price: int = 16) -> CompiledPolicy:
+    """Compile cost-sensitive generalized binary search over a bounded word menu.
+
+    The prior is uniform over catalogue shapes and name assignments. The menu
+    contains all words of lengths two through six and the catalogue's indexed
+    words. If it cannot distinguish viable assignments, use the shortest frontier.
+    """
+    if type(read_price) is not int or read_price < 0:
+        raise ValueError("Read price must be a nonnegative integer")
+
+    menu = set(catalogue.word_rows)
+    menu.update("".join(word) for length in range(2, 7) for word in product(SYMBOLS, repeat=length))
+    words = sorted(menu, key=lambda word: (len(word), word))
+    rows = np.arange(len(catalogue.shapes))
+    endpoints = np.stack([_column(catalogue, rows, word) for word in words])
+
+    def select(version: _VersionSpace) -> str:
+        free = version.size - len(set(version.facts.values()))
+        labels = version.names[version.live, endpoints[:, version.live]]
+        gains = _gbs_gain(labels, version.size, free)
+        best_word = ""
+        best_gain, best_cost = 0, 1
+        for index in np.flatnonzero(gains):
+            word = words[index]
+            gain, cost = int(gains[index]), read_price + len(word)
+            if gain * best_cost > best_gain * cost:
+                best_word, best_gain, best_cost = word, gain, cost
+        return best_word or version.select_frontier()
+
+    return _compile_policy(catalogue, select)
+
+
+def _compile_policy(catalogue: Catalogue, select: Callable[[_VersionSpace], str]) -> CompiledPolicy:
     size = catalogue.edges.shape[1]
     version = _VersionSpace(catalogue, size)
-    select = version.select_frontier if exhaustive_frontier else version.select
 
     def visit(next_name: int) -> _PolicyNode:
         depth = len(version.facts)
@@ -433,7 +484,7 @@ def compile_policy(catalogue: Catalogue, *, exhaustive_frontier: bool = False) -
         elif depth >= size + 24:
             return None
         else:
-            word = select()
+            word = select(version)
         live = version.live
         endpoints = _column(catalogue, live, word)
         names = version.names[live, endpoints]
