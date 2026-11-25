@@ -1,6 +1,6 @@
 # Exact group acquisition from equality queries
 
-The learner receives two generator names, the number of reachable states, and an oracle that answers whether two positive words denote the same element. These experiments test local rewriting, exact certificates for untrusted catalog proposals, and direct recovery in the commuting case. Each comparison specifies which marked actions were fresh and which served as replay controls.
+The learner receives two generator names, the number of reachable states, and an oracle that answers whether two positive words denote the same element. These experiments test local rewriting, exact certificates for untrusted catalog proposals, and direct recovery from verified group structure. Each comparison specifies which marked actions were fresh and which served as replay controls.
 
 ## Streaming shortlex rewriting
 
@@ -165,6 +165,38 @@ We paired these paths seven times in one process on the same 20-case regression 
 All 14 runs reproduced the original five arms' non-timing fields. The loaded extension still paid 3,733 calls and 40,904 symbols versus 12,384 calls and 143,903 symbols for the incumbent. The checker independently reconstructed all 57 marked actions and replayed every selector path. It checked 24,000 output transitions and all paid replies in a separate CLI run, reproduced the default three-arm invocation, confirmed byte-identical policy exports across hash seeds, and rejected six invalid or corrupted inputs and an overwrite attempt. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
 
 The producer was frozen at `464c6d0`. [Source and preregistration](compiled-policy-source.zip) · [Paired runs, audit, and receipts](compiled-policy-results.zip)
+
+## Direct recovery from an order-three commutator
+
+The `--commutator-route` flag adds a sixth arm after the two catalogue certificates reject. The learner has already paid for a negative commutation reply. It finds the two generator orders and uses them to write \(c=aba^{-1}b^{-1}\) as a positive word. It checks that \(c^3=1\) and that each mark conjugates \(c\) to either \(c\) or \(c^{-1}\). The negative commutation reply makes \(c\) nontrivial. These checks establish that \(\langle c\rangle\) is normal and that the quotient is abelian, so \(\langle c\rangle\) is the derived subgroup. Conversely, in a noncommuting two-generator group with derived subgroup of order three, the same commutator generates the subgroup and passes the checks.
+
+The existing abelian decoder gets equality in this quotient by comparing words up to each of the three powers of \(c\). It recovers the quotient lattice \((w,s,h)\) at order \(n/3\). Two lifts, \(a^w\) and \(a^s b^h\), are powers of \(c\). Together with the conjugations and \(ab=cba\), these equations give the two transitions on the unique forms \(c^k a^x b^y\) with \(k<3\), \(x<w\), and \(y<h\). The learner canonicalizes the result by breadth-first traversal. Each call to the underlying equality oracle charges both positive words. Power and conjugation relations are standard tools for collecting normal forms in polycyclic groups. [GAP reference on power-conjugate presentations](https://docs.gap-system.org/doc/ref/chap46_mj.html)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/commutator-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --commutator-route \
+  --output "$PANEL_DIR/commutator-route.json"
+```
+
+| Family | Cases | Prior extended calls (symbols) | Commutator arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| S3 × C20 | 6 fresh | 3,006 (29,696) | 267 (10,300) |
+| C3 ⋊ C40 | 6 fresh | 3,604 (38,019) | 268 (14,864) |
+| S4 × C5 | 6 fresh | 7,061 (79,260) | 7,137 (82,036) |
+| C120 | 2 replayed | 18 (382) | 18 (382) |
+| S5 | 2 replayed | 23 (248) | 23 (248) |
+| A5 × C2 | 2 replayed | 44 (409) | 44 (409) |
+
+Calls on the 12 targets fell 91.91%, clearing the frozen 80% gate. Queried symbols fell 62.84%. After the shared prefix, direct recovery took 19–36 branch calls per target. All six S4 × C5 cases had a commutator of order three and failed the normalization check. They paid 11–14 additional calls each and reproduced the entire original fallback tape. Over all 24 cases the arm saved 5,999 calls and 39,775 symbols.
+
+Summed online CPU on the target cases was 2.04–2.16 ms for the new arm and 36.11–36.37 ms for the incumbent across two local runs. On the outside cases the measurements were 24.71–27.07 ms and 78.99–93.30 ms respectively, despite identical cancellation tapes after the extra checks. Shared S5 setup took 72.6–74.2 ms, short-certificate compilation took 37.0–50.2 ms, and the shared alternating-policy load and validation took 11.4–11.7 ms. These are process CPU observations on one Mac with in-process table oracles. The test did not isolate causes of timing variation on the identical fallback path.
+
+The separate checker independently reconstructed 34,560 output transitions, replayed the paid tapes, verified the lift relations and normal-form bijections, and rejected a forged lift. It checked exact recovery on all 972 ordered generating pairs across four groups of orders 12 and 27, including groups with a central commutator. All 96 generating pairs of the order-12 A4 control rejected. Both hash seeds reproduced the same non-timing output, and removing the new flag reproduced the existing five arms. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `12774ef`. [Frozen source and protocol](commutator-route-source.zip) · [Coverage](commutator-route-coverage.json) · [Tapes, audit, and receipts](commutator-route-results.zip)
 
 ## Reproduction
 
