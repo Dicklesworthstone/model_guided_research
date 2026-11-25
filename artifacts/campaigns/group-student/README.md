@@ -606,3 +606,48 @@ results archive for the corrected benchmark and checksum manifest.
 Set `GBS_RUN`, `GBS_WORK`, and `GBS_SHA` for DSR. This result establishes
 a stronger classical reference on the stated symbolic inventory.
 [Both runs, raw tapes and DSR receipts](classical-gbs-results.zip)
+
+### Exact-search limits by anchor pattern
+
+A fourth exact search used the feasible GBS policy to set a cost ceiling
+for each history after the four anchors. It passed the remaining cost
+allowance to every reply branch and charged the work of constructing
+and pricing the GBS seed to the same 300,000-unit budget. Order 6 again
+attained 1,917. Search used 5,680 work units, including 1,172 for the
+seed, compared with 24,889 units for the original exact planner.
+Orders 10 and 12 exhausted the budget in both relabelings. The scaling
+prediction failed and the simpler compiler was restored. At producer
+`e3c2442`, DSR passed two checks with 110 diagnostics tests passed and
+one skipped. The replay checked 646 acquisitions and reproduced all
+308 archived control tapes. [Frozen search method](upper-budget-source.zip) ·
+[Search results and DSR receipts](upper-budget-results.zip)
+
+A separate lower-bound computation let the learner see the true shape
+for free after a fixed number of real, informative replies. It paid
+each of those queries and the exact residual naming cost. Any policy
+for the original oracle could ignore the free disclosure, so this
+relaxation gives a lower bound. A shortest-first traversal considers
+each joint endpoint vector once at its cheapest spelling. Beyond any
+word whose cost plus the best possible residual naming cost is too
+high, all longer words can be omitted. The bounds from distinct anchor
+patterns add because the mandatory replies distinguish those cases.
+[First two reply bounds](upper-budget-two-reply-bound.zip) ·
+[Depths one through six and DSR receipts](upper-budget-six-reply-bound.zip)
+
+| Order | Marked actions | Prior known-shape floor | New lower bound | Verified GBS cost | Maximum remaining GBS savings |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 | 15 | 1,698 | 1,917 | 1,938 | 1.08% |
+| 10 | 21 | 4,058 | 4,256 | 4,468 | 4.74% |
+| 12 | 41 | 9,374 | 9,709 | 10,293 | 5.67% |
+
+At order 6 the four-reply relaxation already matches the exact
+1,917-unit policy, independently of the whole-horizon compiler.
+For each anchor pattern at larger orders, the table uses the deepest
+completed bound. At order 10 the six-reply computation exhausted its
+separate per-pattern cap on two of five patterns. At order 12, one
+pattern exhausted at depths four through six. The widest order-10
+interval belongs to the 15 actions with anchor reply ranks
+`[0, 1, 1, 2]`. Its 151-unit width accounts for 71% of the remaining
+212-unit uncertainty. Orders 10 and 12 still have an interval between
+the lower bound and the best observed complete policy. These ceilings
+are for paid symbolic operations under the fixed prices.

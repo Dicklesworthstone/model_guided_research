@@ -9,7 +9,7 @@ from functools import cache
 from heapq import heapify, heappop, heappush
 from importlib.resources import files
 from io import BytesIO
-from itertools import count, groupby, product
+from itertools import groupby, product
 from pathlib import Path
 from time import perf_counter_ns
 from typing import Literal, TextIO
@@ -446,23 +446,14 @@ def compile_gbs_policy(catalogue: Catalogue, *, read_price: int = 16) -> Compile
     """
     if type(read_price) is not int or read_price < 0:
         raise ValueError("Read price must be a nonnegative integer")
-    return _compile_gbs_policy(catalogue, read_price)
 
-
-def _compile_gbs_policy(
-    catalogue: Catalogue, read_price: int, spend: Callable[[int], None] | None = None
-) -> CompiledPolicy:
     menu = set(catalogue.word_rows)
     menu.update("".join(word) for length in range(2, 7) for word in product(SYMBOLS, repeat=length))
     words = sorted(menu, key=lambda word: (len(word), word))
     rows = np.arange(len(catalogue.shapes))
-    if spend is not None:
-        spend(len(words))
     endpoints = np.stack([_column(catalogue, rows, word) for word in words])
 
     def select(version: _VersionSpace) -> str:
-        if spend is not None:
-            spend(1 + len(words))
         free = version.size - len(set(version.facts.values()))
         labels = version.names[version.live, endpoints[:, version.live]]
         gains = _gbs_gain(labels, version.size, free)
@@ -473,20 +464,12 @@ def _compile_gbs_policy(
             gain, cost = int(gains[index]), read_price + len(word)
             if gain * best_cost > best_gain * cost:
                 best_word, best_gain, best_cost = word, gain, cost
-        if best_word:
-            return best_word
-        if spend is not None:
-            # The frontier expands each forced reply once and emits two
-            # children per expansion. Charge both generation and scoring.
-            spend(2 * (len(ANCHORS) + 2 * (version.size + 1)))
-        return version.select_frontier()
+        return best_word or version.select_frontier()
 
-    return _compile_policy(catalogue, select, capped=spend is None)
+    return _compile_policy(catalogue, select)
 
 
-def _compile_policy(
-    catalogue: Catalogue, select: Callable[[_VersionSpace], str], *, capped: bool = True
-) -> CompiledPolicy:
+def _compile_policy(catalogue: Catalogue, select: Callable[[_VersionSpace], str]) -> CompiledPolicy:
     size = catalogue.edges.shape[1]
     version = _VersionSpace(catalogue, size)
 
@@ -498,7 +481,7 @@ def _compile_policy(
             row = int(version.live[0])
             states = tuple(int(state) for state in version.states[row, :next_name])
             return _Determined(row, states)
-        elif capped and depth >= size + 24:
+        elif depth >= size + 24:
             return None
         else:
             word = select(version)
@@ -529,19 +512,16 @@ class OptimalPolicy:
     policy: CompiledPolicy
     total_cost: int
     work: int
-    seed_work: int
 
 
 type _PlanningState = tuple[tuple[int, tuple[int, ...]], ...]
-type _WordEndpoints = tuple[str, tuple[int, ...]]
 
 
 def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_work: int = 300_000) -> OptimalPolicy:
     """Minimize total cost across equally weighted shapes, including anchors and naming.
 
-    Each command costs one. The work limit charges expanded states, endpoint
-    vectors, and candidate evaluations, including the feasible seed policy.
-    Exhaustion raises without a policy.
+    Each command costs one. The work limit counts distinct solve states, reachable
+    endpoint vectors, and candidate evaluations. Exhaustion raises without a policy.
     """
     if type(read_price) is not int or read_price < 0:
         raise ValueError("Read price must be a nonnegative integer")
@@ -551,18 +531,12 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
     shapes = catalogue.shapes
     size = len(shapes[0])
     work = 0
-    seed_work = 0
 
-    def spend(amount: int = 1) -> None:
+    def spend() -> None:
         nonlocal work
-        if work + amount > max_work:
+        if work == max_work:
             raise PlanningBudgetExceeded(f"Optimal planning exhausted {max_work} work units")
-        work += amount
-
-    def spend_seed(amount: int) -> None:
-        nonlocal seed_work
-        spend(amount)
-        seed_work += amount
+        work += 1
 
     def partition(state: _PlanningState, endpoints: tuple[int, ...]) -> dict[int, _PlanningState]:
         groups: dict[int, list[tuple[int, tuple[int, ...]]]] = {}
@@ -576,12 +550,11 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
         return {rank: tuple(group) for rank, group in groups.items()}
 
     @cache
-    def probes(rows: tuple[int, ...]) -> Callable[[int], _WordEndpoints | None]:
+    def probes(rows: tuple[int, ...]) -> list[tuple[str, tuple[int, ...]]]:
         # Every longer admissible word extends an anchor. Equal endpoint vectors
         # stay equal after every common suffix, so shortlex BFS keeps a cheapest word.
         seen: set[tuple[int, ...]] = set()
-        queue: list[_WordEndpoints] = []
-        expanded = 0
+        queue: list[tuple[str, tuple[int, ...]]] = []
 
         def add(word: str, endpoints: tuple[int, ...]) -> None:
             if endpoints not in seen:
@@ -591,61 +564,28 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
 
         for word in ANCHORS:
             add(word, tuple(_endpoint(shapes[row], word) for row in rows))
-
-        def candidate(index: int) -> _WordEndpoints | None:
-            nonlocal expanded
-            while index >= len(queue) and expanded < len(queue):
-                word, endpoints = queue[expanded]
-                expanded += 1
-                for mark, symbol in enumerate(SYMBOLS):
-                    add(
-                        word + symbol,
-                        tuple(shapes[row][endpoint][mark] for row, endpoint in zip(rows, endpoints, strict=True)),
-                    )
-            return queue[index] if index < len(queue) else None
-
-        return candidate
+        for word, endpoints in queue:
+            for mark, symbol in enumerate(SYMBOLS):
+                add(
+                    word + symbol,
+                    tuple(shapes[row][endpoint][mark] for row, endpoint in zip(rows, endpoints, strict=True)),
+                )
+        return queue
 
     @cache
-    def naming_bounds(state: _PlanningState) -> tuple[int, int]:
-        current = after_one_reply = 0
-        for row, names in state:
-            missing = [read_price + len(word) for word, target in catalogue.naming[row] if target not in names]
-            current += sum(missing[:-1])
-            after_one_reply += sum(missing[:-2])
-        return current, after_one_reply
-
-    optimal: dict[_PlanningState, tuple[int, _PolicyNode]] = {}
-    infeasible: dict[_PlanningState, int] = {}
-
-    def solve(state: _PlanningState, ceiling: int) -> tuple[int, _PolicyNode] | None:
-        if state in optimal:
-            answer = optimal[state]
-            return answer if answer[0] <= ceiling else None
-        current, after_one_reply = naming_bounds(state)
-        if ceiling < current or ceiling <= infeasible.get(state, -1):
-            return None
+    def solve(state: _PlanningState) -> tuple[int, _PolicyNode]:
         spend()
+        first, names = state[0]
         if len(state) == 1:
-            row, names = state[0]
-            answer = current, _Determined(row, names)
-            optimal[state] = answer
-            return answer
+            # The final unobserved label is forced by the roster. Omit the
+            # most expensive shortest access word among the missing positions.
+            missing = [read_price + len(word) for word, target in catalogue.naming[first] if target not in names]
+            return sum(missing[:-1]), _Determined(first, names)
 
-        original_ceiling = ceiling
-        best: tuple[int, _PolicyNode] | None = None
-        find_candidate = probes(tuple(row for row, _ in state))
-        for index in count():
-            candidate = find_candidate(index)
-            if candidate is None:
-                break
+        best_cost: int | None = None
+        best_probe: _Probe | None = None
+        for word, endpoints in probes(tuple(row for row, _ in state)):
             spend()
-            word, endpoints = candidate
-            total = len(state) * (read_price + len(word))
-            # Every later word costs at least as much, and one reply can
-            # reveal at most one additional name for each fitting shape.
-            if total + after_one_reply > ceiling:
-                break
             groups = partition(state, endpoints)
             if len(groups) == 1:
                 rank, child = next(iter(groups.items()))
@@ -653,60 +593,34 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
                 # read or it was the sole label left in the public roster.
                 if child == state or rank == size - 1:
                     continue
-            ordered = sorted(groups.items(), key=lambda item: -len(item[1]))
-            floors = [naming_bounds(child)[0] for _, child in ordered]
-            unpaid = sum(floors)
-            if total + unpaid > ceiling:
-                continue
+            total = len(state) * (read_price + len(word))
             branches: dict[int, _PolicyNode] = {}
-            for (rank, child), floor in zip(ordered, floors, strict=True):
-                unpaid -= floor
-                answer = solve(child, ceiling - total - unpaid)
-                if answer is None:
+            for rank, child in groups.items():
+                if best_cost is not None and total >= best_cost:
                     break
-                cost, branches[rank] = answer
+                cost, branches[rank] = solve(child)
                 total += cost
             else:
-                best = total, _Probe(word, branches)
-                if total == current:
-                    break
-                ceiling = total - 1
-        if best is None:
-            infeasible[state] = original_ceiling
-        else:
-            optimal[state] = best
-        return best
+                if best_cost is None or total < best_cost:
+                    best_cost, best_probe = total, _Probe(word, branches)
+        if best_cost is None:
+            raise ValueError("No informative probe while multiple rooted actions remain")
+        return best_cost, best_probe
 
-    def seed_cost(state: _PlanningState, node: _PolicyNode) -> int:
-        spend_seed(1)
-        if isinstance(node, _Determined):
-            return naming_bounds(state)[0]
-        if node is None:
-            raise ValueError("The feasible seed ended before determining the action")
-        spend_seed(2)
-        endpoints = tuple(_endpoint(shapes[row], node.word) for row, _ in state)
-        return len(state) * (read_price + len(node.word)) + sum(
-            seed_cost(child, node.branches[rank]) for rank, child in partition(state, endpoints).items()
-        )
-
-    def anchor(state: _PlanningState, depth: int, seed: _PolicyNode) -> tuple[int, _PolicyNode]:
+    def anchor(state: _PlanningState, depth: int) -> tuple[int, _PolicyNode]:
         if depth == len(ANCHORS):
-            ceiling = seed_cost(state, seed)
-            return solve(state, ceiling - 1) or (ceiling, seed)
-        if not isinstance(seed, _Probe):
-            raise ValueError("The feasible seed must query all anchors")
+            return solve(state)
         word = ANCHORS[depth]
         endpoints = tuple(_endpoint(shapes[row], word) for row, _ in state)
         total = len(state) * (read_price + len(word))
         branches = {}
         for rank, child in partition(state, endpoints).items():
-            cost, branches[rank] = anchor(child, depth + 1, seed.branches[rank])
+            cost, branches[rank] = anchor(child, depth + 1)
             total += cost
         return total, _Probe(word, branches)
 
-    seed = _compile_gbs_policy(catalogue, read_price, spend_seed)
-    total, root = anchor(tuple((row, ()) for row in range(len(shapes))), 0, seed._root)
-    return OptimalPolicy(CompiledPolicy(shapes, catalogue.naming, root), total, work, seed_work)
+    total, root = anchor(tuple((row, ()) for row in range(len(shapes))), 0)
+    return OptimalPolicy(CompiledPolicy(shapes, catalogue.naming, root), total, work)
 
 
 def _policy_charges(policy: CompiledPolicy, shape: Shape, roster: list[str]) -> Charges:

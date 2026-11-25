@@ -899,8 +899,6 @@ def test_optimal_policy_pays_the_exact_minimum_for_order_two():
     catalogue = _prepare(shapes)
     plan = compile_optimal_policy(catalogue)
     assert plan.total_cost == 254
-    assert 0 < plan.seed_work <= plan.work
-    assert compile_optimal_policy(catalogue, read_price=0).total_cost == 30
     assert compile_optimal_policy(catalogue, max_work=plan.work).total_cost == 254
     with pytest.raises(PlanningBudgetExceeded, match=rf"{plan.work - 1} work units"):
         compile_optimal_policy(catalogue, max_work=plan.work - 1)
