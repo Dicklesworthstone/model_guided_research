@@ -344,6 +344,37 @@ class _VersionSpace:
             raise ValueError("No informative probe while multiple rooted actions remain")
         return best[2]
 
+    def select_frontier(self) -> str:
+        """Find the globally shortest informative word, then minimize its worst bucket."""
+        free = max(1, self.size - len(set(self.facts.values())))
+        words = list(ANCHORS)
+        endpoints = np.stack([_column(self.index, self.live, word) for word in words])
+        seen: set[int] = set()
+        while words:
+            labels = self.names[self.live, endpoints]
+            uniform = np.all(labels == labels[:, :1], axis=1)
+            forced = uniform & ((labels[:, 0] >= 0) | (free == 1))
+            informative = np.flatnonzero(~forced)
+            if len(informative):
+                worst = _worst(labels[informative], self.size, free)
+                return words[int(informative[int(worst.argmin())])]
+            extensions = []
+            destinations = []
+            # A forced label identifies the same endpoint vector in every
+            # surviving shape. Its earliest shortlex prefix covers all suffixes.
+            for word, states, raw_label in zip(words, endpoints, labels[:, 0], strict=True):
+                label = int(raw_label)
+                if label in seen:
+                    continue
+                seen.add(label)
+                for mark, symbol in enumerate(SYMBOLS):
+                    extensions.append(word + symbol)
+                    destinations.append(self.index.edges[self.live, states, mark])
+            words = extensions
+            if destinations:
+                endpoints = np.stack(destinations)
+        raise ValueError("No informative probe while multiple rooted actions remain")
+
 
 @dataclass(frozen=True, slots=True)
 class _Probe:
@@ -383,10 +414,11 @@ class CompiledPolicy:
         return node.row, names
 
 
-def compile_policy(catalogue: Catalogue) -> CompiledPolicy:
-    """Compile the exact selector once from a prepared catalogue for later acquisitions."""
+def compile_policy(catalogue: Catalogue, *, exhaustive_frontier: bool = False) -> CompiledPolicy:
+    """Compile the shortlist or exhaustive shortest-word selector for later acquisitions."""
     size = catalogue.edges.shape[1]
     version = _VersionSpace(catalogue, size)
+    select = version.select_frontier if exhaustive_frontier else version.select
 
     def visit(next_name: int) -> _PolicyNode:
         depth = len(version.facts)
@@ -399,7 +431,7 @@ def compile_policy(catalogue: Catalogue) -> CompiledPolicy:
         elif depth >= size + 24:
             return None
         else:
-            word = version.select()
+            word = select()
         live = version.live
         endpoints = _column(catalogue, live, word)
         names = version.names[live, endpoints]

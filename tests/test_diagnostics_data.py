@@ -744,7 +744,7 @@ def test_incremental_square_closure_keeps_reporting_a_conflict():
             actions.close(squares=True)
 
 
-@pytest.mark.parametrize("mode", ["square", "tiered", "compiled", "bundled"])
+@pytest.mark.parametrize("mode", ["square", "tiered", "compiled", "bundled", "frontier"])
 def test_exact_endpoint_acquisition_with_opaque_labels(mode):
     from nanochat.group_acquisition import acquire, compile_policy, load_bundled_policy, load_catalogue
 
@@ -771,12 +771,80 @@ def test_exact_endpoint_acquisition_with_opaque_labels(mode):
         policy = load_bundled_policy(len(labels))
     else:
         index = None if mode == "square" else load_catalogue(path, len(labels))
-        policy = compile_policy(index) if mode == "compiled" and index is not None else index
+        policy = (
+            compile_policy(index, exhaustive_frontier=mode == "frontier")
+            if mode in ("compiled", "frontier") and index is not None
+            else index
+        )
     action = acquire(list(reversed(labels)), teacher, catalogue=policy)
     assert words[:4] == ["00", "01", "10", "11"]
     assert action.root == labels[0]
     assert action.terminal == ("square" if mode == "square" else "unique")
     assert action.transitions == {label: (labels[step(i, "0")], labels[step(i, "1")]) for i, label in enumerate(labels)}
+
+
+@pytest.mark.parametrize("size", [4, 6, 8])
+def test_exhaustive_frontier_matches_unrestricted_word_enumeration(size):
+    from itertools import product
+
+    from nanochat.group_acquisition import ANCHORS, _prepare, _VersionSpace
+
+    def rooted(edges):
+        reached = [0]
+        canonical = []
+        for state in reached:
+            for target in edges[state]:
+                if target not in reached:
+                    reached.append(target)
+            canonical.append(tuple(reached.index(target) for target in edges[state]))
+        return tuple(canonical)
+
+    shapes = set()
+    for a, b in product(range(size), repeat=2):
+        for group in (
+            lambda x, y: (x + y) % size,
+            lambda x, y: ((x // 2 + y // 2) % (size // 2)) * 2 + ((x ^ y) & 1),
+        ):
+            shape = rooted([(group(i, a), group(i, b)) for i in range(size)])
+            if len(shape) == size:
+                shapes.add(shape)
+    shapes = sorted(shapes)
+
+    def follow(graph, word):
+        state = 0
+        for mark in word:
+            state = graph[state][int(mark)]
+        return state
+
+    index = _prepare(shapes)
+    checked = 0
+    for truth in shapes:
+        version = _VersionSpace(index, size)
+        for word in ANCHORS:
+            version.learn(word, str(follow(truth, word)))
+        while len(version.live) > 1:
+            selected = version.select_frontier()
+            observed = []
+            for graph in shapes:
+                labels = {follow(graph, word): label for word, label in version.facts.items()}
+                if len(labels) == len(set(version.facts.values())) and all(
+                    labels[follow(graph, word)] == label for word, label in version.facts.items()
+                ):
+                    observed.append((graph, labels))
+            assert len(observed) == len(version.live)
+            unused = max(1, size - len(set(version.facts.values())))
+            choices = []
+            for depth in range(2, len(selected) + 1):
+                for marks in product("01", repeat=depth):
+                    word = "".join(marks)
+                    buckets = Counter(labels.get(follow(graph, word)) for graph, labels in observed)
+                    score = max(buckets.pop(None, 0), unused * max(buckets.values(), default=0))
+                    if score < unused * len(observed):
+                        choices.append((depth, score, word))
+            assert min(choices)[2] == selected
+            checked += 1
+            version.learn(selected, str(follow(truth, selected)))
+    assert checked > 0
 
 
 def test_compiled_acquisition_rejects_an_impossible_equality():
