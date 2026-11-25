@@ -144,3 +144,21 @@ Matching improved **25.59–27.31×** against the frozen 8× criterion. Matching
 All 2,880 compatible pairs and full named-action sets matched exactly. The separate audit checked 12,960 table entries across the three arms, every paid reply, and 10,752 held-out answers across the two catalogue arms. Both matchers reproduced the survivor sets for six other groups and rejected contradictory and subgroup-only profiles. The naming control refused two distinct rooted actions before any oracle call. DSR passed both checks, including 89 diagnostics tests with one skipped.
 
 The producer is `2b20e3f`. Replay with the source archive extracted next to a checkout of that revision. Use `catalogue.json` from the original catalogue source, and extract `scored.json` and `floor-scored.json` from the original results as `prior.json` and `prior-floor.json`. Extract the registered cohort into the run directory. The frozen manifest checks these inputs before the archived DSR target runs. [Batched source and protocol](indexed-catalogue-source.zip) · [Timings, exact audit and DSR receipt](indexed-catalogue-results.zip)
+
+### Matching the observed partial action
+
+The 508 short labels determine four anchors at length two and a partial right action on the observed labels. Assign one shortest representative per label, beginning at the anchors. Each assignment uses its previously assigned prefix. Then require distinct image states for distinct labels and check every observed edge outside this assignment forest. Induction from the anchors recovers every short word, so these checks enforce the same full partition as the earlier matchers.
+
+Before doing that transport, use the periods visible in the observed graph. Right multiplication by a fixed group element has the same cycle length at every state. Any closed cycle in the observed part gives that exact period, and a path through \(k\) distinct vertices requires a period of at least \(k\). This also holds for partial compositions of the two right actions. The matcher applies it to the two marks and the words 01, 001 and 011. Across 24 cases, 117 of the 120 period tests found exact orders. They reduced 8,683,200 case–pair combinations to 4,452 before checking the remaining action constraints.
+
+| CPU across 24 historical cases | Live word-partition matcher | Partial-action matcher |
+| --- | ---: | ---: |
+| Catalogue matching | 290.19–300.16 ms | 58.15–65.60 ms |
+| Matching plus unchanged naming | 304.16–316.19 ms | 73.60–79.79 ms |
+| Live square closure in the same run | 45.61–53.17 ms | 46.18–53.53 ms |
+
+Matching was **4.42–5.16× faster** against the frozen 2× criterion. Both catalogue arms found all 2,880 compatible pairs, reproduced the exact 165-read, 1,551-symbol tape and answered all 5,376 held-out prompts per arm. Square closure used 184 reads and 1,738 symbols. The independent catalogue recheck and endpoint audit verified 17,280 table entries across the two catalogue and two square executions. Hash-seed and arm-order changes reproduced all non-timing output.
+
+The nine outside controls retained the same exact version spaces, including the cyclic case in which all five observed period constraints were lower bounds. On these controls matching rose from 199.08–200.45 ms to 212.02–221.20 ms. The improvement is specific to the cycle-rich historical cohort. Against square closure, the faster catalogue's remaining CPU overhead on that cohort was 20.07–33.61 ms. With a parsed catalogue, free movement and CPU time as an estimate of elapsed overhead, that is **1.06–1.77 ms per saved read**. Charging the one-time table parse gives a 2.29–2.97 ms range. None of these estimates supplies a real device measurement.
+
+The producer is `9fb5b16`. DSR passed both checks, including 89 diagnostics tests with one skipped. Use the same `catalogue.json` and `prior.json` as above, and extract `scored.json` from the batched results as `prior-batched.json`. The source contains the frozen manifest and DSR configuration. [Partial-action source and protocol](partial-action-catalogue-source.zip) · [Raw timings, audit and receipt](partial-action-catalogue-results.zip)
