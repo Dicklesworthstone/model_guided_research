@@ -651,3 +651,61 @@ interval belongs to the 15 actions with anchor reply ranks
 212-unit uncertainty. Orders 10 and 12 still have an interval between
 the lower bound and the best observed complete policy. These ceilings
 are for paid symbolic operations under the fixed prices.
+
+### Exact closure when two shapes remain
+
+An adjacent-query exchange experiment put two uniformly novel probes
+in shortlex order. Swapping them preserves their cost and endpoint
+equalities. The compiler skipped 84 candidate orderings at order 6
+and reproduced the minimum of 1,917 in 5,017 work units, including its
+GBS seed. Orders 10 and 12 still exhausted the fixed cap. This variant
+remains an archived experiment. [Exchange proof and tests](ordered-probes-source.zip)
+· [All results and DSR receipts](ordered-probes-results.zip)
+
+The retained compiler now solves a two-shape state by considering
+an immediate split or one naming query followed by a split. A label
+already observed pairs one endpoint from each shape. A splitting
+query must conflict with one such pair. Keeping the single prefix
+query that produced that pair is enough. Other naming queries can
+move after the split and be paid at the same or lower cost. Two novel
+words distinguish the shapes together precisely when their endpoint
+pairs share exactly one coordinate. The compiler tests those pairs
+using the cheapest representative of each joint endpoint vector.
+[Proof and frozen comparison](ordered-probes-two-shape-source.zip)
+
+| Order | Anchor reply pattern | Original work units | Specialized work units | Exact cost |
+| ---: | :--- | ---: | ---: | ---: |
+| 6 | Two distinct endpoint labels | 2,003 | 51 | 285 |
+| 6 | Four distinct endpoint labels | 228 | 87 | 201 |
+| 10 | Two distinct endpoint labels | Exhausted | 91 | 457 |
+| 10 | Four distinct endpoint labels | Exhausted | 455 | 353 |
+| 12 | Two distinct endpoint labels | Exhausted | 111 | 549 |
+
+The two-distinct-label pattern is `[0,1,1,0]`. All five measured
+two-shape classes completed under the original 300,000-unit cap.
+For the two classes both compilers solved, costs agreed and work fell
+from 2,231 to 138 units. The full order-6 minimum stayed at 1,917,
+with 22,718 work units versus 24,889 for the original solver. Order-6
+host compilation took 21.6–22.5 ms, compared with the original
+18.7–19.5 ms in its historical run. Full orders 10 and 12 still
+exhausted the shared cap.
+
+Choosing a continuation after the mandatory anchors combines feasible
+policies without extra observations. Use the exact two-shape policy
+where available and the earlier verified GBS tape policy on the unsolved
+classes. Updating both limits with the exact class costs narrows the
+order-10 interval to **[4,300, 4,451]**. All 151 remaining units of
+uncertainty come from the 15-shape pattern `[0,1,1,2]`. At order 12
+the interval is **[9,740, 10,276]**. These upper limits are attainable
+by composing the audited policies at the known anchor split. The
+remaining possible savings against those upper limits are at most
+3.39% and 5.22%, respectively.
+
+At producer `a1ebc8a`, DSR passed three checks, including 111 tests
+with one skip, 646 full-catalogue acquisitions, 308 matched control
+tapes and 14 focused acquisitions. The interval calculation passed
+its separate DSR check. Unpack the source beside clean `work/` and
+`base/` checkouts at `a1ebc8a` and `78d873f`. Set `OPT_RUN`,
+`OPT_WORK`, `OPT_BASE`, and `OPT_SHA`. The results archive includes
+both sets of raw tapes, the interval calculation and the check receipts.
+[Measured costs and receipts](ordered-probes-two-shape-results.zip)
