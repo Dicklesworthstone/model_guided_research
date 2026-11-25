@@ -251,3 +251,21 @@ The largest movement increase was on order-120 abelian slot 277. Length-first us
 Over both runs, online CPU after the anchors totaled 44.54–45.60 seconds for length-first versus 10.17–10.30 seconds for live square. Shared cold construction and indexing took 0.53–0.57 seconds of CPU. On the whole census length-first saved 7,405 reads and 79,010 zero symbols while using 47,772 more one symbols. In a serial prepared cost model the measured elapsed overhead is covered when \(7405q+79010m_0-47772m_1\) exceeds 35.90–37.14 seconds. Here \(q\) prices a reset/read, and \(m_0,m_1\) price the marks. The census weights each distinct shape once. Physical action frequencies and device costs remain unmeasured.
 
 The separate checker independently rebuilt the complete catalogue, replayed every paid oracle reply and audited 1,618,560 transition entries across the two arms and naming schemes. It checked every structural handoff and shortest naming suffix in the primary run. The producer is `e27ec06`. DSR passed both checks, including 89 diagnostics tests with one skipped. Reproduce using the pinned `catalogue.json` and the scored movement tape as `prior-movement.json`. [Census source and protocol](acquisition-census-source.zip) · [Full census, audit and receipt](acquisition-census-results.zip)
+
+### Scoring only the shortest informative tier
+
+Length-first acquisition now scores the shortest informative word tier in one batch. The search for the disagreement word between the first two completed candidates stops at that length when a fixed candidate already qualifies. A longer word cannot win under length-first ordering. After a unique shape remains, the learner assigns names directly in shortest-access order. It rejects a reused name and still infers the last one from the roster.
+
+| Live acquisition over 1,874 shapes | Online CPU | Online elapsed | Paid reads | Input symbols |
+| --- | ---: | ---: | ---: | ---: |
+| Square closure | 9.61–10.10 s | 9.89–10.32 s | 213,267 | 1,780,474 |
+| Released length-first | 41.04–43.84 s | 41.95–44.73 s | 205,862 | 1,749,236 |
+| Shortest-tier length-first | 7.37–7.89 s | 7.55–8.07 s | 205,862 | 1,749,236 |
+
+Online CPU improved by **5.56–5.57×** against the released learner and fell **21.8–23.3%** against live square closure. Building the catalogue and endpoint index from the fixed exported tables took 0.53–0.55 seconds of CPU. Tier preparation added 57–64 ms. Charging all three stages, the optimized learner took **7.96–8.51 seconds of CPU and 8.29–8.69 seconds elapsed** in total. It still finished 1.60–1.63 seconds sooner than square closure on this host. The shared anchor observations are charged in the paid totals. GAP table export and physical command, reset and read times are outside these timings.
+
+The audit checked **2,427,840 transition entries** across the three live arms and two name permutations. The optimized learner reproduced every paid word, reply, selected score and exact table from released length-first in both runs. The checker independently recomputed all 113,068 structural scores in the primary run and verified every uniqueness boundary and shortest naming suffix there. Both runs reproduced the forced square fallback and rejected the duplicate-name control. The optimized trace logs the number of words it scores. The released trace retains the full-shortlist minimax statistic, which length-first does not use to choose a word.
+
+On the equally weighted census, the optimized learner saves **7,405 reads and 31,238 total symbols** against square closure. That is 79,010 fewer `0` symbols and 47,772 more `1` symbols. The order-120 abelian subset still uses 15,629 more symbols. These are finite-census software measurements. Device timings and real action frequencies remain open.
+
+The producer is `ed9cda5`. Both DSR checks passed, including 89 diagnostics tests with one skipped. To replay, unpack the source into `run/` beside a clean `work/` checkout at the producer revision. Extract `catalogue.json` from the catalogue replay source and `scored.json` from the complete census results as `prior-census.json`. Set `MGR_TIER_WORK`, `MGR_TIER_RUN` and `MGR_TIER_SHA` for the archived DSR configuration. [Frozen source and protocol](tiered-acquisition-source.zip) · [Raw tapes, timings, audit and DSR receipt](tiered-acquisition-results.zip)

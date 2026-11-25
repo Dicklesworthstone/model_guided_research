@@ -1020,11 +1020,18 @@ retain their original dispositions.
   citations for both the directional braid and surreal optimization-rate
   results. Six ledger entries also cite files missing from the checkout.
   [Evidence and reproduction details](docs/bridge_plan.md#november-2026-assessment)
+- In exact finite-group acquisition, shortest-tier length-first used fewer
+  endpoint reads and input symbols in aggregate than live square closure
+  across all 1,874 marked actions of orders 60 and 120. Elapsed time also fell
+  after charging local catalogue preparation from exported tables. This result
+  concerns the symbolic learner. The matched transformer experiment was
+  inconclusive, and physical-device timings remain open.
+  [Exact acquisition evidence](artifacts/campaigns/group-student/README.md#scoring-only-the-shortest-informative-tier)
 
 `tests/test_practical_utility.py` produces demo-scale diagnostics with
 green/yellow/red verdicts; those are sanity checks on toy problems, not
-evidence about the transformer mechanisms. Anything stated here that is not
-in the ledger should be read as a design intention, not an observation.
+evidence about the transformer mechanisms. Treat uncited mechanism claims
+outside the ledger as design intentions.
 
 ### Open Questions
 
