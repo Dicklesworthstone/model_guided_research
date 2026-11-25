@@ -1322,7 +1322,7 @@ def _check_proposal(tree, certificates, equal):
 
 def _acquire_checked_proposal(
     tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False, klein_route: bool = False,
-    fifth_power_route: bool = False, involution_route: bool = False,
+    fifth_power_route: bool = False, involution_route: bool = False, central_involution_route: bool = False,
 ):
     result = _check_proposal(tree, certificates, equal)
     if result["accepted"]:
@@ -1333,6 +1333,7 @@ def _acquire_checked_proposal(
         result["alternating"] = attempt
         if attempt["accepted"]:
             return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
+    involution_route = involution_route or central_involution_route
     fifth_power_route = fifth_power_route or involution_route
     if commutator_route or klein_route or fifth_power_route:
         graph, witness = _try_order_three_commutator(120, equal)
@@ -1354,6 +1355,9 @@ def _acquire_checked_proposal(
             result["involution"] = lift
             if graph is not None:
                 return dict(right=graph, **result)
+            if central_involution_route and lift.get("rejected") == "central_involution" and lift.get("involution") == witness["word"]:
+                graph, central = _recover_central_involution(120, equal, witness["word"])
+                return dict(right=graph, central_involution=central, **result)
     return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
 
 
@@ -1518,6 +1522,23 @@ def _shortest_positive_difference(left: str, right: str, orders: tuple[int, int]
     return min(candidates, key=lambda word: (len(word), word))
 
 
+def _recover_central_involution(size: int, equal: Callable[[str, str], bool], commutator: str):
+    """Recover the action after the caller has verified a central commutator of order two."""
+    ask = _memoized_noncommuting_equality(equal)
+    comparisons = []
+
+    def quotient_equal(left: str, right: str) -> bool:
+        answer = ask(left, right) or ask(left, commutator + right)
+        comparisons.append((left, right, answer))
+        return answer
+
+    lattice = _acquire_commuting_lattice(size // 2, quotient_equal)
+    width, shift, height = lattice
+    # Each known lift in <c> is either the identity or c.
+    powers = (int(not ask("0" * width, "")), int(not ask("0" * shift + "1" * height, "")))
+    return _prime_extension_action(2, lattice, (1, 1), powers), dict(lattice=lattice, powers=powers, quotient_queries=comparisons)
+
+
 def _try_order_five_commutator(size: int, equal: Callable[[str, str], bool], orders: tuple[int, int], commutator: str):
     """Recover a derived C5 using the paid generator orders and commutator word."""
     if size % 5:
@@ -1649,7 +1670,7 @@ def _try_klein_four_quotient(
 def proposal_panel(
     coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
     alternating_policy: Path | None = None, commutator_route: bool = False, klein_route: bool = False,
-    fifth_power_route: bool = False, involution_route: bool = False,
+    fifth_power_route: bool = False, involution_route: bool = False, central_involution_route: bool = False,
 ) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
@@ -1669,6 +1690,7 @@ def proposal_panel(
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
+    involution_route = involution_route or central_involution_route
     fifth_power_route = fifth_power_route or involution_route
     has_alternating = alternating_route or alternating_policy is not None or commutator_route or klein_route or fifth_power_route
     if abelian_route or has_alternating:
@@ -1694,6 +1716,8 @@ def proposal_panel(
         order += ("fifth_power",)
     if involution_route:
         order += ("involution",)
+    if central_involution_route:
+        order += ("central_involution",)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1724,6 +1748,7 @@ def proposal_panel(
                     commutator_route=arm == "commutator", klein_route=arm == "klein",
                     fifth_power_route=arm == "fifth_power",
                     involution_route=arm == "involution",
+                    central_involution_route=arm == "central_involution",
                 )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
@@ -1759,6 +1784,7 @@ if __name__ == "__main__":
     parser.add_argument("--klein-route", action="store_true", help="Try direct recovery through a normal Klein-four quotient")
     parser.add_argument("--fifth-power-route", action="store_true", help="Try direct recovery with a normal commutator of order five")
     parser.add_argument("--involution-route", action="store_true", help="Try Klein-four recovery seeded by an order-two commutator")
+    parser.add_argument("--central-involution-route", action="store_true", help="Recover from a certified central order-two commutator")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1780,6 +1806,8 @@ if __name__ == "__main__":
         parser.error("--fifth-power-route requires the proposal phase")
     if args.involution_route and args.phase != "proposal":
         parser.error("--involution-route requires the proposal phase")
+    if args.central_involution_route and args.phase != "proposal":
+        parser.error("--central-involution-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1806,6 +1834,7 @@ if __name__ == "__main__":
             args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
             alternating_policy=args.alternating_policy, commutator_route=args.commutator_route, klein_route=args.klein_route,
             fifth_power_route=args.fifth_power_route, involution_route=args.involution_route,
+            central_involution_route=args.central_involution_route,
         )
     elif args.phase == "compile-alternating-policy":
         if args.output is None:
