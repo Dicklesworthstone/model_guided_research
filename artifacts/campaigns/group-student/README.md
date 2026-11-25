@@ -298,3 +298,53 @@ done
 ```
 
 [Frozen source and protocol](transfer-source.zip) · [Raw runs, complete audit and DSR receipts](transfer-results.zip)
+
+### Compiling the exact selector for repeated acquisitions
+
+The catalogue can determine each next structural query from which replies
+have shared labels. Renaming the endpoints permutes the known-label bucket
+counts. The disagreement probe also stays fixed because both completed
+fits assign the same unused labels in order. Two unnamed states in those
+fits agree exactly when they have the same rank in their unmapped state
+lists. The compiler uses this property to branch once on each possible
+reply class. A live acquisition follows the compiled tree, finishes the
+same shortest naming suffix and still verifies every paid reply on the
+resulting table. The compiler takes only the audited catalogue as input.
+
+| Order | Marked actions | Live square CPU | Live dynamic tiered CPU | Compiled online CPU | Compiled CPU incl. setup |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 151 | 0.116–0.122 s | 0.140–0.148 s | 0.0090–0.0095 s | 0.050–0.142 s |
+| 64 | 503 | 1.046–1.124 s | 1.067–1.167 s | 0.054–0.060 s | 0.322–0.359 s |
+| 128 | 1,799 | 12.43–12.49 s | 10.42–10.48 s | 0.414–0.425 s | 2.33–2.52 s |
+
+Both repeats passed the frozen warm criterion at every order. The
+compiled learner ran **15.5–25.3× faster** than the released dynamic
+learner and **12.9–30.2× faster** than live square closure on aggregate
+online CPU. Charging the audited archive load and full policy compilation,
+it still beat square closure in both runs at orders 64 and 128. At order 32,
+it beat square in the first run and took longer in the second. Using
+each run's measured preparation cost and mean online savings for its
+equally weighted mix, the estimated CPU break-even points against square
+closure were 59–178 acquisitions at order 32, 136–142 at order 64 and
+285–314 at order 128. This estimate uses one preparation shared across
+sessions and begins with the already exported shape archive.
+
+Across the two naming permutations, the three live arms completed **14,718
+acquisitions**. The benchmark checked each word, reply, table and terminal
+status against the released tapes, and also checked every named table
+against the independently enumerated marked shape. The second run reversed
+the supplied roster order as well. The compiled learner had the exact same
+paid tape as dynamic shortest-tier in each case. One negative test rejected
+an equality pattern absent from the complete catalogue. DSR passed both
+checks, with 98 diagnostics tests passed and one skipped. A separate
+isolated wheel check recovered all 64 transitions of a 32-state software
+oracle using the installed compiled API. These numbers measure a software
+oracle and host computation.
+
+Use `compile_policy(load_catalogue(...))` in the Python API and pass the
+returned policy to each `acquire` call. To reproduce the experiment, unpack
+the source into `run/` beside a clean `work/` checkout at producer `d7e1694`,
+then run the archived DSR configuration with `POLICY_WORK`, `POLICY_RUN`
+and `POLICY_SHA`. The two pinned input archives are already in that
+checkout. [Frozen protocol and source](policy-source.zip) ·
+[Per-case timing, summaries and DSR receipts](policy-results.zip)
