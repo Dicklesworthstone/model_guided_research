@@ -890,6 +890,41 @@ def test_guarded_policy_can_price_a_conflict_between_reads_and_commands():
         compile_guarded_policy(incumbent, alternative, prices=(-1, 1, 1))
 
 
+def test_optimal_policy_pays_the_exact_minimum_for_order_two():
+    from nanochat.group_acquisition import ANCHORS, PlanningBudgetExceeded, _prepare, acquire, compile_optimal_policy
+
+    # The three ordered generating pairs of C2. The anchors identify the
+    # equal generators outright. The two unequal pairs need one length-three query.
+    shapes = [((1, 1), (0, 0)), ((1, 0), (0, 1)), ((0, 1), (1, 0))]
+    catalogue = _prepare(shapes)
+    plan = compile_optimal_policy(catalogue)
+    assert plan.total_cost == 254
+    assert compile_optimal_policy(catalogue, max_work=plan.work).total_cost == 254
+    with pytest.raises(PlanningBudgetExceeded, match=rf"{plan.work - 1} work units"):
+        compile_optimal_policy(catalogue, max_work=plan.work - 1)
+    with pytest.raises(ValueError, match="nonnegative"):
+        compile_optimal_policy(catalogue, read_price=-1)
+    with pytest.raises(ValueError, match="positive"):
+        compile_optimal_policy(catalogue, max_work=0)
+
+    labels = ["fennel", "sage"]
+    for shape, expected in zip(shapes, [list(ANCHORS), [*ANCHORS, "000"], [*ANCHORS, "000"]], strict=True):
+        words = []
+
+        def ask(word):
+            words.append(word)
+            state = 0
+            for mark in word:
+                state = shape[state][int(mark)]
+            return labels[state]
+
+        action = acquire(labels[::-1], ask, catalogue=plan.policy)
+        assert action.terminal == "unique"
+        assert action.root == labels[0]
+        assert action.transitions == {labels[i]: (labels[a], labels[b]) for i, (a, b) in enumerate(shape)}
+        assert words == expected
+
+
 def test_compiled_acquisition_rejects_an_impossible_equality():
     from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
 
