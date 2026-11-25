@@ -26,6 +26,7 @@ BUNDLED_POLICY_SHA256 = "4645a5343796fabf365eb93f96ee145b9d7f2c32d8d54f19766f4f5
 type Shape = tuple[tuple[int, int], ...]
 type Query = Callable[[str], str]
 type Terminal = Literal["square", "unique", "cap"]
+type Charges = tuple[int, int, int]
 
 
 def record(labels: dict[str, str], word: str, label: str) -> None:
@@ -448,6 +449,80 @@ def compile_policy(catalogue: Catalogue, *, exhaustive_frontier: bool = False) -
         return _Probe(word, branches)
 
     return CompiledPolicy(catalogue.shapes, catalogue.naming, visit(0))
+
+
+def _policy_charges(policy: CompiledPolicy, shape: Shape, roster: list[str]) -> Charges:
+    reads = zeros = ones = 0
+
+    def teacher(word: str) -> str:
+        nonlocal reads, zeros, ones
+        reads += 1
+        zeros += word.count("0")
+        ones += word.count("1")
+        return roster[_endpoint(shape, word)]
+
+    outcome = acquire(roster, teacher, catalogue=policy)
+    expected = {name: (roster[a], roster[b]) for name, (a, b) in zip(roster, shape, strict=True)}
+    if outcome.root != roster[0] or outcome.transitions != expected:
+        raise ValueError("The supplied policy does not recover the audited shape")
+    return reads, zeros, ones
+
+
+@dataclass(slots=True)
+class _CostedShape:
+    shape: Shape
+    deltas: tuple[int, ...]
+    ranks: dict[int, int]
+
+
+def compile_guarded_policy(
+    incumbent: CompiledPolicy, alternative: CompiledPolicy, *, prices: Charges | None = None
+) -> CompiledPolicy:
+    """Switch at the first divergent query only when every fitting shape is protected.
+
+    The policies must use the same complete catalogue. Without prices, protect
+    each of reads, zero commands and one commands. With prices, protect their
+    dot product with the given nonnegative integer price triple. Preparation
+    costs are outside the guarantee.
+    """
+    if incumbent.shapes != alternative.shapes or incumbent.naming != alternative.naming:
+        raise ValueError("Both policies must use the same catalogue and naming order")
+    if prices is not None and (len(prices) != 3 or any(type(value) is not int or value < 0 for value in prices)):
+        raise ValueError("Prices must be three nonnegative integers for reads, zeros and ones")
+    roster = list(map(str, range(len(incumbent.shapes[0]))))
+    cases = []
+    for shape in incumbent.shapes:
+        original = _policy_charges(incumbent, shape, roster)
+        candidate = _policy_charges(alternative, shape, roster)
+        deltas = tuple(b - a for a, b in zip(original, candidate, strict=True))
+        if prices is not None:
+            deltas = (sum(delta * price for delta, price in zip(deltas, prices, strict=True)),)
+        cases.append(_CostedShape(shape, deltas, {}))
+
+    def merge(first: _PolicyNode, second: _PolicyNode, fitting: list[_CostedShape]) -> _PolicyNode:
+        if first is second:
+            return first
+        if isinstance(first, _Probe) and isinstance(second, _Probe) and first.word == second.word:
+            groups: dict[int, list[_CostedShape]] = {}
+            for case in fitting:
+                endpoint = _endpoint(case.shape, first.word)
+                rank = case.ranks.setdefault(endpoint, len(case.ranks))
+                groups.setdefault(rank, []).append(case)
+            if groups.keys() != first.branches.keys() or groups.keys() != second.branches.keys():
+                raise ValueError("A shared policy prefix has inconsistent possible replies")
+            branches = {
+                rank: merge(first.branches[rank], second.branches[rank], group) for rank, group in groups.items()
+            }
+            return _Probe(first.word, branches)
+        # The shared prefix is already paid by either policy. Total cost
+        # differences therefore equal the differences between their tails.
+        changes = [delta for case in fitting for delta in case.deltas]
+        if max(changes) <= 0 and min(changes) < 0:
+            return second
+        return first
+
+    root = merge(incumbent._root, alternative._root, cases)
+    return CompiledPolicy(incumbent.shapes, incumbent.naming, root)
 
 
 def _decode_policy_node(value: list | None) -> _PolicyNode:

@@ -847,6 +847,49 @@ def test_exhaustive_frontier_matches_unrestricted_word_enumeration(size):
     assert checked > 0
 
 
+def test_guarded_policy_can_price_a_conflict_between_reads_and_commands():
+    from nanochat.group_acquisition import (
+        ANCHORS,
+        CompiledPolicy,
+        _Determined,
+        _prepare,
+        _Probe,
+        acquire,
+        compile_guarded_policy,
+    )
+
+    index = _prepare([((0, 0),)])
+
+    def with_extra_probes(words):
+        node = _Determined(0, (0,))
+        for word in reversed((*ANCHORS, *words)):
+            node = _Probe(word, {0: node})
+        return CompiledPolicy(index.shapes, index.naming, node)
+
+    # Both valid C1 policies ask redundant queries. The alternative saves a
+    # read and adds four one commands, so it needs a price-sensitive switch.
+    incumbent = with_extra_probes(("000", "001"))
+    alternative = with_extra_probes(("11111",))
+
+    def tape(policy):
+        words = []
+
+        def endpoint(word):
+            words.append(word)
+            return "root"
+
+        action = acquire(["root"], endpoint, catalogue=policy)
+        assert action.transitions == {"root": ("root", "root")}
+        return words
+
+    assert tape(compile_guarded_policy(incumbent, alternative)) == tape(incumbent)
+    assert tape(compile_guarded_policy(incumbent, alternative, prices=(16, 1, 1))) == tape(alternative)
+    assert tape(compile_guarded_policy(incumbent, alternative, prices=(0, 0, 1))) == tape(incumbent)
+    assert tape(compile_guarded_policy(alternative, with_extra_probes(()))) == list(ANCHORS)
+    with pytest.raises(ValueError, match="three nonnegative integers"):
+        compile_guarded_policy(incumbent, alternative, prices=(-1, 1, 1))
+
+
 def test_compiled_acquisition_rejects_an_impossible_equality():
     from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
 
