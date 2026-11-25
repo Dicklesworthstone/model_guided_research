@@ -60,6 +60,34 @@ The ordinary CLI reproduced all 18 original non-timing rows. With the compiled p
 
 The scored source was frozen at `9d9c2c8`. [Frozen comparison](known-family-source.zip) · [Tapes, CLI runs, and DSR receipts](known-family-results.zip)
 
+## Short certificates for untrusted proposals
+
+The `proposal` command compares the two certificate methods and cancellation alone on the same regular group actions of order 120.
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/short-certificate-coverage.json \
+  --output "$PANEL_DIR/short-certificates.json"
+```
+
+Both certificate arms use the same selector, which takes at most six calls. The short arm verifies Moore's five S5 relators and two equations that bind the proposed presentation to the original marks. Once the equations hold, the resulting homomorphism covers both hidden generators. The known order makes it an isomorphism. The benchmark rejects a failed certificate at its first false answer and runs the same exact cancellation fallback. [Moore presentation in Bray, Conder, Leedham-Green and O'Brien](https://www.math.auckland.ac.nz/~conder/preprints/SymGpPresentations.pdf)
+
+| Six cases per family | Cancellation calls | Edge certificate calls | Short certificate calls |
+| --- | ---: | ---: | ---: |
+| S5 | 9,095 | 755 | 70 |
+| C120 | 1,543 | 1,588 | 1,585 |
+| A5 × C2 | 7,561 | 7,623 | 7,607 |
+| S3 × C20 | 3,032 | 3,074 | 3,074 |
+
+On the six S5 cases, the short arm paid 10–13 calls including selection. It reduced calls by 90.7% and queried symbols from 10,125 to 1,605. Both certificate arms accepted all six S5 cases. They rejected all 18 other actions and recovered each through fallback. The short path paid seven to nine extra calls on rejection, totaling 130 beyond cancellation's 12,136. On S3 × C20 it queried 14 more symbols than the edge arm. All costs charge both queried words and the entire fallback.
+
+In the scored run, shared catalogue, selector and edge-table setup took 90.1 ms of CPU. Compiling the short certificates added 56.7 ms. Total online CPU for the new path was 68.3 ms versus 62.4 ms for the edge path across the 24 table oracles. This comparison measures saved oracle traffic and keeps the higher measured host overhead visible.
+
+The auditor reconstructed 17,280 transitions across the three arms. It exercised every compiled certificate on its own S5 marking, rejected all 3,192 wrong S5 pairings and all 1,026 out-of-family pairings, and rejected a flipped paid answer. Both normal CLI runs preserved every non-timing field. The original congruence command also reproduced its 18 prior rows. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped. The six S5 cases were fresh for certification. The prior known-family selector census had already exercised every S5 marking.
+
+The scored source was frozen at `75840b7`. [Frozen protocol](short-certificate-source.zip) · [Coverage](short-certificate-coverage.json) · [Oracle tapes, audit and receipts](short-certificate-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
