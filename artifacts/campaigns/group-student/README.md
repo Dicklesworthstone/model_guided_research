@@ -124,3 +124,23 @@ The first replay and the follow-up were frozen at `c7fb082` and `4f5e105`. Both 
 The naming check's console summary displays a null totals field because it looks for a nested key. The verified counters are top-level fields in `floor-verified.json` in the results archive.
 
 [Catalogue source and protocol](catalogue-replay-source.zip) · [Naming follow-up source and protocol](catalogue-replay-floor-source.zip) · [Tapes, audits and DSR receipts](catalogue-replay-results.zip)
+
+### Batched exact catalogue matching
+
+The batched matcher evaluates the first 12 words for every ordered pair in a group together. It packs each word's earliest equivalent position into a four-bit field. The resulting key preserves the complete prefix partition. The remaining comparisons require repeated labels to reach their earlier state and new labels to reach unused states. A compatible pair whose words reach more than half the group must generate it. The matcher explicitly checks generation for the other pairs.
+
+The naming step constructs one rooted action and evaluates its shortest access words in every candidate at once. It checks both marked edges under every resulting transport. Since the transports preserve the root and the candidates generate groups of equal order, the maps are bijections. If any edge disagrees, the learner computes the exact scalar set of rooted actions and checks ambiguity before paying for names.
+
+The two executions used the same 24 historical cases and complete order-60 and order-120 tables, reversed arm order, and used hash seeds 0 and 991. They timed the original scalar code live in both runs.
+
+| Live arm | Matching CPU | Naming or closure CPU | Additional reads (symbols) |
+| --- | ---: | ---: | ---: |
+| Scalar catalogue | 7.674–7.715 s | 59.95–61.04 ms | 165 (1,551) |
+| Batched catalogue | 281.00–301.53 ms | 13.71–15.19 ms | 165 (1,551) |
+| Square closure | — | 46.75–49.52 ms | 184 (1,738) |
+
+Matching improved **25.59–27.31×** against the frozen 8× criterion. Matching plus naming took **294.70–316.72 ms** for the batched arm. Parsing the shared catalogue cost 22.93–23.00 ms outside the matching timers. The live square arm remained faster with the in-process oracle. Relative to square closure, the batched arm spent 247.95–267.20 ms more CPU for 19 fewer reads and 187 fewer input symbols. If input movement is free and CPU time translates directly to elapsed overhead, that corresponds to a prepared-catalogue break-even of 13.05–14.06 ms per read. The earlier GAP export and real device costs are outside that calculation.
+
+All 2,880 compatible pairs and full named-action sets matched exactly. The separate audit checked 12,960 table entries across the three arms, every paid reply, and 10,752 held-out answers across the two catalogue arms. Both matchers reproduced the survivor sets for six other groups and rejected contradictory and subgroup-only profiles. The naming control refused two distinct rooted actions before any oracle call. DSR passed both checks, including 89 diagnostics tests with one skipped.
+
+The producer is `2b20e3f`. Replay with the source archive extracted next to a checkout of that revision. Use `catalogue.json` from the original catalogue source, and extract `scored.json` and `floor-scored.json` from the original results as `prior.json` and `prior-floor.json`. Extract the registered cohort into the run directory. The frozen manifest checks these inputs before the archived DSR target runs. [Batched source and protocol](indexed-catalogue-source.zip) · [Timings, exact audit and DSR receipt](indexed-catalogue-results.zip)
