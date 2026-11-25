@@ -179,7 +179,7 @@ the same queries as dynamic shortest-tier selection. To use the dynamic
 selector, pass `--catalogue path/to/anchor-results.zip`. The command checks
 the policy or archive before issuing its first query.
 [Audited catalogue](artifacts/probes/sizing/group-solver-baseline/anchor-results.zip) ·
-[Measured per-order trade-offs](artifacts/campaigns/group-student/README.md#transfer-to-orders-32-64-and-128)
+[Bundled-policy timing and replay](artifacts/campaigns/group-student/README.md#bundled-policy-in-the-installed-command)
 
 The optional transcript is a new JSON-lines file. It records setup time,
 each request and reply, and the final action or observed protocol error. A

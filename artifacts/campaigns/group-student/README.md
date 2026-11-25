@@ -348,3 +348,45 @@ then run the archived DSR configuration with `POLICY_WORK`, `POLICY_RUN`
 and `POLICY_SHA`. The two pinned input archives are already in that
 checkout. [Frozen protocol and source](policy-source.zip) ·
 [Per-case timing, summaries and DSR receipts](policy-results.zip)
+
+### Bundled policy in the installed command
+
+`mgr group-acquire roster.json --compiled --transcript run.jsonl` runs the
+precompiled shortest-tier policy at orders 32, 64 and 128. The policy archive
+ships with the wheel. The command hashes the archive, decodes the requested
+order and prepares its naming walks. It uses the same live verification and
+fallback logic as the existing routes. The compiler regenerated identical
+bytes under three hash seeds from the audited shape inventory alone. The
+archive is 2,277,491 bytes and occupies 414,286 compressed bytes in the wheel.
+
+| Order | Actions | Rebuilt setup CPU | Bundled setup CPU | Square total CPU | Bundled CPU incl. setup |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 151 | 0.050–0.151 s | 0.004–0.096 s | 0.124–0.135 s | 0.014–0.106 s |
+| 64 | 503 | 0.314–0.329 s | 0.013–0.017 s | 1.135–1.201 s | 0.072–0.086 s |
+| 128 | 1,799 | 2.245–2.467 s | 0.112–0.243 s | 13.53–13.58 s | 0.583–0.737 s |
+
+The preregistered prediction of at least 2× lower setup CPU in every cell
+failed at order 32 on the replay. Setup was 36.1× faster in the first run of
+that order and 1.9× slower in the replay. The bundled loader ran first in
+the replay. It was 18.0–24.4× faster at order 64 and 9.2–22.1× faster at order
+128. With preparation charged once per order, the bundled arm still used
+less CPU than live square closure in all six complete census comparisons.
+The observed mean CPU savings give break-even estimates of 6–128 acquisitions
+at order 32, 7–8 at order 64 and 16–34 at order 128 for the same equally
+weighted case mix. Timing starts from the exported data and excludes process
+startup and physical reset, command and read time.
+
+All **14,718 acquisitions** across the three live arms and the two
+relabelings matched archived paid tapes, terminal states and named tables.
+Both compiled arms used the same reads and symbols as released dynamic
+shortest-tier. The isolated wheel drove an independent software oracle through
+the installed command at all three orders and recovered all **448 transition
+entries**. The diagnostics suite passed 100 tests with one skipped, and DSR
+passed all three final checks at producer `f927c7c`.
+
+To reproduce, unpack the source into `run/` beside a clean `work/` checkout
+at the producer revision. Set `BUNDLE_RUN`, `BUNDLE_WORK` and `BUNDLE_SHA`
+for the archived DSR configuration and point `BUNDLE_WHEELHOUSE` at the locked
+runtime wheels for the offline installation check.
+[Frozen protocol, generator and benchmark](bundled-policy-source.zip) ·
+[Paired timings, installed transcripts and DSR receipts](bundled-policy-results.zip)
