@@ -146,6 +146,26 @@ The separate checker independently enumerated the 57 marked tables and all 19 tr
 
 Source and coverage were frozen at `02e1a0a`. The protocol records the failed six-call feasibility check and the seven-call successor, with the same 14-call rejection limit. [Frozen source and protocol](alternating-route-source.zip) · [Coverage](alternating-route-coverage.json) · [Tapes, audit, and receipts](alternating-route-results.zip)
 
+## Reusing the compiled alternating policy
+
+Pass `--alternating-policy` to use the included policy. The loader reconstructs all 57 graphs from the supplied permutations, regenerates and checks the presentation equations, and checks the complete selector against the reconstructed graphs before making an oracle call. The artifact contains the markings, witness words, and split tree. The CLI rejects an invalid bundle before writing a benchmark result. [Ready-to-load policy](compiled-policy-a5xc2.json)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/alternating-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --output "$PANEL_DIR/reused-policy-run.json"
+```
+
+To generate a policy at a new path, run `uv run --locked python -m scripts.group_student_probe compile-alternating-policy --data . --output "$PANEL_DIR/a5xc2-policy.json"`. The command refuses to overwrite an existing file. `--alternating-route` still compiles the policy in the benchmark process.
+
+We paired these paths seven times in one process on the same 20-case regression panel, alternating order. Median alternate setup CPU fell from **130.34 ms to 15.09 ms**, an 88.43% reduction against the frozen 60% gate. One-time compilation and export took 129.52 ms of CPU and produced a 15,340-byte policy. With the saved artifact, the extended path used 19.84 ms less variable CPU at the median than the live routed arm, including validation and both arms' online work. The saved path was faster in all seven pairs on that measure. Shared S5 setup was common to both arms. This is a per-invocation CPU measurement on one Mac with in-process table oracles.
+
+All 14 runs reproduced the original five arms' non-timing fields. The loaded extension still paid 3,733 calls and 40,904 symbols versus 12,384 calls and 143,903 symbols for the incumbent. The checker independently reconstructed all 57 marked actions and replayed every selector path. It checked 24,000 output transitions and all paid replies in a separate CLI run, reproduced the default three-arm invocation, confirmed byte-identical policy exports across hash seeds, and rejected six invalid or corrupted inputs and an overwrite attempt. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer was frozen at `464c6d0`. [Source and preregistration](compiled-policy-source.zip) · [Paired runs, audit, and receipts](compiled-policy-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
