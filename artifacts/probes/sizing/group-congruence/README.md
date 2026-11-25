@@ -1,6 +1,6 @@
 # Exact group acquisition from equality queries
 
-The learner receives two generator names, the number of reachable states, and an oracle that answers whether two positive words denote the same element. We ran two experiments on disjoint panels of rooted, marked actions. The first tested whether locally certified rewrite rules improve search. The second tested whether an untrusted catalog can suggest an action and still preserve exact recovery outside the catalog.
+The learner receives two generator names, the number of reachable states, and an oracle that answers whether two positive words denote the same element. These experiments test local rewriting, exact certificates for untrusted catalog proposals, and direct recovery in the commuting case. Each comparison specifies which marked actions were fresh and which served as replay controls.
 
 ## Streaming shortlex rewriting
 
@@ -116,6 +116,35 @@ Shared catalogue, selector and edge setup cost 78.2–94.1 ms of CPU across two 
 The independent checker replayed the paid answers and compared 23,040 output transitions with separately constructed actions. It verified that the paid tapes uniquely identify the correct lattice among all 360 possible abelian markings. In an exhaustive run of the direct learner across those markings, the maximum was 13 calls and 449 symbols, including commutation. The two binding equations rejected all 129,240 wrong lattice pairings, and the audit rejected a forged commutation reply. All non-timing fields matched across hash seeds. The default CLI reproduced all three original arms. DSR passed 2/2 checks, including 89 diagnostics tests passed and one skipped.
 
 The producer was frozen at `db9ede5` before scoring. [Frozen protocol and auditor](abelian-route-source.zip) · [Coverage](abelian-route-coverage.json) · [Oracle tapes, audit and receipts](abelian-route-results.zip)
+
+## Alternating-product proposals after S5 rejection
+
+The `--alternating-route` flag adds a fifth arm. After a negative commutation reply and a failed short S5 certificate, it selects a proposed \(A_5\times C_2\) marking by paid equalities. It tests the \((2,3,5)\) triangle relations for two auxiliary words, the order-two and commutation equations for a central word, and two equations binding the original marks to those three words. The binding equations make the resulting homomorphism onto. The known order 120 makes it bijective. After cancellation and removal of duplicate or tautological equations, each of the 57 compiled certificates needed four to seven equality checks. The first false reply triggers the existing cancellation fallback. [Bray's presentations of A5 and A5 × 2](https://webspace.maths.qmul.ac.uk/j.n.bray/web/Pres/A5.html)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/alternating-route-coverage.json \
+  --alternating-route \
+  --output "$PANEL_DIR/alternating-route.json"
+```
+
+**Seven calls are necessary and sufficient in the worst case when the family is known.** The six-call binary information bound cannot be attained with equality queries here. The 57 actions form 19 triples, one per marked A5 projection, with the three nonzero central bit assignments. A question with equal letter-count parity on both sides preserves each intact triple. With different parity, at most one of its three lifts can answer yes. A six-call tree must start with a 27/30 split of intact triples, since a parity-changing query leaves at least 38 actions on the no branch. To fit the 30 candidates into five remaining calls, the next split must be 15/15 and preserve the triples. At either 15-candidate node, a parity-preserving split has both sizes divisible by three and therefore cannot fit both children within eight. A parity-changing query leaves at least ten on the no branch. The compiled tree identified 13 markings in five calls, 32 in six, and 12 in seven. This bound concerns selection given the family. The measured acquisition arms pay for dispatch and certification as well.
+
+| Family | Cases | Prior routed calls (symbols) | Extended calls (symbols) |
+| --- | ---: | ---: | ---: |
+| A5 × C2 | 6 fresh | 8,814 (104,518) | 119 (1,207) |
+| S3 × C20 | 6 fresh | 3,481 (37,634) | 3,525 (37,946) |
+| C120 | 4 replayed | 40 (919) | 40 (919) |
+| S5 | 4 replayed | 49 (832) | 49 (832) |
+
+Calls on the fresh target cases fell 98.65%, clearing the frozen 90% gate. The outside cases each paid seven or eight extra calls and then produced the identical cancellation tape. The eight replay cases reproduced their complete prior routed outputs after removing timings. Across the whole matched panel, the extension saved 8,651 calls and 102,999 symbols.
+
+Across two runs on one Mac, the new catalogue, selector, and certificate compilation cost 126.8–131.3 ms of CPU beyond the shared setup. Summed online CPU on the complete panel was 19.8–22.8 ms for the extension and 54.2–61.5 ms for the incumbent. Including the incremental cold setup, this panel cost about 90–95 ms more CPU. The included oracle walks in-process tables. The measured query savings establish a stronger classical baseline for model-guided acquisition, with external latency and amortization unmeasured.
+
+The separate checker independently enumerated the 57 marked tables and all 19 triples, replayed all 57 selector paths, and rejected all 7,011 wrong certificate pairings against the two full catalogues and ten negative controls. It audited all 24,000 output transitions and every paid reply in the five-arm panel, rejected a flipped reply, and checked the identical non-timing fields across two hash seeds and the ordinary incumbent CLI. DSR passed 2/2 main checks, including 89 diagnostics tests passed and one skipped.
+
+Source and coverage were frozen at `02e1a0a`. The protocol records the failed six-call feasibility check and the seven-call successor, with the same 14-call rejection limit. [Frozen source and protocol](alternating-route-source.zip) · [Coverage](alternating-route-coverage.json) · [Tapes, audit, and receipts](alternating-route-results.zip)
 
 ## Reproduction
 
