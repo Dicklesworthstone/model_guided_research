@@ -554,3 +554,55 @@ use the successor's checksum manifest, protocol, and recorded
 producer revision. These are exact symbolic costs under the stated
 oracle. Device economics and an advantage over external scientific
 methods remain unmeasured.
+
+### A cost-sensitive classical baseline
+
+Generalized binary search (GBS) chooses a paid word by expected removed
+posterior mass per unit cost. The posterior includes every consistent
+assignment of unused names. The compiler counts the mass of each reply
+from its shape bucket and the number of unseen names, without enumerating
+the label permutations. This adapts an established objective to the
+oracle and uses a fixed menu of words of lengths two through six plus
+indexed words. A history with no informative menu word can use the
+shortest frontier. All catalogue arms use the same roster, mandatory
+anchors, and residual naming rule. [Average-Case Active Learning with
+Costs](https://arxiv.org/abs/0905.2997) · [Frozen protocol and source](classical-gbs-source.zip)
+
+| Order | Marked actions | Better released greedy | GBS | GBS cheaper / tied / dearer |
+| ---: | ---: | ---: | ---: | ---: |
+| 6 | 15 | 1,990 | 1,938 | 3 / 9 / 3 |
+| 10 | 21 | 4,501 | 4,468 | 2 / 16 / 3 |
+| 12 | 41 | 10,400 | 10,293 | 5 / 31 / 5 |
+| 14 | 27 | 8,180 | 8,129 | 3 / 21 / 3 |
+| 16 | 55 | 18,767 | 18,547 | 16 / 28 / 11 |
+| 20 | 63 | 26,927 | 26,740 | 11 / 40 / 12 |
+| 24 | 146 | 75,411 | 74,421 | 39 / 83 / 24 |
+
+Orders 10 and 12 were primary. GBS reduced their pooled weighted cost
+from 14,901 to 14,761 over 62 actions, a **0.94%** reduction against
+either original greedy policy. This missed the preregistered 2%
+threshold. It used eight fewer reads and 31 fewer `0` commands, with
+19 more `1` commands. Seven cases were cheaper, 47 tied, and eight
+were dearer. At order 6 the exact planner costs 1,917, just 21 units
+below GBS. The known-shape bounds above limit further reductions from
+GBS to at most 9.18% at order 10 and 8.93% at order 12.
+
+All 368 GBS cases recovered the correct action without the structural
+cap fallback. In the two runs at order 24, GBS compilation took
+18.2–18.3 ms of process CPU after indexing, compared with 16.2–16.6 ms
+for the shortlist and 27.9–28.0 ms for the frontier. Online CPU across
+the 146 GBS acquisitions was 5.5–6.2 ms. Weighted query costs exclude
+these host costs. The Python API exposes `compile_gbs_policy(index)`
+as an opt-in comparator.
+
+DSR passed both checks at producer `673982f` with 110 diagnostics tests
+passed and one skipped. Both relabelings reproduced every tape. The
+checker verified 2,944 exact acquisitions and matched 231 archived control
+tapes. The initial attempt failed lint on benchmark import ordering.
+The corrected replay reproduced the same counts and verdict after
+the import order changed. Extract the frozen source into `run/` beside
+`work/` at the producer revision, then use `qualified-source/` from the
+results archive for the corrected benchmark and checksum manifest.
+Set `GBS_RUN`, `GBS_WORK`, and `GBS_SHA` for DSR. This result establishes
+a stronger classical reference on the stated symbolic inventory.
+[Both runs, raw tapes and DSR receipts](classical-gbs-results.zip)
