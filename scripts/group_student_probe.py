@@ -9,7 +9,9 @@ import random
 import time
 from collections import Counter
 from collections.abc import Callable, Generator
-from itertools import permutations, product
+from dataclasses import dataclass
+from functools import cache
+from itertools import combinations, permutations, product
 from pathlib import Path
 from typing import cast
 from zipfile import ZipFile
@@ -17,7 +19,7 @@ from zipfile import ZipFile
 import torch
 from scipy import stats
 
-from nanochat.diagnostics_data import _GROUP_GENERATORS, _group_elements
+from nanochat.diagnostics_data import _GROUP_GENERATORS, _group_elements, _perm_mul
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.report import get_git_info
 from scripts.group_rewrite_probe import Actions, infer_actions, rooted_graph, save, teach_panel_case
@@ -788,8 +790,26 @@ def relator_panel(data: Path, output: Path) -> None:
 
 def s5_catalog():
     elements = _group_elements("s5")
+    conjugates = []
+    for generator in _GROUP_GENERATORS["s5"]:
+        inverse = tuple(generator.index(i) for i in range(len(generator)))
+        conjugates.append({g: _perm_mul(_perm_mul(generator, g), inverse) for g in elements})
+
     graphs = {}
+    seen = set()
     for pair in product(elements, repeat=2):
+        if pair in seen:
+            continue
+        # All simultaneous conjugates give the same rooted marked graph.
+        seen.add(pair)
+        frontier = [pair]
+        while frontier:
+            first, second = frontier.pop()
+            for conjugate in conjugates:
+                moved = conjugate[first], conjugate[second]
+                if moved not in seen:
+                    seen.add(moved)
+                    frontier.append(moved)
         graph = rooted_graph("s5", pair)
         if len(graph) == len(elements):
             graphs[graph_digest(graph)] = graph
@@ -848,6 +868,108 @@ def plan_known_family(catalog) -> EqualityPlan[dict]:
     return dict(marked_class=survivors[0], queries=trace)
 
 
+type FamilyTree = str | FamilySplit
+
+
+@dataclass(frozen=True)
+class FamilySplit:
+    question: tuple[str, str]
+    size: int
+    yes_size: int
+    yes: FamilyTree
+    no: FamilyTree
+
+
+def _binary_path_length(size: int) -> int:
+    """Minimum sum of leaf depths for a binary tree with this many leaves."""
+    depth = size.bit_length() - 1
+    return (depth + 2) * size - (1 << (depth + 1))
+
+
+def compile_known_family(catalog) -> FamilyTree:
+    """Find legal equality queries that attain the binary identification bound."""
+    identifiers = list(catalog)
+    size = len(identifiers)
+    if size == 0:
+        raise ValueError("The known family is empty")
+    if size == 1:
+        return identifiers[0]
+
+    graphs = [catalog[identifier] for identifier in identifiers]
+    equations = {(left, right) for graph in graphs for left, right in graph_equations(graph)}
+    words = sorted({word for pair in equations for word in pair}, key=lambda w: (len(w), w))
+    endpoints = {word: tuple(walk_action(word, graph) for graph in graphs) for word in words}
+    all_candidates = (1 << size) - 1
+
+    def order_key(question):
+        return sum(map(len, question)), question
+
+    def find_tree(questions):
+        partitions: dict[int, tuple[int, tuple[str, str]]] = {}
+        for left, right in questions:
+            yes = sum(1 << i for i, (a, b) in enumerate(zip(endpoints[left], endpoints[right], strict=True)) if a == b)
+            if yes in (0, all_candidates):
+                continue
+            key = min(yes, all_candidates ^ yes)
+            question = (left, right)
+            if key not in partitions or order_key(question) < order_key(partitions[key][1]):
+                partitions[key] = yes, question
+        splits = sorted(partitions.values(), key=lambda entry: order_key(entry[1]))
+
+        @cache
+        def search(live: int, depth: int) -> FamilyTree | None:
+            count = live.bit_count()
+            if count == 1:
+                return identifiers[live.bit_length() - 1]
+            if count > 1 << depth:
+                return None
+
+            child_budget = _binary_path_length(count) - count
+            choices = []
+            seen = set()
+            for mask, question in splits:
+                yes = live & mask
+                no = live ^ yes
+                yes_size, no_size = yes.bit_count(), no.bit_count()
+                key = min(yes, no)
+                if key == 0 or key in seen or max(yes_size, no_size) > 1 << (depth - 1):
+                    continue
+                if _binary_path_length(yes_size) + _binary_path_length(no_size) != child_budget:
+                    continue
+                seen.add(key)
+                choices.append((abs(yes_size - no_size), order_key(question), yes, no))
+            for _, (_, question), yes, no in sorted(choices):
+                yes_tree = search(yes, depth - 1)
+                if yes_tree is None:
+                    continue
+                no_tree = search(no, depth - 1)
+                if no_tree is not None:
+                    return FamilySplit(question, count, yes.bit_count(), yes_tree, no_tree)
+            return None
+
+        return search(all_candidates, (size - 1).bit_length())
+
+    tree = find_tree(equations)
+    if tree is None:
+        # Comparisons of words with identical endpoint vectors are redundant.
+        shortest = {}
+        for word in words:
+            shortest.setdefault(endpoints[word], word)
+        tree = find_tree(combinations(shortest.values(), 2))
+    if tree is None:
+        raise ValueError("The available comparisons could not attain the binary bound")
+    return tree
+
+
+def plan_compiled_family(tree: FamilyTree) -> EqualityPlan[dict]:
+    trace = []
+    while isinstance(tree, FamilySplit):
+        answer = yield tree.question
+        trace.append(dict(pair=list(tree.question), candidates=tree.size, predicted_yes=tree.yes_size, answer=answer))
+        tree = tree.yes if answer else tree.no
+    return dict(marked_class=tree, queries=trace)
+
+
 def run_bounded_proposal(
     frontier: EqualityPlan[dict],
     proposal: EqualityPlan[dict | None],
@@ -882,7 +1004,7 @@ def run_bounded_proposal(
         pending[owner] = _resume_equality_plan(plans[owner], answer)
 
 
-def congruence_panel(coverage: Path, output: Path) -> None:
+def congruence_panel(coverage: Path, output: Path, *, known_family_policy: str = "greedy") -> None:
     manifest = json.loads(coverage.read_bytes())
     if manifest["seed"] != 2026112311 or not hmac.compare_digest(manifest["archive_sha256"], digest(EQUALITY_ARCHIVE)):
         raise ValueError("The coverage manifest does not name the frozen source population")
@@ -892,6 +1014,9 @@ def congruence_panel(coverage: Path, output: Path) -> None:
     catalog_start = time.perf_counter()
     catalog = s5_catalog()
     catalog_seconds = time.perf_counter() - catalog_start
+    compile_start = time.perf_counter()
+    tree = compile_known_family(catalog) if known_family_policy == "optimal" else None
+    compile_seconds = time.perf_counter() - compile_start
     results = []
     excluded = set(manifest["spent"])
     for i, row in enumerate(presentations):
@@ -933,7 +1058,8 @@ def congruence_panel(coverage: Path, output: Path) -> None:
         if group == "s5":
             oracle_seconds = 0.0
             start = time.perf_counter()
-            family = identify_known_family(catalog, oracle)
+            plan = plan_known_family(catalog) if tree is None else plan_compiled_family(tree)
+            family = _run_equality_plan(plan, oracle)
             family.update(seconds=time.perf_counter() - start, oracle_seconds=oracle_seconds)
             if family["marked_class"] != fingerprint:
                 raise ValueError("The known-family search chose the wrong marked group")
@@ -941,15 +1067,15 @@ def congruence_panel(coverage: Path, output: Path) -> None:
             dict(index=i, graph_sha=fingerprint, group=group, samples=samples, arms=strategies, family=family)
         )
         print(group, i, {k: table["counts"] for k, table in strategies.items()}, flush=True)
-    save(
-        output,
-        dict(
-            coverage_sha256=digest(coverage),
-            catalog_size=len(catalog),
-            catalog_seconds=catalog_seconds,
-            results=results,
-        ),
+    report = dict(
+        coverage_sha256=digest(coverage),
+        catalog_size=len(catalog),
+        catalog_seconds=catalog_seconds,
+        results=results,
     )
+    if tree is not None:
+        report.update(known_family_policy=known_family_policy, family_compile_seconds=compile_seconds)
+    save(output, report)
 
 
 if __name__ == "__main__":
@@ -965,7 +1091,13 @@ if __name__ == "__main__":
     parser.add_argument("--cuda-graph", action="store_true", help="Capture forward and backward during training")
     parser.add_argument("--equality-device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--coverage", type=Path)
+    parser.add_argument(
+        "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
+        help="Equality policy for the known S5 comparison in the congruence panel",
+    )
     args = parser.parse_args()
+    if args.phase != "congruence" and args.known_family_policy != "greedy":
+        parser.error("--known-family-policy optimal requires the congruence phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -984,7 +1116,7 @@ if __name__ == "__main__":
     elif args.phase == "congruence":
         if args.coverage is None or args.output is None:
             parser.error("--coverage and --output are required for the congruence panel")
-        congruence_panel(args.coverage, args.output)
+        congruence_panel(args.coverage, args.output, known_family_policy=args.known_family_policy)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
