@@ -11,7 +11,7 @@ from collections import Counter, deque
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from functools import cache
-from itertools import combinations, permutations, product
+from itertools import combinations, groupby, permutations, product
 from pathlib import Path
 from typing import cast
 from zipfile import ZipFile
@@ -1322,6 +1322,7 @@ def _check_proposal(tree, certificates, equal):
 
 def _acquire_checked_proposal(
     tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False, klein_route: bool = False,
+    fifth_power_route: bool = False,
 ):
     result = _check_proposal(tree, certificates, equal)
     if result["accepted"]:
@@ -1332,14 +1333,19 @@ def _acquire_checked_proposal(
         result["alternating"] = attempt
         if attempt["accepted"]:
             return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
-    if commutator_route or klein_route:
+    if commutator_route or klein_route or fifth_power_route:
         graph, witness = _try_order_three_commutator(120, equal)
         result["commutator"] = witness
         if graph is not None:
             return dict(right=graph, **result)
-        if klein_route:
+        if klein_route or fifth_power_route:
             graph, lift = _try_klein_four_quotient(120, equal, witness["orders"])
             result["klein"] = lift
+            if graph is not None:
+                return dict(right=graph, **result)
+        if fifth_power_route:
+            graph, lift = _try_order_five_commutator(120, equal, witness["orders"], witness["word"])
+            result["fifth_power"] = lift
             if graph is not None:
                 return dict(right=graph, **result)
     return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
@@ -1417,28 +1423,30 @@ def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> d
     return dict(right=_lattice_action(*lattice), lattice=lattice)
 
 
-def _order_three_extension_action(lattice, signs, powers) -> tuple[tuple[int, int], ...]:
+def _prime_extension_action(prime: int, lattice, actions, powers) -> tuple[tuple[int, int], ...]:
     """Build the regular action in normal forms c^k a^x b^y."""
     width, shift, height = lattice
-    alpha, beta = signs
+    alpha, beta = actions
     first_power, second_power = powers
+    crossings = [0]
+    for _ in range(1, height):
+        # b^y a = c^d a b^y, with d_{y+1} = beta*d_y - 1.
+        crossings.append((beta * crossings[-1] - 1) % prime)
     root = (0, 0, 0)
     indices = {root: 0}
     queue = deque([root])
     edges = []
     while queue:
         k, x, y = queue.popleft()
-        # b^y a = c^d a b^y, with d_{y+1} = beta*d_y - 1.
-        crossings = -y if beta == 1 else -(y % 2)
         wraps, first_x = divmod(x + 1, width)
-        first = ((k + (alpha if x % 2 else 1) * crossings + wraps * first_power) % 3, first_x, y)
+        first = ((k + pow(alpha, x, prime) * crossings[y] + wraps * first_power) % prime, first_x, y)
         second = (k, x, y + 1)
         if y + 1 == height:
-            # a^s b^h = c^t, so crossing c^t past a^(x-s) may invert it.
+            # a^s b^h = c^t, so conjugate c^t by a^(x-s).
             shifted = x - shift
             wraps, second_x = divmod(shifted, width)
-            second_k = k + (alpha if shifted % 2 else 1) * second_power + wraps * first_power
-            second = (second_k % 3, second_x, 0)
+            second_k = k + pow(alpha, shifted, prime) * second_power + wraps * first_power
+            second = (second_k % prime, second_x, 0)
         for target in (first, second):
             if target not in indices:
                 indices[target] = len(indices)
@@ -1491,7 +1499,56 @@ def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
     powers = []
     for word in ("0" * width, "0" * shift + "1" * height):
         powers.append(next((power for power in range(2) if ask(word, commutator * power)), 2))
-    return _order_three_extension_action(lattice, signs, powers), dict(lattice=lattice, signs=signs, powers=powers, **witness)
+    return _prime_extension_action(3, lattice, signs, powers), dict(lattice=lattice, signs=signs, powers=powers, **witness)
+
+
+def _positive_inverse(word: str, orders: tuple[int, int]) -> str:
+    return "".join(mark * (-sum(1 for _ in run) % orders[int(mark)]) for mark, run in groupby(reversed(word)))
+
+
+def _try_order_five_commutator(size: int, equal: Callable[[str, str], bool], orders: tuple[int, int], commutator: str):
+    """Recover a derived C5 using the paid generator orders and commutator word."""
+    if size % 5:
+        return None, dict(rejected="group_order")
+    ask = _memoized_noncommuting_equality(equal)
+    if not ask(commutator * 5, ""):
+        return None, dict(rejected="commutator_order")
+
+    def compare_offset(left: str, right: str, power: int) -> bool:
+        if power < 0:
+            return ask(commutator * -power + left, right)
+        return ask(left, commutator * power + right)
+
+    actions = []
+    for mark in "01":
+        exponent = next((power for power in (1, -1, 2, -2) if compare_offset(mark + commutator, mark, power)), None)
+        if exponent is None:
+            return None, dict(rejected=f"normalization_{mark}")
+        actions.append(exponent)
+
+    coprime = size % 25 != 0
+    comparisons = []
+
+    def quotient_equal(left: str, right: str) -> bool:
+        if coprime:
+            first, second = cancelled_key(left, right)
+            candidates = (first + _positive_inverse(second, orders), second + _positive_inverse(first, orders))
+            difference = min(candidates, key=lambda word: (len(word), word))
+            answer = ask(difference * 5, "")
+        else:
+            answer = any(compare_offset(left, right, power) for power in (0, 1, -1, 2, -2))
+        comparisons.append((left, right, answer))
+        return answer
+
+    lattice = _acquire_commuting_lattice(size // 5, quotient_equal)
+    width, shift, height = lattice
+    powers = []
+    for word in ("0" * width, "0" * shift + "1" * height):
+        power = next((value for value in (0, 1, -1, 2) if compare_offset(word, "", value)), -2)
+        powers.append(power % 5)
+    witness = dict(lattice=lattice, actions=actions, powers=powers, quotient_oracle="fifth_power" if coprime else "cosets",
+                   quotient_queries=comparisons)
+    return _prime_extension_action(5, lattice, actions, powers), witness
 
 
 def _klein_extension_action(quotient, corrections) -> tuple[tuple[int, int], ...]:
@@ -1563,6 +1620,7 @@ def _try_klein_four_quotient(size: int, equal: Callable[[str, str], bool], order
 def proposal_panel(
     coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
     alternating_policy: Path | None = None, commutator_route: bool = False, klein_route: bool = False,
+    fifth_power_route: bool = False,
 ) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
@@ -1582,7 +1640,7 @@ def proposal_panel(
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
-    has_alternating = alternating_route or alternating_policy is not None or commutator_route or klein_route
+    has_alternating = alternating_route or alternating_policy is not None or commutator_route or klein_route or fifth_power_route
     if abelian_route or has_alternating:
         order += ("routed",)
     if has_alternating:
@@ -1598,10 +1656,12 @@ def proposal_panel(
         )
         order += ("extended",)
         extra = dict(alternating_cpu_ns=time.process_time_ns() - started, alternating_certificates=alternating_certificates)
-    if commutator_route or klein_route:
+    if commutator_route or klein_route or fifth_power_route:
         order += ("commutator",)
-    if klein_route:
+    if klein_route or fifth_power_route:
         order += ("klein",)
+    if fifth_power_route:
+        order += ("fifth_power",)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1623,13 +1683,14 @@ def proposal_panel(
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
-            elif arm in {"routed", "extended", "commutator", "klein"} and equal("01", "10"):
+            elif arm in {"routed", "extended", "commutator", "klein", "fifth_power"} and equal("01", "10"):
                 result = _acquire_commuting_action(120, equal)
             else:
                 result = _acquire_checked_proposal(
                     tree, catalog, edge if arm == "edge" else short, equal,
-                    alternate=alternate if arm in {"extended", "commutator", "klein"} else None,
+                    alternate=alternate if arm in {"extended", "commutator", "klein", "fifth_power"} else None,
                     commutator_route=arm == "commutator", klein_route=arm == "klein",
+                    fifth_power_route=arm == "fifth_power",
                 )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
@@ -1663,6 +1724,7 @@ if __name__ == "__main__":
     parser.add_argument("--alternating-policy", type=Path, help="Use a validated policy from compile-alternating-policy")
     parser.add_argument("--commutator-route", action="store_true", help="Try direct recovery with a normal commutator of order three")
     parser.add_argument("--klein-route", action="store_true", help="Try direct recovery through a normal Klein-four quotient")
+    parser.add_argument("--fifth-power-route", action="store_true", help="Try direct recovery with a normal commutator of order five")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1680,6 +1742,8 @@ if __name__ == "__main__":
         parser.error("--commutator-route requires the proposal phase")
     if args.klein_route and args.phase != "proposal":
         parser.error("--klein-route requires the proposal phase")
+    if args.fifth_power_route and args.phase != "proposal":
+        parser.error("--fifth-power-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1705,6 +1769,7 @@ if __name__ == "__main__":
         proposal_panel(
             args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
             alternating_policy=args.alternating_policy, commutator_route=args.commutator_route, klein_route=args.klein_route,
+            fifth_power_route=args.fifth_power_route,
         )
     elif args.phase == "compile-alternating-policy":
         if args.output is None:
