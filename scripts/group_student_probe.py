@@ -788,14 +788,13 @@ def relator_panel(data: Path, output: Path) -> None:
     save(output, {"seed": 2026112307, "excluded_incomplete_s5": [row[2] for row in leaked_s5], "results": results})
 
 
-def _s5_marked_catalog():
-    elements = _group_elements("s5")
+def _conjugacy_representatives(elements):
+    """Yield one ordered pair per orbit under simultaneous S5 conjugation."""
     conjugates = []
     for generator in _GROUP_GENERATORS["s5"]:
         inverse = tuple(generator.index(i) for i in range(len(generator)))
         conjugates.append({g: _perm_mul(_perm_mul(generator, g), inverse) for g in elements})
 
-    graphs = {}
     seen = set()
     for pair in product(elements, repeat=2):
         if pair in seen:
@@ -810,6 +809,13 @@ def _s5_marked_catalog():
                 if moved not in seen:
                     seen.add(moved)
                     frontier.append(moved)
+        yield pair
+
+
+def _s5_marked_catalog():
+    elements = _group_elements("s5")
+    graphs = {}
+    for pair in _conjugacy_representatives(elements):
         graph = rooted_graph("s5", pair)
         if len(graph) == len(elements):
             graphs[graph_digest(graph)] = graph, pair
@@ -850,7 +856,7 @@ def graph_equations(graph) -> list[tuple[str, ...]]:
 
 
 def _permutation_words(generators):
-    identity = tuple(range(5))
+    identity = tuple(range(len(generators[0])))
     words = {identity: ""}
     frontier = deque([identity])
     while frontier:
@@ -894,6 +900,57 @@ def s5_presentation_certificates(marked_catalog):
                 best = score
         assert best is not None
         certificates[identifier] = best[-1]
+    return certificates
+
+
+def _a5c2_marked_catalog():
+    """Encode the central bit by the action on points 5 and 6."""
+    catalog = {}
+    for first, second in _conjugacy_representatives(_group_elements("a5")):
+        if len(_permutation_words((first, second))) != 60:
+            continue
+        for bits in ((0, 1), (1, 0), (1, 1)):
+            marks = (first + (5 + bits[0], 6 - bits[0]), second + (5 + bits[1], 6 - bits[1]))
+            indices = {state: index for index, state in enumerate(_permutation_words(marks))}
+            graph = tuple(tuple(indices[_perm_mul(mark, state)] for mark in marks) for state in indices)
+            if len(graph) != 120:
+                raise ValueError("The lifted marks do not generate A5 x C2")
+            catalog[graph_digest(graph)] = graph, marks
+    return dict(sorted(catalog.items()))
+
+
+def a5c2_presentation_certificates(marked_catalog):
+    """Transport the icosahedral triangle relations and a central involution."""
+    x = (1, 0, 3, 2, 4, 5, 6)
+    y = (2, 1, 4, 3, 0, 5, 6)
+    z = (0, 1, 2, 3, 4, 6, 5)
+    standard = _permutation_words((x, y, z))
+    charts = []
+    for g in _group_elements("s5"):
+        lift = g + (5, 6)
+        inverse = tuple(lift.index(i) for i in range(7))
+        coordinates = {_perm_mul(_perm_mul(lift, h), inverse): word for h, word in standard.items()}
+        auxiliary = tuple(_perm_mul(_perm_mul(lift, h), inverse) for h in (x, y, z))
+        charts.append((auxiliary, coordinates))
+
+    certificates = {}
+    for identifier, (_, marks) in marked_catalog.items():
+        words = _permutation_words(marks)
+        best = None
+        for auxiliary, coordinates in charts:
+            a, b, c = basis = tuple(words[h] for h in auxiliary)
+            bindings = tuple("".join(basis[int(j)] for j in coordinates[h]) for h in marks)
+            relators = [
+                (a * 2, ""), (b * 3, ""), ((a + b) * 5, ""), (c * 2, ""),
+                (a + c, c + a), (b + c, c + b), ("0", bindings[0]), ("1", bindings[1]),
+            ]
+            questions = list(dict.fromkeys(cancelled_key(left, right) for left, right in relators if left != right))
+            score = (len(questions), sum(len(word) for pair in questions for word in pair), questions, basis, bindings)
+            if best is None or score < best:
+                best = score
+        assert best is not None
+        _, _, questions, basis, bindings = best
+        certificates[identifier] = dict(basis=basis, bindings=bindings, questions=questions)
     return certificates
 
 
@@ -943,14 +1000,15 @@ def _binary_path_length(size: int) -> int:
     return (depth + 2) * size - (1 << (depth + 1))
 
 
-def compile_known_family(catalog) -> FamilyTree:
-    """Find legal equality queries that attain the binary identification bound."""
+def compile_known_family(catalog, *, max_depth: int | None = None) -> FamilyTree:
+    """Compile a bounded tree, requiring the binary path-length bound by default."""
     identifiers = list(catalog)
     size = len(identifiers)
     if size == 0:
         raise ValueError("The known family is empty")
     if size == 1:
         return identifiers[0]
+    depth_limit = (size - 1).bit_length() if max_depth is None else max_depth
 
     graphs = [catalog[identifier] for identifier in identifiers]
     equations = {(left, right) for graph in graphs for left, right in graph_equations(graph)}
@@ -991,7 +1049,7 @@ def compile_known_family(catalog) -> FamilyTree:
                 key = min(yes, no)
                 if key == 0 or key in seen or max(yes_size, no_size) > 1 << (depth - 1):
                     continue
-                if _binary_path_length(yes_size) + _binary_path_length(no_size) != child_budget:
+                if max_depth is None and _binary_path_length(yes_size) + _binary_path_length(no_size) != child_budget:
                     continue
                 seen.add(key)
                 choices.append((abs(yes_size - no_size), order_key(question), yes, no))
@@ -1004,7 +1062,7 @@ def compile_known_family(catalog) -> FamilyTree:
                     return FamilySplit(question, count, yes.bit_count(), yes_tree, no_tree)
             return None
 
-        return search(all_candidates, (size - 1).bit_length())
+        return search(all_candidates, depth_limit)
 
     tree = find_tree(equations)
     if tree is None:
@@ -1014,7 +1072,8 @@ def compile_known_family(catalog) -> FamilyTree:
             shortest.setdefault(endpoints[word], word)
         tree = find_tree(combinations(shortest.values(), 2))
     if tree is None:
-        raise ValueError("The available comparisons could not attain the binary bound")
+        target = "the binary bound" if max_depth is None else f"depth {max_depth}"
+        raise ValueError(f"The available comparisons could not attain {target}")
     return tree
 
 
@@ -1153,7 +1212,7 @@ def _regular_proposal_graph(rows):
     return graph
 
 
-def _acquire_checked_proposal(tree, catalog, certificates, equal):
+def _check_proposal(tree, certificates, equal):
     proposal = _run_equality_plan(plan_compiled_family(tree), equal)
     identifier = proposal["marked_class"]
     observed = {pair_key(*step["pair"]): step["answer"] for step in proposal["queries"]}
@@ -1166,9 +1225,20 @@ def _acquire_checked_proposal(tree, catalog, certificates, equal):
             break
     if not checks:
         raise ValueError("Missing certificate for the proposed action")
-    accepted = checks[-1]["answer"]
-    graph = catalog[identifier] if accepted else acquire_with_memo(120, equal, cancelled_key)["edges"]
-    return dict(right=graph, proposal=proposal, checks=checks, accepted=accepted)
+    return dict(proposal=proposal, checks=checks, accepted=checks[-1]["answer"])
+
+
+def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=None):
+    result = _check_proposal(tree, certificates, equal)
+    if result["accepted"]:
+        return dict(right=catalog[result["proposal"]["marked_class"]], **result)
+    if alternate is not None:
+        next_tree, next_catalog, next_certificates = alternate
+        attempt = _check_proposal(next_tree, next_certificates, equal)
+        result["alternating"] = attempt
+        if attempt["accepted"]:
+            return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
+    return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
 
 
 def _prime_divisors(size: int) -> list[int]:
@@ -1233,7 +1303,7 @@ def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> d
     return dict(right=_lattice_action(width, shift, height), lattice=(width, shift, height))
 
 
-def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False) -> None:
+def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1249,6 +1319,23 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False)
     started = time.process_time_ns()
     short = s5_presentation_certificates(marked)
     short_cpu_ns = time.process_time_ns() - started
+    extra = {}
+    alternate = None
+    order = ("fallback", "edge", "short")
+    if abelian_route or alternating_route:
+        order += ("routed",)
+    if alternating_route:
+        started = time.process_time_ns()
+        alternating_marked = _a5c2_marked_catalog()
+        alternating_graphs = {identifier: graph for identifier, (graph, _) in alternating_marked.items()}
+        alternating_tree = compile_known_family(alternating_graphs, max_depth=7)
+        alternating_certificates = a5c2_presentation_certificates(alternating_marked)
+        alternate = (
+            alternating_tree, alternating_graphs,
+            {identifier: witness["questions"] for identifier, witness in alternating_certificates.items()},
+        )
+        order += ("extended",)
+        extra = dict(alternating_cpu_ns=time.process_time_ns() - started, alternating_certificates=alternating_certificates)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1258,7 +1345,6 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False)
             raise ValueError("The proposal manifest changed or repeated an action")
         seen.add(identifier)
         arms = {}
-        order = ("fallback", "edge", "short", "routed") if abelian_route else ("fallback", "edge", "short")
         offset = index % len(order)
         for arm in order[offset:] + order[:offset]:
             paid = []
@@ -1271,10 +1357,13 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False)
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
-            elif arm == "routed" and equal("01", "10"):
+            elif arm in {"routed", "extended"} and equal("01", "10"):
                 result = _acquire_commuting_action(120, equal)
             else:
-                result = _acquire_checked_proposal(tree, catalog, edge if arm == "edge" else short, equal)
+                result = _acquire_checked_proposal(
+                    tree, catalog, edge if arm == "edge" else short, equal,
+                    alternate=alternate if arm == "extended" else None,
+                )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
                 raise ValueError("Certificate or fallback produced an incorrect marked action")
@@ -1283,7 +1372,7 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False)
         results.append(dict(graph_sha=identifier, family=case["family"], arms=arms))
     save(output, dict(
         coverage_sha256=digest(coverage), common_cpu_ns=common_cpu_ns, short_cpu_ns=short_cpu_ns,
-        certificates=short, results=results,
+        certificates=short, results=results, **extra,
     ))
 
 
@@ -1301,6 +1390,7 @@ if __name__ == "__main__":
     parser.add_argument("--equality-device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--coverage", type=Path)
     parser.add_argument("--abelian-route", action="store_true", help="Add exact commuting-case recovery to the proposal panel")
+    parser.add_argument("--alternating-route", action="store_true", help="Also compare certified A5 x C2 proposals")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1310,6 +1400,8 @@ if __name__ == "__main__":
         parser.error("--known-family-policy optimal requires the congruence phase")
     if args.abelian_route and args.phase != "proposal":
         parser.error("--abelian-route requires the proposal phase")
+    if args.alternating_route and args.phase != "proposal":
+        parser.error("--alternating-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1332,7 +1424,7 @@ if __name__ == "__main__":
     elif args.phase == "proposal":
         if args.coverage is None or args.output is None:
             parser.error("--coverage and --output are required for the proposal panel")
-        proposal_panel(args.coverage, args.output, abelian_route=args.abelian_route)
+        proposal_panel(args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
