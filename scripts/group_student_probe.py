@@ -1171,7 +1171,69 @@ def _acquire_checked_proposal(tree, catalog, certificates, equal):
     return dict(right=graph, proposal=proposal, checks=checks, accepted=accepted)
 
 
-def proposal_panel(coverage: Path, output: Path) -> None:
+def _prime_divisors(size: int) -> list[int]:
+    primes = []
+    divisor = 2
+    while divisor * divisor <= size:
+        if size % divisor == 0:
+            primes.append(divisor)
+            while size % divisor == 0:
+                size //= divisor
+        divisor += 1
+    if size > 1:
+        primes.append(size)
+    return primes[::-1]
+
+
+def _lattice_action(width: int, shift: int, height: int) -> tuple[tuple[int, int], ...]:
+    states = {(0, 0): 0}
+    queue = deque([(0, 0)])
+    edges = []
+    while queue:
+        x, y = queue.popleft()
+        first = ((x + 1) % width, y)
+        second = ((x - shift) % width, 0) if y + 1 == height else (x, y + 1)
+        for target in (first, second):
+            if target not in states:
+                states[target] = len(states)
+                queue.append(target)
+        edges.append((states[first], states[second]))
+    return tuple(edges)
+
+
+def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> dict:
+    """Recover the marked lattice after an exact positive commutation reply."""
+    primes = _prime_divisors(size)
+    width = size
+    for prime in primes:
+        while width % prime == 0 and equal("0" * (width // prime), ""):
+            width //= prime
+    height = size // width
+    modulus, shift = 1, 0
+    for prime in primes:
+        while width % (modulus * prime) == 0:
+            new_modulus = modulus * prime
+            multiplier = width // new_modulus
+            second = "1" * (height * multiplier)
+            choices = []
+            for digit in range(prime):
+                residue = shift + digit * modulus
+                exponent = residue * multiplier
+                inverse = (-exponent) % width
+                # Both forms express a^exponent b^(height*multiplier) = 1.
+                left, right = ("0" * exponent + second, "") if exponent <= inverse else (second, "0" * inverse)
+                choices.append((len(left) + len(right), residue, left, right))
+            choices.sort()
+            _, shift, _, _ = choices[-1]
+            for _, residue, left, right in choices[:-1]:
+                if equal(left, right):
+                    shift = residue
+                    break
+            modulus = new_modulus
+    return dict(right=_lattice_action(width, shift, height), lattice=(width, shift, height))
+
+
+def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1196,7 +1258,7 @@ def proposal_panel(coverage: Path, output: Path) -> None:
             raise ValueError("The proposal manifest changed or repeated an action")
         seen.add(identifier)
         arms = {}
-        order = ("fallback", "edge", "short")
+        order = ("fallback", "edge", "short", "routed") if abelian_route else ("fallback", "edge", "short")
         offset = index % len(order)
         for arm in order[offset:] + order[:offset]:
             paid = []
@@ -1209,6 +1271,8 @@ def proposal_panel(coverage: Path, output: Path) -> None:
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
+            elif arm == "routed" and equal("01", "10"):
+                result = _acquire_commuting_action(120, equal)
             else:
                 result = _acquire_checked_proposal(tree, catalog, edge if arm == "edge" else short, equal)
             cpu_ns = time.process_time_ns() - started
@@ -1236,6 +1300,7 @@ if __name__ == "__main__":
     parser.add_argument("--cuda-graph", action="store_true", help="Capture forward and backward during training")
     parser.add_argument("--equality-device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--coverage", type=Path)
+    parser.add_argument("--abelian-route", action="store_true", help="Add exact commuting-case recovery to the proposal panel")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1243,6 +1308,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.phase != "congruence" and args.known_family_policy != "greedy":
         parser.error("--known-family-policy optimal requires the congruence phase")
+    if args.abelian_route and args.phase != "proposal":
+        parser.error("--abelian-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1265,7 +1332,7 @@ if __name__ == "__main__":
     elif args.phase == "proposal":
         if args.coverage is None or args.output is None:
             parser.error("--coverage and --output are required for the proposal panel")
-        proposal_panel(args.coverage, args.output)
+        proposal_panel(args.coverage, args.output, abelian_route=args.abelian_route)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
