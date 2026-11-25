@@ -92,3 +92,35 @@ CUDA_VISIBLE_DEVICES=0 uv run --locked python -m scripts.group_student_probe sco
 ```
 
 [Frozen cohort archive](registered-cohort.tgz) · [Audit scripts and machine receipts](verification.zip)
+
+## What a classical catalogue recovers from the same short labels
+
+A later finite replay gave both classical arms all 508 unique short labels per presentation and the public roster. It used all 24 historical cases. The catalogue considered 723,600 ordered pairs in the complete SmallGrp inventory at orders 60 and 120, without receiving the hidden family or the marked generators. A second implementation verified the 2,880 compatible generating pairs against the same observations and reconstructed the historical actions from pointwise permutations. [SmallGrp inventory and completeness](https://gap-packages.github.io/smallgrp/)
+
+| Method using the short labels | Exact named actions with zero new reads | Correct primary answers with zero new reads |
+| --- | ---: | ---: |
+| Archived short-only transformer | — | 26/2,304 |
+| Live square closure | 7/24 | 1,389/2,304 |
+| Complete classical catalogue | 13/24 | 1,248/2,304 |
+
+The catalogue missed its frozen 20/24 target. Each of the 11 unresolved cases had at least two unseen names. Swapping two such names preserves all observations and changes the rooted labeled action. The catalogue abstained on every held-out word in an unresolved case. Square closure could use partial tables there and returned more correct answers under this zero-new-read rule. The transformer count comes from the historical trained checkpoint scores.
+
+### Recovering the missing names at the exact query floor
+
+In the follow-up, all compatible pairs for each case gave the same rooted action up to renaming. The catalogue learner asked a shortest positive access word for each unseen state except one farthest from the root, then used the remaining roster name for that state. An exact learner must distinguish every remaining swap of two unseen names. Each newly named state requires a word at least as long as its distance from the root. The checker independently confirmed that the learner attained both lower bounds in every case.
+
+| Order | Cases | Square closure additional labels (symbols) | Catalogue additional labels (symbols) |
+| --- | ---: | ---: | ---: |
+| 60 | 12 | 41 (391) | 36 (340) |
+| 120 | 12 | 143 (1,347) | 129 (1,211) |
+| **Total** | **24** | **184 (1,738)** | **165 (1,551)** |
+
+Both arms recovered every named table against the same live in-process endpoint callback, and the catalogue reproduced all 5,376 held-out answers. It saved 10.33% of additional reads and 10.76% of additional symbols. Both arms also incurred the original 12,192 short labels and 86,016 symbols. Including the initial observations yields 12,376 versus 12,357 total labels.
+
+Over two local runs, catalogue matching took 7.79–8.00 seconds of process CPU across the cohort. The GAP export separately took 2.22–2.30 seconds elapsed. After matching, structure deduplication and minimum-cost naming took 66.14–70.66 ms of CPU. The live square arm took 50.92–51.33 ms. The extra work saved queries but increased local computation. The comparison assumes a regular group action of known order and a known roster. It measures the additional value of those structural assumptions on this historical cohort. Physical latency and generalization remain unmeasured.
+
+The first replay and the follow-up were frozen at `c7fb082` and `4f5e105`. Both DSR qualifications passed 2/2 checks, and the diagnostics suite passed 89 tests with one skipped. The independent audit verified 8,640 transition entries across the two full-label arms and checked the ambiguity and contradictory-observation controls. The archived neural ranker result used runtime comparisons and did not supply the retained labels to its generic ordering baselines. The same-label catalogue results provide the stronger conventional reference for this cohort. [Neural ranking comparison](../../probes/sizing/group-equality/README.md)
+
+The naming check's console summary displays a null totals field because it looks for a nested key. The verified counters are top-level fields in `floor-verified.json` in the results archive.
+
+[Catalogue source and protocol](catalogue-replay-source.zip) · [Naming follow-up source and protocol](catalogue-replay-floor-source.zip) · [Tapes, audits and DSR receipts](catalogue-replay-results.zip)
