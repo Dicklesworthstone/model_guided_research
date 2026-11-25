@@ -162,3 +162,19 @@ Matching was **4.42–5.16× faster** against the frozen 2× criterion. Both cat
 The nine outside controls retained the same exact version spaces, including the cyclic case in which all five observed period constraints were lower bounds. On these controls matching rose from 199.08–200.45 ms to 212.02–221.20 ms. The improvement is specific to the cycle-rich historical cohort. Against square closure, the faster catalogue's remaining CPU overhead on that cohort was 20.07–33.61 ms. With a parsed catalogue, free movement and CPU time as an estimate of elapsed overhead, that is **1.06–1.77 ms per saved read**. Charging the one-time table parse gives a 2.29–2.97 ms range. None of these estimates supplies a real device measurement.
 
 The producer is `9fb5b16`. DSR passed both checks, including 89 diagnostics tests with one skipped. Use the same `catalogue.json` and `prior.json` as above, and extract `scored.json` from the batched results as `prior-batched.json`. The source contains the frozen manifest and DSR configuration. [Partial-action source and protocol](partial-action-catalogue-source.zip) · [Raw timings, audit and receipt](partial-action-catalogue-results.zip)
+
+### Reusing complete labelled actions
+
+When all but at most one roster name is observed, each surviving pair already gives a complete naming. The matcher forms the root and both named generator columns for all such pairs in integer arrays and deduplicates those rows before creating Python tables. The last unseen element and its label follow by elimination. When the resulting named-action set is a singleton, acquisition uses that table directly. This avoided a second pass over the witnesses in all 13 cases with complete naming.
+
+| CPU across 24 historical cases | Live scalar table construction | Batched table construction |
+| --- | ---: | ---: |
+| Catalogue matching | 63.76–72.79 ms | 37.33–45.29 ms |
+| Final naming | 13.31–14.89 ms | 7.71–8.38 ms |
+| Matching plus naming | 77.08–87.67 ms | 45.71–53.01 ms |
+
+The combined reduction was **31.23% and 47.86%**, above the frozen 20% criterion in both runs. Compared with live square closure in the candidate's run, the catalogue was **5.89 ms slower** in one execution and **4.88 ms faster** in the other. The shared catalogue parse cost 22.19–26.02 ms and is outside the table. Charging that parse to catalogue acquisition, the CPU-based break-even estimate is **0.91–1.68 ms per saved read** with free movement. The estimate uses the measured host overhead on these cases.
+
+Both catalogue arms kept every compatible pair and used **165 reads and 1,551 symbols**, versus 184 reads and 1,738 symbols for square closure. The audit checked 2,880 compatible pairs, 17,280 transition entries and 10,752 held-out answers. The nine outside controls remained exact. Their matching CPU improved by 8.31 ms in one run and increased by 2.41 ms in the other. A separate three-element control preserved two roots with identical marked columns and completed one unseen name.
+
+The producer is `4a28ebb`. Both DSR checks passed and the diagnostics suite passed 89 tests with one skipped. Reproduce with the source archive, the earlier `catalogue.json` and `prior.json`, and `scored.json` from the partial-action results saved as `prior-partial.json`. The source includes the unchanged incumbent and the frozen DSR configuration. [Source and protocol](batch-named-catalogue-source.zip) · [Exact tapes, timing and audit](batch-named-catalogue-results.zip)
