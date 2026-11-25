@@ -498,3 +498,59 @@ check. To replay, extract the source into `run/` beside `work/` at
 producer `ac5a758`. Set `GUARD_RUN`, `GUARD_WORK` and `GUARD_SHA` for
 the archived DSR config. The results include the post-run diagnosis
 source and receipt. [Raw costs, tape receipts, and price regions](guarded-results.zip)
+
+### How much can planning the whole acquisition save?
+
+The opt-in Python API `compile_optimal_policy(index, read_price=16)`
+returns a compiled policy for `acquire(..., catalogue=plan.policy)`.
+It minimizes the total weighted cost across equally weighted marked
+actions, including the four mandatory anchors and the cost of learning
+the remaining names. It considers every reachable joint endpoint
+vector and uses each vector's cheapest word. With one compatible shape
+left, the complete roster supplies the final unseen label by elimination.
+Budget exhaustion raises `PlanningBudgetExceeded` before returning any
+policy. [Frozen protocol, proof, and replay](optimal-source.zip)
+
+| Order | Marked actions | Live square | Each greedy policy | Exact planner | Minimum with free shape identity |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 | 15 | 2,918 | 1,990 | 1,917 | 1,698 |
+| 10 | 21 | 5,961 | 4,501 | Exhausted | 4,058 |
+| 12 | 41 | 13,111 | 10,400 | Exhausted | 9,374 |
+
+Each reset and read costs 16 units and each command costs one. The
+preregistered result required exact solutions at orders 6 and 10 under
+300,000 work units per order. It missed that target. At order 6 the
+exact policy reduced aggregate cost by 3.7% versus either greedy
+policy, using 103 reads, 166 zero commands, and 103 one commands
+versus 107, 174, and 104. It was cheaper on four actions, tied on
+nine, and dearer on two because of extra commands. It used 24,889
+work units and took 18.7–19.5 ms of compilation CPU after indexing.
+[Initial scored tapes and DSR receipts](optimal-initial-results.zip)
+
+Two frozen follow-ups tested equivalent name histories, then a
+word-length bound. They reproduced the order-6 optimum with 13,787
+and 6,892 work units, respectively. Both still exhausted the budget
+at orders 10 and 12 and spent more CPU reaching those limits. The
+simpler initial compiler is the retained implementation. [Name-history
+protocol](optimal-scaled-source.zip) · [Result](optimal-scaled-results.zip)
+· [Word-length protocol](optimal-bounded-source.zip) ·
+[Result](optimal-bounded-results.zip)
+
+The last column is a post-run lower bound. A learner who gets the true
+shape for free still owes the anchors and the cheapest queries to name
+all but one unobserved position. Thus under this price and weighting,
+any exact learner in the original oracle can save at most 9.84% and
+9.87% against either greedy policy at orders 10 and 12, respectively.
+These ceilings do not imply an attainable gain. [Lower-bound
+calculation and DSR receipt](optimal-naming-bound.zip)
+
+Each of the three DSR comparisons ran 106 diagnostics tests with one
+skip, then checked 492 exact acquisitions against the audited Cayley
+tables in two relabelings with reversed execution order. Replay the
+initial run by extracting its source into `run/` beside `work/` at
+producer `a765bfc`. Set `OPT_RUN`, `OPT_WORK`, and `OPT_SHA`. For each
+successor, extract the initial benchmark and DSR configuration and
+use the successor's checksum manifest, protocol, and recorded
+producer revision. These are exact symbolic costs under the stated
+oracle. Device economics and an advantage over external scientific
+methods remain unmeasured.
