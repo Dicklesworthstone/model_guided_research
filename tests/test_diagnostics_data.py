@@ -925,6 +925,35 @@ def test_optimal_policy_pays_the_exact_minimum_for_order_two():
         assert words == expected
 
 
+def test_optimal_policy_can_name_one_pair_before_distinguishing_two_shapes():
+    from nanochat.group_acquisition import _prepare, acquire, compile_optimal_policy
+
+    shapes = [tuple(((i + a) % 6, (i + b) % 6) for i in range(6)) for a, b in ((1, 4), (4, 1))]
+    plan = compile_optimal_policy(_prepare(shapes))
+    # All length-three and length-four words give the same reply rank
+    # on both shapes. One paired name makes the length-six query split.
+    # That two-query route costs 285, versus 302 for a direct split.
+    assert plan.total_cost == 285
+    paid = []
+    for shape in shapes:
+        words = []
+
+        def ask(word):
+            words.append(word)
+            point = 0
+            for mark in word:
+                point = shape[point][int(mark)]
+            return str(point)
+
+        roster = [str(i) for i in range(6)]
+        action = acquire(roster, ask, catalogue=plan.policy)
+        assert action.root == "0"
+        assert action.transitions == {str(i): (str(a), str(b)) for i, (a, b) in enumerate(shape)}
+        assert words[4:6] == ["000", "000000"]
+        paid.extend(words)
+    assert sum(16 + len(word) for word in paid) == 285
+
+
 @pytest.mark.parametrize("free", [0, 1, 2, 3])
 def test_gbs_gain_matches_enumerating_all_named_hypotheses(free):
     from itertools import permutations, product

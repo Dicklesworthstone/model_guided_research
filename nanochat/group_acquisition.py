@@ -572,6 +572,53 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
                 )
         return queue
 
+    def solve_pair(state: _PlanningState) -> tuple[int, _PolicyNode]:
+        # Until the first split, every useful query names one position in
+        # each shape. A split requires an already named pair to disagree
+        # with one endpoint. Keep at most one query that named such a pair.
+        # All other naming can move after the split at the same cost.
+        earlier: dict[tuple[int, int], list[tuple[str, _PlanningState]]] = {}
+        best: tuple[int, int, str, int, str] | None = None
+        policy: _PolicyNode = None
+
+        def consider(word: str, groups: dict[int, _PlanningState], prefix: str = "") -> None:
+            nonlocal best, policy
+            total = 2 * (read_price + len(word))
+            if prefix:
+                total += 2 * (read_price + len(prefix))
+            branches = {}
+            for rank, child in groups.items():
+                cost, branches[rank] = solve(child)
+                total += cost
+            first = prefix or word
+            key = total, len(first), first, len(word), word
+            if best is None or key < best:
+                best = key
+                decision = _Probe(word, branches)
+                policy = _Probe(prefix, {len(state[0][1]): decision}) if prefix else decision
+
+        for word, endpoints in probes(tuple(row for row, _ in state)):
+            spend()
+            groups = partition(state, endpoints)
+            if len(groups) == 2:
+                consider(word, groups)
+                continue
+            rank, child = next(iter(groups.items()))
+            if child == state or rank == size - 1:
+                continue
+            # Two novel words make a split if they share precisely one
+            # endpoint. Joint vectors are unique, so they cannot share both.
+            for side, endpoint in enumerate(endpoints):
+                previous = earlier.setdefault((side, endpoint), [])
+                for prefix, named in previous:
+                    spend()
+                    consider(word, partition(named, endpoints), prefix)
+                previous.append((word, child))
+
+        if best is None:
+            raise ValueError("No informative probe while two rooted actions remain")
+        return best[0], policy
+
     @cache
     def solve(state: _PlanningState) -> tuple[int, _PolicyNode]:
         spend()
@@ -581,6 +628,8 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
             # most expensive shortest access word among the missing positions.
             missing = [read_price + len(word) for word, target in catalogue.naming[first] if target not in names]
             return sum(missing[:-1]), _Determined(first, names)
+        if len(state) == 2:
+            return solve_pair(state)
 
         best_cost: int | None = None
         best_probe: _Probe | None = None
