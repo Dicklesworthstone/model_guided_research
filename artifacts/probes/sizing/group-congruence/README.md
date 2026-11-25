@@ -227,6 +227,36 @@ The separate checker replayed the paid replies, reconstructed all 40,320 transit
 
 The producer and manifest were frozen at `000d318`. [Frozen source and protocol](klein-route-source.zip) · [Coverage](klein-route-coverage.json) · [Tapes, audit, and receipts](klein-route-results.zip)
 
+## Fifth-power tests for exact quotient equality
+
+The `--fifth-power-route` flag adds an arm after the existing subgroup searches reject. It reuses the paid generator orders and the positive word for the commutator \(c=aba^{-1}b^{-1}\). The earlier negative commutation reply makes \(c\) nontrivial. The new arm checks \(c^5=1\) and that both marks conjugate \(c\) to a unit power of \(c\). This proves \(K=\langle c\rangle\) has order five and is normal. The quotient is abelian because \(ab=cba\), so \(K\) is the derived subgroup.
+
+When five is coprime to the quotient order, \(uK=vK\) holds precisely when \((uv^{-1})^5=1\). In one direction, \(uv^{-1}\) belongs to \(K\), and in the other its quotient image has order dividing five and must be trivial. The learner can therefore answer each quotient comparison with at most one paid call. It uses the shorter positive representation of \(uv^{-1}\) and \(vu^{-1}\) after cancellation, with exact generator orders supplying the inverses. When five divides the quotient order, the learner tests membership against powers of \(c\) explicitly. It then uses the existing abelian lattice decoder and two power lifts to recover the action in the normal forms \(c^k a^x b^y\). The same collection arithmetic handles both the order-three and order-five routes. [GAP reference on power-conjugate presentations](https://docs.gap-system.org/doc/ref/chap46_mj.html)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/fifth-power-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --fifth-power-route \
+  --output "$PANEL_DIR/fifth-power-route.json"
+```
+
+| Family | Cases | Prior Klein calls (symbols) | Fifth-power arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| D10 × C12 | 6 fresh | 3,305 (39,096) | 228 (4,997) |
+| C5 ⋊ C24 | 6 fresh | 5,968 (65,374) | 244 (6,959) |
+| A4 × C10 | 6 fresh | 4,105 (47,840) | 4,111 (48,860) |
+| Six previously solved families | 12 replayed | 656 (25,619) | 656 (25,619) |
+
+On the 12 targets, calls fell 94.91% against a frozen 85% gate, and queried symbols fell 88.56%. The new branch took 8–18 calls per target after the shared prefix, with 71 logical quotient equality tests in total. The six outside cases each paid one extra call, adding 1,020 symbols across the six, and reproduced the full cancellation fallback. All historical controls retained their exact tapes and tables. Over the entire panel the new arm saved 8,795 calls and 91,494 symbols.
+
+Over two local runs, summed online CPU on the target cases was 1.99–2.13 ms for the new arm and 95.77–103.12 ms for the incumbent. For the outside cases it was 17.21–19.35 ms and 18.63–21.42 ms respectively, with identical fallback tapes after the added query. Shared S5 setup took 72.4–78.0 ms, short-certificate preparation took 45.7–46.8 ms, and alternating-policy validation took 13.2–14.6 ms. There was no catalogue setup for the new branch. These measurements use an in-process oracle on one Mac.
+
+The separate checker reconstructed all 57,600 transitions, replayed every paid reply, verified the quotient answers by explicit coset arithmetic, and rejected a forged lift. All 300 ordered generating pairs of D10 and C5 ⋊ C4 recovered exactly, exercising all four unit conjugation exponents modulo five. The 12 sampled generating pairs of the order-125 Heisenberg group recovered exactly with explicit coset checks. Every Heisenberg pair exhibited a false equality under an unguarded fifth-power test, since the first mark has fifth power one while its coset is nontrivial. Both hash seeds reproduced the same non-timing output, and the previous flag reproduced its seven arms. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `9c598c4`. [Frozen source and protocol](fifth-power-route-source.zip) · [Coverage](fifth-power-route-coverage.json) · [Tapes, audit, and receipts](fifth-power-route-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
