@@ -286,6 +286,36 @@ The separate checker reconstructed 64,800 output transitions, checked every paid
 
 The producer and manifest were frozen at `008b75b`. [Frozen source and protocol](involution-route-source.zip) · [Coverage](involution-route-coverage.json) · [Tapes, audit, and receipts](involution-route-results.zip)
 
+## Recovering a central order-two extension
+
+The `--central-involution-route` flag reuses a result from the commutator-seeded Klein attempt. When that attempt finds a central involution, it has already established that its commutator word \(c\) is nontrivial, \(c^2=1\), and both marks commute with \(c\). The new route uses that proof when the reported involution is the same word \(c\). Since \(ab=cba\), the quotient by \(\langle c\rangle\) is abelian and the derived subgroup is exactly \(\langle c\rangle\). This handoff requires no additional recognition queries.
+
+For quotient equality, compare \(u\) with \(v\) and, if needed, with \(cv\). The existing lattice learner recovers the quotient of order \(n/2\). The lifts of the two lattice relations each lie in \(\{1,c\}\), so one identity comparison identifies each lift. The regular action follows from the unique normal forms \(c^k a^x b^y\), using the same power and conjugation arithmetic as the earlier cyclic-commutator routes. [GAP reference on power-conjugate presentations](https://docs.gap-system.org/doc/ref/chap46_mj.html)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/central-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --central-involution-route \
+  --output "$PANEL_DIR/central-route.json"
+```
+
+| Family | Cases | Prior involution calls (symbols) | Central arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| D8 × C15 | 6 fresh | 2,642 (34,251) | 298 (11,251) |
+| Q8 × C15 | 6 fresh | 2,523 (36,026) | 292 (16,348) |
+| D30 × C4 | 6 fresh | 2,625 (54,761) | 2,625 (54,761) |
+| Nine previously solved families | 18 replayed | 1,039 (40,898) | 1,039 (40,898) |
+
+The 12 targets recovered exactly with 88.58% fewer calls against a frozen 80% gate, and 60.73% fewer queried symbols. After the shared prefix, the direct recovery took 9–22 calls per target. The six D30 × C4 controls and the 18 historical cases reproduced the complete incumbent tapes and output fields. The full panel saved 4,575 calls and 42,678 symbols.
+
+Across two local runs, summed online CPU on the target cases was 2.18–2.54 ms for the new arm and 27.63–34.93 ms for the incumbent. On the outside cases, it was 11.00–12.91 ms and 12.17–13.90 ms respectively despite identical paid tapes. S5 setup took 66.0–80.5 ms, short-certificate preparation took 39.6–43.8 ms, and alternating-policy validation took 14.3–14.6 ms, shared across the two arms. These measurements use an in-process oracle on one Mac. The comparison does not isolate the cause of timing variation on the outside controls.
+
+The separate checker reconstructed 86,400 output transitions, replayed every paid reply, verified that every qualified case already paid for the centrality proof, and rejected a forged lift. It recovered all 144 ordered generating pairs of D8, Q8, and the order-16 semidirect product with conjugation \(x\mapsto x^5\). The census exercised all four lift-bit combinations. All 96 generating pairs of the order-16 dihedral control refused on commutator order. The hash-seed replay and previous CLI reproduced the original non-timing fields. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `1800539`. [Frozen source and protocol](central-route-source.zip) · [Coverage](central-route-coverage.json) · [Tapes, audit, and receipts](central-route-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
