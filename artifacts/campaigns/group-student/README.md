@@ -233,3 +233,21 @@ The combined builder was **15.58–18.20× faster** than the live exhaustive bui
 Every builder produced the same 376 order-60 shapes and 1,498 order-120 shapes. The independent checker expanded every noncommuting orbit, accounting for 478,140 noncommuting pairs and 195,060 commuting pairs in nonabelian groups. It recovered 168 and 360 lattice coordinates and rejected an omitted orbit. Both cold pipelines reproduced the prior length-first tapes on all 30 actions, including 2,178 reads and 12,521 symbols on the historical cases. The audit checked 10,800 transition entries and 10,752 held-out answers across the two complete pipelines. Both hash seeds reproduced the same non-timing output.
 
 The producer is `c2d591b`. DSR passed both checks, including 89 diagnostics tests with one skipped. Replay with the same `catalogue.json`, `prior-partial.json` and registered cohort, plus the scored tape from the movement results as `prior-movement.json`. The archived source includes the frozen manifest and DSR configuration. [Frozen cold-build source and protocol](cold-catalogue-source.zip) · [Complete timings, tapes and audit](cold-catalogue-results.zip)
+
+### Complete order-60 and order-120 acquisition census
+
+The two live arms used every distinct rooted marked action in the complete catalogue, once per shape, and paid the same four anchors. The replay changed every roster permutation, reversed per-case arm order and used a second hash seed. After decoding names, the paid words, replies and structural traces agreed on all 1,874 actions.
+
+| Order | Marked shapes | Square reads | Length-first reads | Square symbols | Length-first symbols |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60 | 376 | 24,529 | 23,121 | 169,705 | 160,824 |
+| 120 | 1,498 | 188,738 | 182,741 | 1,610,769 | 1,588,412 |
+| **Total** | **1,874** | **213,267** | **205,862** | **1,780,474** | **1,749,236** |
+
+Both orders passed the frozen requirement to reduce total reads and total symbols. Length-first paid no more reads on any shape. Compared in reads and total symbols, it improved one or both costs without increasing the other on **1,743** shapes, gave mixed results on **130**, and lost to square closure on **one**. That action used 123 reads in both arms and 964 symbols with length-first versus 947 with square closure. Comparing reads and the two marks separately gave 1,674 length-first wins and 200 mixed results. Excluding the prior 30 acquisitions leaves 1,713 wins, 130 mixed results and the same one loss in the two-cost comparison. Neither run reached the cap.
+
+The largest movement increase was on order-120 abelian slot 277. Length-first used 121 reads and 2,098 symbols versus 125 and 1,266 for square closure. Across all 360 abelian order-120 cases, length-first saved 1,299 reads and used 15,629 more symbols. The four-anchor partition captures many of these cases because equal endpoints for 01 and 10 certify that the generating marks commute. The audit also reports each anchor partition and both primitive totals.
+
+Over both runs, online CPU after the anchors totaled 44.54–45.60 seconds for length-first versus 10.17–10.30 seconds for live square. Shared cold construction and indexing took 0.53–0.57 seconds of CPU. On the whole census length-first saved 7,405 reads and 79,010 zero symbols while using 47,772 more one symbols. In a serial prepared cost model the measured elapsed overhead is covered when \(7405q+79010m_0-47772m_1\) exceeds 35.90–37.14 seconds. Here \(q\) prices a reset/read, and \(m_0,m_1\) price the marks. The census weights each distinct shape once. Physical action frequencies and device costs remain unmeasured.
+
+The separate checker independently rebuilt the complete catalogue, replayed every paid oracle reply and audited 1,618,560 transition entries across the two arms and naming schemes. It checked every structural handoff and shortest naming suffix in the primary run. The producer is `e27ec06`. DSR passed both checks, including 89 diagnostics tests with one skipped. Reproduce using the pinned `catalogue.json` and the scored movement tape as `prior-movement.json`. [Census source and protocol](acquisition-census-source.zip) · [Full census, audit and receipt](acquisition-census-results.zip)
