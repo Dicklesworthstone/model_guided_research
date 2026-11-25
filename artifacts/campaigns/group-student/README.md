@@ -390,3 +390,57 @@ for the archived DSR configuration and point `BUNDLE_WHEELHOUSE` at the locked
 runtime wheels for the offline installation check.
 [Frozen protocol, generator and benchmark](bundled-policy-source.zip) ·
 [Paired timings, installed transcripts and DSR receipts](bundled-policy-results.zip)
+
+### Searching the entire shortest informative layer
+
+The released selector searches a shortlist. The exhaustive option starts at
+the four paid anchors and expands forced replies in breadth-first order.
+Two prefixes that force the same reply have the same endpoint in every
+fitting shape, so all their corresponding extensions have the same score.
+Keeping the first shortlex representative of each forced reply preserves
+the globally shortest informative word and the best worst-case bucket and
+lexical tie break at that length. When only one roster label is unused, a
+word reaching an unnamed endpoint in every candidate forces that last label.
+The small-order check verified choices against unrestricted enumeration at
+orders 4, 6 and 8. [Proof and frozen comparison](frontier-source.zip)
+
+| Order | Shapes | Reads added vs. shortlist | Symbols added vs. shortlist | Additional `0` | Additional `1` |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 151 | +5 | +22 | +67 | −45 |
+| 64 | 503 | +51 | −237 | +1,652 | −1,889 |
+| 128 | 1,799 | +307 | −13,662 | +24,801 | −38,463 |
+
+The preregistered no-extra-reads and fewer-symbols prediction failed at
+every order. The exhaustive selector changed 1,772 paid tapes. It
+added reads on 561 shapes, added symbols on 539, and reduced at least
+one cost without increasing the other on 482. Against live square
+closure it saved 10,302 reads and 82,345 symbols across the census.
+At order 128 alone, the extra cost versus the shortlist is 307 resets
+and reads and 24,801 `0` commands, offset by 38,463 fewer `1` commands.
+With both marks equally priced and host overhead excluded, its movement
+savings cover the extra observations if a reset and read cost less than
+44.5 command times. A device measurement would need to price both marks
+and charge the appropriate policy preparation.
+
+The earliest order-32 read regression is slot 30. After 15 shared
+observations, 29 shapes fit. The shortlist chose `00001` with a worst
+bucket of 28, while the exhaustive selector chose `00011` with a worst
+bucket of 27. Both words have length five. The exhaustive session still
+needed 34 reads and 178 symbols versus 33 and 172. This case separates
+the exact greedy choice from the total cost of learning the action.
+
+Online CPU was comparable for both compiled arms. At order 128 they
+took 0.458–0.478 seconds across all 1,799 actions, including validation.
+The exhaustive compiler took 7.02–7.17 seconds at that order after
+catalogue loading. The shipped CLI and its bundled shortlist remain the
+default. The Python API exposes the experiment as
+`compile_policy(index, exhaustive_frontier=True)`.
+
+DSR passed both scoped checks at `0ea2934`, with 104 diagnostics tests
+passed and one skipped. All 14,718 live acquisitions recovered the exact
+named table. Both released controls reproduced their original paid tapes
+and all candidate acquisitions reached a unique shape. The candidate's
+word sequence reproduced across the two relabelings. Replay by unpacking
+the source into `run/` beside a clean `work/` checkout at the producer
+revision. Set `FRONTIER_WORK`, `FRONTIER_RUN` and `FRONTIER_SHA` for the
+archived DSR config. [Both new paid tapes, timings and receipts](frontier-results.zip)
