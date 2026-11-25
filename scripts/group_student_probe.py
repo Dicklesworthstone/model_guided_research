@@ -1320,7 +1320,7 @@ def _check_proposal(tree, certificates, equal):
     return dict(proposal=proposal, checks=checks, accepted=checks[-1]["answer"])
 
 
-def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=None):
+def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False):
     result = _check_proposal(tree, certificates, equal)
     if result["accepted"]:
         return dict(right=catalog[result["proposal"]["marked_class"]], **result)
@@ -1330,6 +1330,11 @@ def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=N
         result["alternating"] = attempt
         if attempt["accepted"]:
             return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
+    if commutator_route:
+        graph, witness = _try_order_three_commutator(120, equal)
+        result["commutator"] = witness
+        if graph is not None:
+            return dict(right=graph, **result)
     return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
 
 
@@ -1363,13 +1368,17 @@ def _lattice_action(width: int, shift: int, height: int) -> tuple[tuple[int, int
     return tuple(edges)
 
 
-def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> dict:
-    """Recover the marked lattice after an exact positive commutation reply."""
-    primes = _prime_divisors(size)
-    width = size
+def _element_order(mark: str, size: int, primes: list[int], equal: Callable[[str, str], bool]) -> int:
+    order = size
     for prime in primes:
-        while width % prime == 0 and equal("0" * (width // prime), ""):
-            width //= prime
+        while order % prime == 0 and equal(mark * (order // prime), ""):
+            order //= prime
+    return order
+
+
+def _acquire_commuting_lattice(size: int, equal: Callable[[str, str], bool]) -> tuple[int, int, int]:
+    primes = _prime_divisors(size)
+    width = _element_order("0", size, primes, equal)
     height = size // width
     modulus, shift = 1, 0
     for prime in primes:
@@ -1392,12 +1401,90 @@ def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> d
                     shift = residue
                     break
             modulus = new_modulus
-    return dict(right=_lattice_action(width, shift, height), lattice=(width, shift, height))
+    return width, shift, height
+
+
+def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> dict:
+    """Recover the marked lattice after an exact positive commutation reply."""
+    lattice = _acquire_commuting_lattice(size, equal)
+    return dict(right=_lattice_action(*lattice), lattice=lattice)
+
+
+def _order_three_extension_action(lattice, signs, powers) -> tuple[tuple[int, int], ...]:
+    """Build the regular action in normal forms c^k a^x b^y."""
+    width, shift, height = lattice
+    alpha, beta = signs
+    first_power, second_power = powers
+    root = (0, 0, 0)
+    indices = {root: 0}
+    queue = deque([root])
+    edges = []
+    while queue:
+        k, x, y = queue.popleft()
+        # b^y a = c^d a b^y, with d_{y+1} = beta*d_y - 1.
+        crossings = -y if beta == 1 else -(y % 2)
+        wraps, first_x = divmod(x + 1, width)
+        first = ((k + (alpha if x % 2 else 1) * crossings + wraps * first_power) % 3, first_x, y)
+        second = (k, x, y + 1)
+        if y + 1 == height:
+            # a^s b^h = c^t, so crossing c^t past a^(x-s) may invert it.
+            shifted = x - shift
+            wraps, second_x = divmod(shifted, width)
+            second_k = k + (alpha if shifted % 2 else 1) * second_power + wraps * first_power
+            second = (second_k % 3, second_x, 0)
+        for target in (first, second):
+            if target not in indices:
+                indices[target] = len(indices)
+                queue.append(target)
+        edges.append((indices[first], indices[second]))
+    return tuple(edges)
+
+
+def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
+    """Recognize and recover a group with derived subgroup C3 after a paid noncommutation reply."""
+    if size % 3:
+        return None, dict(rejected="group_order")
+    observed: dict[tuple[str, ...], bool] = {("01", "10"): False}
+
+    def ask(left: str, right: str) -> bool:
+        if left == right:
+            return True
+        pair = cancelled_key(left, right)
+        if pair not in observed:
+            observed[pair] = equal(*pair)
+        return observed[pair]
+
+    primes = _prime_divisors(size)
+    order_a = _element_order("0", size, primes, ask)
+    order_b = _element_order("1", size, primes, ask)
+    commutator = "01" + "0" * (order_a - 1) + "1" * (order_b - 1)
+    witness = dict(word=commutator, orders=(order_a, order_b))
+    if not ask(commutator * 3, ""):
+        return None, dict(rejected="commutator_order", **witness)
+    signs = []
+    for mark in "01":
+        if ask(mark + commutator, commutator + mark):
+            signs.append(1)
+        elif ask(mark + commutator, commutator * 2 + mark):
+            signs.append(-1)
+        else:
+            return None, dict(rejected=f"normalization_{mark}", **witness)
+
+    def quotient_equal(left: str, right: str) -> bool:
+        return any(ask(left, commutator * power + right) for power in range(3))
+
+    lattice = _acquire_commuting_lattice(size // 3, quotient_equal)
+    width, shift, height = lattice
+    # Both powers are known to belong to <c> from the quotient calculation.
+    powers = []
+    for word in ("0" * width, "0" * shift + "1" * height):
+        powers.append(next((power for power in range(2) if ask(word, commutator * power)), 2))
+    return _order_three_extension_action(lattice, signs, powers), dict(lattice=lattice, signs=signs, powers=powers, **witness)
 
 
 def proposal_panel(
     coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
-    alternating_policy: Path | None = None,
+    alternating_policy: Path | None = None, commutator_route: bool = False,
 ) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
@@ -1417,9 +1504,10 @@ def proposal_panel(
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
-    if abelian_route or alternating_route or alternating_policy is not None:
+    has_alternating = alternating_route or alternating_policy is not None or commutator_route
+    if abelian_route or has_alternating:
         order += ("routed",)
-    if alternating_route or alternating_policy is not None:
+    if has_alternating:
         started = time.process_time_ns()
         if alternating_policy is None:
             alternating_tree, alternating_marked, alternating_certificates = _compile_alternating_policy()
@@ -1432,6 +1520,8 @@ def proposal_panel(
         )
         order += ("extended",)
         extra = dict(alternating_cpu_ns=time.process_time_ns() - started, alternating_certificates=alternating_certificates)
+    if commutator_route:
+        order += ("commutator",)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1453,12 +1543,13 @@ def proposal_panel(
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
-            elif arm in {"routed", "extended"} and equal("01", "10"):
+            elif arm in {"routed", "extended", "commutator"} and equal("01", "10"):
                 result = _acquire_commuting_action(120, equal)
             else:
                 result = _acquire_checked_proposal(
                     tree, catalog, edge if arm == "edge" else short, equal,
-                    alternate=alternate if arm == "extended" else None,
+                    alternate=alternate if arm in {"extended", "commutator"} else None,
+                    commutator_route=arm == "commutator",
                 )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
@@ -1490,6 +1581,7 @@ if __name__ == "__main__":
     parser.add_argument("--abelian-route", action="store_true", help="Add exact commuting-case recovery to the proposal panel")
     parser.add_argument("--alternating-route", action="store_true", help="Also compare certified A5 x C2 proposals")
     parser.add_argument("--alternating-policy", type=Path, help="Use a validated policy from compile-alternating-policy")
+    parser.add_argument("--commutator-route", action="store_true", help="Try direct recovery with a normal commutator of order three")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1503,6 +1595,8 @@ if __name__ == "__main__":
         parser.error("--alternating-route requires the proposal phase")
     if args.alternating_policy is not None and args.phase != "proposal":
         parser.error("--alternating-policy requires the proposal phase")
+    if args.commutator_route and args.phase != "proposal":
+        parser.error("--commutator-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1527,7 +1621,7 @@ if __name__ == "__main__":
             parser.error("--coverage and --output are required for the proposal panel")
         proposal_panel(
             args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
-            alternating_policy=args.alternating_policy,
+            alternating_policy=args.alternating_policy, commutator_route=args.commutator_route,
         )
     elif args.phase == "compile-alternating-policy":
         if args.output is None:
