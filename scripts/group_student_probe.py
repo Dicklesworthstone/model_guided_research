@@ -911,12 +911,25 @@ def _a5c2_marked_catalog():
             continue
         for bits in ((0, 1), (1, 0), (1, 1)):
             marks = (first + (5 + bits[0], 6 - bits[0]), second + (5 + bits[1], 6 - bits[1]))
-            indices = {state: index for index, state in enumerate(_permutation_words(marks))}
-            graph = tuple(tuple(indices[_perm_mul(mark, state)] for mark in marks) for state in indices)
-            if len(graph) != 120:
-                raise ValueError("The lifted marks do not generate A5 x C2")
+            graph = _a5c2_marked_graph(marks)
             catalog[graph_digest(graph)] = graph, marks
     return dict(sorted(catalog.items()))
+
+
+def _a5c2_marked_graph(marks):
+    indices = {state: index for index, state in enumerate(_permutation_words(marks))}
+    if len(indices) != 120:
+        raise ValueError("The lifted marks do not generate A5 x C2")
+    return tuple(tuple(indices[_perm_mul(mark, state)] for mark in marks) for state in indices)
+
+
+def _a5c2_certificate_questions(basis, bindings):
+    a, b, c = basis
+    relators = [
+        (a * 2, ""), (b * 3, ""), ((a + b) * 5, ""), (c * 2, ""),
+        (a + c, c + a), (b + c, c + b), ("0", bindings[0]), ("1", bindings[1]),
+    ]
+    return list(dict.fromkeys(cancelled_key(left, right) for left, right in relators if left != right))
 
 
 def a5c2_presentation_certificates(marked_catalog):
@@ -938,13 +951,9 @@ def a5c2_presentation_certificates(marked_catalog):
         words = _permutation_words(marks)
         best = None
         for auxiliary, coordinates in charts:
-            a, b, c = basis = tuple(words[h] for h in auxiliary)
+            basis = tuple(words[h] for h in auxiliary)
             bindings = tuple("".join(basis[int(j)] for j in coordinates[h]) for h in marks)
-            relators = [
-                (a * 2, ""), (b * 3, ""), ((a + b) * 5, ""), (c * 2, ""),
-                (a + c, c + a), (b + c, c + b), ("0", bindings[0]), ("1", bindings[1]),
-            ]
-            questions = list(dict.fromkeys(cancelled_key(left, right) for left, right in relators if left != right))
+            questions = _a5c2_certificate_questions(basis, bindings)
             score = (len(questions), sum(len(word) for pair in questions for word in pair), questions, basis, bindings)
             if best is None or score < best:
                 best = score
@@ -1084,6 +1093,89 @@ def plan_compiled_family(tree: FamilyTree) -> EqualityPlan[dict]:
         trace.append(dict(pair=list(tree.question), candidates=tree.size, predicted_yes=tree.yes_size, answer=answer))
         tree = tree.yes if answer else tree.no
     return dict(marked_class=tree, queries=trace)
+
+
+_ALTERNATING_POLICY_SCHEMA = "mgr.group.alternating-policy.v1"
+
+
+def _compile_alternating_policy():
+    marked = _a5c2_marked_catalog()
+    graphs = {identifier: graph for identifier, (graph, _) in marked.items()}
+    return compile_known_family(graphs, max_depth=7), marked, a5c2_presentation_certificates(marked)
+
+
+def _pack_family_tree(tree: FamilyTree):
+    if isinstance(tree, str):
+        return tree
+    return [*tree.question, _pack_family_tree(tree.yes), _pack_family_tree(tree.no)]
+
+
+def export_alternating_policy(output: Path) -> None:
+    tree, marked, witnesses = _compile_alternating_policy()
+    entries = {
+        identifier: dict(marks=marks, basis=witnesses[identifier]["basis"], bindings=witnesses[identifier]["bindings"])
+        for identifier, (_, marks) in marked.items()
+    }
+    save(output, dict(schema=_ALTERNATING_POLICY_SCHEMA, entries=entries, tree=_pack_family_tree(tree)))
+
+
+def _is_policy_words(value, count: int) -> bool:
+    return isinstance(value, list) and len(value) == count and all(
+        isinstance(word, str) and set(word) <= {"0", "1"} for word in value
+    )
+
+
+def _validate_policy_tree(node, graphs, depth: int) -> FamilyTree:
+    if isinstance(node, str) and list(graphs) == [node]:
+        return node
+    if not depth or not isinstance(node, list) or len(node) != 4 or not _is_policy_words(node[:2], 2):
+        raise ValueError("Invalid selector node or incorrect leaf")
+    left, right, yes_node, no_node = node
+    yes, no = {}, {}
+    for identifier, graph in graphs.items():
+        branch = yes if walk_action(left, graph) == walk_action(right, graph) else no
+        branch[identifier] = graph
+    if not yes or not no:
+        raise ValueError("The selector question does not split its candidates")
+    return FamilySplit(
+        (left, right), len(graphs), len(yes),
+        _validate_policy_tree(yes_node, yes, depth - 1), _validate_policy_tree(no_node, no, depth - 1),
+    )
+
+
+def load_alternating_policy(path: Path):
+    """Verify the marked actions, presentation witnesses, and selector before use."""
+    try:
+        policy = json.loads(path.read_bytes())
+        if not isinstance(policy, dict) or policy.get("schema") != _ALTERNATING_POLICY_SCHEMA:
+            raise ValueError("Unknown alternating policy schema")
+        entries = policy["entries"]
+        if not isinstance(entries, dict) or len(entries) != 57:
+            raise ValueError("An alternating policy must contain 57 distinct markings")
+        even = set(_group_elements("a5"))
+        graphs, certificates = {}, {}
+        for identifier, entry in entries.items():
+            marks = entry["marks"]
+            if not isinstance(marks, list) or len(marks) != 2 or any(
+                not isinstance(mark, list) or len(mark) != 7 or any(type(point) is not int for point in mark)
+                or tuple(mark[:5]) not in even or mark[5:] not in ([5, 6], [6, 5]) for mark in marks
+            ):
+                raise ValueError("Invalid lifted permutation marks")
+            graph = _a5c2_marked_graph(tuple(map(tuple, marks)))
+            if graph_digest(graph) != identifier:
+                raise ValueError("The marked graph digest does not match")
+            basis, bindings = entry["basis"], entry["bindings"]
+            if not _is_policy_words(basis, 3) or not _is_policy_words(bindings, 2):
+                raise ValueError("Invalid presentation words")
+            questions = _a5c2_certificate_questions(basis, bindings)
+            if not 1 <= len(questions) <= 7 or any(walk_action(a, graph) != walk_action(b, graph) for a, b in questions):
+                raise ValueError("The presentation does not certify its marked graph")
+            graphs[identifier] = graph
+            certificates[identifier] = dict(basis=basis, bindings=bindings, questions=questions)
+        tree = _validate_policy_tree(policy["tree"], graphs, 7)
+        return tree, graphs, certificates
+    except (OSError, TypeError, KeyError, ValueError, RecursionError) as error:
+        raise ValueError(f"Invalid compiled alternating policy {path}: {error}") from error
 
 
 def run_bounded_proposal(
@@ -1303,7 +1395,10 @@ def _acquire_commuting_action(size: int, equal: Callable[[str, str], bool]) -> d
     return dict(right=_lattice_action(width, shift, height), lattice=(width, shift, height))
 
 
-def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False) -> None:
+def proposal_panel(
+    coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
+    alternating_policy: Path | None = None,
+) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1322,14 +1417,15 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False,
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
-    if abelian_route or alternating_route:
+    if abelian_route or alternating_route or alternating_policy is not None:
         order += ("routed",)
-    if alternating_route:
+    if alternating_route or alternating_policy is not None:
         started = time.process_time_ns()
-        alternating_marked = _a5c2_marked_catalog()
-        alternating_graphs = {identifier: graph for identifier, (graph, _) in alternating_marked.items()}
-        alternating_tree = compile_known_family(alternating_graphs, max_depth=7)
-        alternating_certificates = a5c2_presentation_certificates(alternating_marked)
+        if alternating_policy is None:
+            alternating_tree, alternating_marked, alternating_certificates = _compile_alternating_policy()
+            alternating_graphs = {identifier: graph for identifier, (graph, _) in alternating_marked.items()}
+        else:
+            alternating_tree, alternating_graphs, alternating_certificates = load_alternating_policy(alternating_policy)
         alternate = (
             alternating_tree, alternating_graphs,
             {identifier: witness["questions"] for identifier, witness in alternating_certificates.items()},
@@ -1379,7 +1475,9 @@ def proposal_panel(coverage: Path, output: Path, *, abelian_route: bool = False,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover", "congruence", "proposal")
+        "phase", choices=(
+            "prepare", "train", "score", "equality", "relator", "congruence-cover", "congruence", "proposal", "compile-alternating-policy",
+        )
     )
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
@@ -1391,6 +1489,7 @@ if __name__ == "__main__":
     parser.add_argument("--coverage", type=Path)
     parser.add_argument("--abelian-route", action="store_true", help="Add exact commuting-case recovery to the proposal panel")
     parser.add_argument("--alternating-route", action="store_true", help="Also compare certified A5 x C2 proposals")
+    parser.add_argument("--alternating-policy", type=Path, help="Use a validated policy from compile-alternating-policy")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1402,6 +1501,8 @@ if __name__ == "__main__":
         parser.error("--abelian-route requires the proposal phase")
     if args.alternating_route and args.phase != "proposal":
         parser.error("--alternating-route requires the proposal phase")
+    if args.alternating_policy is not None and args.phase != "proposal":
+        parser.error("--alternating-policy requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1424,7 +1525,14 @@ if __name__ == "__main__":
     elif args.phase == "proposal":
         if args.coverage is None or args.output is None:
             parser.error("--coverage and --output are required for the proposal panel")
-        proposal_panel(args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route)
+        proposal_panel(
+            args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
+            alternating_policy=args.alternating_policy,
+        )
+    elif args.phase == "compile-alternating-policy":
+        if args.output is None:
+            parser.error("--output is required to compile the alternating policy")
+        export_alternating_policy(args.output)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
