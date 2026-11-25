@@ -257,6 +257,35 @@ The separate checker reconstructed all 57,600 transitions, replayed every paid r
 
 The producer and manifest were frozen at `9c598c4`. [Frozen source and protocol](fifth-power-route-source.zip) · [Coverage](fifth-power-route-coverage.json) · [Tapes, audit, and receipts](fifth-power-route-results.zip)
 
+## Seeding the Klein-four lift with a commutator
+
+The `--involution-route` flag tries a second way to find a normal Klein-four subgroup after the prior routes reject. It reuses the paid generator orders and the positive word for the commutator. The initial negative commutation reply makes that word nontrivial. One equality test establishes whether it squares to the identity. If it does, the learner uses it as the first involution and retains the existing checks for a distinct conjugate, commutation, and normalization by both marks. Successful checks feed the existing quotient decoder and its edge corrections. This recovers \(A_4\) actions even though \(A_4\) has no element of order divisible by four. [Graph lift construction](https://arxiv.org/abs/2501.17135)
+
+For this seed, if the quotient order is odd, two words have the same coset exactly when the square of their difference is the identity. Elements of the verified kernel square to the identity, and an odd-order quotient cannot contain a nonidentity element whose order divides two. The implementation reuses the positive-word difference from the fifth-power route. Even-order quotients use explicit kernel offsets.
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/involution-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --involution-route \
+  --output "$PANEL_DIR/involution-route.json"
+```
+
+| Family | Cases | Prior fifth-power calls (symbols) | Involution arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| A4 × C10 | 8 fresh | 6,093 (68,987) | 888 (41,492) |
+| D8 × C15 | 6 fresh | 2,450 (27,145) | 2,468 (28,809) |
+| Eight previously solved families | 16 replayed | 815 (30,651) | 815 (30,651) |
+
+The eight targets recovered through explicit coset comparisons in a quotient of order 30. Calls fell 85.43% against the frozen 70% gate, and queried symbols fell 39.86%. The extra branch took 55–101 calls per target after the shared prefix. Each dihedral control produced a central commutator and failed to supply a second involution. Those controls paid three extra calls each and 1,664 additional symbols in total, then ran the identical cancellation fallback. Across the entire panel the new arm saved 5,187 calls and 25,831 symbols.
+
+Across two local runs, summed online CPU for the eight targets was 3.44–3.56 ms for the new arm and 33.09–35.29 ms for the incumbent. On the six dihedral controls it was 16.86–17.67 ms and 17.10–18.12 ms respectively. S5 setup took 76.4–77.9 ms, short-certificate preparation took 39.5–48.2 ms, and alternating-policy validation took 16.1–16.4 ms, shared across the two arms. The new arm adds no catalogue setup. These measurements use an in-process oracle on one Mac.
+
+The separate checker reconstructed 64,800 output transitions, checked every paid reply, independently built the quotient from concrete cosets, and rejected a forged edge correction. The transfer census recovered all 96 ordered generating pairs of A4 with the odd-order square shortcut and all 288 of A4 × C2 with explicit cosets. Every A4 × C2 pair exhibited a false equality under an unguarded square test. All 24 generating pairs of the dihedral group of order eight rejected the central commutator seed. Both hash seeds reproduced the same non-timing fields, and the previous flag reproduced its eight arms. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `008b75b`. [Frozen source and protocol](involution-route-source.zip) · [Coverage](involution-route-coverage.json) · [Tapes, audit, and receipts](involution-route-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
