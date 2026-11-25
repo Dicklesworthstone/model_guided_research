@@ -269,3 +269,32 @@ The audit checked **2,427,840 transition entries** across the three live arms an
 On the equally weighted census, the optimized learner saves **7,405 reads and 31,238 total symbols** against square closure. That is 79,010 fewer `0` symbols and 47,772 more `1` symbols. The order-120 abelian subset still uses 15,629 more symbols. These are finite-census software measurements. Device timings and real action frequencies remain open.
 
 The producer is `ed9cda5`. Both DSR checks passed, including 89 diagnostics tests with one skipped. To replay, unpack the source into `run/` beside a clean `work/` checkout at the producer revision. Extract `catalogue.json` from the catalogue replay source and `scored.json` from the complete census results as `prior-census.json`. Set `MGR_TIER_WORK`, `MGR_TIER_RUN` and `MGR_TIER_SHA` for the archived DSR configuration. [Frozen source and protocol](tiered-acquisition-source.zip) · [Raw tapes, timings, audit and DSR receipt](tiered-acquisition-results.zip)
+
+### Transfer to orders 32, 64 and 128
+
+The frozen shortest-tier learner saved reads and symbols against live square closure at **all three held-out orders**. The joint preregistered prediction failed because CPU savings held only at order 128. Orders 32 and 64 were already slower with a prepared catalogue. Each row covers the full set of distinct rooted marked regular actions of that order, counted once, with the same four paid observations supplied to each arm. [Prior inventory and completeness checks](../../probes/sizing/group-solver-baseline/anchor-report.md) · [SmallGrp 1.7.0](https://gap-packages.github.io/smallgrp/)
+
+| Order | Shapes | Reads saved | Symbols saved | Square CPU | Tiered online CPU | Tiered CPU incl. setup |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 151 | 451 | 2,766 | 0.107–0.113 s | 0.121–0.131 s | 0.133–0.146 s |
+| 64 | 503 | 1,752 | 12,458 | 1.063–1.064 s | 1.124–1.130 s | 1.241–1.250 s |
+| 128 | 1,799 | 8,462 | 53,244 | 12.05–12.34 s | 10.07–10.41 s | 11.63–12.01 s |
+
+At order 128, the learner saved **1.92–1.97 seconds of online CPU** and **0.33–0.42 seconds of CPU with setup charged** across the census. Setup cost 1.56–1.59 seconds of CPU once per order. The measured elapsed savings with setup were 0.35–0.57 seconds across 1,799 actions on this host. The timing includes parsing the fixed exported tables, rebuilding the catalogue, indexing endpoints and preparing tiers. The square arm uses the four observations and the public roster. GAP export and physical action costs are outside these timings.
+
+Reads fell on 2,450 shapes and tied on three. Symbols fell on 2,368 shapes, tied on two and increased on 83. At order 128 the aggregate reduction was **59,493 fewer `0` symbols and 6,249 more `1` symbols**. The 255 abelian shapes at that order saved 976 reads and used 695 more symbols. Their movement mix accounts for the aggregate increase in `1` commands. Device qualification would need to price the two commands independently and account for the action mix and how often the catalogue is reused.
+
+The verifier matched the independently enumerated prior inventory, replayed every paid endpoint and checked **2,138,368 transition entries** across both arms and relabelings. It recomputed all **175,585 selected structural scores** in the primary run and rejected a forged score. Both runs passed the forced fallback and invalid-name controls. DSR passed both checks with 89 diagnostics tests passed and one skipped. The producer is `a6a9fe8`.
+
+To replay, unpack the source into `run/` beside a clean `work/` checkout at the producer revision. At `run/`, extract `group-tables.json` from the prior [anchor source](../../probes/sizing/group-solver-baseline/anchor-source.zip) and extract `scored.json` from the [anchor results](../../probes/sizing/group-solver-baseline/anchor-results.zip) as `prior-anchor-shapes.json`. Create the exact per-order input streams and set `MGR_TRANSFER_WORK`, `MGR_TRANSFER_RUN` and `MGR_TRANSFER_SHA` for the archived DSR configuration.
+
+```sh
+set -C
+for order in 32 64 128; do
+  jq -c --argjson order "$order" \
+    '[.[0],.[1], (.[3]|map(select(.[0]==$order) | [.[0],.[1],.[4]]))]' \
+    group-tables.json > "tables-$order.json"
+done
+```
+
+[Frozen source and protocol](transfer-source.zip) · [Raw runs, complete audit and DSR receipts](transfer-results.zip)
