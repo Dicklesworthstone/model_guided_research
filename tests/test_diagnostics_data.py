@@ -706,13 +706,17 @@ def test_active_group_table_queries_only_missing_edges():
         assert follow(labels, edges, word) == teacher(word)
 
 
-def test_prepend_append_rectangle_and_its_inverse():
+@pytest.mark.parametrize("last", range(3))
+def test_prepend_append_rectangle_and_its_inverse(last):
     from scripts.group_rewrite_probe import Actions
 
     actions = Actions(set("abcdef"))
-    actions.bind("L0", "a", "b")
-    actions.bind("R1", "a", "c")
-    actions.bind("R1", "b", "d")
+    known = [("L0", "a", "b"), ("R1", "a", "c"), ("R1", "b", "d")]
+    for index, fact in enumerate(known):
+        if index != last:
+            actions.bind(*fact)
+            actions.close(squares=True)
+    actions.bind(*known[last])
     actions.close(squares=False)
     assert "c" not in actions.maps["L0"]
     actions.close(squares=True)
@@ -726,6 +730,17 @@ def test_prepend_append_rectangle_and_its_inverse():
     actions.bind("L1", "b", "d")
     actions.close(squares=True)
     assert "c" not in actions.maps["L0"]
+
+
+def test_incremental_square_closure_keeps_reporting_a_conflict():
+    from scripts.group_rewrite_probe import Actions
+
+    actions = Actions(set("abcdef"))
+    for fact in [("L0", "a", "b"), ("R1", "a", "c"), ("R1", "b", "d"), ("L0", "c", "e")]:
+        actions.bind(*fact)
+    for _ in range(2):
+        with pytest.raises(ValueError, match="Inconsistent permutation edge"):
+            actions.close(squares=True)
 
 
 def test_equality_only_action_recovers_every_edge_with_a_wrong_ranker():
