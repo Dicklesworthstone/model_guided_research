@@ -316,6 +316,37 @@ The separate checker reconstructed 86,400 output transitions, replayed every pai
 
 The producer and manifest were frozen at `1800539`. [Frozen source and protocol](central-route-source.zip) · [Coverage](central-route-coverage.json) · [Tapes, audit, and receipts](central-route-results.zip)
 
+## Recovering an order-fifteen cyclic extension
+
+The `--order-fifteen-route` flag reuses the paid comparisons \(c^3\ne 1\) and \(c^5\ne 1\) from the earlier prime-order branches. A successful comparison \(c^{15}=1\) then certifies exact order 15. For each mark, the route first checks identity or inverse conjugation. If both fail, it checks the conjugations of \(c^5\) and \(c^3\) among their unit powers. These two elements generate \(\langle c\rangle\), so the successful comparisons prove normality. The commutator relation makes the quotient abelian. The Chinese remainder theorem recovers each conjugation exponent modulo 15.
+
+When the quotient order is coprime to 15, \(u\) and \(v\) have the same image exactly when \((uv^{-1})^{15}=1\). Otherwise the learner compares explicit coset representatives. The two lattice lifts are known to lie in \(\langle c\rangle\). Their fifth and third powers give the residues modulo three and five, respectively. The existing power-conjugate reconstruction then gives the regular action on \(c^k a^x b^y\). [GAP reference on power-conjugate presentations](https://docs.gap-system.org/doc/ref/chap46_mj.html)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/order-fifteen-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --order-fifteen-route \
+  --output "$PANEL_DIR/order-fifteen-route.json"
+```
+
+| Family | Cases | Central arm calls (symbols) | Order-fifteen arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| C15 ⋊ C8, inversion | 6 fresh | 3,864 (54,808) | 266 (13,111) |
+| C15 ⋊ C8, multiplier two | 6 fresh | 8,526 (90,304) | 306 (18,074) |
+| D30 × C4 | 6 replayed | 2,625 (54,761) | 243 (14,927) |
+| D40 × C3 | 6 fresh | 3,622 (55,735) | 3,628 (60,205) |
+| Eleven previously solved families | 11 replayed | 611 (26,025) | 611 (26,025) |
+
+On the 12 fresh targets, the new arm cut calls by 95.38% against the frozen 80% gate and queried symbols by 78.51%. The order-fifteen branch took 15–27 calls after the shared prefix. On the six D30 × C4 cases that motivated the experiment, calls fell 90.74%. All six D40 × C3 controls rejected on commutator order, adding one call each and 4,470 symbols in total before the identical cancellation fallback. The full 35-case panel saved 14,194 calls and 149,291 queried symbols.
+
+Summed online process CPU over two local runs was 2.94–3.00 ms for the new arm and 55.14–58.02 ms for the incumbent on fresh targets, 1.20–1.40 ms and 12.58–14.29 ms on the replayed targets, and 16.33–17.84 ms and 16.74–17.74 ms on D40 × C3. The other controls took 2.20–2.26 ms and 2.21–2.26 ms respectively. Both arms shared S5 setup of 68.48–82.13 ms, short-certificate preparation of 44.81–52.07 ms, and alternating-policy validation of 14.55–15.35 ms. The scorable result is an exact query-cost improvement under the in-process word-equality oracle on this panel. Physical oracle costs and the contribution of model guidance require their own comparisons.
+
+The independent checker verified every paid reply and 92,400 output transitions across 11 arms, checked the quotient against concrete cosets, and rejected a forged lift. It recovered all 360 ordered generating pairs of D30 and all 1,440 of C15 ⋊ C4 with multiplier two. Every one of the 12 sampled D30 × C3 pairs gave a false quotient match under an unguarded fifteenth-power test and recovered exactly with explicit cosets. Both hash seeds reproduced the non-timing fields, and the previous CLI reproduced its ten arms. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `fa4bcd0`. [Frozen source and protocol](order-fifteen-route-source.zip) · [Coverage](order-fifteen-route-coverage.json) · [Tapes, audit, and receipts](order-fifteen-route-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
