@@ -1322,7 +1322,7 @@ def _check_proposal(tree, certificates, equal):
 
 def _acquire_checked_proposal(
     tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False, klein_route: bool = False,
-    fifth_power_route: bool = False,
+    fifth_power_route: bool = False, involution_route: bool = False,
 ):
     result = _check_proposal(tree, certificates, equal)
     if result["accepted"]:
@@ -1333,6 +1333,7 @@ def _acquire_checked_proposal(
         result["alternating"] = attempt
         if attempt["accepted"]:
             return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
+    fifth_power_route = fifth_power_route or involution_route
     if commutator_route or klein_route or fifth_power_route:
         graph, witness = _try_order_three_commutator(120, equal)
         result["commutator"] = witness
@@ -1346,6 +1347,11 @@ def _acquire_checked_proposal(
         if fifth_power_route:
             graph, lift = _try_order_five_commutator(120, equal, witness["orders"], witness["word"])
             result["fifth_power"] = lift
+            if graph is not None:
+                return dict(right=graph, **result)
+        if involution_route:
+            graph, lift = _try_klein_four_quotient(120, equal, witness["orders"], commutator=witness["word"])
+            result["involution"] = lift
             if graph is not None:
                 return dict(right=graph, **result)
     return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
@@ -1506,6 +1512,12 @@ def _positive_inverse(word: str, orders: tuple[int, int]) -> str:
     return "".join(mark * (-sum(1 for _ in run) % orders[int(mark)]) for mark, run in groupby(reversed(word)))
 
 
+def _shortest_positive_difference(left: str, right: str, orders: tuple[int, int]) -> str:
+    first, second = cancelled_key(left, right)
+    candidates = (first + _positive_inverse(second, orders), second + _positive_inverse(first, orders))
+    return min(candidates, key=lambda word: (len(word), word))
+
+
 def _try_order_five_commutator(size: int, equal: Callable[[str, str], bool], orders: tuple[int, int], commutator: str):
     """Recover a derived C5 using the paid generator orders and commutator word."""
     if size % 5:
@@ -1531,10 +1543,7 @@ def _try_order_five_commutator(size: int, equal: Callable[[str, str], bool], ord
 
     def quotient_equal(left: str, right: str) -> bool:
         if coprime:
-            first, second = cancelled_key(left, right)
-            candidates = (first + _positive_inverse(second, orders), second + _positive_inverse(first, orders))
-            difference = min(candidates, key=lambda word: (len(word), word))
-            answer = ask(difference * 5, "")
+            answer = ask(_shortest_positive_difference(left, right, orders) * 5, "")
         else:
             answer = any(compare_offset(left, right, power) for power in (0, 1, -1, 2, -2))
         comparisons.append((left, right, answer))
@@ -1569,19 +1578,27 @@ def _klein_extension_action(quotient, corrections) -> tuple[tuple[int, int], ...
     return tuple(graph)
 
 
-def _try_klein_four_quotient(size: int, equal: Callable[[str, str], bool], orders: tuple[int, int]):
+def _try_klein_four_quotient(
+    size: int, equal: Callable[[str, str], bool], orders: tuple[int, int], *, commutator: str | None = None,
+):
     """Recover a detected normal Klein-four extension of a supported quotient."""
     if size % 4:
         return None, dict(rejected="group_order")
     ask = _memoized_noncommuting_equality(equal)
-    involutions = [mark * (order // 2) for mark, order in zip("01", orders, strict=True) if order % 4 == 0]
-    if involutions:
-        d = min(involutions, key=lambda word: (len(word), word))
+    if commutator is not None:
+        # The already established noncommutation excludes the identity.
+        if not ask(commutator * 2, ""):
+            return None, dict(rejected="commutator_order")
+        d = commutator
     else:
-        order_ab = _element_order("01", size, _prime_divisors(size), ask)
-        if order_ab % 4:
-            return None, dict(rejected="no_order_four_power")
-        d = "01" * (order_ab // 2)
+        involutions = [mark * (order // 2) for mark, order in zip("01", orders, strict=True) if order % 4 == 0]
+        if involutions:
+            d = min(involutions, key=lambda word: (len(word), word))
+        else:
+            order_ab = _element_order("01", size, _prime_divisors(size), ask)
+            if order_ab % 4:
+                return None, dict(rejected="no_order_four_power")
+            d = "01" * (order_ab // 2)
 
     for order, mark in sorted(zip(orders, "01", strict=True)):
         if not ask(mark + d, d + mark):
@@ -1595,13 +1612,23 @@ def _try_klein_four_quotient(size: int, equal: Callable[[str, str], bool], order
     if any(not any(ask(mark + word, other + mark) for other in kernel[1:]) for mark in "01" for word in (d, e)):
         return None, dict(rejected="nonnormal_kernel", basis=(d, e))
 
+    quotient_size = size // 4
+    use_square = commutator is not None and quotient_size % 2 == 1
+    comparisons = []
+
     def quotient_equal(left: str, right: str) -> bool:
-        return any(ask(left, word + right) for word in kernel)
+        if use_square:
+            answer = ask(_shortest_positive_difference(left, right, orders) * 2, "")
+        else:
+            answer = any(ask(left, word + right) for word in kernel)
+        if commutator is not None:
+            comparisons.append((left, right, answer))
+        return answer
 
     if quotient_equal("01", "10"):
-        quotient = _acquire_commuting_action(size // 4, quotient_equal)["right"]
+        quotient = _acquire_commuting_action(quotient_size, quotient_equal)["right"]
     else:
-        quotient, _ = _try_order_three_commutator(size // 4, quotient_equal)
+        quotient, _ = _try_order_three_commutator(quotient_size, quotient_equal)
         if quotient is None:
             return None, dict(rejected="unsupported_quotient", basis=(d, e))
 
@@ -1614,13 +1641,15 @@ def _try_klein_four_quotient(size: int, equal: Callable[[str, str], bool], order
             row.append(next((i for i, word in enumerate(kernel[:3]) if ask(left, word + right)), 3))
         corrections.append(tuple(row))
     witness = dict(basis=(d, e), quotient=quotient, corrections=corrections)
+    if commutator is not None:
+        witness.update(quotient_oracle="square" if use_square else "cosets", quotient_queries=comparisons)
     return _klein_extension_action(quotient, corrections), witness
 
 
 def proposal_panel(
     coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
     alternating_policy: Path | None = None, commutator_route: bool = False, klein_route: bool = False,
-    fifth_power_route: bool = False,
+    fifth_power_route: bool = False, involution_route: bool = False,
 ) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
@@ -1640,6 +1669,7 @@ def proposal_panel(
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
+    fifth_power_route = fifth_power_route or involution_route
     has_alternating = alternating_route or alternating_policy is not None or commutator_route or klein_route or fifth_power_route
     if abelian_route or has_alternating:
         order += ("routed",)
@@ -1662,6 +1692,8 @@ def proposal_panel(
         order += ("klein",)
     if fifth_power_route:
         order += ("fifth_power",)
+    if involution_route:
+        order += ("involution",)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1683,14 +1715,15 @@ def proposal_panel(
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
-            elif arm in {"routed", "extended", "commutator", "klein", "fifth_power"} and equal("01", "10"):
+            elif arm not in {"edge", "short"} and equal("01", "10"):
                 result = _acquire_commuting_action(120, equal)
             else:
                 result = _acquire_checked_proposal(
                     tree, catalog, edge if arm == "edge" else short, equal,
-                    alternate=alternate if arm in {"extended", "commutator", "klein", "fifth_power"} else None,
+                    alternate=alternate if arm not in {"edge", "short", "routed"} else None,
                     commutator_route=arm == "commutator", klein_route=arm == "klein",
                     fifth_power_route=arm == "fifth_power",
+                    involution_route=arm == "involution",
                 )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
@@ -1725,6 +1758,7 @@ if __name__ == "__main__":
     parser.add_argument("--commutator-route", action="store_true", help="Try direct recovery with a normal commutator of order three")
     parser.add_argument("--klein-route", action="store_true", help="Try direct recovery through a normal Klein-four quotient")
     parser.add_argument("--fifth-power-route", action="store_true", help="Try direct recovery with a normal commutator of order five")
+    parser.add_argument("--involution-route", action="store_true", help="Try Klein-four recovery seeded by an order-two commutator")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1744,6 +1778,8 @@ if __name__ == "__main__":
         parser.error("--klein-route requires the proposal phase")
     if args.fifth_power_route and args.phase != "proposal":
         parser.error("--fifth-power-route requires the proposal phase")
+    if args.involution_route and args.phase != "proposal":
+        parser.error("--involution-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1769,7 +1805,7 @@ if __name__ == "__main__":
         proposal_panel(
             args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
             alternating_policy=args.alternating_policy, commutator_route=args.commutator_route, klein_route=args.klein_route,
-            fifth_power_route=args.fifth_power_route,
+            fifth_power_route=args.fifth_power_route, involution_route=args.involution_route,
         )
     elif args.phase == "compile-alternating-policy":
         if args.output is None:
