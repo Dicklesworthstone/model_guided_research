@@ -744,9 +744,9 @@ def test_incremental_square_closure_keeps_reporting_a_conflict():
             actions.close(squares=True)
 
 
-@pytest.mark.parametrize("tiered", [False, True])
-def test_exact_endpoint_acquisition_with_opaque_labels(tiered):
-    from nanochat.group_acquisition import acquire, load_catalogue
+@pytest.mark.parametrize("mode", ["square", "tiered", "compiled"])
+def test_exact_endpoint_acquisition_with_opaque_labels(mode):
+    from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
 
     labels = [f"state {i:02x} / α" for i in range(32)]
 
@@ -767,11 +767,25 @@ def test_exact_endpoint_acquisition_with_opaque_labels(tiered):
         return labels[state]
 
     path = FIXTURE_PATH.parents[2] / "artifacts/probes/sizing/group-solver-baseline/anchor-results.zip"
-    action = acquire(labels, teacher, catalogue=load_catalogue(path, len(labels)) if tiered else None)
+    index = None if mode == "square" else load_catalogue(path, len(labels))
+    policy = compile_policy(index) if mode == "compiled" and index is not None else index
+    action = acquire(list(reversed(labels)), teacher, catalogue=policy)
     assert words[:4] == ["00", "01", "10", "11"]
     assert action.root == labels[0]
-    assert action.terminal == ("unique" if tiered else "square")
+    assert action.terminal == ("square" if mode == "square" else "unique")
     assert action.transitions == {label: (labels[step(i, "0")], labels[step(i, "1")]) for i, label in enumerate(labels)}
+
+
+def test_compiled_acquisition_rejects_an_impossible_equality():
+    from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
+
+    path = FIXTURE_PATH.parents[2] / "artifacts/probes/sizing/group-solver-baseline/anchor-results.zip"
+    policy = compile_policy(load_catalogue(path, 32))
+    labels = [f"state-{i}" for i in range(32)]
+    observations = dict(zip(("00", "01", "10"), (labels[0], labels[0], labels[1]), strict=True))
+    # Equality of the first two answers implies the two marks coincide.
+    with pytest.raises(ValueError, match="no action for the observed endpoints"):
+        acquire(labels, observations.__getitem__, catalogue=policy)
 
 
 @pytest.mark.parametrize(

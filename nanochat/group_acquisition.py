@@ -342,22 +342,110 @@ class _VersionSpace:
             raise ValueError("No informative probe while multiple rooted actions remain")
         return best[2]
 
-    def name_action(self, roster: set[str], ask: Query) -> tuple[str, dict[str, tuple[str, str]]]:
-        row = int(self.live[0])
-        names = [str(int(name)) if name >= 0 else "" for name in self.names[row]]
-        missing = [(word, state) for word, state in self.index.naming[row] if not names[state]]
-        available = roster.difference(names)
-        for word, state in missing[:-1]:
-            answer = ask(word)
-            if answer not in available:
-                raise ValueError("The oracle reused a name in the determined action")
-            available.remove(answer)
-            names[state] = answer
-        if missing:
-            (last,) = available
-            names[missing[-1][1]] = last
-        rows = {names[state]: (names[a], names[b]) for state, (a, b) in enumerate(self.index.shapes[row])}
-        return names[0], rows
+
+@dataclass(frozen=True, slots=True)
+class _Probe:
+    word: str
+    branches: dict[int, "_PolicyNode"]
+
+
+@dataclass(frozen=True, slots=True)
+class _Determined:
+    row: int
+    observed_states: tuple[int, ...]
+
+
+type _PolicyNode = _Probe | _Determined | None
+
+
+@dataclass(frozen=True)
+class CompiledPolicy:
+    catalogue: Catalogue
+    _root: _PolicyNode
+
+    def _fit(self, ask: Query) -> tuple[int, list[str]] | None:
+        ranks: dict[str, int] = {}
+        node = self._root
+        while isinstance(node, _Probe):
+            label = ask(node.word)
+            rank = ranks.setdefault(label, len(ranks))
+            if rank not in node.branches:
+                raise ValueError("The exact catalogue contains no action for the observed endpoints")
+            node = node.branches[rank]
+        if node is None:
+            return None
+        names = [""] * len(self.catalogue.shapes[node.row])
+        for label, state in zip(ranks, node.observed_states, strict=True):
+            names[state] = label
+        return node.row, names
+
+
+def compile_policy(catalogue: Catalogue) -> CompiledPolicy:
+    """Compile the exact selector once from a prepared catalogue for later acquisitions."""
+    size = catalogue.edges.shape[1]
+    version = _VersionSpace(catalogue, size)
+
+    def visit(next_name: int) -> _PolicyNode:
+        depth = len(version.facts)
+        if depth < len(ANCHORS):
+            word = ANCHORS[depth]
+        elif len(version.live) == 1:
+            row = int(version.live[0])
+            states = tuple(int(state) for state in version.states[row, :next_name])
+            return _Determined(row, states)
+        elif depth >= size + 24:
+            return None
+        else:
+            word = version.select()
+        live = version.live
+        endpoints = _column(catalogue, live, word)
+        names = version.names[live, endpoints]
+        branches = {}
+        # Branches partition the live rows. Each child writes only its own rows,
+        # so siblings need neither copies nor a rollback of the naming arrays.
+        for outcome in np.unique(names):
+            is_new = outcome == -1
+            rank = next_name if is_new else int(outcome)
+            version.live = live[names == outcome]
+            version.learn(word, str(rank))
+            branches[rank] = visit(next_name + int(is_new))
+            del version.facts[word]
+        return _Probe(word, branches)
+
+    return CompiledPolicy(catalogue, visit(0))
+
+
+def _fit_catalogue(index: Catalogue, initial: dict[str, str], ask: Query) -> tuple[int, list[str]] | None:
+    version = _VersionSpace(index, index.edges.shape[1])
+    for word, label in initial.items():
+        version.learn(word, label)
+    while len(version.live) > 1 and len(version.facts) < version.size + 24:
+        word = version.select()
+        version.learn(word, ask(word))
+    if len(version.live) > 1:
+        return None
+    row = int(version.live[0])
+    names = [str(int(name)) if name >= 0 else "" for name in version.names[row]]
+    return row, names
+
+
+def _name_action(
+    index: Catalogue, fit: tuple[int, list[str]], roster: set[str], ask: Query
+) -> tuple[str, dict[str, tuple[str, str]]]:
+    row, names = fit
+    missing = [(word, state) for word, state in index.naming[row] if not names[state]]
+    available = roster.difference(names)
+    for word, state in missing[:-1]:
+        answer = ask(word)
+        if answer not in available:
+            raise ValueError("The oracle reused a name in the determined action")
+        available.remove(answer)
+        names[state] = answer
+    if missing:
+        (last,) = available
+        names[missing[-1][1]] = last
+    rows = {names[state]: (names[a], names[b]) for state, (a, b) in enumerate(index.shapes[row])}
+    return names[0], rows
 
 
 def _square(initial: dict[str, str], roster: set[str], ask: Query) -> tuple[str, dict[str, tuple[str, str]]]:
@@ -408,10 +496,11 @@ class AcquiredAction:
     terminal: Terminal
 
 
-def acquire(roster: list[str], ask: Query, *, catalogue: Catalogue | None = None) -> AcquiredAction:
+def acquire(roster: list[str], ask: Query, *, catalogue: Catalogue | CompiledPolicy | None = None) -> AcquiredAction:
     """Learn a regular action from stable endpoint labels and a public complete roster."""
     validate_roster(roster)
-    if catalogue is not None and catalogue.edges.shape[1] != len(roster):
+    index = catalogue.catalogue if isinstance(catalogue, CompiledPolicy) else catalogue
+    if index is not None and index.edges.shape[1] != len(roster):
         raise ValueError("Catalogue order differs from the roster size")
     encode = {label: str(i) for i, label in enumerate(roster)}
     identifiers = set(encode.values())
@@ -427,23 +516,18 @@ def acquire(roster: list[str], ask: Query, *, catalogue: Catalogue | None = None
         tape[word] = answer
         return answer
 
-    initial = {word: query(word) for word in ANCHORS}
-    terminal: Terminal = "square"
-    if catalogue is None:
-        root, rows = _square(initial, identifiers, query)
+    if isinstance(catalogue, CompiledPolicy):
+        fit = catalogue._fit(query)
     else:
-        version = _VersionSpace(catalogue, len(roster))
-        for word, label in initial.items():
-            version.learn(word, label)
-        while len(version.live) > 1 and len(version.facts) < len(roster) + 24:
-            word = version.select()
-            version.learn(word, query(word))
-        if len(version.live) > 1:
-            root, rows = _square(version.facts, identifiers, query)
-            terminal = "cap"
-        else:
-            root, rows = version.name_action(identifiers, query)
-            terminal = "unique"
+        initial = {word: query(word) for word in ANCHORS}
+        fit = None if index is None else _fit_catalogue(index, initial, query)
+    terminal: Terminal
+    if index is None or fit is None:
+        root, rows = _square(tape, identifiers, query)
+        terminal = "square" if index is None else "cap"
+    else:
+        root, rows = _name_action(index, fit, identifiers, query)
+        terminal = "unique"
     _verify_action(root, rows, tape)
     transitions = {
         label: (roster[int(rows[str(i)][0])], roster[int(rows[str(i)][1])]) for i, label in enumerate(roster)

@@ -185,6 +185,20 @@ reply's `roundtrip_ns` includes sending the query, waiting for the driver,
 and reading its response. Measure reset, each command and endpoint read
 inside the driver if those costs need to be distinguished.
 
+For repeated acquisitions in one Python process, prepare the decision
+tree once and pass it to each session. The driver function takes a word,
+resets the oracle, executes the word left to right, and returns the final
+label. Provide the roster for each acquisition.
+
+```python
+from pathlib import Path
+
+from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
+
+policy = compile_policy(load_catalogue(Path("anchor-results.zip"), order=32))
+action = acquire(roster, read_endpoint, catalogue=policy)
+```
+
 ### Quick Tour
 
 ```bash
