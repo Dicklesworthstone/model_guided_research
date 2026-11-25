@@ -198,6 +198,35 @@ The separate checker independently reconstructed 34,560 output transitions, repl
 
 The producer and manifest were frozen at `12774ef`. [Frozen source and protocol](commutator-route-source.zip) · [Coverage](commutator-route-coverage.json) · [Tapes, audit, and receipts](commutator-route-results.zip)
 
+## Lifting a certified Klein-four quotient
+
+The `--klein-route` flag adds an arm after the paid commutator test rejects. The learner reuses the orders of the two marks and tests the order of their product if needed. It takes the half-order power of a word of order divisible by four, obtaining an involution \(d\). A mark that changes \(d\) under conjugation supplies another involution \(e\). Paid checks establish that \(d\) and \(e\) commute and that both marks normalize their four-element subgroup \(K\). An equality in the quotient by \(K\) can then be checked against the four possible kernel offsets. The learner attempts the existing abelian or order-three-commutator decoder on that quotient.
+
+Choose a breadth-first representative \(u\) in each quotient coset. Each marked quotient edge \(u\to v\) has a unique correction \(k'\in K\) satisfying \(um=k'v\) for its mark \(m\). The lift sends \((k,u)\) to \((kk',v)\). The kernel coordinate stays on the left, so this works for noncentral kernels. Tree edges have the identity correction by construction. For a quotient of order 30, only 31 edges remain, each requiring at most three equality calls to identify its correction. The reconstruction is a voltage graph lift with the corrections learned through paid equalities. [Voltage graph construction and spanning-tree normalization](https://arxiv.org/abs/2501.17135)
+
+```sh
+uv run --locked python -m scripts.group_student_probe proposal \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/klein-route-coverage.json \
+  --alternating-policy artifacts/probes/sizing/group-congruence/compiled-policy-a5xc2.json \
+  --klein-route \
+  --output "$PANEL_DIR/klein-route.json"
+```
+
+| Family | Cases | Prior commutator calls (symbols) | Klein arm calls (symbols) |
+| --- | ---: | ---: | ---: |
+| S4 × C5 | 8 fresh | 9,765 (105,568) | 1,223 (35,343) |
+| D10 × C12 | 6 fresh | 3,659 (41,867) | 3,665 (41,935) |
+| Five previously solved families | 10 replayed | 279 (12,966) | 279 (12,966) |
+
+On the eight targets, calls fell 87.48% against a frozen 70% gate, and queried symbols fell 66.52%. The additional branch took 84–170 calls per target after the shared prefix. Each dihedral control yielded a central involution, paid one extra call, and reproduced the entire fallback tape. Across the full panel the new arm saved 8,536 calls and 70,157 symbols. The ten historical cases reproduced their prior non-timing fields.
+
+Across two local runs, summed online CPU on the eight targets was 3.26–3.33 ms for the new arm and 38.14–43.49 ms for the incumbent. On the six dihedral controls, it was 20.37–22.53 ms and 20.78–21.56 ms respectively. S5 setup, short-certificate preparation, and alternating-policy validation took 68.0–79.7 ms, 40.2–48.4 ms, and 11.2–13.8 ms respectively, shared across the two arms. The branch requires no additional catalogue setup. These are measurements of an in-process oracle on one Mac.
+
+The separate checker replayed the paid replies, reconstructed all 40,320 transitions, built the quotient from concrete cosets, and rejected a forged edge correction. It verified exact recovery on all 216 ordered generating pairs of S4 and all 432 of S4 × C2. All 96 generating pairs of A4 refused at the initial search. A4 has a normal Klein subgroup, and this extractor needs a word whose order is divisible by four. Both hash seeds reproduced the same non-timing output, and the incumbent flag reproduced its six arms. DSR passed 2/2 checks, with 89 diagnostics tests passed and one skipped.
+
+The producer and manifest were frozen at `000d318`. [Frozen source and protocol](klein-route-source.zip) · [Coverage](klein-route-coverage.json) · [Tapes, audit, and receipts](klein-route-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
