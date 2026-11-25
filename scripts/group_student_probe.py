@@ -7,7 +7,7 @@ import json
 import math
 import random
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from functools import cache
@@ -538,8 +538,8 @@ def cached_equality(short: dict[str, str], word: str, ref: str) -> bool | None:
     return lhs == rhs if lhs is not None and rhs is not None else None
 
 
-def walk_action(word: str, edges) -> int:
-    state = 0
+def walk_action(word: str, edges, *, start: int = 0) -> int:
+    state = start
     for symbol in word:
         state = edges[state][int(symbol)]
     return state
@@ -788,7 +788,7 @@ def relator_panel(data: Path, output: Path) -> None:
     save(output, {"seed": 2026112307, "excluded_incomplete_s5": [row[2] for row in leaked_s5], "results": results})
 
 
-def s5_catalog():
+def _s5_marked_catalog():
     elements = _group_elements("s5")
     conjugates = []
     for generator in _GROUP_GENERATORS["s5"]:
@@ -812,12 +812,15 @@ def s5_catalog():
                     frontier.append(moved)
         graph = rooted_graph("s5", pair)
         if len(graph) == len(elements):
-            graphs[graph_digest(graph)] = graph
+            graphs[graph_digest(graph)] = graph, pair
     return dict(sorted(graphs.items()))
 
 
-def graph_equations(graph) -> list[tuple[str, ...]]:
-    """Return transition equations of a canonical BFS-numbered action."""
+def s5_catalog():
+    return {identifier: graph for identifier, (graph, _) in _s5_marked_catalog().items()}
+
+
+def _graph_words(graph) -> list[str]:
     reps: list[str | None] = [None] * len(graph)
     reps[0] = ""
     for source, row in enumerate(graph):
@@ -830,6 +833,12 @@ def graph_equations(graph) -> list[tuple[str, ...]]:
     words = [word for word in reps if word is not None]
     if len(words) != len(graph):
         raise ValueError("Graph contains a state without a representative")
+    return words
+
+
+def graph_equations(graph) -> list[tuple[str, ...]]:
+    """Return transition equations of a canonical BFS-numbered action."""
+    words = _graph_words(graph)
     return sorted(
         {
             pair_key(words[source] + str(digit), words[dest])
@@ -838,6 +847,54 @@ def graph_equations(graph) -> list[tuple[str, ...]]:
             if words[source] + str(digit) != words[dest]
         }
     )
+
+
+def _permutation_words(generators):
+    identity = tuple(range(5))
+    words = {identity: ""}
+    frontier = deque([identity])
+    while frontier:
+        state = frontier.popleft()
+        for mark, generator in enumerate(generators):
+            target = _perm_mul(generator, state)
+            if target not in words:
+                words[target] = words[state] + str(mark)
+                frontier.append(target)
+    return words
+
+
+def s5_presentation_certificates(marked_catalog):
+    """Compile Moore's five relators and two marking equations into positive words."""
+    transposition, cycle = _GROUP_GENERATORS["s5"]
+    standard_words = _permutation_words((transposition, cycle))
+    charts = []
+    for g in standard_words:
+        inverse = tuple(g.index(i) for i in range(len(g)))
+        coordinates = {_perm_mul(_perm_mul(g, h), inverse): word for h, word in standard_words.items()}
+        charts.append((_perm_mul(_perm_mul(g, transposition), inverse), _perm_mul(_perm_mul(g, cycle), inverse),
+                       coordinates))
+
+    certificates = {}
+    for identifier, (_, marks) in marked_catalog.items():
+        words = _permutation_words(marks)
+        best = None
+        for x, y, standard in charts:
+            a, b = words[x], words[y]
+            basis = (a, b)
+            ties = [(str(i), "".join(basis[int(j)] for j in standard[h])) for i, h in enumerate(marks)]
+            # The preceding b^5 equation licenses replacing inverse powers of b.
+            relators = [
+                (a * 2, ""), (b * 5, ""), ((a + b) * 4, ""),
+                ((a + b * 4 + a + b) * 3, ""), ((a + b * 3 + a + b * 2) * 2, ""),
+                *ties,
+            ]
+            questions = list(dict.fromkeys(cancelled_key(left, right) for left, right in relators if left != right))
+            score = (len(questions), sum(len(word) for pair in questions for word in pair), questions)
+            if best is None or score < best:
+                best = score
+        assert best is not None
+        certificates[identifier] = best[-1]
+    return certificates
 
 
 def identify_known_family(catalog, equal: Callable[[str, str], bool]) -> dict:
@@ -1078,10 +1135,98 @@ def congruence_panel(coverage: Path, output: Path, *, known_family_policy: str =
     save(output, report)
 
 
+def _regular_proposal_graph(rows):
+    graph = tuple(tuple(row) for row in rows)
+    if len(graph) != 120 or any(len(row) != 2 for row in graph):
+        raise ValueError("The proposal panel requires a two-generator action of order 120")
+    if any(type(target) is not int for row in graph for target in row) or any(
+        sorted(column) != list(range(120)) for column in zip(*graph, strict=True)
+    ):
+        raise ValueError("The proposed oracle actions must be permutations")
+    words = _graph_words(graph)
+    for start in graph[0]:
+        left = [walk_action(word, graph, start=start) for word in words]
+        if sorted(left) != list(range(120)) or any(
+            left[graph[i][mark]] != graph[left[i]][mark] for i in range(120) for mark in range(2)
+        ):
+            raise ValueError("The proposal oracle is not a regular group action")
+    return graph
+
+
+def _acquire_checked_proposal(tree, catalog, certificates, equal):
+    proposal = _run_equality_plan(plan_compiled_family(tree), equal)
+    identifier = proposal["marked_class"]
+    observed = {pair_key(*step["pair"]): step["answer"] for step in proposal["queries"]}
+    checks = []
+    for pair in certificates[identifier]:
+        reused = pair in observed
+        answer = observed[pair] if reused else equal(*pair)
+        checks.append(dict(pair=pair, answer=answer, reused=reused))
+        if not answer:
+            break
+    if not checks:
+        raise ValueError("Missing certificate for the proposed action")
+    accepted = checks[-1]["answer"]
+    graph = catalog[identifier] if accepted else acquire_with_memo(120, equal, cancelled_key)["edges"]
+    return dict(right=graph, proposal=proposal, checks=checks, accepted=accepted)
+
+
+def proposal_panel(coverage: Path, output: Path) -> None:
+    try:
+        cases = json.loads(coverage.read_bytes())["cases"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError(f"Invalid proposal manifest {coverage}") from error
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("The proposal manifest needs at least one case")
+    started = time.process_time_ns()
+    marked = _s5_marked_catalog()
+    catalog = {identifier: graph for identifier, (graph, _) in marked.items()}
+    tree = compile_known_family(catalog)
+    edge = {identifier: graph_equations(graph) for identifier, graph in catalog.items()}
+    common_cpu_ns = time.process_time_ns() - started
+    started = time.process_time_ns()
+    short = s5_presentation_certificates(marked)
+    short_cpu_ns = time.process_time_ns() - started
+    results = []
+    seen = set()
+    for index, case in enumerate(cases):
+        graph = _regular_proposal_graph(case["graph"])
+        identifier = graph_digest(graph)
+        if identifier != case["graph_sha"] or identifier in seen:
+            raise ValueError("The proposal manifest changed or repeated an action")
+        seen.add(identifier)
+        arms = {}
+        order = ("fallback", "edge", "short")
+        offset = index % len(order)
+        for arm in order[offset:] + order[:offset]:
+            paid = []
+
+            def equal(left, right, tape=paid):
+                answer = walk_action(left, graph) == walk_action(right, graph)
+                tape.append((left, right, answer))
+                return answer
+
+            started = time.process_time_ns()
+            if arm == "fallback":
+                result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
+            else:
+                result = _acquire_checked_proposal(tree, catalog, edge if arm == "edge" else short, equal)
+            cpu_ns = time.process_time_ns() - started
+            if tuple(map(tuple, result["right"])) != graph:
+                raise ValueError("Certificate or fallback produced an incorrect marked action")
+            result.update(paid=paid, cpu_ns=cpu_ns)
+            arms[arm] = result
+        results.append(dict(graph_sha=identifier, family=case["family"], arms=arms))
+    save(output, dict(
+        coverage_sha256=digest(coverage), common_cpu_ns=common_cpu_ns, short_cpu_ns=short_cpu_ns,
+        certificates=short, results=results,
+    ))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover", "congruence")
+        "phase", choices=("prepare", "train", "score", "equality", "relator", "congruence-cover", "congruence", "proposal")
     )
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--runs", type=Path)
@@ -1117,6 +1262,10 @@ if __name__ == "__main__":
         if args.coverage is None or args.output is None:
             parser.error("--coverage and --output are required for the congruence panel")
         congruence_panel(args.coverage, args.output, known_family_policy=args.known_family_policy)
+    elif args.phase == "proposal":
+        if args.coverage is None or args.output is None:
+            parser.error("--coverage and --output are required for the proposal panel")
+        proposal_panel(args.coverage, args.output)
     else:
         if args.runs is None:
             parser.error("--runs is required for training and scoring")
