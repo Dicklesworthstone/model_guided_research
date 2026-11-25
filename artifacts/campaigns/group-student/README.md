@@ -444,3 +444,57 @@ word sequence reproduced across the two relabelings. Replay by unpacking
 the source into `run/` beside a clean `work/` checkout at the producer
 revision. Set `FRONTIER_WORK`, `FRONTIER_RUN` and `FRONTIER_SHA` for the
 archived DSR config. [Both new paid tapes, timings and receipts](frontier-results.zip)
+
+### Can the shared replies certify a safe policy switch?
+
+The guarded compiler uses the shortlist and frontier's common queries
+until the first differing word. Every compatible shape has the same
+already-paid prefix under both choices. The compiler takes the frontier
+continuation only if every compatible shape costs at most as much and
+at least one costs less. It can enforce this separately for reads and
+both commands, or for a supplied linear price. The guarantee covers
+paid operations on the audited catalogue. Preparation, host CPU and
+physical timing are separate costs. [Frozen protocol and implementation method](guarded-source.zip)
+
+Both preregistered utility predictions failed. The componentwise guard
+and the guard using 16 units per reset/read and one per command both made
+**zero switches** on all 2,453 shapes in both runs. The separate audit
+verified all **24,530 exact acquisitions** across five live arms and both
+relabelings. Each guarded tape matched one of the two allowed published
+continuations, with all three paid counts independently recounted. Both
+guards satisfied their pointwise cost constraints.
+
+| Order | Different tapes | Distinct first divergences | Individually cheaper at (16, 1, 1) | Profitable prefixes at any nonnegative prices | Profitable prefixes with all prices positive |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 32 | 2 | 6 | 0 | 0 |
+| 64 | 288 | 33 | 78 | 7 | 0 |
+| 128 | 1,452 | 57 | 418 | 15 | 0 |
+
+The follow-up groups the candidate tapes by the observable equality
+history before their first differing word. At the fixed price, the
+frontier was cheaper on 502 shapes. All 84 prefix groups containing
+a strict gain also contained a loss. The frontier improved at least
+one cost without increasing the others on 252 individual shapes.
+All 78 prefix groups containing one of those shapes also contained a
+component increase on some compatible action.
+
+The last two columns are exploratory. They come from intersecting the
+normalized price triangle with every compatible shape's exact no-increase
+inequality in each of the 92 groups. No group allowed a safe, strictly
+profitable switch when all three prices were positive. The 22 boundary
+groups with a gain required pricing at least one operation at zero.
+Both relabelings reproduced this result. It identifies an information
+limit at the first divergence of these two policies on this inventory.
+
+At order 128, preparing the frontier took 7.42–7.44 seconds of CPU after
+loading. Building the componentwise and priced guards each added about
+0.89–0.95 seconds. The Python API exposes the generic compiler as
+`compile_guarded_policy(incumbent, alternative, prices=(16, 1, 1))`.
+Omit `prices` to protect all three counts independently.
+
+DSR passed both final checks with 105 diagnostics tests passed and one
+skipped. The post-run price-region diagnosis passed its separate DSR
+check. To replay, extract the source into `run/` beside `work/` at
+producer `ac5a758`. Set `GUARD_RUN`, `GUARD_WORK` and `GUARD_SHA` for
+the archived DSR config. The results include the post-run diagnosis
+source and receipt. [Raw costs, tape receipts, and price regions](guarded-results.zip)
