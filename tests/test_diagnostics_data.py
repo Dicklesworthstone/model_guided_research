@@ -744,9 +744,9 @@ def test_incremental_square_closure_keeps_reporting_a_conflict():
             actions.close(squares=True)
 
 
-@pytest.mark.parametrize("mode", ["square", "tiered", "compiled"])
+@pytest.mark.parametrize("mode", ["square", "tiered", "compiled", "bundled"])
 def test_exact_endpoint_acquisition_with_opaque_labels(mode):
-    from nanochat.group_acquisition import acquire, compile_policy, load_catalogue
+    from nanochat.group_acquisition import acquire, compile_policy, load_bundled_policy, load_catalogue
 
     labels = [f"state {i:02x} / α" for i in range(32)]
 
@@ -767,8 +767,11 @@ def test_exact_endpoint_acquisition_with_opaque_labels(mode):
         return labels[state]
 
     path = FIXTURE_PATH.parents[2] / "artifacts/probes/sizing/group-solver-baseline/anchor-results.zip"
-    index = None if mode == "square" else load_catalogue(path, len(labels))
-    policy = compile_policy(index) if mode == "compiled" and index is not None else index
+    if mode == "bundled":
+        policy = load_bundled_policy(len(labels))
+    else:
+        index = None if mode == "square" else load_catalogue(path, len(labels))
+        policy = compile_policy(index) if mode == "compiled" and index is not None else index
     action = acquire(list(reversed(labels)), teacher, catalogue=policy)
     assert words[:4] == ["00", "01", "10", "11"]
     assert action.root == labels[0]
@@ -786,6 +789,17 @@ def test_compiled_acquisition_rejects_an_impossible_equality():
     # Equality of the first two answers implies the two marks coincide.
     with pytest.raises(ValueError, match="no action for the observed endpoints"):
         acquire(labels, observations.__getitem__, catalogue=policy)
+
+
+def test_bundled_policy_rejects_a_changed_resource(tmp_path, monkeypatch):
+    from nanochat import group_acquisition
+
+    resources = tmp_path / "research_data"
+    resources.mkdir()
+    (resources / "group_policies.zip").write_bytes(b"corrupt compiled policy")
+    monkeypatch.setattr(group_acquisition, "files", lambda _: tmp_path)
+    with pytest.raises(ValueError, match="checksum"):
+        group_acquisition.load_bundled_policy(32)
 
 
 @pytest.mark.parametrize(
@@ -831,9 +845,18 @@ def test_group_acquire_validates_inputs_before_querying(tmp_path):
     assert invalid.exit_code == 2 and not invalid.stdout
     assert "Catalogue checksum mismatch" in invalid.stderr
 
+    conflict = runner.invoke(app, ["group-acquire", str(roster), "--compiled", "--catalogue", str(catalogue)])
+    assert conflict.exit_code == 2 and not conflict.stdout
+    assert "Choose either --compiled or --catalogue" in conflict.stderr
+
     occupied = runner.invoke(app, ["group-acquire", str(roster), "--transcript", str(transcript)])
     assert occupied.exit_code == 2 and not occupied.stdout
     assert transcript.read_text(encoding="utf-8") == "existing evidence\n"
+
+    roster.write_text('["home"]', encoding="utf-8")
+    unsupported = runner.invoke(app, ["group-acquire", str(roster), "--compiled"])
+    assert unsupported.exit_code == 2 and not unsupported.stdout
+    assert "covers orders 32, 64, 128" in unsupported.stderr
 
     roster.write_text('["same","same"]', encoding="utf-8")
     bad_roster = runner.invoke(app, ["group-acquire", str(roster)])

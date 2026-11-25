@@ -6,6 +6,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from heapq import heapify, heappop, heappush
+from importlib.resources import files
 from io import BytesIO
 from itertools import groupby, product
 from pathlib import Path
@@ -20,6 +21,7 @@ ANCHORS = ("00", "01", "10", "11")
 SHORT = tuple("".join(word) for length in range(2, 5) for word in product(SYMBOLS, repeat=length))
 CATALOGUE_SHA256 = "75c7df5cda251d1d28d63c300e5fd2587d6b64d33229635757e2eb45dfefc70f"
 CATALOGUE_ORDERS = (32, 64, 128)
+BUNDLED_POLICY_SHA256 = "4645a5343796fabf365eb93f96ee145b9d7f2c32d8d54f19766f4f50371fd96b"
 
 type Shape = tuple[tuple[int, int], ...]
 type Query = Callable[[str], str]
@@ -360,7 +362,8 @@ type _PolicyNode = _Probe | _Determined | None
 
 @dataclass(frozen=True)
 class CompiledPolicy:
-    catalogue: Catalogue
+    shapes: list[Shape]
+    naming: list[list[tuple[str, int]]]
     _root: _PolicyNode
 
     def _fit(self, ask: Query) -> tuple[int, list[str]] | None:
@@ -374,7 +377,7 @@ class CompiledPolicy:
             node = node.branches[rank]
         if node is None:
             return None
-        names = [""] * len(self.catalogue.shapes[node.row])
+        names = [""] * len(self.shapes[node.row])
         for label, state in zip(ranks, node.observed_states, strict=True):
             names[state] = label
         return node.row, names
@@ -412,7 +415,34 @@ def compile_policy(catalogue: Catalogue) -> CompiledPolicy:
             del version.facts[word]
         return _Probe(word, branches)
 
-    return CompiledPolicy(catalogue, visit(0))
+    return CompiledPolicy(catalogue.shapes, catalogue.naming, visit(0))
+
+
+def _decode_policy_node(value: list | None) -> _PolicyNode:
+    if value is None:
+        return None
+    head, data = value
+    if isinstance(head, str):
+        return _Probe(head, {int(rank): _decode_policy_node(child) for rank, child in data})
+    return _Determined(head, tuple(data))
+
+
+def load_bundled_policy(order: int) -> CompiledPolicy:
+    """Load a compiled policy from the release's audited catalogue."""
+    if order not in CATALOGUE_ORDERS:
+        raise ValueError(f"The bundled policy covers orders {', '.join(map(str, CATALOGUE_ORDERS))}")
+    content = files("nanochat").joinpath("research_data", "group_policies.zip").read_bytes()
+    if hashlib.sha256(content).hexdigest() != BUNDLED_POLICY_SHA256:
+        raise ValueError("The bundled policy checksum does not match this release")
+    with ZipFile(BytesIO(content)) as archive:
+        payload = json.loads(archive.read(f"{order}.json"))
+    if payload["format"] != "mgr.group-policy.v1" or payload["catalogue"] != CATALOGUE_SHA256:
+        raise ValueError("The bundled policy has an incompatible format or catalogue")
+    shapes = []
+    for packed in payload["shapes"]:
+        edges = bytes.fromhex(packed)
+        shapes.append(tuple(zip(edges[::2], edges[1::2], strict=True)))
+    return CompiledPolicy(shapes, [_access(shape) for shape in shapes], _decode_policy_node(payload["tree"]))
 
 
 def _fit_catalogue(index: Catalogue, initial: dict[str, str], ask: Query) -> tuple[int, list[str]] | None:
@@ -430,7 +460,7 @@ def _fit_catalogue(index: Catalogue, initial: dict[str, str], ask: Query) -> tup
 
 
 def _name_action(
-    index: Catalogue, fit: tuple[int, list[str]], roster: set[str], ask: Query
+    index: Catalogue | CompiledPolicy, fit: tuple[int, list[str]], roster: set[str], ask: Query
 ) -> tuple[str, dict[str, tuple[str, str]]]:
     row, names = fit
     missing = [(word, state) for word, state in index.naming[row] if not names[state]]
@@ -499,8 +529,7 @@ class AcquiredAction:
 def acquire(roster: list[str], ask: Query, *, catalogue: Catalogue | CompiledPolicy | None = None) -> AcquiredAction:
     """Learn a regular action from stable endpoint labels and a public complete roster."""
     validate_roster(roster)
-    index = catalogue.catalogue if isinstance(catalogue, CompiledPolicy) else catalogue
-    if index is not None and index.edges.shape[1] != len(roster):
+    if catalogue is not None and len(catalogue.shapes[0]) != len(roster):
         raise ValueError("Catalogue order differs from the roster size")
     encode = {label: str(i) for i, label in enumerate(roster)}
     identifiers = set(encode.values())
@@ -520,13 +549,13 @@ def acquire(roster: list[str], ask: Query, *, catalogue: Catalogue | CompiledPol
         fit = catalogue._fit(query)
     else:
         initial = {word: query(word) for word in ANCHORS}
-        fit = None if index is None else _fit_catalogue(index, initial, query)
+        fit = None if catalogue is None else _fit_catalogue(catalogue, initial, query)
     terminal: Terminal
-    if index is None or fit is None:
+    if catalogue is None or fit is None:
         root, rows = _square(tape, identifiers, query)
-        terminal = "square" if index is None else "cap"
+        terminal = "square" if catalogue is None else "cap"
     else:
-        root, rows = _name_action(index, fit, identifiers, query)
+        root, rows = _name_action(catalogue, fit, identifiers, query)
         terminal = "unique"
     _verify_action(root, rows, tape)
     transitions = {
@@ -545,7 +574,7 @@ def run_stream(
     stdin: TextIO,
     stdout: TextIO,
     *,
-    catalogue: Catalogue | None,
+    catalogue: Catalogue | CompiledPolicy | None,
     transcript: TextIO | None,
     setup_ns: int,
 ) -> None:
@@ -581,7 +610,12 @@ def run_stream(
         log("reply", word=word, label=label, roundtrip_ns=elapsed)
         return label
 
-    log("start", roster=roster, mode="square" if catalogue is None else "tiered", setup_ns=setup_ns)
+    mode = "square"
+    if isinstance(catalogue, CompiledPolicy):
+        mode = "compiled"
+    elif catalogue is not None:
+        mode = "tiered"
+    log("start", roster=roster, mode=mode, setup_ns=setup_ns)
     try:
         action = acquire(roster, ask, catalogue=catalogue)
     except (ValueError, OSError) as error:

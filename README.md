@@ -173,9 +173,11 @@ returns `action` with the root label and a `transitions` mapping. Each value is
 an array of the next labels for commands `0` and `1`, in that order. Protocol
 errors exit with status 2 and a diagnostic on stderr.
 
-The default uses live square closure. Pass `--catalogue path/to/anchor-results.zip`
-to use shortest-tier selection at orders 32, 64 or 128. The command checks the
-archive against the audited inventory before issuing its first query.
+The default uses live square closure. Pass `--compiled` at order 32, 64
+or 128 to load the release's precompiled shortest-tier policy. It uses
+the same queries as dynamic shortest-tier selection. To use the dynamic
+selector, pass `--catalogue path/to/anchor-results.zip`. The command checks
+the policy or archive before issuing its first query.
 [Audited catalogue](artifacts/probes/sizing/group-solver-baseline/anchor-results.zip) ·
 [Measured per-order trade-offs](artifacts/campaigns/group-student/README.md#transfer-to-orders-32-64-and-128)
 

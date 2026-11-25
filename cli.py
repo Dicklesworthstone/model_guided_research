@@ -531,15 +531,21 @@ def group_acquire(
     catalogue: Annotated[
         Path | None, typer.Option(help="Audited anchor-results.zip for shortest-tier selection at order 32, 64 or 128")
     ] = None,
+    compiled: Annotated[bool, typer.Option(help="Use the bundled compiled policy at order 32, 64 or 128")] = False,
     transcript: Annotated[Path | None, typer.Option(help="New file for the JSON-lines acquisition transcript")] = None,
 ) -> None:
     """Learn a regular group action from one binary-word query and JSON reply at a time."""
-    from nanochat.group_acquisition import load_catalogue, run_stream, validate_roster
+    from nanochat.group_acquisition import load_bundled_policy, load_catalogue, run_stream, validate_roster
 
     try:
+        if compiled and catalogue is not None:
+            raise ValueError("Choose either --compiled or --catalogue")
         labels = validate_roster(json.loads(roster.read_text(encoding="utf-8")))
         started = time.perf_counter_ns()
-        index = None if catalogue is None else load_catalogue(catalogue, len(labels))
+        if compiled:
+            index = load_bundled_policy(len(labels))
+        else:
+            index = None if catalogue is None else load_catalogue(catalogue, len(labels))
         setup_ns = 0 if index is None else time.perf_counter_ns() - started
         with nullcontext(None) if transcript is None else transcript.open("x", encoding="utf-8") as journal:
             run_stream(labels, sys.stdin, sys.stdout, catalogue=index, transcript=journal, setup_ns=setup_ns)
