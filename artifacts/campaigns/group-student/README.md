@@ -196,3 +196,22 @@ Over the 24 historical cases, live square closure took 103–106 ms of CPU, the 
 The independent checker rebuilt the entire catalogue, verified the feasible shape count and bucket score for every structural probe, checked every paid reply and shortest-word naming suffix, and audited 16,200 table entries and 16,128 held-out observations across the three arms. Both arm orders and hash seeds reproduced all non-timing output. DSR passed both checks, including 89 diagnostics tests with one skipped.
 
 The producer is `397fba3`. Extract the registered cohort and the earlier `catalogue.json`, then extract `scored.json` from the partial-action results as `prior-partial.json` and `verified.json` from the batched named results as `prior-cost.json`. The source archive includes the older catalogue helpers and the DSR replay configuration. [Frozen four-anchor source and protocol](four-anchor-source.zip) · [Paid tapes, complete audit and timings](four-anchor-results.zip)
+
+### Reducing movement in the four-anchor acquisition
+
+For each true action, take the shortest admissible word length to each state whose name was absent from the anchors. These distances come from a multi-source traversal with all anchor endpoints at distance two. The sum of the unseen distances minus the largest is a movement lower bound after the anchors. At least all but one name must be observed, and the roster can supply the last. Including the four anchor words gives a floor of **12,350 symbols** across the 24 historical cases.
+
+The movement-credit policy applies the same bound inside each compatible shape. A newly observed state of distance \(d\) lowers the remaining bound by the lesser of \(d\) and the second-largest distance still unseen. This follows by subtracting the new sum and maximum from the old sum and maximum. Among probes with a worst-case bucket at most twice the best strict minimax value, the selector minimizes word length minus this credit averaged over compatible shapes. Those shapes have equal numbers of residual naming bijections. The length-first policy uses the shortest strictly informative probe, breaking ties by worst bucket and then lexicographic order. Both use the same shortlist as the live short policy and share the exact naming suffix after structure selection.
+
+| Live policy, 24 historical cases | Reads | Input symbols | Symbols above floor | Online CPU |
+| --- | ---: | ---: | ---: | ---: |
+| Square closure | 2,287 | 13,223 | 873 | 104–105 ms |
+| Short minimax catalogue | 2,177 | 13,780 | 1,430 | 388–404 ms |
+| Movement credit | 2,175 | 13,148 | 798 | 797–833 ms |
+| Length-first | 2,178 | 12,521 | 171 | 307–329 ms |
+
+The preregistered credit policy reduced symbol surplus by **44.20%** against the 35% threshold and used two fewer reads than short minimax. The fixed length-first ablation reduced symbol surplus by **88.04%** at one extra read. Against live square closure it saved 109 reads, 392 zero symbols and 310 one symbols. It took 210–231 ms more elapsed time with a prepared catalogue, so the measured host overhead would be covered if \(109q+392m_0+310m_1\) exceeds that range, where \(q\) prices a reset/read and \(m_0,m_1\) price the two marks. Common catalogue and endpoint preparation took 6.26–6.27 seconds of CPU. Credit's distance preparation added 21–23 ms. Device pricing remains open.
+
+On the six outside controls, square, short minimax, credit and length-first used respectively 572, 542, 544 and 554 reads, and 3,755, 3,734, 3,667 and 3,616 symbols. All recovered exactly. Credit cost 259–269 ms of outside CPU, length-first 107–127 ms, short minimax 115–132 ms and square 25–28 ms. No catalogue needed its cap in the ordinary cohorts. The forced cap recovered with the original live square tape.
+
+The independent checker reconstructed the full catalogue, all candidate choices among the complete shortlists, both cost floors, every paid reply and the exact naming suffixes. It audited 21,600 table entries and 21,504 held-out answers across four arms. Both hashes reproduced the same non-timing data, and the live incumbents reproduced their archived traces. The producer is `f8e486e`. DSR passed both checks, including 89 diagnostics tests with one skipped. Reproduce with the same cohort, catalogue and `prior-partial.json`. Extract the scored tape from the four-anchor results as `prior-four.json`. [Frozen movement source and protocol](movement-credit-source.zip) · [Raw runs, audit and DSR receipt](movement-credit-results.zip)
