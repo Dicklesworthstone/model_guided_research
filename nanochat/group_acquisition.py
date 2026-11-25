@@ -498,6 +498,20 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
             groups.setdefault(rank, []).append((row, names))
         return {rank: tuple(group) for rank, group in groups.items()}
 
+    def canonical(state: _PlanningState) -> _PlanningState:
+        # A simultaneous permutation of seen-label ranks changes no future
+        # costs. Use the first compatible shape to choose their common order.
+        _, first_names = state[0]
+        order = sorted(range(len(first_names)), key=first_names.__getitem__)
+        return tuple((row, tuple(names[rank] for rank in order)) for row, names in state)
+
+    @cache
+    def naming_cost(row: int, names: frozenset[int]) -> int:
+        # Omit the most expensive shortest access word, because the last
+        # unused name is determined by the roster.
+        missing = [read_price + len(word) for word, target in catalogue.naming[row] if target not in names]
+        return sum(missing[:-1])
+
     @cache
     def probes(rows: tuple[int, ...]) -> list[tuple[str, tuple[int, ...]]]:
         # Every longer admissible word extends an anchor. Equal endpoint vectors
@@ -522,17 +536,14 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
         return queue
 
     @cache
-    def solve(state: _PlanningState) -> tuple[int, _PolicyNode]:
+    def solve(state: _PlanningState) -> tuple[int, str | None]:
         spend()
         first, names = state[0]
         if len(state) == 1:
-            # The final unobserved label is forced by the roster. Omit the
-            # most expensive shortest access word among the missing positions.
-            missing = [read_price + len(word) for word, target in catalogue.naming[first] if target not in names]
-            return sum(missing[:-1]), _Determined(first, names)
+            return naming_cost(first, frozenset(names)), None
 
         best_cost: int | None = None
-        best_probe: _Probe | None = None
+        best_word: str | None = None
         for word, endpoints in probes(tuple(row for row, _ in state)):
             spend()
             groups = partition(state, endpoints)
@@ -543,22 +554,38 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
                 if child == state or rank == size - 1:
                     continue
             total = len(state) * (read_price + len(word))
-            branches: dict[int, _PolicyNode] = {}
-            for rank, child in groups.items():
+            if best_cost is not None:
+                lower_bound = sum(
+                    naming_cost(row, frozenset(named)) for child in groups.values() for row, named in child
+                )
+                if total + lower_bound >= best_cost:
+                    continue
+            for child in groups.values():
                 if best_cost is not None and total >= best_cost:
                     break
-                cost, branches[rank] = solve(child)
+                cost, _ = solve(canonical(child))
                 total += cost
             else:
                 if best_cost is None or total < best_cost:
-                    best_cost, best_probe = total, _Probe(word, branches)
+                    best_cost, best_word = total, word
         if best_cost is None:
             raise ValueError("No informative probe while multiple rooted actions remain")
-        return best_cost, best_probe
+        return best_cost, best_word
+
+    def emit(state: _PlanningState) -> _PolicyNode:
+        # Restore the acquisition runtime's first-seen reply ranks. Only
+        # optimal branches are materialized from the memoized actions.
+        _, word = solve(canonical(state))
+        if word is None:
+            row, names = state[0]
+            return _Determined(row, names)
+        endpoints = tuple(_endpoint(shapes[row], word) for row, _ in state)
+        return _Probe(word, {rank: emit(child) for rank, child in partition(state, endpoints).items()})
 
     def anchor(state: _PlanningState, depth: int) -> tuple[int, _PolicyNode]:
         if depth == len(ANCHORS):
-            return solve(state)
+            cost, _ = solve(canonical(state))
+            return cost, emit(state)
         word = ANCHORS[depth]
         endpoints = tuple(_endpoint(shapes[row], word) for row, _ in state)
         total = len(state) * (read_price + len(word))
