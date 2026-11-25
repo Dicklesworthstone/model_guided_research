@@ -1320,7 +1320,9 @@ def _check_proposal(tree, certificates, equal):
     return dict(proposal=proposal, checks=checks, accepted=checks[-1]["answer"])
 
 
-def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False):
+def _acquire_checked_proposal(
+    tree, catalog, certificates, equal, *, alternate=None, commutator_route: bool = False, klein_route: bool = False,
+):
     result = _check_proposal(tree, certificates, equal)
     if result["accepted"]:
         return dict(right=catalog[result["proposal"]["marked_class"]], **result)
@@ -1330,11 +1332,16 @@ def _acquire_checked_proposal(tree, catalog, certificates, equal, *, alternate=N
         result["alternating"] = attempt
         if attempt["accepted"]:
             return dict(right=next_catalog[attempt["proposal"]["marked_class"]], **result)
-    if commutator_route:
+    if commutator_route or klein_route:
         graph, witness = _try_order_three_commutator(120, equal)
         result["commutator"] = witness
         if graph is not None:
             return dict(right=graph, **result)
+        if klein_route:
+            graph, lift = _try_klein_four_quotient(120, equal, witness["orders"])
+            result["klein"] = lift
+            if graph is not None:
+                return dict(right=graph, **result)
     return dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"], **result)
 
 
@@ -1440,10 +1447,8 @@ def _order_three_extension_action(lattice, signs, powers) -> tuple[tuple[int, in
     return tuple(edges)
 
 
-def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
-    """Recognize and recover a group with derived subgroup C3 after a paid noncommutation reply."""
-    if size % 3:
-        return None, dict(rejected="group_order")
+def _memoized_noncommuting_equality(equal: Callable[[str, str], bool]) -> Callable[[str, str], bool]:
+    """Cache exact comparisons after the caller has established noncommutation."""
     observed: dict[tuple[str, ...], bool] = {("01", "10"): False}
 
     def ask(left: str, right: str) -> bool:
@@ -1453,7 +1458,14 @@ def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
         if pair not in observed:
             observed[pair] = equal(*pair)
         return observed[pair]
+    return ask
 
+
+def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
+    """Recognize and recover a group with derived subgroup C3 after a paid noncommutation reply."""
+    if size % 3:
+        return None, dict(rejected="group_order")
+    ask = _memoized_noncommuting_equality(equal)
     primes = _prime_divisors(size)
     order_a = _element_order("0", size, primes, ask)
     order_b = _element_order("1", size, primes, ask)
@@ -1482,9 +1494,75 @@ def _try_order_three_commutator(size: int, equal: Callable[[str, str], bool]):
     return _order_three_extension_action(lattice, signs, powers), dict(lattice=lattice, signs=signs, powers=powers, **witness)
 
 
+def _klein_extension_action(quotient, corrections) -> tuple[tuple[int, int], ...]:
+    root = (0, 0)
+    indices = {root: 0}
+    queue = deque([root])
+    graph = []
+    while queue:
+        kernel, coset = queue.popleft()
+        row = []
+        for target, correction in zip(quotient[coset], corrections[coset], strict=True):
+            state = (kernel ^ correction, target)
+            if state not in indices:
+                indices[state] = len(indices)
+                queue.append(state)
+            row.append(indices[state])
+        graph.append((row[0], row[1]))
+    return tuple(graph)
+
+
+def _try_klein_four_quotient(size: int, equal: Callable[[str, str], bool], orders: tuple[int, int]):
+    """Recover a detected normal Klein-four extension of a supported quotient."""
+    if size % 4:
+        return None, dict(rejected="group_order")
+    ask = _memoized_noncommuting_equality(equal)
+    involutions = [mark * (order // 2) for mark, order in zip("01", orders, strict=True) if order % 4 == 0]
+    if involutions:
+        d = min(involutions, key=lambda word: (len(word), word))
+    else:
+        order_ab = _element_order("01", size, _prime_divisors(size), ask)
+        if order_ab % 4:
+            return None, dict(rejected="no_order_four_power")
+        d = "01" * (order_ab // 2)
+
+    for order, mark in sorted(zip(orders, "01", strict=True)):
+        if not ask(mark + d, d + mark):
+            e = mark + d + mark * (order - 1)
+            break
+    else:
+        return None, dict(rejected="central_involution", involution=d)
+    if not ask(d + e, e + d):
+        return None, dict(rejected="noncommuting_involutions", basis=(d, e))
+    kernel = ("", d, e, d + e)
+    if any(not any(ask(mark + word, other + mark) for other in kernel[1:]) for mark in "01" for word in (d, e)):
+        return None, dict(rejected="nonnormal_kernel", basis=(d, e))
+
+    def quotient_equal(left: str, right: str) -> bool:
+        return any(ask(left, word + right) for word in kernel)
+
+    if quotient_equal("01", "10"):
+        quotient = _acquire_commuting_action(size // 4, quotient_equal)["right"]
+    else:
+        quotient, _ = _try_order_three_commutator(size // 4, quotient_equal)
+        if quotient is None:
+            return None, dict(rejected="unsupported_quotient", basis=(d, e))
+
+    reps = _graph_words(quotient)
+    corrections = []
+    for rep, targets in zip(reps, quotient, strict=True):
+        row = []
+        for mark, target in zip("01", targets, strict=True):
+            left, right = rep + mark, reps[target]
+            row.append(next((i for i, word in enumerate(kernel[:3]) if ask(left, word + right)), 3))
+        corrections.append(tuple(row))
+    witness = dict(basis=(d, e), quotient=quotient, corrections=corrections)
+    return _klein_extension_action(quotient, corrections), witness
+
+
 def proposal_panel(
     coverage: Path, output: Path, *, abelian_route: bool = False, alternating_route: bool = False,
-    alternating_policy: Path | None = None, commutator_route: bool = False,
+    alternating_policy: Path | None = None, commutator_route: bool = False, klein_route: bool = False,
 ) -> None:
     try:
         cases = json.loads(coverage.read_bytes())["cases"]
@@ -1504,7 +1582,7 @@ def proposal_panel(
     extra = {}
     alternate = None
     order = ("fallback", "edge", "short")
-    has_alternating = alternating_route or alternating_policy is not None or commutator_route
+    has_alternating = alternating_route or alternating_policy is not None or commutator_route or klein_route
     if abelian_route or has_alternating:
         order += ("routed",)
     if has_alternating:
@@ -1520,8 +1598,10 @@ def proposal_panel(
         )
         order += ("extended",)
         extra = dict(alternating_cpu_ns=time.process_time_ns() - started, alternating_certificates=alternating_certificates)
-    if commutator_route:
+    if commutator_route or klein_route:
         order += ("commutator",)
+    if klein_route:
+        order += ("klein",)
     results = []
     seen = set()
     for index, case in enumerate(cases):
@@ -1543,13 +1623,13 @@ def proposal_panel(
             started = time.process_time_ns()
             if arm == "fallback":
                 result = dict(right=acquire_with_memo(120, equal, cancelled_key)["edges"])
-            elif arm in {"routed", "extended", "commutator"} and equal("01", "10"):
+            elif arm in {"routed", "extended", "commutator", "klein"} and equal("01", "10"):
                 result = _acquire_commuting_action(120, equal)
             else:
                 result = _acquire_checked_proposal(
                     tree, catalog, edge if arm == "edge" else short, equal,
-                    alternate=alternate if arm in {"extended", "commutator"} else None,
-                    commutator_route=arm == "commutator",
+                    alternate=alternate if arm in {"extended", "commutator", "klein"} else None,
+                    commutator_route=arm == "commutator", klein_route=arm == "klein",
                 )
             cpu_ns = time.process_time_ns() - started
             if tuple(map(tuple, result["right"])) != graph:
@@ -1582,6 +1662,7 @@ if __name__ == "__main__":
     parser.add_argument("--alternating-route", action="store_true", help="Also compare certified A5 x C2 proposals")
     parser.add_argument("--alternating-policy", type=Path, help="Use a validated policy from compile-alternating-policy")
     parser.add_argument("--commutator-route", action="store_true", help="Try direct recovery with a normal commutator of order three")
+    parser.add_argument("--klein-route", action="store_true", help="Try direct recovery through a normal Klein-four quotient")
     parser.add_argument(
         "--known-family-policy", choices=("greedy", "optimal"), default="greedy",
         help="Equality policy for the known S5 comparison in the congruence panel",
@@ -1597,6 +1678,8 @@ if __name__ == "__main__":
         parser.error("--alternating-policy requires the proposal phase")
     if args.commutator_route and args.phase != "proposal":
         parser.error("--commutator-route requires the proposal phase")
+    if args.klein_route and args.phase != "proposal":
+        parser.error("--klein-route requires the proposal phase")
     if args.phase == "prepare":
         prepare(args.data)
     elif args.phase == "equality":
@@ -1621,7 +1704,7 @@ if __name__ == "__main__":
             parser.error("--coverage and --output are required for the proposal panel")
         proposal_panel(
             args.coverage, args.output, abelian_route=args.abelian_route, alternating_route=args.alternating_route,
-            alternating_policy=args.alternating_policy, commutator_route=args.commutator_route,
+            alternating_policy=args.alternating_policy, commutator_route=args.commutator_route, klein_route=args.klein_route,
         )
     elif args.phase == "compile-alternating-policy":
         if args.output is None:
