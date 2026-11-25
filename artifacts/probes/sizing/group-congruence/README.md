@@ -35,6 +35,31 @@ The preregistered gate passed. All six fresh `S5` cases certified with 90.57% fe
 
 The oracle here is an in-process table walk. On macOS, cold catalog enumeration took 0.785 s. Over the 18 cases, cancellation took 0.060 s including 0.007 s in the oracle. The checked proposal with fallback took 0.198 s after enumeration, including 0.004 s in the oracle. Query savings therefore describe a resource tradeoff for an expensive oracle. This experiment measures a static library on a fixed panel, with no external latency benchmark.
 
+## Information-optimal selection with a known S5 family
+
+The existing congruence command can compile a decision tree using exact word equalities across the complete 57-action S5 catalogue.
+
+```sh
+uv run --locked python -m scripts.group_student_probe congruence \
+  --data . \
+  --coverage artifacts/probes/sizing/group-congruence/coverage.json \
+  --known-family-policy optimal \
+  --output "$PANEL_DIR/optimal-family.json"
+```
+
+| Policy | Targets identified | Maximum equality calls | Calls across all targets | Queried symbols across all targets |
+| --- | ---: | ---: | ---: | ---: |
+| Frozen greedy | 57/57 | 9 | 376 | 3,971 |
+| Compiled tree | 57/57 | 6 | 335 | 2,656 |
+
+The compiled tree attains both binary information lower bounds. Distinguishing 57 targets requires at least six calls in the worst case. The minimum total leaf depth is 335 under equal target weights, attained by seven five-call and 50 six-call paths. Each split uses a legal endpoint equality, and the auditor independently replayed every split against the live set of actions. The new policy used fewer calls on 29 targets, the same on 18, and more on ten. Its symbol savings were measured. Global symbol optimality was outside this experiment. [Binary code lower bounds](https://web.stanford.edu/class/ee398a/handouts/papers/Huffman%20-%20Min%20Redundancy%20Codes%20-%20IRE52.pdf)
+
+The catalogue builder now visits one representative per simultaneous-conjugation orbit. It preserves the original sorted graph dictionary exactly. In two live paired runs, the old builder took 875–889 ms of CPU and the orbit builder took about 20 ms. Tree compilation added 58–62 ms. The repeated online phase took 632–645 ms of CPU for greedy and under 1 ms for the compiled policy across all 57 targets on this Mac.
+
+The ordinary CLI reproduced all 18 original non-timing rows. With the compiled policy, the six S5 rows went from 43 to 36 calls combined. All other arms reproduced their non-timing fields. The full catalogue replay matched at a second Python hash seed, and the auditor rejected a flipped answer. DSR passed 2/2 checks, including 89 diagnostics tests passed and one skipped. The compiled route assumes known S5 membership. The separate untrusted-catalogue experiment retains its certificate and fallback.
+
+The scored source was frozen at `9d9c2c8`. [Frozen comparison](known-family-source.zip) · [Tapes, CLI runs, and DSR receipts](known-family-results.zip)
+
 ## Reproduction
 
 The [first coverage manifest](coverage.json) was committed at `3d8e745` and the matched learner ran at `9696164`. The [second manifest](proposal-coverage.json) and [frozen producer and auditor](proposal-source.zip) were committed at `5becc54`. The [verification archive](verification.zip) includes both complete transcripts on each platform, the prior synthetic cohort used to check exclusions, audit source, and the DSR commands and receipts. The summaries expose the per-case counts for [rewriting](summary.json) and [checked proposals](proposal-summary.json).
