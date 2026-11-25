@@ -21,8 +21,9 @@ from scipy import stats
 
 from nanochat.diagnostics_data import _GROUP_GENERATORS, _group_elements, _perm_mul
 from nanochat.gpt import GPT, GPTConfig
+from nanochat.group_acquisition import Actions, infer_actions, teach_panel_case
 from nanochat.report import get_git_info
-from scripts.group_rewrite_probe import Actions, infer_actions, rooted_graph, save, teach_panel_case
+from scripts.group_rewrite_probe import rooted_graph, save
 
 ARMS = ("active", "random", "short_only")
 STEPS = 900

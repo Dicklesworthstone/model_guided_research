@@ -663,7 +663,8 @@ def test_cli_gen_tasks_and_profile_task(tmp_path):
 
 
 def test_group_substitutions_need_only_equal_endpoint_names():
-    from scripts.group_rewrite_probe import Rewriter, oracle, record, verify_rewrite
+    from nanochat.group_acquisition import record
+    from scripts.group_rewrite_probe import Rewriter, oracle, verify_rewrite
 
     # In S3 a transposition squared is the identity; insertion preserves any context.
     labels = {"11": "x", "0011": "x", "00": "y", "01": "z"}
@@ -708,7 +709,7 @@ def test_active_group_table_queries_only_missing_edges():
 
 @pytest.mark.parametrize("last", range(3))
 def test_prepend_append_rectangle_and_its_inverse(last):
-    from scripts.group_rewrite_probe import Actions
+    from nanochat.group_acquisition import Actions
 
     actions = Actions(set("abcdef"))
     known = [("L0", "a", "b"), ("R1", "a", "c"), ("R1", "b", "d")]
@@ -733,7 +734,7 @@ def test_prepend_append_rectangle_and_its_inverse(last):
 
 
 def test_incremental_square_closure_keeps_reporting_a_conflict():
-    from scripts.group_rewrite_probe import Actions
+    from nanochat.group_acquisition import Actions
 
     actions = Actions(set("abcdef"))
     for fact in [("L0", "a", "b"), ("R1", "a", "c"), ("R1", "b", "d"), ("L0", "c", "e")]:
@@ -741,6 +742,89 @@ def test_incremental_square_closure_keeps_reporting_a_conflict():
     for _ in range(2):
         with pytest.raises(ValueError, match="Inconsistent permutation edge"):
             actions.close(squares=True)
+
+
+@pytest.mark.parametrize("tiered", [False, True])
+def test_exact_endpoint_acquisition_with_opaque_labels(tiered):
+    from nanochat.group_acquisition import acquire, load_catalogue
+
+    labels = [f"state {i:02x} / α" for i in range(32)]
+
+    def step(state, mark):
+        rotation, reflection = divmod(state, 2)
+        if mark == "1":
+            return state ^ 1
+        return 2 * ((rotation + (-1 if reflection else 1)) % 16) + reflection
+
+    words = []
+
+    def teacher(word):
+        assert len(word) >= 2 and word not in words
+        words.append(word)
+        state = 0
+        for mark in word:
+            state = step(state, mark)
+        return labels[state]
+
+    path = FIXTURE_PATH.parents[2] / "artifacts/probes/sizing/group-solver-baseline/anchor-results.zip"
+    action = acquire(labels, teacher, catalogue=load_catalogue(path, len(labels)) if tiered else None)
+    assert words[:4] == ["00", "01", "10", "11"]
+    assert action.root == labels[0]
+    assert action.terminal == ("unique" if tiered else "square")
+    assert action.transitions == {label: (labels[step(i, "0")], labels[step(i, "1")]) for i, label in enumerate(labels)}
+
+
+@pytest.mark.parametrize(
+    ("reply", "event", "message"),
+    [
+        ("", "eof", "closed its input"),
+        ("xyz\n", "invalid_reply", "Expected a JSON reply"),
+        ('{"label":"home","label":"home"}\n', "invalid_reply", "Expected one string label"),
+        ('{"label":"unknown"}\n', "reply", "outside the roster"),
+    ],
+)
+def test_group_acquire_retains_failed_oracle_interaction(tmp_path, reply, event, message):
+    from typer.testing import CliRunner
+
+    from cli import app
+
+    roster = tmp_path / "roster.json"
+    roster.write_text('["home"]', encoding="utf-8")
+    transcript = tmp_path / "session.jsonl"
+    result = CliRunner().invoke(app, ["group-acquire", str(roster), "--transcript", str(transcript)], input=reply)
+    assert result.exit_code == 2
+    assert json.loads(result.stdout) == {"word": "00"}
+    assert message in result.stderr
+    rows = [json.loads(line) for line in transcript.read_text(encoding="utf-8").splitlines()]
+    assert [row["event"] for row in rows] == ["start", "request", event, "error"]
+    assert rows[2]["roundtrip_ns"] >= 0
+
+
+def test_group_acquire_validates_inputs_before_querying(tmp_path):
+    from typer.testing import CliRunner
+
+    from cli import app
+
+    roster = tmp_path / "roster.json"
+    roster.write_text(json.dumps([str(i) for i in range(32)]), encoding="utf-8")
+    catalogue = tmp_path / "catalogue.zip"
+    catalogue.write_bytes(b"unverified inventory")
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("existing evidence\n", encoding="utf-8")
+    runner = CliRunner()
+
+    invalid = runner.invoke(app, ["group-acquire", str(roster), "--catalogue", str(catalogue)])
+    assert invalid.exit_code == 2 and not invalid.stdout
+    assert "Catalogue checksum mismatch" in invalid.stderr
+
+    occupied = runner.invoke(app, ["group-acquire", str(roster), "--transcript", str(transcript)])
+    assert occupied.exit_code == 2 and not occupied.stdout
+    assert transcript.read_text(encoding="utf-8") == "existing evidence\n"
+
+    roster.write_text('["same","same"]', encoding="utf-8")
+    bad_roster = runner.invoke(app, ["group-acquire", str(roster)])
+    assert bad_roster.exit_code == 2 and not bad_roster.stdout
+    assert "Roster labels must be distinct" in bad_roster.stderr
 
 
 def test_equality_only_action_recovers_every_edge_with_a_wrong_ranker():

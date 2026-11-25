@@ -17,6 +17,7 @@ import statistics
 import subprocess  # nosec B404
 import sys
 import time
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from functools import lru_cache
@@ -522,6 +523,29 @@ def list_demos():
     console.print(table)
     console.print("\n[dim]Run a demo with:[/dim] [bold green]mgr run <demo-name>[/bold green]")
     console.print("[dim]Get info about a demo:[/dim] [bold green]mgr info <demo-name>[/bold green]")
+
+
+@app.command("group-acquire")
+def group_acquire(
+    roster: Annotated[Path, typer.Argument(help="JSON array of all distinct endpoint labels")],
+    catalogue: Annotated[
+        Path | None, typer.Option(help="Audited anchor-results.zip for shortest-tier selection at order 32, 64 or 128")
+    ] = None,
+    transcript: Annotated[Path | None, typer.Option(help="New file for the JSON-lines acquisition transcript")] = None,
+) -> None:
+    """Learn a regular group action from one binary-word query and JSON reply at a time."""
+    from nanochat.group_acquisition import load_catalogue, run_stream, validate_roster
+
+    try:
+        labels = validate_roster(json.loads(roster.read_text(encoding="utf-8")))
+        started = time.perf_counter_ns()
+        index = None if catalogue is None else load_catalogue(catalogue, len(labels))
+        setup_ns = 0 if index is None else time.perf_counter_ns() - started
+        with nullcontext(None) if transcript is None else transcript.open("x", encoding="utf-8") as journal:
+            run_stream(labels, sys.stdin, sys.stdout, catalogue=index, transcript=journal, setup_ns=setup_ns)
+    except (ValueError, OSError) as error:
+        Console(stderr=True).print(str(error), style="red", markup=False)
+        raise typer.Exit(2) from error
 
 
 @app.command("flags")

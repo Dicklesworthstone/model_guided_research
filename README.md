@@ -158,6 +158,33 @@ writes (`hypotheses add|hold|release` and `adjudicate`), claim-bearing
 scorecards, `status`, and `theorems validate --deep` require a checkout.
 Deep theorem validation also needs the dev dependencies to collect pytest tests.
 
+### Connect an endpoint oracle
+
+`mgr group-acquire roster.json --transcript run.jsonl` reconstructs a finite
+regular group action from two commands, `0` and `1`. Provide the complete
+roster as a JSON array of distinct, opaque string labels. The oracle must be
+able to reset to the same starting state, run both marks left to right, and
+return the same label whenever it reaches the same state.
+
+An oracle driver starts the command with stdin and stdout connected. For each
+flushed stdout line such as `{"word":"010"}`, reset the oracle, execute the word
+and send one stdin line such as `{"label":"opaque-17"}`. Continue until stdout
+returns `action` with the root label and a `transitions` mapping. Each value is
+an array of the next labels for commands `0` and `1`, in that order. Protocol
+errors exit with status 2 and a diagnostic on stderr.
+
+The default uses live square closure. Pass `--catalogue path/to/anchor-results.zip`
+to use shortest-tier selection at orders 32, 64 or 128. The command checks the
+archive against the audited inventory before issuing its first query.
+[Audited catalogue](artifacts/probes/sizing/group-solver-baseline/anchor-results.zip) ·
+[Measured per-order trade-offs](artifacts/campaigns/group-student/README.md#transfer-to-orders-32-64-and-128)
+
+The optional transcript is a new JSON-lines file. It records setup time,
+each request and reply, and the final action or observed protocol error. A
+reply's `roundtrip_ns` includes sending the query, waiting for the driver,
+and reading its response. Measure reset, each command and endpoint read
+inside the driver if those costs need to be distinguished.
+
 ### Quick Tour
 
 ```bash

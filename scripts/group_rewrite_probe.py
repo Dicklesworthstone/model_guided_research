@@ -8,10 +8,9 @@ import argparse
 import hashlib
 import json
 import random
-from collections import defaultdict, deque
+from collections import defaultdict
 from collections.abc import Callable
 from functools import cache
-from heapq import heapify, heappop, heappush
 from itertools import product
 from pathlib import Path
 from zipfile import ZipFile
@@ -30,13 +29,13 @@ from nanochat.diagnostics_data import (
     _perm_mul,
     content_sha256,
 )
+from nanochat.group_acquisition import SYMBOLS, record, shortest, teach_panel_case
 from nanochat.report import build_provenance
 from nanochat.tokenizer import checkpoint_tokenizer
 
 SUITE = "vdc4-group-tasktok-shuf-b30-s256-rung"
 SPEC = TASKS["group"]
 GROUPS = ("s5", "a5", "s3", "z60")
-SYMBOLS = "01"
 
 
 def parse_doc(doc: str) -> tuple[str, str, str]:
@@ -47,18 +46,6 @@ def parse_doc(doc: str) -> tuple[str, str, str]:
     if any(t not in {"g0", "g1"} for t in letters):
         raise ValueError(f"Invalid generator in {doc!r}")
     return tokens[3], "".join(t[1] for t in letters), tokens[-1]
-
-
-def record(labels: dict[str, str], word: str, label: str) -> None:
-    if labels.setdefault(word, label) != label:
-        raise ValueError(f"Inconsistent endpoint for {word}")
-
-
-def shortest(labels: dict[str, str]) -> dict[str, str]:
-    representatives = {}
-    for word in sorted(labels, key=lambda w: (len(w), w)):
-        representatives.setdefault(labels[word], word)
-    return representatives
 
 
 class Rewriter:
@@ -248,150 +235,6 @@ def save(path: Path, data) -> None:
     with path.open("x") as output:
         json.dump(data, output, sort_keys=True, separators=(",", ":"))
         output.write("\n")
-
-
-class Actions:
-    """A map and its inverse for each generator on each side of the word."""
-
-    def __init__(self, vocabulary: set[str]):
-        self.vocabulary = vocabulary
-        self.maps: dict[str, dict[str, str]] = {side + a: {} for side in "RrLl" for a in SYMBOLS}
-        self._pending: deque[tuple[str, str, str]] = deque()
-
-    def bind(self, edge: str, source: str, target: str) -> bool:
-        if source not in self.vocabulary or target not in self.vocabulary:
-            raise ValueError("Unknown endpoint")
-        forward, backward = self.maps[edge], self.maps[edge.swapcase()]
-        if source in forward and forward[source] != target or target in backward and backward[target] != source:
-            raise ValueError("Inconsistent permutation edge")
-        if source in forward:
-            return False
-        forward[source] = target
-        backward[target] = source
-        self._pending.append((edge, source, target))
-        self._pending.append((edge.swapcase(), target, source))
-        return True
-
-    def _complete_column(self, edge: str) -> None:
-        mapping, inverse = self.maps[edge], self.maps[edge.swapcase()]
-        if len(mapping) == len(self.vocabulary) - 1:
-            (source,) = self.vocabulary.difference(mapping)
-            (target,) = self.vocabulary.difference(inverse)
-            self.bind(edge, source, target)
-
-    def close(self, squares: bool) -> None:
-        for edge in ("R0", "R1", "L0", "L1"):
-            self._complete_column(edge)
-        if not squares:
-            return
-
-        # Both orientations are queued. If the new edge is on the far
-        # side of a square, the inverse of the crossing edge lets us
-        # examine the same square from the new edge's source.
-        while self._pending:
-            edge, source, target = self._pending[0]
-            self._complete_column(edge)
-            mapping = self.maps[edge]
-            opposite = ("R0", "R1", "r0", "r1") if edge[0] in "Ll" else ("L0", "L1", "l0", "l1")
-            for other in opposite:
-                crossing = self.maps[other]
-                start = crossing.get(source)
-                if start is None:
-                    continue
-                end = crossing.get(target)
-                if end is not None:
-                    self.bind(edge, start, end)
-                elif (end := mapping.get(start)) is not None:
-                    self.bind(other, target, end)
-            self._pending.popleft()
-
-    def read_right(self, observations: dict[str, str], word: str) -> str | None:
-        if word in observations:
-            return observations[word]
-        state = observations.get(word[:2])
-        for g in word[2:]:
-            if state is None:
-                return None
-            state = self.maps["R" + g].get(state)
-        return state
-
-    def representatives(self, observations: dict[str, str]) -> dict[str, str]:
-        reps = shortest(observations)
-        queue = [(len(w), w, y) for y, w in reps.items()]
-        heapify(queue)
-        while queue:
-            _, w, source = heappop(queue)
-            if w != reps[source]:
-                continue
-            for a in SYMBOLS:
-                target = self.maps["R" + a].get(source)
-                if target is None:
-                    continue
-                word = w + a
-                if target not in reps or (len(word), word) < (len(reps[target]), reps[target]):
-                    reps[target] = word
-                    heappush(queue, (len(word), word, target))
-        return reps
-
-
-def _extensions(word: str, target: str) -> tuple[tuple[str, str, str], tuple[str, str, str]]:
-    return ("R" + word[-1], word[:-1], target), ("L" + word[0], word[1:], target)
-
-
-def _propagate_extensions(
-    actions: Actions, observations: dict[str, str], pending: list[tuple[str, str, str]], *, squares: bool
-) -> list[tuple[str, str, str]]:
-    while True:
-        before = sum(len(m) for m in actions.maps.values())
-        unresolved = []
-        for edge, part, target in pending:
-            start = actions.read_right(observations, part)
-            if start is None:
-                unresolved.append((edge, part, target))
-            else:
-                actions.bind(edge, start, target)
-        actions.close(squares)
-        if not unresolved or before == sum(len(m) for m in actions.maps.values()):
-            return unresolved
-        pending = unresolved
-
-
-def infer_actions(actions: Actions, observations: dict[str, str], *, squares: bool) -> None:
-    """Propagate observed prefix and suffix extensions to a fixed point."""
-    pending = [extension for word, target in observations.items() for extension in _extensions(word, target)]
-    _propagate_extensions(actions, observations, pending, squares=squares)
-
-
-def teach_panel_case(initial: dict[str, str], vocabulary: set[str], ask: Callable[[str], str], *, squares: bool):
-    observations = initial.copy()
-    actions = Actions(vocabulary)
-    pending = [extension for word, target in observations.items() for extension in _extensions(word, target)]
-    queries: list[tuple[str, str]] = []
-    while True:
-        pending = _propagate_extensions(actions, observations, pending, squares=squares)
-        reps = actions.representatives(observations)
-        missing = (
-            (len(w) + 1, w + a, source, a)
-            for source, w in reps.items()
-            for a in SYMBOLS
-            if source not in actions.maps["R" + a]
-        )
-        choice = min(missing, default=None)
-        if choice is None:
-            if any(len(actions.maps["R" + a]) != len(vocabulary) for a in SYMBOLS):
-                raise ValueError("Learner stalled before covering every advertised state")
-            return actions, queries
-        _, word, source, symbol = choice
-        if word in observations:
-            raise ValueError("Requested an already labeled word")
-        target = ask(word)
-        known = actions.read_right(observations, word)
-        if known is not None and known != target:
-            raise ValueError(f"Inconsistent endpoint for {word}")
-        queries.append((word, target))
-        record(observations, word, target)
-        pending.extend(_extensions(word, target))
-        actions.bind("R" + symbol, source, target)
 
 
 def rooted_graph(group: str, generators: tuple) -> tuple[tuple[int, int], ...]:
