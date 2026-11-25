@@ -9,7 +9,7 @@ from functools import cache
 from heapq import heapify, heappop, heappush
 from importlib.resources import files
 from io import BytesIO
-from itertools import groupby, product
+from itertools import count, groupby, product
 from pathlib import Path
 from time import perf_counter_ns
 from typing import Literal, TextIO
@@ -464,6 +464,7 @@ class OptimalPolicy:
 
 
 type _PlanningState = tuple[tuple[int, tuple[int, ...]], ...]
+type _WordEndpoints = tuple[str, tuple[int, ...]]
 
 
 def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_work: int = 300_000) -> OptimalPolicy:
@@ -506,18 +507,20 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
         return tuple((row, tuple(names[rank] for rank in order)) for row, names in state)
 
     @cache
-    def naming_cost(row: int, names: frozenset[int]) -> int:
+    def naming_costs(row: int, names: frozenset[int]) -> tuple[int, int]:
         # Omit the most expensive shortest access word, because the last
-        # unused name is determined by the roster.
+        # unused name is determined by the roster. The second bound grants
+        # one optimal missing name for free.
         missing = [read_price + len(word) for word, target in catalogue.naming[row] if target not in names]
-        return sum(missing[:-1])
+        return sum(missing[:-1]), sum(missing[:-2])
 
     @cache
-    def probes(rows: tuple[int, ...]) -> list[tuple[str, tuple[int, ...]]]:
+    def probes(rows: tuple[int, ...]) -> Callable[[int], _WordEndpoints | None]:
         # Every longer admissible word extends an anchor. Equal endpoint vectors
         # stay equal after every common suffix, so shortlex BFS keeps a cheapest word.
         seen: set[tuple[int, ...]] = set()
-        queue: list[tuple[str, tuple[int, ...]]] = []
+        queue: list[_WordEndpoints] = []
+        expanded = 0
 
         def add(word: str, endpoints: tuple[int, ...]) -> None:
             if endpoints not in seen:
@@ -527,25 +530,43 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
 
         for word in ANCHORS:
             add(word, tuple(_endpoint(shapes[row], word) for row in rows))
-        for word, endpoints in queue:
-            for mark, symbol in enumerate(SYMBOLS):
-                add(
-                    word + symbol,
-                    tuple(shapes[row][endpoint][mark] for row, endpoint in zip(rows, endpoints, strict=True)),
-                )
-        return queue
+
+        def candidate(index: int) -> _WordEndpoints | None:
+            nonlocal expanded
+            while index >= len(queue) and expanded < len(queue):
+                word, endpoints = queue[expanded]
+                expanded += 1
+                for mark, symbol in enumerate(SYMBOLS):
+                    add(
+                        word + symbol,
+                        tuple(shapes[row][endpoint][mark] for row, endpoint in zip(rows, endpoints, strict=True)),
+                    )
+            return queue[index] if index < len(queue) else None
+
+        return candidate
 
     @cache
     def solve(state: _PlanningState) -> tuple[int, str | None]:
         spend()
         first, names = state[0]
         if len(state) == 1:
-            return naming_cost(first, frozenset(names)), None
+            return naming_costs(first, frozenset(names))[0], None
 
         best_cost: int | None = None
         best_word: str | None = None
-        for word, endpoints in probes(tuple(row for row, _ in state)):
+        find_candidate = probes(tuple(row for row, _ in state))
+        after_any_reply = sum(naming_costs(row, frozenset(named))[1] for row, named in state)
+        for index in count():
+            candidate = find_candidate(index)
+            if candidate is None:
+                break
             spend()
+            word, endpoints = candidate
+            total = len(state) * (read_price + len(word))
+            # One reply can identify at most one name per shape. Every later
+            # candidate costs at least as much, so the same bound rejects the tail.
+            if best_cost is not None and total + after_any_reply >= best_cost:
+                break
             groups = partition(state, endpoints)
             if len(groups) == 1:
                 rank, child = next(iter(groups.items()))
@@ -553,10 +574,9 @@ def compile_optimal_policy(catalogue: Catalogue, *, read_price: int = 16, max_wo
                 # read or it was the sole label left in the public roster.
                 if child == state or rank == size - 1:
                     continue
-            total = len(state) * (read_price + len(word))
             if best_cost is not None:
                 lower_bound = sum(
-                    naming_cost(row, frozenset(named)) for child in groups.values() for row, named in child
+                    naming_costs(row, frozenset(named))[0] for child in groups.values() for row, named in child
                 )
                 if total + lower_bound >= best_cost:
                     continue
