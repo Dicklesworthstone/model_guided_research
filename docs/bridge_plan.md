@@ -19,6 +19,79 @@ independent verifier checked the recovered actions on all twenty presentations
 including S3 and Z60. Neural transfer without an inference-time rewrite is open.
 [Registration, query counts and certificates](../artifacts/probes/sizing/group-query-completion/README.md)
 
+## Does the surreal proxy improve language-model training?
+
+The proxy's projection is exponential weight normalization. For a nonzero
+direction above the clamp in the normalization operator, the effective
+row is `exp(s) * v / ||v||`. Ordinary weight normalization uses a direct
+gain in place of `exp(s)`. A positive linear gain and an exponential gain
+give the same row. Their optimization coordinates differ. Exponential
+weight normalization was already described in the literature. Recent work
+also studies magnitude-direction decoupling on larger language models.
+[Weight normalization](https://arxiv.org/abs/1602.07868) ·
+[Exponential weight normalization](https://proceedings.mlr.press/v167/morwani22a.html) ·
+[Magnitude-direction decoupling](https://arxiv.org/abs/2606.25971)
+
+The historical perplexity ratio of 0.5392 came from 13 selected placebo
+evaluations. In the corrected replay six were before operational
+registration and seven lack training lineage. The source associated
+with the initial evaluations zeroes the standard attention output
+projection and leaves the proxy's unit-norm output rows intact. Its
+non-HOSS optimizer factory also uses the older Muon-plus-AdamW split.
+The retained evaluation artifacts cannot assign the historical difference
+to initialization, the gain coordinate, or their interaction with training.
+[Historical verdict](../artifacts/adjudications/hqwi/report.md) ·
+[Eligibility audit](../artifacts/adjudications/jida36-eligibility-replay/eligibility-audit.json) ·
+[Source and preregistration](../artifacts/probes/sizing/surreal-init-audit/source.zip)
+
+In a new word-token placebo sizing run, none of the three standard seeds
+beat the train-only unigram loss of 2.9924 nats at 64, 192, or 384 steps.
+The locked rule stopped the mechanism comparison before any matched arms
+were trained. A separate replay of all nine measurements split the deeper
+test loss by whether the target appeared in training. The six absent
+token types accounted for 1,633 of 7,680 targets. Their mean loss rose
+from 9.27 to 14.39 nats between steps 64 and 384, while the loss of seen
+types moved from 2.708 to 2.717. This support shift was measured for
+the new word-token probe. The historical tokenizer differs.
+[Sizing data](../artifacts/probes/sizing/surreal-init-audit/placebo-results.zip) ·
+[Depth replay](../artifacts/probes/sizing/surreal-init-audit/depth-diagnostic.zip)
+
+A separately frozen byte-LM comparison used CPython 3.13.0 source, with
+entire files held out and disjoint from the sizing files. The earliest
+qualifying rung was 192 steps. Each model used 73,728 training token
+positions at width 64 and depth 2 under the same AdamW recipe. All
+eight fresh standard seeds beat the unigram floor. Five paired arms
+shared nonprojection weights and batch order. The three matched arms
+used the same initial effective attention matrices. The initialization
+checker accepted 16 matched projection outputs and rejected a planted
+25% gain change.
+
+| Arm | Validation nats per byte | Test nats per byte |
+| --- | ---: | ---: |
+| Dense with stock initialization | 2.27346 | 2.39822 |
+| Dense with output projection matched | 2.24765 | 2.37261 |
+| Dense with all projections matched | 2.25391 | 2.38153 |
+| Linear gain on matched projections | 2.35509 | 2.46634 |
+| Exponential gain on matched projections | 2.35484 | 2.46600 |
+
+The primary paired contrast, exponential gain minus linear gain,
+was **−0.000248 nats** with 95% CI **[−0.000478, −0.000018]**. This
+excludes the preregistered worthwhile reduction of 0.10 nats in this
+fixed recipe. Exponential gain lost to the fully matched dense arm by
+0.10093 nats on validation, with descriptive paired CI [0.08275, 0.11912].
+Mean training CPU was 0.794 s for exponential gain and 0.696 s for
+matched dense on this host. Timings are local observations. These
+results address the small fixed-recipe proxy and its initialization.
+The separate valuation-distance mechanism and scaling behavior were
+outside the experiment. The historical registry and its eligibility
+are unchanged.
+
+Both sizing protocols passed DSR 2/2, and the depth replay passed 1/1.
+The raw loss contrast was also independently recomputed from the eight
+paired measurements. The comparison producer was `21d0b0c`.
+[Frozen CPython protocol](../artifacts/probes/sizing/surreal-init-audit/cpython-source.zip) ·
+[Raw measurements, file hashes, and DSR receipts](../artifacts/probes/sizing/surreal-init-audit/cpython-results.zip)
+
 ## Repairs following the November 2026 assessment
 
 The ci-v7 adjudicator checks the operational definition in Git and the
